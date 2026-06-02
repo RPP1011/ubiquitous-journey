@@ -202,8 +202,10 @@ export class QuestBoard {
   // hunt progress: the sim calls this when the PLAYER kills a monster
   // (onCombatEvents -> dead event whose attacker is the player & target a monster).
   bumpHunt(monsterFaction) {
-    for (const q of this.active) {
-      if (q.type !== 'hunt' || q.state !== QUEST_STATE.active) continue;
+    // count kills toward EVERY live hunt (offered or accepted): the deed is
+    // real whether or not the player formally took the contract.
+    for (const q of [...this.offers, ...this.active]) {
+      if (q.type !== 'hunt' || q.finished) continue;
       if (q.target.monsterFaction !== monsterFaction) continue;
       q.progress = Math.min(q.target.count, q.progress + 1);
     }
@@ -213,39 +215,49 @@ export class QuestBoard {
   tick() {
     const player = this._player || this.sim.player;
     if (!player) return;
-    for (const q of this.active.slice()) {
-      if (q.state !== QUEST_STATE.active) continue;
+    // Completion is recognised for OFFERED quests too — a giver rationally
+    // compensates anyone who did the deed (even unintentionally), because over
+    // repeated play a proven helper is worth more than a stranger. Acceptance is
+    // now optional (it just tracks the quest in the log). Every payout is a
+    // co-located transaction from the giver's own purse.
+    for (const q of [...this.offers, ...this.active]) {
+      if (q.finished) continue;
       const giver = this.sim.agentsById.get(q.giverId);
       if (!giver || !giver.alive) { this._fail(q, 'giver lost'); continue; }
+      const near = player.pos.distanceTo(giver.pos) <= QUEST.recoverNearDist;
 
       if (q.type === 'fetch' || q.type === 'recover') {
         const c = q.target.commodity, qty = q.target.qty;
         const held = Math.floor(player.inventory[c] || 0);
-        // fetch completes on hand-off near the giver; recover too (return the goods)
-        const near = player.pos.distanceTo(giver.pos) <= QUEST.recoverNearDist;
         q.progress = Math.min(1, held / qty);
         if (held >= qty && near) {
-          // transfer the goods to the giver and pay out
+          // hand the goods over and let the giver pay for them (a trade)
           player.inventory[c] -= qty;
           giver.inventory[c] = (giver.inventory[c] || 0) + qty;
           if (c === 'food') giver.needs.hunger = Math.min(1, giver.needs.hunger + 0.4);
-          this._complete(q, player);
+          this._complete(q, player, giver);
         }
       } else if (q.type === 'hunt') {
-        if (q.progress >= q.target.count) this._complete(q, player);
+        // killed the monsters anywhere; collect from the grateful giver in person
+        if (q.progress >= q.target.count && near) this._complete(q, player, giver);
       }
     }
   }
 
-  _complete(q, player) {
+  _complete(q, player, giver) {
     q.state = QUEST_STATE.done;
     q.progress = 1;
+    giver = giver || this.sim.agentsById.get(q.giverId);
     const r = q.reward;
-    if (r.gold) player.gold += r.gold;
+    // The giver PAYS FROM ITS OWN PURSE — no money is minted, so the closed
+    // economy stays intact. It compensates a proven helper as a forward-looking
+    // investment, but can only ever pay what it can afford; the rest of the debt
+    // rides on the standing bump below (goodwill it will repay another way).
+    const pay = giver ? Math.min(r.gold || 0, Math.max(0, Math.floor(giver.gold))) : 0;
+    if (pay > 0) { giver.gold -= pay; player.gold += pay; }
     if (r.xp && player.progression && typeof player.progression.addXP === 'function') {
       player.progression.addXP(r.xp, { reason: 'quest', tags: [q.type] });
     }
-    const giver = this.sim.agentsById.get(q.giverId);
     if (giver) giver.openOffer = null;
     // a completed quest is a reputation-bearing deed: the giver + nearby
     // townsfolk who see it warm to the player (witnessDeed moves standing +
@@ -253,6 +265,7 @@ export class QuestBoard {
     if (giver) this.sim.reputation?.witnessDeed?.(this.sim.agents, 'QUEST_DONE', giver.pos, this.sim.time, giver.id);
     bus.emit({ actorId: player.id, verb: 'QUEST_DONE', tags: [q.type], magnitude: r.rep || 1,
       targetId: q.giverId, t: this.sim.time });
+    this.offers = this.offers.filter((x) => x !== q);
     this.active = this.active.filter((x) => x !== q);
     this._done = this._done || [];
     this._done.push(q);
