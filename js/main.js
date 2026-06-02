@@ -182,14 +182,12 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyE' && game.state === 'playing') { e.preventDefault(); tryOpenDialogue(); }
   if (e.code === 'KeyR') restart();
   if (e.code === 'KeyQ') questLog.toggle();
-  // Digit1-4 drive ability casts while playing (handled in pollCastKeys); they
-  // toggle the collapsible UI tabs only when NOT in active play.
-  if (game.state !== 'playing') {
-    if (e.code === 'Digit1') toggleTab(1);
-    if (e.code === 'Digit2') toggleTab(2);
-    if (e.code === 'Digit3') toggleTab(3);
-    if (e.code === 'Digit4') toggleTab(4);
-  }
+  // UI tabs toggle on letter keys (C/T/I/M) so they never clash with the 1-4
+  // ability hotbar, and work in any state — including mid-play.
+  if (e.code === 'KeyC') toggleTab(1);
+  if (e.code === 'KeyT') toggleTab(2);
+  if (e.code === 'KeyI') toggleTab(3);
+  if (e.code === 'KeyM') toggleTab(4);
 });
 
 input.onLockChange = (locked) => {
