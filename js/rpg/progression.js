@@ -135,6 +135,17 @@ export class Progression {
     return Math.min(RPG.totalLevelCap, s);
   }
 
+  // public: award flat XP (e.g. a quest/event reward) to the agent's primary
+  // class. If the agent has no class yet, mint a generic [Adventurer] so the
+  // reward isn't lost.
+  addXP(amount, now) {
+    if (!(amount > 0)) return;
+    const t = typeof now === 'number' ? now : this._lastTick;   // callers may pass a meta object
+    let cls = this.primaryClass();
+    if (!cls) { this._grantClass('adventurer', '[Adventurer]', t); cls = this.classes.get('adventurer'); }
+    this._awardXp(cls, amount, t);
+  }
+
   // ---------------------------------------------------------------------------
   // PERIODIC: profile decay + class matching. Called every 6Hz tick from the
   // sim loop; the heavy matcher only runs on matchIntervalSec.
@@ -212,6 +223,7 @@ export class Progression {
       if (!spec) continue;
       this.abilities.set(abilityId, spec);
       this.cooldowns.set(abilityId, 0);
+      this.agent.grantAbility?.(spec);   // mirror onto the Agent (UI + cast path)
       bus.emit(makeEvent({
         actorId: this.agent.id, verb: 'ability_gained', tags: [],
         magnitude: lvl, t: now,

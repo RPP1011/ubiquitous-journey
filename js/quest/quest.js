@@ -43,10 +43,10 @@ export const QUEST = {
   fetchNeedThresh: 0.32,    // hunger below this counts as "going hungry"
   fetchStuckTicks: 24,      // ticks hungry-without-relief before a fetch is posted
   fetchQty: 3,              // food units a fetch quest asks for
-  fetchReward: { gold: 14, xp: 6, rep: REP?.deeds?.questDone ?? 0.25 },
+  fetchReward: { gold: 14, xp: 6, rep: REP?.deeds?.QUEST_DONE?.personal ?? 0.25 },
   huntCount: 2,             // monsters a hunt quest asks the player to slay
-  huntReward: { gold: 22, xp: 12, rep: (REP?.deeds?.questDone ?? 0.25) * 1.4 },
-  recoverReward: { gold: 18, xp: 10, rep: (REP?.deeds?.questDone ?? 0.25) * 1.2 },
+  huntReward: { gold: 22, xp: 12, rep: (REP?.deeds?.QUEST_DONE?.personal ?? 0.25) * 1.4 },
+  recoverReward: { gold: 18, xp: 10, rep: (REP?.deeds?.QUEST_DONE?.personal ?? 0.25) * 1.2 },
   recoverNearDist: 3.0,     // how close to the giver the recovered goods return
   expireAfter: 0,           // 0 = offers persist until taken or state changes
 };
@@ -247,7 +247,10 @@ export class QuestBoard {
     }
     const giver = this.sim.agentsById.get(q.giverId);
     if (giver) giver.openOffer = null;
-    // a completed quest is a reputation-bearing deed (sim/reputation reads this)
+    // a completed quest is a reputation-bearing deed: the giver + nearby
+    // townsfolk who see it warm to the player (witnessDeed moves standing +
+    // does the faction rollup).
+    if (giver) this.sim.reputation?.witnessDeed?.(this.sim.agents, 'QUEST_DONE', giver.pos, this.sim.time, giver.id);
     bus.emit({ actorId: player.id, verb: 'QUEST_DONE', tags: [q.type], magnitude: r.rep || 1,
       targetId: q.giverId, t: this.sim.time });
     this.active = this.active.filter((x) => x !== q);
