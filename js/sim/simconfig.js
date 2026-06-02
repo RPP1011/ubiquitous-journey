@@ -4,8 +4,8 @@
 // belief surface from the spec's economy.md.
 
 // --- commodities ------------------------------------------------------------
-export const COMMODITIES = ['food', 'wood', 'ore', 'tool'];
-export const BASE_PRICE = { food: 4, wood: 3, ore: 5, tool: 14 };
+export const COMMODITIES = ['food', 'wood', 'ore', 'tool', 'herb', 'potion'];
+export const BASE_PRICE = { food: 4, wood: 3, ore: 5, tool: 14, herb: 3, potion: 12 };
 
 // --- professions ------------------------------------------------------------
 // raw producers make a good at their site; the smith converts wood+ore -> tool.
@@ -16,6 +16,8 @@ export const PROFESSIONS = {
   woodcutter: { label: 'Woodcutter', color: 0x5f8f3a, model: 'knight',    site: 'forest', output: 'wood' },
   miner:      { label: 'Miner',      color: 0x9aa0a8, model: 'barbarian', site: 'mine',   output: 'ore'  },
   smith:      { label: 'Smith',      color: 0xcf6a2c, model: 'barbarian', site: 'forge',  output: 'tool', inputs: { wood: 1, ore: 1 } },
+  forager:    { label: 'Forager',    color: 0x8fbf6a, model: 'knight',    site: 'meadow', output: 'herb' },
+  apothecary: { label: 'Apothecary', color: 0x7fb0c0, model: 'knight',    site: 'hut',    output: 'potion', inputs: { herb: 1 } },
 };
 
 // who spawns
@@ -24,13 +26,15 @@ export const ROSTER = [
   { profession: 'woodcutter', n: 5 },
   { profession: 'miner',      n: 5 },
   { profession: 'smith',      n: 3 },
+  { profession: 'forager',    n: 3 },
+  { profession: 'apothecary', n: 1 },
 ];
 
 // --- economy tuning ---------------------------------------------------------
 export const ECON = {
   startGold: 40,
   startStock: 2,              // units of own output to start with
-  keep: { food: 3, wood: 1, ore: 1, tool: 1 }, // reserve kept for personal use
+  keep: { food: 3, wood: 1, ore: 1, tool: 1, herb: 1, potion: 1 }, // reserve kept for personal use
   maxStack: 24,
 
   produceRate: 0.32,          // units/sec for raw producers

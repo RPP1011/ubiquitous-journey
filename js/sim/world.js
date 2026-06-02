@@ -8,7 +8,7 @@ import { ARENA_RADIUS, BIOME, findBiomeSpot } from '../arena.js';
 
 export const POI_KIND = {
   FIELD: 'field', FOREST: 'forest', MINE: 'mine', FORGE: 'forge',
-  MARKET: 'market', REST: 'rest',
+  MARKET: 'market', REST: 'rest', MEADOW: 'meadow', HUT: 'hut',
 };
 
 export class World {
@@ -38,6 +38,7 @@ export class World {
     this.market = this._add(POI_KIND.MARKET, new THREE.Vector3(0, 0, 0), makeMarket());
     this._add(POI_KIND.FORGE, new THREE.Vector3(6, 0, -4), makeForge());
     this._add(POI_KIND.FORGE, new THREE.Vector3(-7, 0, 5), makeForge());
+    this._add(POI_KIND.HUT, new THREE.Vector3(-9, 0, -6), makeHut());   // apothecary
     for (const [x, z] of [[-4, 6], [5, 4], [0, -7], [9, 2]]) {
       this._add(POI_KIND.REST, new THREE.Vector3(x, 0, z), makeCampfire());
     }
@@ -46,6 +47,7 @@ export class World {
     this._scatter(POI_KIND.FIELD,  BIOME.PLAINS, 4, 20, 52, makeField);
     this._scatter(POI_KIND.FOREST, BIOME.FOREST, 4, 20, 55, makeWoods);
     this._scatter(POI_KIND.MINE,   BIOME.HILLS,  4, 24, 58, makeMine);
+    this._scatter(POI_KIND.MEADOW, BIOME.PLAINS, 3, 20, 50, makeMeadow);
     // a few wilderness campfires for travellers
     this._scatter(POI_KIND.REST, BIOME.PLAINS, 3, 24, 50, makeCampfire);
   }
@@ -154,6 +156,40 @@ function makeMarket() {
     stall.position.set(Math.cos(a) * 3.6, 0, Math.sin(a) * 3.6);
     g.add(stall);
   }
+  return g;
+}
+
+function makeMeadow() {
+  const g = new THREE.Group();
+  const stem = new THREE.MeshStandardMaterial({ color: 0x5f9f4f, roughness: 1 });
+  const blooms = [0xe06f9c, 0xe0c84a, 0x9c6fe0, 0xffffff];
+  for (let i = 0; i < 18; i++) {
+    const p = new THREE.Group();
+    const s = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, 0.5, 4), stem);
+    s.position.y = 0.25;
+    const b = new THREE.Mesh(new THREE.IcosahedronGeometry(0.12, 0),
+      new THREE.MeshStandardMaterial({ color: blooms[(Math.random() * blooms.length) | 0], roughness: 0.8 }));
+    b.position.y = 0.55;
+    p.add(s, b);
+    p.position.set((Math.random() - 0.5) * 5, 0, (Math.random() - 0.5) * 5);
+    g.add(p);
+  }
+  return g;
+}
+
+function makeHut() {
+  const g = new THREE.Group();
+  const wall = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.6, 2.2),
+    new THREE.MeshStandardMaterial({ color: 0x8a6b4a, roughness: 1 }));
+  wall.position.y = 0.8; wall.castShadow = true;
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(1.9, 1.1, 4),
+    new THREE.MeshStandardMaterial({ color: 0x5a7b8a, flatShading: true }));
+  roof.position.y = 2.1; roof.rotation.y = Math.PI / 4; roof.castShadow = true;
+  const cauldron = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.3, 0.5, 10),
+    new THREE.MeshStandardMaterial({ color: 0x2c2c30 }));
+  cauldron.position.set(1.6, 0.25, 0);
+  const brew = new THREE.PointLight(0x80ffb0, 4, 5, 2); brew.position.set(1.6, 0.6, 0);
+  g.add(wall, roof, cauldron, brew);
   return g;
 }
 

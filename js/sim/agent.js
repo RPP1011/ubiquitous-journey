@@ -20,10 +20,12 @@ import { bus, makeEvent } from '../rpg/events.js';
 // is no per-commodity tag in the RPG vocabulary, so produced goods map to the
 // gather/craft identity that makes them. Smith uses inputs->tool (SMITHING).
 const OUTPUT_TAGS = {
-  food: ['FARMING', 'ENDURANCE'],
-  wood: ['WOODCUT', 'ENDURANCE'],
-  ore:  ['MINING', 'ENDURANCE'],
-  tool: ['SMITHING', 'CRAFTING', 'TOOLMAKING'],
+  food:   ['FARMING', 'ENDURANCE'],
+  wood:   ['WOODCUT', 'ENDURANCE'],
+  ore:    ['MINING', 'ENDURANCE'],
+  tool:   ['SMITHING', 'CRAFTING', 'TOOLMAKING'],
+  herb:   ['FORAGE', 'ENDURANCE'],
+  potion: ['CRAFTING', 'SMITHING'],
 };
 
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
@@ -58,7 +60,8 @@ export class Agent {
     this.needs = { hunger: rand(0.5, 0.9), energy: rand(0.6, 0.95), social: rand(0.4, 0.85) };
 
     // economy
-    this.inventory = { food: 0, wood: 0, ore: 0, tool: 0 };
+    this.inventory = {};
+    for (const c of COMMODITIES) this.inventory[c] = 0;
     this.gold = ECON.startGold;
     this.toolWear = 0;
     this._smithTimer = 0;
@@ -189,7 +192,10 @@ export class Agent {
     if (this.controlled) return 0;
     if (c === 'food') return Math.max(0, ECON.keep.food - Math.floor(this.inventory.food));
     if (c === 'tool') return this.inventory.tool < 1 ? 1 : 0;
-    if (this.profession === 'smith' && (c === 'wood' || c === 'ore')) return Math.max(0, 2 - Math.floor(this.inventory[c]));
+    if (c === 'potion') return this.inventory.potion < 1 ? 1 : 0;  // everyone keeps a remedy
+    // crafters buy their recipe inputs (smith: wood+ore; apothecary: herb; ...)
+    const prof = this.profession ? PROFESSIONS[this.profession] : null;
+    if (prof?.inputs && prof.inputs[c]) return Math.max(0, 2 - Math.floor(this.inventory[c]));
     return 0;
   }
   sellQty(c) { return Math.max(0, Math.floor(this.surplus(c))); }
@@ -260,6 +266,11 @@ export class Agent {
   act(dt, ctx) {
     if (!this.alive || this.controlled) return;
     this.priceGossip(ctx, dt);
+    // drink a remedy when badly hurt — keeps a recurring demand for potions
+    if (this.fighter.health < TUNE.maxHealth * 0.5 && (this.inventory.potion || 0) >= 1) {
+      this.inventory.potion -= 1;
+      this.fighter.health = Math.min(TUNE.maxHealth, this.fighter.health + 45);
+    }
     const prof = this.profession ? PROFESSIONS[this.profession] : null;
 
     switch (this.goal.kind) {
