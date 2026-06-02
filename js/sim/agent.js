@@ -5,7 +5,7 @@
 // neighbours (gossip) — the economic belief surface.
 
 import * as THREE from 'three';
-import { DIR } from '../constants.js';
+import { DIR, TUNE } from '../constants.js';
 import { ARENA_RADIUS } from '../arena.js';
 import { POI_KIND } from './world.js';
 import { BeliefStore } from './beliefs.js';
