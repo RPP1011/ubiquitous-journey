@@ -38,6 +38,11 @@ export class Fighter {
     this.health = TUNE.maxHealth;
     this.alive = true;
 
+    // When set, a player melee swing routes its damage through this AbilitySpec's
+    // damage op (combat.js) instead of flat TUNE.damage. Cleared after one hit.
+    // Always defined so ability-less / professionless fighters are safe.
+    this.pendingSpec = null;
+
     this.targetYaw = 0;
     this.moveSpeed = 0;                    // set by controller each frame
 

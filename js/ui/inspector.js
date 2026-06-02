@@ -7,9 +7,10 @@ import { PROFESSIONS, COMMODITIES, BASE_PRICE, PLAYER_COLOR, FACTIONS } from '..
 const hex = (c) => `#${c.toString(16).padStart(6, '0')}`;
 
 export class Inspector {
-  constructor(panelEl, camera) {
+  constructor(panelEl, camera, sim = null) {
     this.el = panelEl;
     this.camera = camera;
+    this.sim = sim;   // optional Simulation, for reputation 'thinks of you' line
     this.ray = new THREE.Raycaster();
     this.center = new THREE.Vector2(0, 0);
     this.agents = [];
@@ -59,6 +60,36 @@ export class Inspector {
 
     const goal = `<div class="goal">doing: <b>${a.goal.kind}</b></div>`;
 
+    // RPG: top classes (level-sorted). Present for every agent incl. monsters
+    // and the player once they accrue behavior; empty until a class is granted,
+    // so guard the no-class case.
+    let classes = '';
+    if (a.progression && a.progression.topClasses) {
+      const top = a.progression.topClasses(3);
+      if (top.length) {
+        classes = `<div class="sec">Classes (lv ${a.progression.totalLevel})</div>` +
+          top.map((c) => `<div class="brow"><span class="bn">${c.name}</span>` +
+            `<span class="bc">Lv ${c.level}</span>` +
+            `<span class="bs">${Math.round(c.xp)} xp</span></div>`).join('');
+      }
+    }
+
+    // reputation: what this NPC thinks of YOU, and its faction's wholesale view.
+    let repSec = '';
+    if (this.sim && this.sim.reputation && this.sim.reputation.playerId != null) {
+      const rep = this.sim.reputation;
+      const s = rep.standing(a);
+      const label = rep.describe(a);
+      const sc = s > 0.05 ? '#7fd18a' : s < -0.05 ? '#e36f6f' : '#9aa6b2';
+      const fs = rep.factionStanding(a.faction);
+      const fl = FACTIONS[a.faction] ? FACTIONS[a.faction].label : a.faction;
+      repSec = `<div class="sec">Thinks of you</div>` +
+        `<div class="brow"><span class="bn">${label}</span>` +
+        `<span class="bc" style="color:${sc}">${s > 0 ? '+' : ''}${s.toFixed(2)}</span></div>` +
+        `<div class="brow"><span class="bn">${fl} faction</span>` +
+        `<span class="bc">${fs > 0 ? '+' : ''}${fs.toFixed(2)}</span></div>`;
+    }
+
     const needs = `<div class="sec">Needs</div>
       ${this._bar('hunger', a.needs.hunger, '#7fd18a')}
       ${this._bar('energy', a.needs.energy, '#6fb7ff')}
@@ -98,7 +129,7 @@ export class Inspector {
     if (!brows) brows = '<div class="empty">knows of no-one yet</div>';
     const beliefSec = `<div class="sec">Believes (${beliefs.length})</div>${brows}`;
 
-    return head + goal + needs + inv + prices + beliefSec +
+    return head + goal + classes + repSec + needs + inv + prices + beliefSec +
       `<div class="foot">${this.pinned ? 'pinned · F to release' : 'look + press F to pin'}</div>`;
   }
 

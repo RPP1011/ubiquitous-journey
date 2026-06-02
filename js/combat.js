@@ -4,6 +4,7 @@
 
 import * as THREE from 'three';
 import { TUNE } from './constants.js';
+import { EFFECTS } from './rpg/abilities/effects.js';
 
 const _torso = new THREE.Vector3();
 const _p = new THREE.Vector3();
@@ -12,7 +13,7 @@ const BLADE_SAMPLES = 4;
 // Returns an array of events: { type:'hit'|'blocked'|'dead', attacker, target, point }
 // isHostile(attacker, target) optionally gates damage so a swing passes
 // harmlessly through allies and only connects with believed enemies.
-export function resolveCombat(fighters, isHostile = null) {
+export function resolveCombat(fighters, isHostile = null, ctx = null) {
   const events = [];
   const hitR2 = TUNE.hitRadius * TUNE.hitRadius;
 
@@ -35,7 +36,41 @@ export function resolveCombat(fighters, isHostile = null) {
       if (!hit) continue;
 
       attacker.hasHit = true;       // one connection per swing
-      const result = target.takeHit(TUNE.damage, attacker.dir);
+
+      // Ability-spec melee routing: if the attacker armed a pendingSpec (player
+      // pressed an ability key, then swung), apply that spec's damage op through
+      // the agent layer (block-aware, shield-aware). Fall back to flat damage for
+      // ability-less / professionless fighters (monsters, unarmed player swings).
+      const spec = attacker.pendingSpec;
+      const aAgent = attacker.agent, tAgent = target.agent;
+      let result;
+      if (spec && aAgent && tAgent) {
+        // pick the spec's damage effect; if none, fall back to flat damage.
+        const dmgEff = spec.effects.find((e) => e.op === 'damage');
+        if (dmgEff) {
+          const landed = EFFECTS.damage(dmgEff, aAgent, tAgent, ctx);
+          // EFFECTS.damage already called target.fighter.takeHit; derive the event
+          // type from the fighter's resulting state.
+          result = !landed ? 'blocked' : (!target.alive ? 'dead' : 'hit');
+          // also run any non-damage same-spec effects gated on the hit (e.g.
+          // knockback when:'on_hit') so melee specs compose like cast ones.
+          if (landed) {
+            for (const e of spec.effects) {
+              if (e === dmgEff || e.op === 'damage') continue;
+              if (e.when && e.when !== 'on_hit') continue;
+              if (e.chance < 1 && Math.random() > e.chance) continue;
+              const fn = EFFECTS[e.op];
+              if (fn) fn(e, aAgent, (e.op === 'heal' || e.op === 'shield' || e.op === 'dash') ? aAgent : tAgent, ctx);
+            }
+          }
+        } else {
+          result = target.takeHit(TUNE.damage, attacker.dir);
+        }
+        attacker.pendingSpec = null;   // one spec consumed per swing
+      } else {
+        result = target.takeHit(TUNE.damage, attacker.dir);
+      }
+
       events.push({ type: result === 'blocked' ? 'blocked' : (result === 'dead' ? 'dead' : 'hit'),
                     attacker, target, point: _torso.clone() });
       break;                        // a swing connects with at most one target

@@ -13,6 +13,18 @@ import {
   PROFESSIONS, COMMODITIES, BASE_PRICE, ECON, SIM, WEIGHT, PLAYER_COLOR, SOURCE,
   FACTIONS, factionHostile,
 } from './simconfig.js';
+import { Progression } from '../rpg/progression.js';
+import { bus, makeEvent } from '../rpg/events.js';
+
+// Map a producer's commodity output -> the behavior tags the deed earns. There
+// is no per-commodity tag in the RPG vocabulary, so produced goods map to the
+// gather/craft identity that makes them. Smith uses inputs->tool (SMITHING).
+const OUTPUT_TAGS = {
+  food: ['FARMING', 'ENDURANCE'],
+  wood: ['WOODCUT', 'ENDURANCE'],
+  ore:  ['MINING', 'ENDURANCE'],
+  tool: ['SMITHING', 'CRAFTING', 'TOOLMAKING'],
+};
 
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -60,6 +72,19 @@ export class Agent {
       if (prof.inputs) for (const c in prof.inputs) this.inventory[c] = 2;
     }
 
+    // RPG: class/level/XP brain — built for EVERY agent (townsfolk, monsters,
+    // the player). Progression is profession-agnostic: it only ever sees the
+    // ActionEvents we emit, so a null profession just produces fewer deeds.
+    this.progression = new Progression(this);
+    this._rpgNow = 0;          // sim time stamped each decide(); used as event t
+    this._produceAccum = 0;    // emit one produce ActionEvent per WHOLE unit
+
+    // Known abilities (id -> AbilitySpec). Empty for everyone at construction;
+    // milestone grants / explicit player grants fill this. ALWAYS a Map so the
+    // cast path is safe for professionless / ability-less agents (the freeze
+    // lesson: never touch profession/economy assumptions for monsters/player).
+    this.abilities = new Map();
+
     // professionless agents (monsters, the player) never "work"
     this.goal = { kind: this.profession ? 'work' : 'wander' };
     this.wanderTarget = null;
@@ -70,6 +95,12 @@ export class Agent {
 
   get pos() { return this.fighter.root.position; }
   get alive() { return this.fighter.alive; }
+
+  // --- abilities (safe no-ops when the agent knows nothing) -----------------
+  grantAbility(specObj) { if (specObj && specObj.id) this.abilities.set(specObj.id, specObj); }
+  knowsAbility(id) { return this.abilities.has(id); }
+  abilityList() { return [...this.abilities.values()]; }   // stable order for key binding
+
   profColor() {
     if (this.controlled) return PLAYER_COLOR;
     if (this.profession) return PROFESSIONS[this.profession].color;
@@ -165,11 +196,28 @@ export class Agent {
   askPrice(c) { return this.priceBeliefs[c]; }
   bidPrice(c) { return Math.min(this.priceBeliefs[c], this.gold); }   // can't bid more than you hold
 
-  applyBuy(c, price) { this.inventory[c] += 1; this.gold -= price; this.learnPrice(c, price, ECON.priceLearn); this._tradeFlash = 0.6; }
-  applySell(c, price) { this.inventory[c] -= 1; this.gold += price; this.learnPrice(c, price, ECON.priceLearn); this._tradeFlash = 0.6; }
+  applyBuy(c, price) {
+    this.inventory[c] += 1; this.gold -= price; this.learnPrice(c, price, ECON.priceLearn); this._tradeFlash = 0.6;
+    const belief = this.priceBeliefs[c] || price;
+    const bargain = Math.max(0, (belief - price) / Math.max(1, belief));
+    bus.emit(makeEvent({
+      actorId: this.id, verb: 'buy', tags: ['TRADE', 'BARTER', 'HAGGLE'],
+      magnitude: 1 + bargain, t: this._rpgNow,
+    }));
+  }
+  applySell(c, price) {
+    this.inventory[c] -= 1; this.gold += price; this.learnPrice(c, price, ECON.priceLearn); this._tradeFlash = 0.6;
+    const belief = this.priceBeliefs[c] || price;
+    const profit = Math.max(0, (price - belief) / Math.max(1, belief));
+    bus.emit(makeEvent({
+      actorId: this.id, verb: 'sell', tags: ['TRADE', 'PROFIT', 'HAGGLE'],
+      magnitude: 1 + profit, t: this._rpgNow,
+    }));
+  }
 
   // --- decision -------------------------------------------------------------
   decide(ctx) {
+    this._rpgNow = ctx.time;   // stamp sim time for this tick's emitted deeds
     if (!this.alive || this.controlled) return;
     const P = this.personality;
     const inv = this.inventory;
@@ -266,6 +314,11 @@ export class Agent {
           this._smithTimer = 0;
           for (const c in prof.inputs) inv[c] -= prof.inputs[c];
           if (inv.tool < ECON.maxStack) inv.tool += 1;
+          // a forged tool is a discrete crafting deed
+          bus.emit(makeEvent({
+            actorId: this.id, verb: 'forge', tags: OUTPUT_TAGS.tool,
+            magnitude: 1, t: this._rpgNow,
+          }));
         }
       }
       return;
@@ -275,6 +328,16 @@ export class Agent {
     const boosted = inv.tool >= 1;
     const gained = ECON.produceRate * (boosted ? ECON.toolBoost : 1) * dt;
     inv[prof.output] += gained;
+    // emit ONE produce ActionEvent per whole unit accumulated, tagged by output
+    this._produceAccum += gained;
+    while (this._produceAccum >= 1) {
+      this._produceAccum -= 1;
+      bus.emit(makeEvent({
+        actorId: this.id, verb: 'produce',
+        tags: OUTPUT_TAGS[prof.output] || ['ENDURANCE'],
+        magnitude: 1, t: this._rpgNow,
+      }));
+    }
     if (boosted) {
       // tools wear PER UNIT PRODUCED — ties tool demand to throughput, which is
       // what closes the money loop (validated via the Markov-chain analysis).
