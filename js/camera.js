@@ -1,0 +1,48 @@
+// Third-person orbit camera that follows a target position. Yaw/pitch are
+// driven by consumed mouse-look deltas; the player faces the camera's yaw.
+
+import * as THREE from 'three';
+
+const LOOK_SENS = 0.0026;
+const PITCH_MIN = -0.55;
+const PITCH_MAX = 0.9;
+
+export class OrbitCamera {
+  constructor(camera) {
+    this.camera = camera;
+    this.yaw = 0;
+    this.pitch = 0.25;
+    this.distance = 4.6;
+    this.height = 1.5;          // look-at height above the target's feet
+    this.target = new THREE.Vector3();
+    this._desired = new THREE.Vector3();
+    this._look = new THREE.Vector3();
+  }
+
+  applyLook(dx, dy) {
+    this.yaw -= dx * LOOK_SENS;
+    this.pitch += dy * LOOK_SENS;
+    this.pitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, this.pitch));
+  }
+
+  // follow target (Vector3 at feet), smoothing position.
+  update(targetPos, dt) {
+    this._look.copy(targetPos);
+    this._look.y += this.height;
+
+    const cp = Math.cos(this.pitch);
+    const offX = Math.sin(this.yaw) * cp * this.distance;
+    const offZ = Math.cos(this.yaw) * cp * this.distance;
+    const offY = Math.sin(this.pitch) * this.distance;
+
+    this._desired.set(
+      this._look.x + offX,
+      this._look.y + offY + 0.4,
+      this._look.z + offZ,
+    );
+
+    const k = 1 - Math.pow(0.0008, dt);   // smooth follow
+    this.camera.position.lerp(this._desired, k);
+    this.camera.lookAt(this._look);
+  }
+}
