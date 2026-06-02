@@ -432,6 +432,13 @@ export class Agent {
 
   _updateLabel() {
     const ctx = this._lblCtx; if (!ctx) return;
+    const sub = this.controlled ? 'visitor'
+      : `${this.goal.kind}${this._tradeFlash > 0 ? ' · traded!' : ' · ' + Math.round(this.gold) + 'g'}`;
+    // skip the canvas redraw + GPU upload when nothing visible changed — this is
+    // the dominant per-frame cost once there are dozens of agents.
+    const sig = `${this.name}|${sub}|${this._tradeFlash > 0 ? 1 : 0}`;
+    if (sig === this._lblSig) return;
+    this._lblSig = sig;
     const col = `#${this.profColor().toString(16).padStart(6, '0')}`;
     ctx.clearRect(0, 0, 256, 64);
     ctx.textAlign = 'center';
@@ -439,8 +446,6 @@ export class Agent {
     ctx.font = 'bold 24px sans-serif'; ctx.fillStyle = col;
     ctx.fillText(this.name, 128, 24);
     ctx.font = '19px sans-serif'; ctx.fillStyle = this._tradeFlash > 0 ? '#ffd36b' : '#dfe6ee';
-    const sub = this.controlled ? 'visitor'
-      : `${this.goal.kind}${this._tradeFlash > 0 ? ' · traded!' : ' · ' + Math.round(this.gold) + 'g'}`;
     ctx.fillText(sub, 128, 56);
     this._lblTex.needsUpdate = true;
   }

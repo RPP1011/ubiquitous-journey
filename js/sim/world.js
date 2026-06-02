@@ -60,6 +60,12 @@ export class World {
     return best;
   }
 
+  // a random site of a kind (used to scatter spawns across the world)
+  randomSite(kind) {
+    const m = this.pois.filter((p) => p.kind === kind);
+    return m.length ? m[(Math.random() * m.length) | 0] : null;
+  }
+
   dispose() {
     for (const p of this.pois) if (p.mesh) this.scene.remove(p.mesh);
     this.pois = [];

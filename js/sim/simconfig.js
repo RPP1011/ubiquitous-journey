@@ -20,10 +20,10 @@ export const PROFESSIONS = {
 
 // who spawns
 export const ROSTER = [
-  { profession: 'farmer',     n: 3 },
-  { profession: 'woodcutter', n: 2 },
-  { profession: 'miner',      n: 2 },
-  { profession: 'smith',      n: 1 },
+  { profession: 'farmer',     n: 6 },
+  { profession: 'woodcutter', n: 5 },
+  { profession: 'miner',      n: 5 },
+  { profession: 'smith',      n: 3 },
 ];
 
 // --- economy tuning ---------------------------------------------------------
@@ -71,7 +71,7 @@ export function factionHostile(a, b) {
 }
 
 // Monster threat that lurks in the wilds and attacks the village/player.
-export const MONSTER = { count: 2, model: 'barbarian', faction: 'monster', name: 'Bandit', threat: 1.1 };
+export const MONSTER = { count: 6, model: 'barbarian', faction: 'monster', name: 'Bandit', threat: 1.1 };
 
 // --- general sim tuning (shared with movement/perception) -------------------
 export const SIM = {

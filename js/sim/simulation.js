@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { Fighter } from '../fighter.js';
 import { Agent } from './agent.js';
 import { PROFESSIONS, ROSTER, COMMODITIES, ECON, SIM, NAMES, MONSTER, factionHostile } from './simconfig.js';
-import { ARENA_RADIUS } from '../arena.js';
+import { ARENA_RADIUS, BIOME, findBiomeSpot } from '../arena.js';
 import { bus, makeEvent } from '../rpg/events.js';
 import { Reputation, REP } from './reputation.js';
 import { QuestBoard } from '../quest/quest.js';
@@ -71,7 +71,8 @@ export class Simulation {
       for (let i = 0; i < row.n; i++) {
         const prof = PROFESSIONS[row.profession];
         const fighter = new Fighter(prof.model, {});
-        const site = this.world.nearest(prof.site, origin);
+        // scatter across the multiple sites of this profession's kind
+        const site = this.world.randomSite(prof.site) || this.world.nearest(prof.site, origin);
         const base = site ? site.pos : origin;
         fighter.root.position.set(base.x + rand(-2.5, 2.5), 0, base.z + rand(-2.5, 2.5));
         this.scene.add(fighter.root);
@@ -85,11 +86,12 @@ export class Simulation {
       }
     }
 
-    // monsters lurking in the wilds (a corner away from the village)
-    const wilds = new THREE.Vector3(ARENA_RADIUS * 0.8, 0, -ARENA_RADIUS * 0.8);
+    // monsters lurking across the wilds frontier (scattered, not one corner)
     for (let i = 0; i < MONSTER.count; i++) {
       const fighter = new Fighter(MONSTER.model, {});
-      fighter.root.position.set(wilds.x + rand(-3, 3), 0, wilds.z + rand(-3, 3));
+      const spot = findBiomeSpot(BIOME.WILDS, ARENA_RADIUS * 0.74, ARENA_RADIUS * 0.96)
+        || new THREE.Vector3(ARENA_RADIUS * 0.85, 0, -ARENA_RADIUS * 0.85);
+      fighter.root.position.set(spot.x + rand(-3, 3), 0, spot.z + rand(-3, 3));
       this.scene.add(fighter.root);
       const m = new Agent(fighter, {
         id: this._nextId++, name: `${MONSTER.name} ${i + 1}`, profession: null,
