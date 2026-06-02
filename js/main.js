@@ -150,6 +150,25 @@ Object.assign(dbg.style, {
 document.body.appendChild(dbg);
 let _frames = 0, _crashed = false;
 
+// ---- player readout: gold · class · carried items --------------------------
+const pstats = document.createElement('div');
+Object.assign(pstats.style, {
+  position: 'fixed', left: '50%', bottom: '10px', transform: 'translateX(-50%)', zIndex: '6',
+  font: '12px monospace', color: '#e8e2cf', background: 'rgba(0,0,0,.45)', padding: '5px 12px',
+  borderRadius: '6px', pointerEvents: 'none', whiteSpace: 'nowrap',
+});
+document.body.appendChild(pstats);
+function updatePlayerStats() {
+  const p = game.sim && game.sim.player;
+  if (!p) { pstats.textContent = ''; return; }
+  const inv = COMMODITIES.map((c) => {
+    const n = c === 'food' ? Math.floor(p.inventory[c] || 0) : Math.floor(p.inventory[c] || 0);
+    return n > 0 ? `${n} ${c}` : null;
+  }).filter(Boolean).join('  ');
+  const cls = p.progression && p.progression.primaryClass && p.progression.primaryClass();
+  pstats.textContent = `${Math.round(p.gold)}g  ·  ${cls ? cls.name + ' Lv' + cls.level : 'no class yet'}  ·  ${inv || 'empty pack'}`;
+}
+
 (function professionLegend() {
   const rows = Object.values(PROFESSIONS).map((p) =>
     `<div class="f"><span class="dot" style="background:${hex(p.color)}"></span>${p.label}</div>`).join('');
@@ -285,6 +304,7 @@ function frame() {
     stage = 'mind';       mind.update();
     stage = 'questLog';   questLog.render();
     stage = 'ticker';     updateTicker();
+    stage = 'pstats';     updatePlayerStats();
     if (game.playerFighter) { stage = 'camera'; orbitCam.update(game.playerFighter.root.position, dt); }
     stage = 'render';     renderer.render(scene, camera);
 

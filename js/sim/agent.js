@@ -303,7 +303,12 @@ export class Agent {
       }
       default: {
         if (!this.wanderTarget || this.pos.distanceTo(this.wanderTarget) < 1.0) {
-          const a = Math.random() * Math.PI * 2, r = Math.random() * ARENA_RADIUS * 0.7;
+          // monsters prowl the mid-to-outer wilds (danger lives on the frontier);
+          // townsfolk roam the inner world around the village.
+          const mon = this.faction === 'monster';
+          const minR = mon ? ARENA_RADIUS * 0.45 : 0;
+          const maxR = ARENA_RADIUS * (mon ? 0.92 : 0.65);
+          const a = Math.random() * Math.PI * 2, r = minR + Math.random() * (maxR - minR);
           this.wanderTarget = new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r);
         }
         this._goTo(this.wanderTarget, dt);
