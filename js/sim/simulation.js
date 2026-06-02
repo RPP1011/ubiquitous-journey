@@ -262,9 +262,13 @@ export class Simulation {
         targetId: T.id, magnitude: risk, t: this.time,
       }));
 
-      // quest hook: the player slaying a monster advances any active hunt bounty.
+      // quest hook + loot: the player slaying a monster advances hunt bounties
+      // and lets the player loot the corpse — its purse (no minting) and a chance
+      // of a remedy. A real transfer, so the closed economy stays intact.
       if (ev.type === 'dead' && A.controlled && T.faction === MONSTER.faction) {
         this.quests.bumpHunt(T.faction);
+        A.gold += Math.max(0, Math.floor(T.gold || 0)); T.gold = 0;
+        if (Math.random() < 0.5) A.inventory.potion = (A.inventory.potion || 0) + 1;
       }
 
       // RPG reputation: if the PLAYER is the aggressor, this is a witnessed deed.

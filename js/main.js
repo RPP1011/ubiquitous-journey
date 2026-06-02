@@ -19,6 +19,7 @@ import { Inspector } from './ui/inspector.js';
 import { MindBrowser } from './ui/mindbrowser.js';
 import { castSpec } from './rpg/abilities/interpreter.js';
 import { ABILITY_CATALOG } from './rpg/abilities/catalog.js';
+import { bus, makeEvent } from './rpg/events.js';
 import { pickAgent } from './util/pick.js';
 import { DialogueView } from './ui/dialogueView.js';
 import { DialogueSession } from './dialogue/dialogue.js';
@@ -90,6 +91,37 @@ function pollCastKeys() {
     } else if (!down) {
       _castHeld.delete(code);
     }
+  }
+}
+
+// ---- player actions: gather (G) from a nearby node, drink a potion (H) ------
+const GATHER = { field: 'food', forest: 'wood', mine: 'ore', meadow: 'herb' };
+const GATHER_TAGS = {
+  food: ['FARMING', 'ENDURANCE'], wood: ['WOODCUT', 'ENDURANCE'],
+  ore: ['MINING', 'ENDURANCE'], herb: ['FORAGE', 'ENDURANCE'],
+};
+let _gatherCd = 0;
+function pollGather(dt) {
+  _gatherCd -= dt;
+  if (_gatherCd > 0 || !input.has('KeyG') || !game.sim || !game.sim.player || !game.world) return;
+  const p = game.sim.player;
+  let best = null, bd = 9;             // gather within ~3m of a resource node
+  for (const poi of game.world.pois) {
+    const c = GATHER[poi.kind]; if (!c) continue;
+    const d = p.pos.distanceToSquared(poi.pos);
+    if (d < bd) { bd = d; best = c; }
+  }
+  if (!best) return;
+  p.inventory[best] = (p.inventory[best] || 0) + 1;
+  bus.emit(makeEvent({ actorId: p.id, verb: 'gather', tags: GATHER_TAGS[best], magnitude: 1, t: game.sim.time }));
+  p._tradeFlash = 0.5;                 // reuse the label flash as pickup feedback
+  _gatherCd = 0.6;
+}
+function drinkPotion() {
+  const p = game.sim && game.sim.player; if (!p) return;
+  if ((p.inventory.potion || 0) >= 1 && p.fighter.health < TUNE.maxHealth) {
+    p.inventory.potion -= 1;
+    p.fighter.health = Math.min(TUNE.maxHealth, p.fighter.health + 45);   // HP bar shows it
   }
 }
 
@@ -182,6 +214,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyE' && game.state === 'playing') { e.preventDefault(); tryOpenDialogue(); }
   if (e.code === 'KeyR') restart();
   if (e.code === 'KeyQ') questLog.toggle();
+  if (e.code === 'KeyH' && game.state === 'playing') drinkPotion();
   // UI tabs toggle on letter keys (C/T/I/M) so they never clash with the 1-4
   // ability hotbar, and work in any state — including mid-play.
   if (e.code === 'KeyC') toggleTab(1);
@@ -228,6 +261,7 @@ function frame() {
       stage = 'player.update'; game.player.update(dt);
       stage = 'sim.update';    game.sim.update(dt);
       stage = 'castInput';     pollCastKeys();
+      stage = 'gather';        pollGather(dt);
     } else if (game.state === 'dialogue') {
       // freeze the player but keep the social sim alive behind the modal
       stage = 'sim.update';    game.sim.update(dt);
