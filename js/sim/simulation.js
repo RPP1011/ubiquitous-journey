@@ -123,7 +123,7 @@ export class Simulation {
   // (decentralised tatonnement) so prices converge to competitive levels.
   _runMarket() {
     this.tradesThisTick = 0;
-    const traders = this.agents.filter((a) => a.alive && !a.controlled);
+    const traders = this.agents.filter((a) => a.alive && !a.controlled && a.profession);
     if (traders.length < 2) return;
 
     for (const c of COMMODITIES) {

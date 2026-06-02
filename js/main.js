@@ -55,6 +55,16 @@ Object.assign(hurt.style, {
 document.body.appendChild(hurt);
 function flashHurt() { hurt.style.opacity = '1'; setTimeout(() => (hurt.style.opacity = '0'), 60); }
 
+// ---- debug readout + crash surface (temporary, to diagnose the freeze) -----
+const dbg = document.createElement('div');
+Object.assign(dbg.style, {
+  position: 'fixed', left: '8px', bottom: '8px', zIndex: '9', font: '11px monospace',
+  color: '#9fe', background: 'rgba(0,0,0,.6)', padding: '4px 8px', borderRadius: '4px',
+  whiteSpace: 'pre', pointerEvents: 'none', maxWidth: '90vw',
+});
+document.body.appendChild(dbg);
+let _frames = 0, _crashed = false;
+
 (function professionLegend() {
   const rows = Object.values(PROFESSIONS).map((p) =>
     `<div class="f"><span class="dot" style="background:${hex(p.color)}"></span>${p.label}</div>`).join('');
@@ -139,34 +149,49 @@ function updateTicker() {
 const clock = new THREE.Clock();
 
 function frame() {
+  if (_crashed) return;
+  _frames++;
   const dt = Math.min(clock.getDelta(), 0.05);
+  let stage = 'start';
+  try {
+    const look = input.consumeLook();
+    orbitCam.applyLook(look.dx, look.dy);
 
-  const look = input.consumeLook();
-  orbitCam.applyLook(look.dx, look.dy);
-
-  if (game.state === 'playing') {
-    game.player.update(dt);
-    game.sim.update(dt);
-  }
-
-  const fighters = game.sim ? game.sim.fighters : [];
-  for (const f of fighters) f.update(dt);
-  scene.updateMatrixWorld(true);
-
-  if (game.state === 'playing') {
-    const events = resolveCombat(fighters, game.sim.isHostile.bind(game.sim));
-    if (events.length) {
-      game.sim.onCombatEvents(events);
-      for (const ev of events) if (ev.target === game.playerFighter && ev.type !== 'blocked') flashHurt();
+    if (game.state === 'playing') {
+      stage = 'player.update'; game.player.update(dt);
+      stage = 'sim.update';    game.sim.update(dt);
     }
-    if (hpFill) hpFill.style.width = `${Math.max(0, (game.playerFighter.health / TUNE.maxHealth) * 100)}%`;
-  }
 
-  inspector.update();
-  mind.update();
-  updateTicker();
-  if (game.playerFighter) orbitCam.update(game.playerFighter.root.position, dt);
-  renderer.render(scene, camera);
+    const fighters = game.sim ? game.sim.fighters : [];
+    stage = 'fighter.update'; for (const f of fighters) f.update(dt);
+    scene.updateMatrixWorld(true);
+
+    if (game.state === 'playing') {
+      stage = 'resolveCombat';
+      const events = resolveCombat(fighters, game.sim.isHostile.bind(game.sim));
+      if (events.length) {
+        stage = 'onCombatEvents'; game.sim.onCombatEvents(events);
+        for (const ev of events) if (ev.target === game.playerFighter && ev.type !== 'blocked') flashHurt();
+      }
+      if (hpFill) hpFill.style.width = `${Math.max(0, (game.playerFighter.health / TUNE.maxHealth) * 100)}%`;
+    }
+
+    stage = 'inspector';  inspector.update();
+    stage = 'mind';       mind.update();
+    stage = 'ticker';     updateTicker();
+    if (game.playerFighter) { stage = 'camera'; orbitCam.update(game.playerFighter.root.position, dt); }
+    stage = 'render';     renderer.render(scene, camera);
+
+    const n = game.sim ? game.sim.agents.length : 0;
+    dbg.textContent = `state=${game.state}  t=${game.sim ? game.sim.time.toFixed(1) : '-'}  frame=${_frames}  agents=${n}`;
+  } catch (err) {
+    _crashed = true;
+    console.error('FRAME CRASH at stage:', stage, err);
+    dbg.style.color = '#f88';
+    dbg.textContent = `CRASH @ ${stage}\n${err && err.message}\n${(err && err.stack || '').split('\n').slice(1, 4).join('\n')}`;
+    setOverlay(`<h1 class="lose">Runtime error</h1><p>stage: <b>${stage}</b></p><p>${err && err.message}</p><p style="font-size:11px;opacity:.7">${(err && err.stack || '').split('\n').slice(1, 5).join('<br>')}</p>`);
+    showOverlay();
+  }
 }
 
 addEventListener('resize', () => {

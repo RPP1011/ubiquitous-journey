@@ -60,7 +60,8 @@ export class Agent {
       if (prof.inputs) for (const c in prof.inputs) this.inventory[c] = 2;
     }
 
-    this.goal = { kind: 'work' };
+    // professionless agents (monsters, the player) never "work"
+    this.goal = { kind: this.profession ? 'work' : 'wander' };
     this.wanderTarget = null;
     this._tradeFlash = 0;
 
@@ -226,6 +227,7 @@ export class Agent {
         break;
       }
       case 'work': {
+        if (!prof) break;                       // monsters have no workplace
         const site = ctx.world.nearest(prof.site, this.pos);
         if (site && this._goTo(site.pos, dt)) this._produce(dt);
         break;
