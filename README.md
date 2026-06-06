@@ -28,6 +28,7 @@ Open <http://localhost:8000>, click to enter, then:
 | Attack | hold **LMB**, flick to aim a direction, release |
 | Block | hold **RMB**, flick to match the incoming direction |
 | **Read a mind** | look at an agent, press **F** to pin/unpin the inspector |
+| **Chronicle** | press **N** for the live drama feed (kills, vendettas, prodigies, fortunes, raids, births) |
 | Reset world | `R` · free cursor `Esc` |
 
 ## How the Theory of Mind works (mapping to the spec)
@@ -91,6 +92,23 @@ vendor/  three.module.js (r160) + addons
 Behaviour lives in `js/sim/simconfig.js` (`SIM`, `WEIGHT`, `FACTIONS`,
 `ARCHETYPE`, `ROSTER` in `simulation.js`). Combat feel is in `TUNE`
 (`js/constants.js`); flip `MODEL_YAW_OFFSET` if a model faces backwards.
+
+## Optional: LLM-flavoured NPC dialogue
+
+NPC dialogue lines can optionally be written by a small local language model
+(LiquidAI/LFM2.5-350M served with vLLM) speaking *as that NPC*, from its beliefs.
+This is **off by default** — with it off, or no server running, dialogue is
+exactly the templated behaviour. There is **no new browser/npm dependency**; the
+client is plain `fetch`. Quick start:
+
+```bash
+pip install -U vllm
+vllm serve LiquidAI/LFM2.5-350M --port 8001 --allowed-origins '["*"]'
+```
+
+Then in the game's devtools console: `llmConfig({ enabled: true })` and talk to
+an NPC (`E`). Full setup, CORS notes, ports and tradeoffs are in
+[`docs/llm-npcs.md`](docs/llm-npcs.md).
 
 ## Assets
 

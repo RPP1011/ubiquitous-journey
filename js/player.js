@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { TUNE } from './constants.js';
 import { ARENA_RADIUS } from './arena.js';
+import { collideWalls } from './sim/walls.js';
 
 const _fwd = new THREE.Vector3();
 const _right = new THREE.Vector3();
@@ -38,6 +39,7 @@ export class Player {
       _move.normalize();
       const slowed = f.state === 'block' || f.state === 'ready';
       speed = (this.input.running && !slowed ? TUNE.runSpeed : TUNE.moveSpeed) * (slowed ? 0.5 : 1);
+      const px = f.root.position.x, pz = f.root.position.z;
       f.root.position.addScaledVector(_move, speed * dt);
 
       // clamp to arena
@@ -46,6 +48,8 @@ export class Player {
         f.root.position.x *= ARENA_RADIUS / r;
         f.root.position.z *= ARENA_RADIUS / r;
       }
+      // town walls (overworld only — the y-guard inside skips dungeons)
+      collideWalls(f.root.position, px, pz);
     }
     f.setMoving(speed);
     f.setFacing(yaw);   // always face where the camera looks

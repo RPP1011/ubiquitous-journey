@@ -43,6 +43,13 @@ export const CLASS_TEMPLATES = [
     requirements: [['TRADE', 5]],
     score_tags:   [['TRADE', 1.0], ['PROFIT', 0.9], ['HAGGLE', 0.6], ['BARTER', 0.4]] },
 
+  // [Mason] — earned by raising buildings (the Phase-1 construction deed emits
+  // verb 'build' with tags BUILD/CRAFTING/ENDURANCE). A townsperson who builds
+  // their own home (or pitches into the town tavern) grows into the trade.
+  { key: 'mason',      name: '[Mason]',
+    requirements: [['BUILD', 5]],
+    score_tags:   [['BUILD', 1.0], ['CRAFTING', 0.6], ['ENDURANCE', 0.4]] },
+
   { key: 'speaker',    name: '[Speaker]',
     requirements: [['PERSUADE', 4]],
     score_tags:   [['PERSUADE', 1.0], ['LEAD', 0.7], ['CHARM', 0.6], ['GOSSIP', 0.4]] },

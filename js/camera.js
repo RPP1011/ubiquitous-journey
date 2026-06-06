@@ -25,6 +25,11 @@ export class OrbitCamera {
     this.pitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, this.pitch));
   }
 
+  // mouse-wheel zoom for the overhead follow view (dir: +1 out, -1 in)
+  zoom(dir) {
+    this.distance = Math.max(5, Math.min(20, this.distance + dir * 1.3));
+  }
+
   // follow target (Vector3 at feet), smoothing position.
   update(targetPos, dt) {
     this._look.copy(targetPos);

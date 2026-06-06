@@ -13,9 +13,12 @@ import { comboKey } from './tags.js';
 
 export { classMatchScore };
 
-// xp_needed(level, totalLevel) = 50 * exp(0.1*level) * (1 + (totalLevel/100)^2)
+// xp_needed(level, totalLevel) = xpNeedBase * exp(xpNeedExp*level) * (1 + (totalLevel/100)^2)
 // Cost to go FROM `level` to level+1. totalLevel is the agent's summed levels
 // across all classes — so the more classes/levels you hold, the costlier each.
+// The curve is deliberately gentle (base/exp flattened in Phase 1) so a storied
+// agent's grind-immune NARRATIVE beats convert to real levels (15-30) while a
+// quiet labourer's tiny, grind-decayed routine income still plateaus low.
 export function xpForLevel(level, totalLevel = 0) {
   const t = totalLevel / 100;
   return RPG.xpNeedBase * Math.exp(RPG.xpNeedExp * level) * (1 + t * t);

@@ -31,11 +31,16 @@ export class Input {
   _bind() {
     const c = this.canvas;
 
-    c.addEventListener('click', () => { if (!this.locked) c.requestPointerLock(); });
-
+    // NOTE: pointer-lock is intentionally NOT requested here anymore. The game is
+    // point-and-click (see commander.js) and needs a visible cursor; clicks are
+    // handled by the Commander. These lock-aware handlers stay only so the old
+    // mouse-look/M&B path is inert rather than removed wholesale.
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === c;
-      if (!this.locked) { this.lmb = this.rmb = false; this.keys.clear(); }
+      // This is a point-and-click game now: we never want the pointer locked. If
+      // anything ever engages it, release it immediately so the cursor stays free.
+      if (this.locked) { document.exitPointerLock(); return; }
+      this.lmb = this.rmb = false; this.keys.clear();
       if (this.onLockChange) this.onLockChange(this.locked);
     });
 

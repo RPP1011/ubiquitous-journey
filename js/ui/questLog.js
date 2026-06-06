@@ -70,8 +70,11 @@ export class QuestLog {
       #${PANEL_ID} .q-ttl .tag { font-size: 9px; text-transform: uppercase; letter-spacing: 1px;
         color: #0b0d10; background: #9aa6b2; border-radius: 3px; padding: 0 4px; margin-left: 6px; }
       #${PANEL_ID} .q-ttl .tag.hunt { background: #d77b6b; }
+      #${PANEL_ID} .q-ttl .tag.bounty { background: #e0894e; }
       #${PANEL_ID} .q-ttl .tag.fetch { background: #7fd18a; }
+      #${PANEL_ID} .q-ttl .tag.deliver { background: #a6cf7f; }
       #${PANEL_ID} .q-ttl .tag.recover { background: #6fb7ff; }
+      #${PANEL_ID} .q-ttl .tag.delve { background: #b07be0; }
       #${PANEL_ID} .q-desc { color: #aeb8c2; margin: 3px 0 2px; line-height: 1.5; }
       #${PANEL_ID} .q-rew { color: #e0c46a; font-size: 11px; }
       #${PANEL_ID} .q-bar { height: 6px; background: rgba(255,255,255,.1); border-radius: 3px;
@@ -117,7 +120,7 @@ export class QuestLog {
     if (!isOffer) {
       const pct = Math.round(this._progressPct(q) * 100);
       const label = q.state === QUEST_STATE.done ? 'done'
-        : q.type === 'hunt' ? `${q.progress | 0}/${q.target.count} slain`
+        : (q.type === 'hunt' || q.type === 'bounty') ? `${q.progress | 0}/${q.target.count} slain`
         : `${pct}%`;
       prog = `<div class="q-bar"><i style="width:${pct}%"></i></div>
         <div class="q-hint">${label}</div>`;
@@ -133,7 +136,7 @@ export class QuestLog {
   }
 
   _progressPct(q) {
-    if (q.type === 'hunt') return q.target.count ? Math.min(1, q.progress / q.target.count) : 0;
+    if (q.type === 'hunt' || q.type === 'bounty') return q.target.count ? Math.min(1, q.progress / q.target.count) : 0;
     return Math.min(1, q.progress || 0);
   }
 }

@@ -5,7 +5,7 @@
 
 import * as THREE from 'three';
 
-export const ARENA_RADIUS = 72;            // playable world radius
+export const ARENA_RADIUS = 320;           // playable world radius (open world: holds several towns + frontier)
 const GROUND = ARENA_RADIUS + 16;          // ground half-extent (past the edge)
 
 export const BIOME = { VILLAGE: 'village', PLAINS: 'plains', FOREST: 'forest', HILLS: 'hills', WILDS: 'wilds' };
@@ -38,6 +38,122 @@ export function biomeAt(x, z) {
 
 export function biomeColor(b) { return BIOME_COLOR[b] ?? 0x6f8050; }
 
+// ===========================================================================
+// PHASE 3 — terrain that is CONSEQUENTIAL (geography hooks into the sim).
+// Everything here is a PURE deterministic function of (x,z): no Math.random(),
+// no Date — stable across rebuilds and safe to call on the headless fixed tick.
+// ===========================================================================
+
+// --- elevation -------------------------------------------------------------
+// A smooth height field in metres. The central village is a flat basin; the
+// land rises toward the hills/wilds and dips into a couple of low vales. This
+// is the single source of truth: the 3D mesh, agent y, perception (high ground
+// sees farther) and movement cost (cliffs slow) all sample it.
+const RIDGE_X = ARENA_RADIUS * 0.55, RIDGE_Z = -ARENA_RADIUS * 0.45;  // the great ridge
+export function terrainHeight(x, z) {
+  const r = Math.hypot(x, z);
+  if (r < 16) return 0;                              // flat village basin
+  // base swell that grows toward the frontier, plus rolling noise
+  let h = (r / ARENA_RADIUS) * 6 + noise(x, z) * 2.2 + Math.sin(x * 0.02) * Math.cos(z * 0.018) * 3;
+  // a named high ridge in the north-east hills (a landmark + a sightline perch)
+  const rd = Math.hypot(x - RIDGE_X, z - RIDGE_Z);
+  h += Math.max(0, 14 - rd * 0.55);
+  // a sunken vale in the south-west (low ground that conceals)
+  const vd = Math.hypot(x + ARENA_RADIUS * 0.5, z + ARENA_RADIUS * 0.5);
+  h -= Math.max(0, 8 - vd * 0.4);
+  return h;
+}
+
+// --- water / ravines (movement barriers -> chokepoints) --------------------
+// A river arcs across the map; a couple of ravines cut the hills. `barrierAt`
+// returns a code: 0 = open ground, 1 = water (river), 2 = ravine. Agents pay a
+// heavy movement cost crossing these, so routes funnel through the gaps (fords /
+// land-bridges) — emergent chokepoints + ambush sites from pure geometry.
+// Cheap: a handful of trig/hypot ops, fully deterministic.
+const FORD_X = -8;                                   // the village ford (a gap in the river)
+export function barrierAt(x, z) {
+  // the river: a sinuous band at a roughly-constant signed distance from centre.
+  // channel = how far z sits from the river's winding centreline at this x.
+  const riverZ = ARENA_RADIUS * 0.32 + Math.sin(x * 0.04) * 22;
+  const channel = Math.abs(z - riverZ);
+  // TWO fords keep the river a real chokepoint without strangling trade flow: the
+  // generous village ford near town, plus a far eastern crossing for the hills.
+  const ford = Math.abs(x - FORD_X) < 13 || Math.abs(x - ARENA_RADIUS * 0.55) < 9;
+  // the river only runs through the OUTER half of the map — the dense inner trade
+  // core stays barrier-free so the economy flows, while the crossing is a real
+  // chokepoint between the town and the resource-rich outer regions.
+  if (channel < 5 && !ford && Math.hypot(x, z) > ARENA_RADIUS * 0.45) return 1;  // water
+  // a ravine raking the north-east hills (skirts the ridge, leaving a land bridge)
+  const rav = Math.abs((x - RIDGE_X) * 0.7 + (z - RIDGE_Z)) ;
+  if (rav < 4 && Math.hypot(x - RIDGE_X, z - RIDGE_Z) > 10 &&
+      Math.hypot(x - RIDGE_X, z - RIDGE_Z) < 46) return 2;       // ravine
+  return 0;
+}
+
+// --- concealment (perception modifier) -------------------------------------
+// 0 = wide open (full sight), up to ~0.6 = heavily concealed. Dense forest and
+// low/sunken ground hide; open plains and high ground don't. perceive() folds
+// BOTH the seer's vantage and the seen agent's cover into effective vision, so
+// high ground sees far and a quarry in deep wood / a vale is hard to spot — the
+// substrate for ambush + the spy/disguise belief-asymmetry layer.
+export function concealmentAt(x, z) {
+  const b = biomeAt(x, z);
+  let c = 0;
+  if (b === BIOME.FOREST) c += 0.45;
+  else if (b === BIOME.WILDS) c += 0.25;
+  // low ground (below the basin level) adds cover; high ground adds none
+  const h = terrainHeight(x, z);
+  if (h < -1) c += Math.min(0.3, (-1 - h) * 0.06);
+  return Math.max(0, Math.min(0.7, c));
+}
+
+// --- regions (economic geography) ------------------------------------------
+// The map is carved into named REGIONS with different resource richness and
+// danger, so WHERE an agent works shapes its wealth and risk. world.js biases
+// POI scatter by each region's `rich` table (which GOODS sites cluster where)
+// and the monster spawn frontier reads `danger`. Pure function of (x,z).
+export const REGION = {
+  HEARTH:   'hearth',     // the safe central vale around the village
+  GOLDFURROWS: 'goldfurrows', // fertile plains: food + herb rich, calm
+  IRONHILLS:   'ironhills',   // the ore-rich hills: ore + wood, some danger
+  THORNWILDS:  'thornwilds',  // the dangerous frontier: scarce but lucrative, monster-ridden
+};
+// region table: human label + which GOOD sites are favoured there + danger 0..1
+export const REGIONS = {
+  hearth:      { label: 'The Hearth',       rich: { food: 1.2, herb: 1.1 },           danger: 0.0 },
+  goldfurrows: { label: 'The Goldfurrows',  rich: { food: 1.6, herb: 1.4 },           danger: 0.1 },
+  ironhills:   { label: 'The Ironhills',    rich: { ore: 1.7, wood: 1.3, mine: 1.7 }, danger: 0.35 },
+  thornwilds:  { label: 'The Thornwilds',   rich: { ore: 1.2, wood: 1.2 },            danger: 1.0 },
+};
+export function regionAt(x, z) {
+  const r = Math.hypot(x, z);
+  if (r < 22) return REGION.HEARTH;
+  if (r > ARENA_RADIUS * 0.74) return REGION.THORNWILDS;
+  // east of centre + hilly -> the Ironhills; the fertile west/south -> Goldfurrows
+  const b = biomeAt(x, z);
+  if (b === BIOME.HILLS || (x > 10 && z < ARENA_RADIUS * 0.3)) return REGION.IRONHILLS;
+  return REGION.GOLDFURROWS;
+}
+
+// --- named landmarks (places agents/players can reference) -----------------
+// A handful of fixed, named places. nearestLandmark gives the closest within a
+// radius for "near Highcairn", region/biography flavour, and (browser) markers.
+export const LANDMARKS = [
+  { name: 'Highcairn',    x: RIDGE_X, z: RIDGE_Z,                                  kind: 'peak'  },
+  { name: 'The Old Ford', x: FORD_X,  z: ARENA_RADIUS * 0.32 + Math.sin(FORD_X * 0.04) * 22, kind: 'ford' },
+  { name: 'Wraithmere',   x: -ARENA_RADIUS * 0.5, z: -ARENA_RADIUS * 0.5,         kind: 'vale'  },
+  { name: 'Marketwell',   x: 0,       z: 0,                                       kind: 'town'  },
+  { name: 'The Thorngate', x: ARENA_RADIUS * 0.82, z: 0,                          kind: 'gate'  },
+];
+export function nearestLandmark(x, z, maxR = Infinity) {
+  let best = null, bd = maxR * maxR;
+  for (const l of LANDMARKS) {
+    const d = (l.x - x) * (l.x - x) + (l.z - z) * (l.z - z);
+    if (d < bd) { bd = d; best = l; }
+  }
+  return best;
+}
+
 // Find a random spot in a given biome within a radius band (or null if none).
 export function findBiomeSpot(biome, minR, maxR, tries = 40) {
   for (let i = 0; i < tries; i++) {
@@ -57,25 +173,40 @@ const _p = new THREE.Vector3();
 
 export function buildArena(scene) {
   scene.background = new THREE.Color(0x9ec4e0);
-  scene.fog = new THREE.Fog(0x9ec4e0, 55, 150);
+  scene.fog = new THREE.Fog(0x9ec4e0, 70, 220);
 
-  // --- biome-painted ground (vertex colours over a subdivided plane) ---------
-  const seg = 96;
+  // --- biome-painted, ELEVATED ground (Phase 3) ------------------------------
+  // The plane is displaced by terrainHeight(x,z) — the SAME field the sim samples
+  // for agent y / perception / movement — so what you SEE (hills, the vale) is
+  // what the agents actually act on. Denser subdivision so the relief reads.
+  const seg = 160;
   const geo = new THREE.PlaneGeometry(GROUND * 2, GROUND * 2, seg, seg);
   geo.rotateX(-Math.PI / 2);
   const pos = geo.attributes.position;
   const colors = new Float32Array(pos.count * 3);
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), z = pos.getZ(i);
-    _c.setHex(biomeColor(biomeAt(x, z)));
-    // subtle per-vertex value jitter so big patches aren't flat
-    const j = 1 + (noise(x * 1.7, z * 1.7) * 0.04);
+    const h = terrainHeight(x, z);
+    pos.setY(i, h);                                   // raise the land
+    const bar = barrierAt(x, z);
+    _c.setHex(bar === 1 ? 0x2f5a7a : bar === 2 ? 0x3a3026 : biomeColor(biomeAt(x, z)));
+    // subtle per-vertex value jitter + a touch of height shading
+    const j = 1 + (noise(x * 1.7, z * 1.7) * 0.04) + Math.max(-0.06, Math.min(0.1, h * 0.006));
     colors[i * 3] = _c.r * j; colors[i * 3 + 1] = _c.g * j; colors[i * 3 + 2] = _c.b * j;
   }
+  geo.computeVertexNormals();
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   const ground = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
   ground.receiveShadow = true;
   scene.add(ground);
+
+  // a translucent water plane sitting just below the village basin, so the river
+  // channels read as water (the displaced ground dips; this catches the light).
+  const water = new THREE.Mesh(
+    new THREE.PlaneGeometry(GROUND * 2, GROUND * 2, 1, 1),
+    new THREE.MeshStandardMaterial({ color: 0x3a6f96, transparent: true, opacity: 0.5, roughness: 0.3, metalness: 0.1 }));
+  water.rotation.x = -Math.PI / 2; water.position.y = -0.6; water.renderOrder = -1;
+  scene.add(water);
 
   // --- scattered terrain props (instanced for cheapness) ---------------------
   buildProps(scene);
@@ -104,7 +235,7 @@ export function buildArena(scene) {
 // place ambient trees (forest) + rocks (hills) + grass (plains) via InstancedMesh
 function buildProps(scene) {
   const trunkM = [], crownM = [], rockM = [], grassM = [];
-  const step = 3.2;
+  const step = 4.5;   // wider scatter step on the 2x map keeps prop instance counts ~constant
   for (let x = -ARENA_RADIUS; x <= ARENA_RADIUS; x += step) {
     for (let z = -ARENA_RADIUS; z <= ARENA_RADIUS; z += step) {
       if (Math.hypot(x, z) > ARENA_RADIUS) continue;
@@ -129,7 +260,7 @@ function buildProps(scene) {
 }
 
 function spot(x, z, scale, rand = false) {
-  return { x, z, scale, rot: rand ? Math.random() * Math.PI : 0 };
+  return { x, z, scale, rot: rand ? Math.random() * Math.PI : 0, y: terrainHeight(x, z) };
 }
 
 function addInstanced(scene, geo, mat, list, yBase, shadow) {
@@ -137,7 +268,7 @@ function addInstanced(scene, geo, mat, list, yBase, shadow) {
   const mesh = new THREE.InstancedMesh(geo, mat, list.length);
   for (let i = 0; i < list.length; i++) {
     const o = list[i];
-    _p.set(o.x, yBase * o.scale, o.z);
+    _p.set(o.x, (o.y || 0) + yBase * o.scale, o.z);
     _q.setFromEuler(new THREE.Euler(0, o.rot, 0));
     _s.set(o.scale, o.scale, o.scale);
     _m.compose(_p, _q, _s);

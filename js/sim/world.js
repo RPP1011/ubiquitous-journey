@@ -4,7 +4,9 @@
 // kinds line up with PROFESSIONS[*].site so an agent finds "its" workplace.
 
 import * as THREE from 'three';
-import { ARENA_RADIUS, BIOME, findBiomeSpot } from '../arena.js';
+import { ARENA_RADIUS, BIOME, findBiomeSpot, regionAt, REGIONS, LANDMARKS, terrainHeight } from '../arena.js';
+import { TOWNS } from './simconfig.js';
+import { buildWalls } from './walls.js';
 
 export const POI_KIND = {
   FIELD: 'field', FOREST: 'forest', MINE: 'mine', FORGE: 'forge',
@@ -19,37 +21,117 @@ export class World {
   }
 
   _add(kind, pos, mesh) {
-    const poi = { kind, pos: pos.clone(), mesh };
+    // ground the site on the terrain surface (Phase 3 elevation) so resource
+    // sites sit ON the hills/plains, not under a flat plane. y is cosmetic (the
+    // sim picks sites by x/z), so only lift it in the browser — headless keeps
+    // y=0 so World.nearest's 3D distance stays flat-plane identical to before.
+    let y = 0;
+    if (typeof document !== 'undefined') { try { y = terrainHeight(pos.x, pos.z); } catch { /* keep 0 */ } }
+    const p = pos.clone(); p.y = y;
+    const poi = { kind, pos: p, region: this._regionOf(p), mesh };
     this.pois.push(poi);
-    if (mesh) { mesh.position.copy(pos); this.scene.add(mesh); }
+    if (mesh) { mesh.position.copy(p); this.scene.add(mesh); }
     return poi;
   }
 
-  _scatter(kind, biome, count, minR, maxR, make) {
+  _regionOf(p) { try { return regionAt(p.x, p.z); } catch { return null; } }
+
+  // Scatter `count` sites of `kind` in `biome`, but BIAS placement toward the
+  // REGIONS where this resource is rich (economic geography): for each site we
+  // sample a few candidate spots and keep the one whose region most favours the
+  // matching good, so ore clusters in the Ironhills, food in the Goldfurrows,
+  // etc. WHERE an agent works then shapes its wealth + risk. Deterministic-safe
+  // (uses the same Math.random the rest of placement does — never at module eval).
+  _scatter(kind, biome, count, minR, maxR, make, good) {
     for (let i = 0; i < count; i++) {
-      const p = findBiomeSpot(biome, minR, maxR) ||
+      let best = null, bestW = -Infinity;
+      for (let t = 0; t < 4; t++) {
+        const p = findBiomeSpot(biome, minR, maxR);
+        if (!p) continue;
+        const reg = REGIONS[this._regionOf(p)];
+        // richness weight for THIS good/kind in the candidate's region (default 1)
+        const w = reg ? ((reg.rich && (reg.rich[good] || reg.rich[kind])) || 1) : 1;
+        if (w > bestW) { bestW = w; best = p; }
+      }
+      const p = best ||
         new THREE.Vector3(Math.cos(i) * (minR + maxR) / 2, 0, Math.sin(i) * (minR + maxR) / 2);
       this._add(kind, p, make());
     }
   }
 
   _build() {
-    // central village: market + forge + a couple of campfires
-    this.market = this._add(POI_KIND.MARKET, new THREE.Vector3(0, 0, 0), makeMarket());
-    this._add(POI_KIND.FORGE, new THREE.Vector3(6, 0, -4), makeForge());
-    this._add(POI_KIND.FORGE, new THREE.Vector3(-7, 0, 5), makeForge());
-    this._add(POI_KIND.HUT, new THREE.Vector3(-9, 0, -6), makeHut());   // apothecary
-    for (const [x, z] of [[-4, 6], [5, 4], [0, -7], [9, 2]]) {
-      this._add(POI_KIND.REST, new THREE.Vector3(x, 0, z), makeCampfire());
+    // OPEN WORLD: build a dense village around EACH town centre (market + forges +
+    // huts + campfires + its own ring of resource sites), with wilderness between.
+    // Town 0 sits at the origin so its terrain/landmarks are unchanged.
+    const centers = (TOWNS && TOWNS.centers && TOWNS.centers.length)
+      ? TOWNS.centers : [[0, 0]];
+    const tr = (TOWNS && TOWNS.radius) || 70;
+    for (let ti = 0; ti < centers.length; ti++) {
+      const cx = centers[ti][0], cz = centers[ti][1];
+      this._buildTown(cx, cz, tr, ti === 0, ti);
     }
+    // stone walls ringing each town core (browser-visual; collision is config-pure)
+    buildWalls(this.scene);
+    // a deep-frontier landmark set (browser-visual) — placed once over the world.
+    this._buildLandmarks();
+  }
 
-    // resources out in their terrain
-    this._scatter(POI_KIND.FIELD,  BIOME.PLAINS, 4, 20, 52, makeField);
-    this._scatter(POI_KIND.FOREST, BIOME.FOREST, 4, 20, 55, makeWoods);
-    this._scatter(POI_KIND.MINE,   BIOME.HILLS,  4, 24, 58, makeMine);
-    this._scatter(POI_KIND.MEADOW, BIOME.PLAINS, 3, 20, 50, makeMeadow);
-    // a few wilderness campfires for travellers
-    this._scatter(POI_KIND.REST, BIOME.PLAINS, 3, 24, 50, makeCampfire);
+  // raise one town: its market (the trade hub), a forge or two, an apothecary hut,
+  // some hearth campfires, and a ring of resource sites in its hinterland. Sites
+  // are placed RELATIVE to the town centre so each town has its own reachable
+  // economy (proximity keeps its townsfolk local — the social-density guarantee).
+  _buildTown(cx, cz, radius, primary, ti) {
+    const at = (dx, dz) => new THREE.Vector3(cx + dx, 0, cz + dz);
+    const m = this._add(POI_KIND.MARKET, at(0, 0), makeMarket());
+    if (primary) this.market = m;                    // town 0's market = the legacy singleton
+    this._add(POI_KIND.FORGE, at(6, -4), makeForge());
+    this._add(POI_KIND.FORGE, at(-7, 5), makeForge());
+    this._add(POI_KIND.HUT,   at(-9, -6), makeHut()); // apothecary
+    for (const [dx, dz] of [[-4, 6], [5, 4], [0, -7], [9, 2]]) this._add(POI_KIND.REST, at(dx, dz), makeCampfire());
+    // resource sites ringing this town's hinterland (within its home band so its
+    // townsfolk reach them without straying toward another town's sites). Counts come
+    // from this town's SPECIALIZATION profile (comparative advantage) — see TOWNS.
+    const inner = 18, outer = radius;
+    const prof = (TOWNS && TOWNS.profiles && TOWNS.profiles[ti]) || { field: 6, forest: 6, mine: 6, meadow: 5 };
+    this._scatterAround(POI_KIND.FIELD,  cx, cz, prof.field,  inner, outer, makeField,  'food');
+    this._scatterAround(POI_KIND.FOREST, cx, cz, prof.forest, inner, outer, makeWoods,  'wood');
+    this._scatterAround(POI_KIND.MINE,   cx, cz, prof.mine,   inner, outer, makeMine,   'ore');
+    this._scatterAround(POI_KIND.MEADOW, cx, cz, prof.meadow, inner, outer, makeMeadow, 'herb');
+    this._scatterAround(POI_KIND.REST,   cx, cz, 4,           inner, outer, makeCampfire);
+  }
+
+  // scatter `count` sites of `kind` in an annulus [minR,maxR] around (cx,cz).
+  // Town-relative placement (vs the origin-biased _scatter) so each town owns a
+  // reachable hinterland. Deterministic-safe (same Math.random as other placement).
+  _scatterAround(kind, cx, cz, count, minR, maxR, make, good) {
+    for (let i = 0; i < count; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const r = minR + Math.random() * (maxR - minR);
+      this._add(kind, new THREE.Vector3(cx + Math.cos(ang) * r, 0, cz + Math.sin(ang) * r), make());
+    }
+  }
+
+  // a random POI of `kind` in a named region (or null) — lets quest/spawn code
+  // target "a mine in the Ironhills". Read-only; guarded.
+  randomSiteInRegion(kind, region) {
+    const m = this.pois.filter((p) => p.kind === kind && p.region === region);
+    if (m.length) return m[(Math.random() * m.length) | 0];
+    return this.randomSite(kind);
+  }
+
+  // Visual markers for the named LANDMARKS (a cairn on Highcairn, a signpost at
+  // the ford, etc). Browser-only: skipped headless (no scene meshes needed for
+  // the sim, which references landmarks via arena.nearestLandmark). Guarded.
+  _buildLandmarks() {
+    if (typeof document === 'undefined') return;     // headless: nothing to draw
+    for (const l of LANDMARKS) {
+      let y = 0; try { y = terrainHeight(l.x, l.z); } catch { /* 0 */ }
+      const m = makeLandmark(l.kind);
+      m.position.set(l.x, y, l.z);
+      this.scene.add(m);
+      this.landmarkMeshes = this.landmarkMeshes || [];
+      this.landmarkMeshes.push(m);
+    }
   }
 
   nearest(kind, pos) {
@@ -68,8 +150,21 @@ export class World {
     return m.length ? m[(Math.random() * m.length) | 0] : null;
   }
 
+  // a random site of a kind within `maxR` of the origin (used to seed the spawn
+  // cohort in a TIGHT inner band on the 2x map — agents still lean toward
+  // different first trades by kind, but start socially dense near the village so
+  // beliefs/groups form, then migrate outward to the spread-out work sites).
+  randomSiteNear(kind, maxR, center) {
+    const cx = center ? center.x : 0, cz = center ? center.z : 0;
+    const m = this.pois.filter((p) => p.kind === kind && Math.hypot(p.pos.x - cx, p.pos.z - cz) <= maxR);
+    if (m.length) return m[(Math.random() * m.length) | 0];
+    return this.randomSite(kind);   // fall back to any if none are near
+  }
+
   dispose() {
     for (const p of this.pois) if (p.mesh) this.scene.remove(p.mesh);
+    if (this.landmarkMeshes) for (const m of this.landmarkMeshes) this.scene.remove(m);
+    this.landmarkMeshes = [];
     this.pois = [];
   }
 
@@ -190,6 +285,37 @@ function makeHut() {
   cauldron.position.set(1.6, 0.25, 0);
   const brew = new THREE.PointLight(0x80ffb0, 4, 5, 2); brew.position.set(1.6, 0.6, 0);
   g.add(wall, roof, cauldron, brew);
+  return g;
+}
+
+// a named-landmark marker, styled by kind (a cairn/peak, ford signpost, vale
+// menhir, town banner, frontier gate). Cheap primitives; browser-visual only.
+function makeLandmark(kind) {
+  const g = new THREE.Group();
+  if (kind === 'peak') {
+    const stone = new THREE.MeshStandardMaterial({ color: 0x8a8276, roughness: 1, flatShading: true });
+    for (let i = 0; i < 4; i++) {
+      const r = new THREE.Mesh(new THREE.DodecahedronGeometry(1.2 - i * 0.25, 0), stone);
+      r.position.y = 0.6 + i * 1.0; r.rotation.y = i; r.castShadow = true; g.add(r);
+    }
+  } else if (kind === 'ford' || kind === 'gate') {
+    const wood = new THREE.MeshStandardMaterial({ color: 0x6a4b2f, roughness: 1 });
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 2.6, 6), wood);
+    post.position.y = 1.3; post.castShadow = true;
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.3, 0.1), wood);
+    arm.position.set(0.5, 2.1, 0); g.add(post, arm);
+  } else if (kind === 'vale') {
+    const stone = new THREE.MeshStandardMaterial({ color: 0x5a5550, roughness: 1, flatShading: true });
+    const menhir = new THREE.Mesh(new THREE.BoxGeometry(0.8, 3.4, 0.5), stone);
+    menhir.position.y = 1.7; menhir.rotation.z = 0.08; menhir.castShadow = true; g.add(menhir);
+  } else {  // town
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 3.2, 6),
+      new THREE.MeshStandardMaterial({ color: 0x6a4b2f }));
+    pole.position.y = 1.6;
+    const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.7),
+      new THREE.MeshStandardMaterial({ color: 0xc94f4f, side: THREE.DoubleSide }));
+    flag.position.set(0.6, 2.8, 0); g.add(pole, flag);
+  }
   return g;
 }
 

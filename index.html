@@ -13,25 +13,6 @@
 
   #hud { position: fixed; inset: 0; pointer-events: none; }
 
-  /* Crosshair + 4-arc direction indicator */
-  #reticle {
-    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
-    width: 120px; height: 120px;
-  }
-  .arc {
-    position: absolute; left: 50%; top: 50%; width: 30px; height: 30px;
-    border: 3px solid rgba(255,255,255,0.28);
-    transition: border-color .06s, background .06s;
-  }
-  .arc.up    { transform: translate(-50%, -150%); border-bottom: none; border-left: none; border-right: none; border-top-width: 5px; width: 46px; }
-  .arc.down  { transform: translate(-50%, 50%);   border-top: none; border-left: none; border-right: none; border-bottom-width: 5px; width: 46px; }
-  .arc.left  { transform: translate(-150%, -50%); border-top: none; border-bottom: none; border-right: none; border-left-width: 5px; height: 46px; }
-  .arc.right { transform: translate(50%, -50%);   border-top: none; border-bottom: none; border-left: none; border-right-width: 5px; height: 46px; }
-  .arc.active { border-color: var(--accent) !important; }
-  .arc.block.active { border-color: #6fb7ff !important; }
-  #dot { position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; border-radius: 50%;
-         background: rgba(255,255,255,.6); transform: translate(-50%, -50%); }
-
   /* Health bar */
   #playerHud { position: absolute; left: 24px; bottom: 22px; width: 280px; }
   #hpOuter { height: 22px; background: rgba(0,0,0,.45); border: 2px solid #000;
@@ -46,11 +27,14 @@
   #enemyCounter .lbl { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; opacity: .7; }
 
   /* collapsible tab stack */
-  #tabs { position: absolute; left: 16px; top: 16px; width: 252px;
-          display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
-  .tab { background: rgba(10,13,18,.82); border: 1px solid rgba(255,255,255,.12);
+  #tabs { position: absolute; left: 16px; top: 16px; width: auto;
+          display: flex; flex-direction: column; align-items: flex-start; gap: 8px; pointer-events: none; }
+  .tab { width: 252px; background: rgba(10,13,18,.82); border: 1px solid rgba(255,255,255,.12);
          border-radius: 8px; overflow: hidden; backdrop-filter: blur(2px); }
-  .tab-head { pointer-events: auto; cursor: pointer; display: flex; align-items: center; gap: 8px;
+  /* the data-heavy panels are wider so their detail can flow in two columns */
+  .tab[data-tab="3"], .tab[data-tab="4"] { width: 392px; }
+  .tab.floating { box-shadow: 0 10px 30px rgba(0,0,0,.55); }
+  .tab-head { pointer-events: auto; cursor: move; display: flex; align-items: center; gap: 8px;
               padding: 8px 12px; font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase;
               color: #cbd5e1; user-select: none; background: rgba(255,255,255,.04); }
   .tab-head:hover { background: rgba(255,255,255,.09); }
@@ -82,8 +66,11 @@
   #factions .dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
 
   /* inspector ("mind reader"), inside its tab */
-  .mindpanel { font-size: 12px; color: #dfe6ee; }
-  .mindpanel .hdr { font-size: 17px; font-weight: 700; }
+  /* the data flows in two columns so the (long) panels aren't a tall single list */
+  .mindpanel { font-size: 12px; color: #dfe6ee; column-count: 2; column-gap: 14px; }
+  .mindpanel .sec, .mindpanel .row, .mindpanel .brow, .mindpanel .goal,
+  .mindpanel .inv, .mindpanel .foot { break-inside: avoid; }
+  .mindpanel .hdr { font-size: 17px; font-weight: 700; column-span: all; }
   .mindpanel .hdr .sub { display: block; font-size: 11px; font-weight: 400; color: #9aa6b2; margin-top: 1px; }
   .mindpanel .goal { margin: 7px 0; color: #cbd5e1; }
   .mindpanel .goal b { color: var(--accent); }
@@ -127,29 +114,23 @@
 </head>
 <body>
 <div id="hud">
-  <div id="reticle">
-    <div class="arc up"    data-dir="UP"></div>
-    <div class="arc down"  data-dir="DOWN"></div>
-    <div class="arc left"  data-dir="LEFT"></div>
-    <div class="arc right" data-dir="RIGHT"></div>
-    <div id="dot"></div>
-  </div>
-
   <div id="tabs">
     <section class="tab" data-tab="1">
       <div class="tab-head"><span class="ttl">Controls</span><span class="hot">C</span><span class="chev">▾</span></div>
       <div class="tab-body">
-        <div><b>WASD</b> move · <b>Shift</b> run · <b>mouse</b> look</div>
-        <div><b>Hold LMB</b> + aim — attack · <b>1-4</b> cast abilities</div>
-        <div><b>E</b> talk · <b>Q</b> quests · <b>F</b> read a mind · <b>[</b>/<b>]</b> cycle minds</div>
-        <div><b>G</b> gather at a node · <b>H</b> drink a potion</div>
-        <div><b>R</b> reset world · <b>Esc</b> free cursor</div>
+        <div><b>Left-click</b> move (anywhere, never attacks) · <b>Right-click</b> attack a target</div>
+        <div><b>Wheel</b> zoom · <b>1-4</b> cast abilities · hover a soul to read it</div>
+        <div><b>E</b> talk / recruit / use a dungeon portal · <b>Q</b> quests</div>
+        <div><b>F</b> read a mind · <b>[</b>/<b>]</b> cycle minds</div>
+        <div><b>G</b> gather at a node · <b>H</b> drink a potion · <b>B</b> inventory</div>
+        <div><b>K</b> class codex · <b>Y</b> ability index · <b>N</b> chronicle</div>
+        <div><b>R</b> reset world · <b>Esc</b> pause</div>
         <div style="margin-top:6px;opacity:.6">fold tabs: click a header, or <b>C</b>/<b>T</b>/<b>I</b>/<b>M</b></div>
       </div>
     </section>
     <section class="tab" data-tab="2">
       <div class="tab-head"><span class="ttl">Town &amp; Prices</span><span class="hot">T</span><span class="chev">▾</span></div>
-      <div class="tab-body"><div id="factions"></div></div>
+      <div class="tab-body"><div id="econView"></div></div>
     </section>
     <section class="tab" data-tab="3">
       <div class="tab-head"><span class="ttl">Inspector</span><span class="hot">I</span><span class="chev">▾</span></div>
@@ -170,7 +151,7 @@
     <div id="hpOuter"><div id="hpFill"></div></div>
   </div>
 
-  <div id="hint">click to lock the cursor and fight</div>
+  <div id="hint">click to begin · left-click to move · right-click to attack</div>
 </div>
 
 <div id="overlay">

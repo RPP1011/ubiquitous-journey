@@ -10,6 +10,10 @@ import { REP } from '../sim/reputation.js';
 import { bus } from '../rpg/events.js';
 import { MONSTER, SIM } from '../sim/simconfig.js';
 
+// commodities a "deliver" radiant quest may ask for (raw goods the player can
+// gather or buy — not tools/potions, which are scarcer).
+const DELIVER_GOODS = ['food', 'wood', 'ore', 'herb'];
+
 // quest lifecycle states
 export const QUEST_STATE = { offered: 'offered', active: 'active', done: 'done', failed: 'failed' };
 
@@ -19,7 +23,7 @@ export class Quest {
   // type: 'fetch' | 'hunt' | 'recover'
   // target: type-specific payload (see QuestBoard synthesis below)
   // reward: { gold, xp, rep }
-  constructor({ type, giverId, title, desc, target, reward }) {
+  constructor({ type, giverId, title, desc, target, reward, personal }) {
     this.id = _qid++;
     this.type = type;
     this.giverId = giverId;
@@ -30,10 +34,15 @@ export class Quest {
     this.state = QUEST_STATE.offered;
     this.progress = 0;          // 0..1 for the log; hunt counts kills here
     this.acceptedAt = 0;
+    // PERSONAL goals (a vendetta) are satisfied only by the giver's OWN agency, so
+    // they're posted as an ASSIST ("help me"), never a delegable "do it for me" —
+    // and the future NPC favour-economy may never have another NPC take them.
+    this.personal = !!personal;
   }
 
   get active()   { return this.state === QUEST_STATE.active; }
   get finished() { return this.state === QUEST_STATE.done || this.state === QUEST_STATE.failed; }
+  get delegable() { return !this.personal; }   // can someone OTHER than the giver settle it?
 }
 
 // How the board behaves. Tunables live here so the integrator can dial them.
@@ -49,6 +58,21 @@ export const QUEST = {
   recoverReward: { gold: 18, xp: 10, rep: (REP?.deeds?.QUEST_DONE?.personal ?? 0.25) * 1.2 },
   recoverNearDist: 3.0,     // how close to the giver the recovered goods return
   expireAfter: 0,           // 0 = offers persist until taken or state changes
+
+  // --- vendetta (PERSONAL): an outmatched griever begging help against a named foe -
+  avengeReward: { gold: 50, xp: 30, rep: (REP?.deeds?.QUEST_DONE?.personal ?? 0.25) * 2.2 },
+  avengeOnlyNamed: true,    // only post when the killer is a NAMED nemesis/warlord (a boss)
+                            //   the griever can't bring down alone — else they avenge it solo
+
+  // --- radiant generation (always-on, level-scaled, repeatable) ------------
+  radiantFloor: 3,          // keep at least this many offers posted at all times
+  goldPerLevel: 2,          // reward gold added per point of player total level
+  xpPerLevel: 1,            // reward xp added per point of player total level
+  bountyCount: 3,           // base monsters a radiant bounty asks for
+  bountyReward: { gold: 20, xp: 12, rep: REP?.deeds?.QUEST_DONE?.personal ?? 0.25 },
+  deliverQty: 3,            // units a radiant deliver quest asks for
+  deliverReward: { gold: 14, xp: 6, rep: REP?.deeds?.QUEST_DONE?.personal ?? 0.25 },
+  delveReward: { gold: 40, xp: 24, rep: (REP?.deeds?.QUEST_DONE?.personal ?? 0.25) * 1.6 },
 };
 
 export class QuestBoard {
@@ -88,6 +112,8 @@ export class QuestBoard {
     this._synthFetch();
     this._synthHunt();
     this._synthRecover();
+    this._synthVendetta();  // PERSONAL: only when a griever is outmatched (see below)
+    this._synthRadiant();   // top the board up with repeatable, scaled offers
     // trim to maxOffers, keeping the freshest
     if (this.offers.length > QUEST.maxOffers) this.offers = this.offers.slice(-QUEST.maxOffers);
     // clear any offer whose giver has died / left
@@ -104,7 +130,8 @@ export class QuestBoard {
   }
 
   _townsfolk() {
-    return this.sim.agents.filter((a) => a.alive && !a.controlled && a.faction === 'townsfolk');
+    // companions following the player don't post notices — they're with you
+    return this.sim.agents.filter((a) => a.alive && a.autonomous && !a.inParty && a.faction === 'townsfolk');
   }
 
   _post(quest) {
@@ -113,7 +140,9 @@ export class QuestBoard {
     if (g) g.openOffer = quest;
     this.offers.push(quest);
     this._postedFor.add(quest.giverId);
-    bus.emit({ actorId: quest.giverId, verb: 'QUEST_OFFERED', tags: [quest.type], magnitude: 1, t: this.sim.time });
+    // tags:[] -> earns NO XP. Only QUEST_DONE should grant XP, else agents are
+    // incentivised to spam-open quests. (Offering/accepting/failing aren't deeds.)
+    bus.emit({ actorId: quest.giverId, verb: 'QUEST_OFFERED', tags: [], magnitude: 1, t: this.sim.time });
   }
 
   // FETCH: a townsperson the market keeps failing to feed. We track how long
@@ -185,6 +214,111 @@ export class QuestBoard {
     }
   }
 
+  // VENDETTA (PERSONAL): a townsperson who GRIEVES a slain loved one (a high-salience
+  // witnessed_death whose killer still lives) wants vengeance — but vengeance is
+  // satisfied only by THEIR OWN hand, so it is NOT a delegable "do it for me" bounty.
+  // The griever pursues the killer themselves (deriveGoals' avenge goal). It surfaces
+  // as a quest ONLY when they're OUTMATCHED — the killer is a NAMED nemesis/warlord
+  // (a boss) they cannot bring down alone — and then it's a personal ASSIST ("help me
+  // face them"), completed only if the GRIEVER lives to see the foe fall.
+  _synthVendetta() {
+    for (const a of this._townsfolk()) {
+      if (this._postedFor.has(a.id)) continue;
+      if (!a.memory || !a.memory.stm) continue;
+      let killerId, fallenId;
+      try {
+        const eps = [...a.memory.stm.items(), ...a.memory.mtm.items(), ...a.memory.ltm.items()];
+        for (const e of eps) {
+          if (e && e.kind === 'witnessed_death' && (e.salience || 0) >= 0.7 && e.byId != null) {
+            const k = this.sim.agentsById.get(e.byId);
+            if (k && k.alive && k.faction !== 'townsfolk') { killerId = e.byId; fallenId = e.withId; break; }
+          }
+        }
+      } catch { /* memory shapes vary — never throw on synth */ }
+      if (killerId == null) continue;
+      const killer = this.sim.agentsById.get(killerId);
+      // outmatched test: only beg help against a NAMED boss the griever can't best
+      // alone (a higher-level nemesis/warlord). Otherwise they settle it themselves.
+      const named = !!(killer.nemesis || killer.warlord || killer.epithet);
+      if (QUEST.avengeOnlyNamed && !named) continue;
+      if (this._lvlOf(killer) < this._lvlOf(a)) continue;   // a stronger avenger needs no help
+      const fallen = (this.sim.agentsById.get(fallenId) || {}).name || 'their kin';
+      this._post(new Quest({
+        type: 'avenge', giverId: a.id, personal: true,
+        title: `Avenge ${fallen}`,
+        desc: `${killer.name} slew ${fallen} — ${a.name} burns for vengeance but cannot face them alone. Help bring ${killer.name} down; ${a.name} will stand with you.`,
+        target: { killerId, killerName: killer.name, fallenId, fallenName: fallen },
+        reward: QUEST.avengeReward,
+      }));
+    }
+  }
+
+  _lvlOf(a) { return (a && a.progression && a.progression.totalLevel) || 0; }
+
+  // RADIANT: unlike the emergent synths above (which fire only when an agent is
+  // genuinely stuck), this keeps a baseline of repeatable contracts on the board
+  // forever, scaled to the player's level. It's how the board never runs dry —
+  // bounties on the monsters, deliveries for the market, and delves into the
+  // dungeons the DungeonManager scattered in the wilds.
+  _synthRadiant() {
+    if (this.offers.length >= QUEST.radiantFloor) return;
+    const folk = this._townsfolk().filter((a) => !this._postedFor.has(a.id));
+    while (this.offers.length < QUEST.radiantFloor && folk.length) {
+      const giver = folk.splice((Math.random() * folk.length) | 0, 1)[0];
+      const q = this._mintRadiant(giver);
+      if (q) this._post(q); else break;
+    }
+  }
+
+  _playerLevel() {
+    const p = this.sim.player;
+    return (p && p.progression && p.progression.totalLevel) || 0;
+  }
+  _scale(base) {
+    const l = this._playerLevel();
+    return {
+      gold: (base.gold || 0) + Math.round(l * QUEST.goldPerLevel),
+      xp: (base.xp || 0) + Math.round(l * QUEST.xpPerLevel),
+      rep: base.rep || 0,
+    };
+  }
+
+  _mintRadiant(giver) {
+    const dungeons = this.sim.dungeons;
+    const dungeonsExist = dungeons && dungeons.entrances && dungeons.entrances.length;
+    const monstersAlive = this.sim.agents.some((m) => m.alive && m.faction === MONSTER.faction);
+    const roll = Math.random();
+
+    if (dungeonsExist && roll < 0.4) {
+      const place = dungeons.entrances[(Math.random() * dungeons.entrances.length) | 0].name;
+      return new Quest({
+        type: 'delve', giverId: giver.id,
+        title: `Recover a relic from ${place}`,
+        desc: `${giver.name} will pay well for a relic dragged out of ${place}. Bring one back.`,
+        target: { relics: 1, place },
+        reward: this._scale(QUEST.delveReward),
+      });
+    }
+    if (monstersAlive && roll < 0.75) {
+      const count = QUEST.bountyCount + Math.floor(this._playerLevel() / 8);
+      return new Quest({
+        type: 'bounty', giverId: giver.id,
+        title: `Bounty: ${count} ${MONSTER.name}s`,
+        desc: `${giver.name} posts a standing bounty — slay ${count} ${MONSTER.name}s, wherever you find them.`,
+        target: { monsterFaction: MONSTER.faction, count },
+        reward: this._scale(QUEST.bountyReward),
+      });
+    }
+    const c = DELIVER_GOODS[(Math.random() * DELIVER_GOODS.length) | 0];
+    return new Quest({
+      type: 'deliver', giverId: giver.id,
+      title: `Deliver ${QUEST.deliverQty} ${c} to ${giver.name}`,
+      desc: `${giver.name} will buy ${QUEST.deliverQty} ${c} on the spot — gather it and bring it over.`,
+      target: { commodity: c, qty: QUEST.deliverQty },
+      reward: this._scale(QUEST.deliverReward),
+    });
+  }
+
   // ---- player interaction --------------------------------------------------
   accept(quest, player) {
     if (!quest || quest.state !== QUEST_STATE.offered) return false;
@@ -194,7 +328,7 @@ export class QuestBoard {
     this._player = player;
     this.offers = this.offers.filter((q) => q !== quest);
     this.active.push(quest);
-    bus.emit({ actorId: player.id, verb: 'QUEST_ACCEPTED', tags: [quest.type], magnitude: 1,
+    bus.emit({ actorId: player.id, verb: 'QUEST_ACCEPTED', tags: [], magnitude: 1,
       targetId: quest.giverId, t: this.sim.time });
     return true;
   }
@@ -205,9 +339,19 @@ export class QuestBoard {
     // count kills toward EVERY live hunt (offered or accepted): the deed is
     // real whether or not the player formally took the contract.
     for (const q of [...this.offers, ...this.active]) {
-      if (q.type !== 'hunt' || q.finished) continue;
+      if ((q.type !== 'hunt' && q.type !== 'bounty') || q.finished) continue;
       if (q.target.monsterFaction !== monsterFaction) continue;
       q.progress = Math.min(q.target.count, q.progress + 1);
+    }
+  }
+
+  // vendetta credit: the sim calls this when the PLAYER deals a killing blow to ANY
+  // agent. If that agent was the named foe of a posted vendetta, mark it player-slain
+  // so completion (beside the surviving griever) reads as a vengeance YOU delivered.
+  bumpVendetta(victimId) {
+    for (const q of [...this.offers, ...this.active]) {
+      if (q.type !== 'avenge' || q.finished) continue;
+      if (q.target.killerId === victimId) q._playerSlew = true;
     }
   }
 
@@ -226,20 +370,39 @@ export class QuestBoard {
       if (!giver || !giver.alive) { this._fail(q, 'giver lost'); continue; }
       const near = player.pos.distanceTo(giver.pos) <= QUEST.recoverNearDist;
 
-      if (q.type === 'fetch' || q.type === 'recover') {
+      if (q.type === 'fetch' || q.type === 'recover' || q.type === 'deliver') {
         const c = q.target.commodity, qty = q.target.qty;
         const held = Math.floor(player.inventory[c] || 0);
         q.progress = Math.min(1, held / qty);
         if (held >= qty && near) {
-          // hand the goods over and let the giver pay for them (a trade)
+          // hand the goods over and let the giver pay for them (a trade). If the
+          // giver was desperate for food, the player's delivery is a `succoured`
+          // kindness — recorded BEFORE we sate its hunger, so it can grow into a
+          // repay(player) goal. Guarded via sim.recordSuccoured.
+          if (c === 'food' && this.sim && this.sim.recordSuccoured) this.sim.recordSuccoured(giver, player.id);
           player.inventory[c] -= qty;
           giver.inventory[c] = (giver.inventory[c] || 0) + qty;
           if (c === 'food') giver.needs.hunger = Math.min(1, giver.needs.hunger + 0.4);
           this._complete(q, player, giver);
         }
-      } else if (q.type === 'hunt') {
+      } else if (q.type === 'hunt' || q.type === 'bounty') {
         // killed the monsters anywhere; collect from the grateful giver in person
         if (q.progress >= q.target.count && near) this._complete(q, player, giver);
+      } else if (q.type === 'delve') {
+        // dragged a relic out of a dungeon; hand it over near the giver
+        const need = q.target.relics || 1;
+        const have = Math.floor(player.relics || 0);
+        q.progress = Math.min(1, have / need);
+        if (have >= need && near) { player.relics -= need; this._complete(q, player, giver); }
+      } else if (q.type === 'avenge') {
+        // PERSONAL vendetta: satisfied only if the foe FALLS while the griever still
+        // lives to see it (the giver-lost guard above already fails it if they died
+        // first — a vengeance that came too late). If the PLAYER struck the killer
+        // down, it's a fulfilled vendetta → reward, claimed beside the grateful giver.
+        const killer = this.sim.agentsById.get(q.target.killerId);
+        if (killer && killer.alive) { q.progress = 0; continue; }   // still out there
+        if (q._playerSlew) { q.progress = 1; if (near) this._complete(q, player, giver); }
+        else { this.offers = this.offers.filter((x) => x !== q); this.active = this.active.filter((x) => x !== q); }   // the town avenged it without you — retire quietly
       }
     }
   }
@@ -276,7 +439,45 @@ export class QuestBoard {
     const giver = this.sim.agentsById.get(q.giverId);
     if (giver) giver.openOffer = null;
     bus.emit({ actorId: (this._player || this.sim.player)?.id ?? -1, verb: 'QUEST_FAILED',
-      tags: [q.type], magnitude: 1, targetId: q.giverId, t: this.sim.time });
+      tags: [], magnitude: 1, targetId: q.giverId, t: this.sim.time });
     this.active = this.active.filter((x) => x !== q);
+  }
+
+  // look up a live offer/active quest by id (NPC bounty-hunters resolve the job they
+  // read in the Gazette).
+  byId(id) {
+    for (const q of this.offers) if (q.id === id) return q;
+    for (const q of this.active) if (q.id === id) return q;
+    return null;
+  }
+
+  // an NPC committed to a quest — PIN it (offers -> active) so board churn (the
+  // maxOffers trim) can't yank the job out from under the hunter mid-hunt. The
+  // player can still complete it too (a race); the giver-died/finished checks still
+  // apply. Idempotent.
+  claimForNpc(q) {
+    if (!q) return;
+    const i = this.offers.indexOf(q);
+    if (i >= 0) { this.offers.splice(i, 1); q.state = QUEST_STATE.active; this.active.push(q); }
+  }
+
+  // an NPC (not the player) settled a quest — the same closed-economy payout as the
+  // player path: the giver pays what it can from its OWN purse, no minting. Used by
+  // the Bounties subsystem when a bounty-hunter's killing blow completes the job.
+  completeByNpc(q, npc) {
+    if (!q || !npc || q.finished) return;
+    q.state = QUEST_STATE.done; q.progress = 1;
+    const giver = this.sim.agentsById.get(q.giverId);
+    const r = q.reward || {};
+    const pay = giver ? Math.min(r.gold || 0, Math.max(0, Math.floor(giver.gold))) : 0;
+    if (pay > 0 && giver) { giver.gold -= pay; npc.gold += pay; }
+    if (r.xp && npc.progression && typeof npc.progression.addXP === 'function') {
+      npc.progression.addXP(r.xp, { reason: 'bounty', tags: [q.type] });
+    }
+    if (giver) giver.openOffer = null;
+    bus.emit({ actorId: npc.id, verb: 'QUEST_DONE', tags: [q.type], magnitude: r.rep || 1, targetId: q.giverId, t: this.sim.time });
+    this.offers = this.offers.filter((x) => x !== q);
+    this.active = this.active.filter((x) => x !== q);
+    this._done = this._done || []; this._done.push(q);
   }
 }

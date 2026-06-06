@@ -65,6 +65,9 @@ export function castSpec(spec, caster, ctx) {
     }
     for (const t of targets) {
       const hostileHit = e.op === 'damage';
+      // friendly-fire guard: harmful ops never land on an ally, even for an
+      // 'any'-target AoE (which otherwise splashes everyone in the footprint).
+      if (HOSTILE_OPS.has(e.op) && !isFoe(caster, t)) continue;
       if (!gateTrigger(e, caster, t, false, now)) continue;
       const ok = fn(e, caster, t, ctx);
       landed = ok || landed;
@@ -112,9 +115,17 @@ function runChained(spec, primary, caster, target, ctx, now) {
 }
 
 // ---- target resolution by area + range over the agent list ------------------
+// ops that harm a target — never applied to allies (friendly-fire guard above)
+const HOSTILE_OPS = new Set(['damage', 'stun', 'slow', 'knockback']);
+
 function resolveTargets(spec, caster, ctx) {
   const h = spec.header;
-  if (h.target === 'self' || h.area.kind === 'self') return [];
+  // self-TARGETED abilities scan no foes. NOTE: area.kind === 'self' is NOT the
+  // same thing — a single-target ranged/instant attack (target enemy/ally/any,
+  // delivery projectile/instant) carries area 'self' as "no AoE footprint" yet
+  // must still resolve the NEAREST valid foe. That case is handled by the
+  // single-target branch below; only a genuinely self-targeted spec bails here.
+  if (h.target === 'self') return [];
 
   const agents = ctx?.agents || [];
   const out = [];

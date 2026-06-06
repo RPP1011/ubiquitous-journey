@@ -2,192 +2,50 @@
 // commodities, eat, and trade at the market using price beliefs that update
 // from trades and spread by gossip. Look at anyone and press F to read their
 // economic mind. The human just wanders and watches.
+//
+// main.js is the thin entry: it builds the renderer/scene (boot.js), the HUD
+// (ui/hud.js) and player input (playerControls.js), owns the game-state machine
+// + world build/teardown, and runs the frame loop (with its crash-surface).
 
 import * as THREE from 'three';
-import { buildArena } from './arena.js';
 import { preloadCharacters } from './assets.js';
 import { Fighter } from './fighter.js';
-import { Input } from './input.js';
-import { OrbitCamera } from './camera.js';
-import { Player } from './player.js';
 import { resolveCombat } from './combat.js';
 import { TUNE } from './constants.js';
 import { World } from './sim/world.js';
 import { Simulation } from './sim/simulation.js';
-import { PROFESSIONS, COMMODITIES, BASE_PRICE, SIM } from './sim/simconfig.js';
-import { Inspector } from './ui/inspector.js';
-import { MindBrowser } from './ui/mindbrowser.js';
-import { castSpec } from './rpg/abilities/interpreter.js';
 import { ABILITY_CATALOG } from './rpg/abilities/catalog.js';
-import { bus, makeEvent } from './rpg/events.js';
-import { pickAgent } from './util/pick.js';
-import { DialogueView } from './ui/dialogueView.js';
-import { DialogueSession } from './dialogue/dialogue.js';
-import { QuestLog } from './ui/questLog.js';
+import { DungeonManager } from './world/dungeonManager.js';
+import { boot } from './boot.js';
+import { Hud } from './ui/hud.js';
+import { PlayerControls } from './playerControls.js';
 
-const hex = (c) => `#${c.toString(16).padStart(6, '0')}`;
+// ---- renderer / scene / camera / input -------------------------------------
+const { renderer, scene, camera, orbitCam, input, commander } = boot();
 
-// ---- renderer / scene ------------------------------------------------------
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.setSize(innerWidth, innerHeight);
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-document.body.appendChild(renderer.domElement);
+let dungeonMgr = null;             // built per-world in buildWorld()
 
-const scene = new THREE.Scene();
-buildArena(scene);
-
-const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 200);
-camera.position.set(0, 4, 8);
-
-const orbitCam = new OrbitCamera(camera);
-const input = new Input(renderer.domElement);
-const inspector = new Inspector(document.getElementById('inspector'), camera, null);
-const mind = new MindBrowser(document.getElementById('mindList'), document.getElementById('mindDetail'), inspector);
-const questLog = new QuestLog();   // self-mounts #questLog; board/player set in buildWorld()
-
-// ---- dialogue modal (self-injects its own DOM + CSS) -----------------------
-const dialogueView = new DialogueView();
-dialogueView.onClose = () => {
-  // returning from a conversation: resume play and re-capture the pointer
-  if (game.state === 'dialogue') {
-    game.state = 'playing';
-    renderer.domElement.requestPointerLock();
-  }
-};
-
-// Open a conversation with whoever is under the reticle, if within talkRange.
-// Must never throw when nothing (or a monster/dead agent) is targeted.
-function tryOpenDialogue() {
-  if (game.state !== 'playing' || !game.sim || !game.sim.player) return;
-  const npc = pickAgent(camera, null, game.sim.agents);
-  if (!npc || !npc.alive) return;
-  const me = game.sim.player;
-  if (npc === me) return;
-  if (me.pos.distanceTo(npc.pos) > SIM.talkRange) return;
-  const session = new DialogueSession(npc, me, game.sim);
-  game.state = 'dialogue';
-  document.exitPointerLock();   // free the cursor so the modal buttons are clickable
-  dialogueView.open(session);
-}
-
-// ---- ability cast keys (1-4 -> player's known-ability slots) ----------------
-// Edge-triggered: cast once per key press, not every frame it's held. Safe when
-// the player knows fewer than 4 abilities (slot missing -> no-op).
-const CAST_CODES = ['Digit1', 'Digit2', 'Digit3', 'Digit4'];
-const _castHeld = new Set();
-function pollCastKeys() {
-  if (!game.sim || !game.sim.player) return;
-  const slots = game.sim.player.abilityList();
-  for (let i = 0; i < CAST_CODES.length; i++) {
-    const code = CAST_CODES[i];
-    const down = input.has(code);
-    if (down && !_castHeld.has(code)) {
-      _castHeld.add(code);
-      const spec = slots[i];
-      if (spec) { try { castSpec(spec, game.sim.player, game.sim._ctx()); } catch (e) { console.warn('cast failed', spec.id, e); } }
-    } else if (!down) {
-      _castHeld.delete(code);
-    }
-  }
-}
-
-// ---- player actions: gather (G) from a nearby node, drink a potion (H) ------
-const GATHER = { field: 'food', forest: 'wood', mine: 'ore', meadow: 'herb' };
-const GATHER_TAGS = {
-  food: ['FARMING', 'ENDURANCE'], wood: ['WOODCUT', 'ENDURANCE'],
-  ore: ['MINING', 'ENDURANCE'], herb: ['FORAGE', 'ENDURANCE'],
-};
-let _gatherCd = 0;
-function pollGather(dt) {
-  _gatherCd -= dt;
-  if (_gatherCd > 0 || !input.has('KeyG') || !game.sim || !game.sim.player || !game.world) return;
-  const p = game.sim.player;
-  let best = null, bd = 9;             // gather within ~3m of a resource node
-  for (const poi of game.world.pois) {
-    const c = GATHER[poi.kind]; if (!c) continue;
-    const d = p.pos.distanceToSquared(poi.pos);
-    if (d < bd) { bd = d; best = c; }
-  }
-  if (!best) return;
-  p.inventory[best] = (p.inventory[best] || 0) + 1;
-  bus.emit(makeEvent({ actorId: p.id, verb: 'gather', tags: GATHER_TAGS[best], magnitude: 1, t: game.sim.time }));
-  p._tradeFlash = 0.5;                 // reuse the label flash as pickup feedback
-  _gatherCd = 0.6;
-}
-function drinkPotion() {
-  const p = game.sim && game.sim.player; if (!p) return;
-  if ((p.inventory.potion || 0) >= 1 && p.fighter.health < TUNE.maxHealth) {
-    p.inventory.potion -= 1;
-    p.fighter.health = Math.min(TUNE.maxHealth, p.fighter.health + 45);   // HP bar shows it
-  }
-}
-
-// ---- DOM -------------------------------------------------------------------
-const overlay = document.getElementById('overlay');
-const hint = document.getElementById('hint');
-const legendEl = document.getElementById('factions');
-const hpFill = document.getElementById('hpFill');   // player health (combat is live now)
-
-// red hurt flash when the player takes a hit
-const hurt = document.createElement('div');
-Object.assign(hurt.style, {
-  position: 'fixed', inset: '0', opacity: '0', pointerEvents: 'none', transition: 'opacity .35s',
-  zIndex: '5', background: 'radial-gradient(ellipse at center, rgba(180,0,0,0) 45%, rgba(180,0,0,.55) 100%)',
+// ---- HUD (panels + readouts) -----------------------------------------------
+const hud = new Hud({
+  camera,
+  getSim: () => game.sim,
+  getDungeonMgr: () => dungeonMgr,
 });
-document.body.appendChild(hurt);
-function flashHurt() { hurt.style.opacity = '1'; setTimeout(() => (hurt.style.opacity = '0'), 60); }
-
-// ---- debug readout + crash surface (temporary, to diagnose the freeze) -----
-const dbg = document.createElement('div');
-Object.assign(dbg.style, {
-  position: 'fixed', left: '8px', bottom: '8px', zIndex: '9', font: '11px monospace',
-  color: '#9fe', background: 'rgba(0,0,0,.6)', padding: '4px 8px', borderRadius: '4px',
-  whiteSpace: 'pre', pointerEvents: 'none', maxWidth: '90vw',
-});
-document.body.appendChild(dbg);
-let _frames = 0, _crashed = false;
-
-// ---- player readout: gold · class · carried items --------------------------
-const pstats = document.createElement('div');
-Object.assign(pstats.style, {
-  position: 'fixed', left: '50%', bottom: '10px', transform: 'translateX(-50%)', zIndex: '6',
-  font: '12px monospace', color: '#e8e2cf', background: 'rgba(0,0,0,.45)', padding: '5px 12px',
-  borderRadius: '6px', pointerEvents: 'none', whiteSpace: 'nowrap',
-});
-document.body.appendChild(pstats);
-function updatePlayerStats() {
-  const p = game.sim && game.sim.player;
-  if (!p) { pstats.textContent = ''; return; }
-  const inv = COMMODITIES.map((c) => {
-    const n = c === 'food' ? Math.floor(p.inventory[c] || 0) : Math.floor(p.inventory[c] || 0);
-    return n > 0 ? `${n} ${c}` : null;
-  }).filter(Boolean).join('  ');
-  const cls = p.progression && p.progression.primaryClass && p.progression.primaryClass();
-  pstats.textContent = `${Math.round(p.gold)}g  ·  ${cls ? cls.name + ' Lv' + cls.level : 'no class yet'}  ·  ${inv || 'empty pack'}`;
-}
-
-(function professionLegend() {
-  const rows = Object.values(PROFESSIONS).map((p) =>
-    `<div class="f"><span class="dot" style="background:${hex(p.color)}"></span>${p.label}</div>`).join('');
-  legendEl.innerHTML = rows + `<div id="ticker"></div>`;
-})();
-const tickerEl = document.getElementById('ticker');
-
-// collapsible tabs: click a header, or press its number key
-function toggleTab(n) {
-  const t = document.querySelector(`#tabs .tab[data-tab="${n}"]`);
-  if (t) t.classList.toggle('collapsed');
-}
-document.querySelectorAll('#tabs .tab-head').forEach((h, i) =>
-  h.addEventListener('click', () => h.parentElement.classList.toggle('collapsed')));
 
 // ---- game state ------------------------------------------------------------
 const game = { state: 'start', world: null, sim: null, player: null, playerFighter: null };
 
+// ---- player input ----------------------------------------------------------
+const controls = new PlayerControls({
+  game, input, camera, commander, hud,
+  getDungeonMgr: () => dungeonMgr,
+  togglePause: () => togglePause(),
+  restart: () => restart(),
+});
+controls.installKeys();
+
 function buildWorld() {
+  if (dungeonMgr) { dungeonMgr.dispose(); dungeonMgr = null; }
   if (game.sim) { game.sim.dispose?.(); for (const a of game.sim.agents) a.fighter.dispose(); }
   if (game.world) game.world.dispose();
 
@@ -195,12 +53,18 @@ function buildWorld() {
   game.sim = new Simulation(scene, game.world);
   game.sim.spawn();
 
+  // dungeons: scatter cave-mouth portals in the wilds and expose the manager to
+  // the quest board so it can mint "delve" radiant quests against real dungeons.
+  dungeonMgr = new DungeonManager(scene, game.sim);
+  dungeonMgr.placeEntrances();
+  game.sim.dungeons = dungeonMgr;
+
   const pf = new Fighter('knight', { isPlayer: true });
   pf.root.position.set(0, 0, 8);
   scene.add(pf.root);
   game.playerFighter = pf;
-  game.player = new Player(pf, orbitCam, input);
   const playerAgent = game.sim.addPlayer(pf);
+  commander.attach(playerAgent, game.sim);   // you drive this one body, point-and-click
   // Starter loadout so keys 1-4 have something to cast. Mix a melee spec (arms
   // the next swing), a projectile, a self spec and an AoE so every cast path is
   // exercised. Guarded: missing catalog ids are skipped.
@@ -208,15 +72,15 @@ function buildWorld() {
     if (ABILITY_CATALOG[id]) playerAgent.grantAbility(ABILITY_CATALOG[id]);
   }
 
-  inspector.setAgents(game.sim.agents);
-  inspector.sim = game.sim;   // wire reputation 'thinks of you' panel
-  mind.setAgents(game.sim.agents);
-  questLog.setBoard(game.sim.quests);
-  questLog.setPlayer(game.sim.player);   // the Agent (board ticks against sim.player)
-  orbitCam.yaw = 0; orbitCam.pitch = 0.25;
+  hud.setWorld(game.sim, controls.useItem);
+  // overhead follow camera (Stoneshard/Qud-ish angle), no mouse-look
+  orbitCam.yaw = 0; orbitCam.pitch = 0.88; orbitCam.distance = 11; orbitCam.height = 1.1;
 }
 
-// ---- overlay ---------------------------------------------------------------
+// ---- DOM (overlay / hint) --------------------------------------------------
+const overlay = document.getElementById('overlay');
+const hint = document.getElementById('hint');
+
 function setOverlay(html) { overlay.innerHTML = html; }
 function showOverlay() { overlay.classList.remove('hidden'); }
 function hideOverlay() { overlay.classList.add('hidden'); }
@@ -225,62 +89,43 @@ function restart() {
   buildWorld();
   hideOverlay();
   game.state = 'playing';
-  renderer.domElement.requestPointerLock();
 }
 
-overlay.addEventListener('click', () => { hideOverlay(); renderer.domElement.requestPointerLock(); });
-window.addEventListener('keydown', (e) => {
-  if (e.code === 'KeyE' && game.state === 'playing') { e.preventDefault(); tryOpenDialogue(); }
-  if (e.code === 'KeyR') restart();
-  if (e.code === 'KeyQ') questLog.toggle();
-  if (e.code === 'KeyH' && game.state === 'playing') drinkPotion();
-  // UI tabs toggle on letter keys (C/T/I/M) so they never clash with the 1-4
-  // ability hotbar, and work in any state — including mid-play.
-  if (e.code === 'KeyC') toggleTab(1);
-  if (e.code === 'KeyT') toggleTab(2);
-  if (e.code === 'KeyI') toggleTab(3);
-  if (e.code === 'KeyM') toggleTab(4);
-});
-
-input.onLockChange = (locked) => {
-  if (game.state === 'dialogue') return;   // dialogue manages its own lock/unlock
-  if (locked) {
-    hideOverlay(); hint.classList.add('hidden');
-    if (game.state === 'start' || game.state === 'paused') game.state = 'playing';
-  } else if (game.state === 'playing') {
+// pause/resume (replaces the old pointer-lock-driven pause)
+function togglePause() {
+  if (game.state === 'playing') {
     game.state = 'paused';
-    setOverlay(`<h1>PAUSED</h1><p><span class="key">Click</span> to resume.</p>`);
+    setOverlay(`<h1>PAUSED</h1><p><span class="key">Esc</span> or <span class="key">click</span> to resume.</p>`);
     showOverlay();
+  } else if (game.state === 'paused' || game.state === 'start') {
+    hideOverlay(); hint.classList.add('hidden');
+    game.state = 'playing';
   }
-};
-
-// ---- market price ticker ---------------------------------------------------
-function updateTicker() {
-  if (!game.sim) return;
-  tickerEl.innerHTML = COMMODITIES.map((c) => {
-    const p = game.sim.avgPrice(c), base = BASE_PRICE[c];
-    const col = p > base * 1.08 ? '#e0894e' : p < base * 0.92 ? '#7fd18a' : '#cbd5e1';
-    return `<span style="color:${col}">${c} ${p.toFixed(1)}g</span>`;
-  }).join(' · ');
 }
+
+overlay.addEventListener('click', () => { if (game.state !== 'dialogue') togglePause(); });
 
 // ---- main loop -------------------------------------------------------------
 const clock = new THREE.Clock();
+let _frames = 0, _crashed = false;
 
 function frame() {
   if (_crashed) return;
   _frames++;
   const dt = Math.min(clock.getDelta(), 0.05);
   let stage = 'start';
+  const stageFn = (name) => { stage = name; };
   try {
-    const look = input.consumeLook();
-    orbitCam.applyLook(look.dx, look.dy);
+    commander.enabled = (game.state === 'playing');
 
     if (game.state === 'playing') {
-      stage = 'player.update'; game.player.update(dt);
+      stage = 'commander';     commander.update(dt, game.sim._ctx());
+      // keep the player inside dungeon walls (overrides the arena clamp while below)
+      stage = 'dungeon.collide'; if (dungeonMgr && dungeonMgr.active) dungeonMgr.collidePlayer(game.playerFighter.root.position);
       stage = 'sim.update';    game.sim.update(dt);
-      stage = 'castInput';     pollCastKeys();
-      stage = 'gather';        pollGather(dt);
+      stage = 'dungeon.update'; if (dungeonMgr) dungeonMgr.update(dt);
+      stage = 'castInput';     controls.pollCastKeys();
+      stage = 'gather';        controls.pollGather(dt);
     } else if (game.state === 'dialogue') {
       // freeze the player but keep the social sim alive behind the modal
       stage = 'sim.update';    game.sim.update(dt);
@@ -292,29 +137,30 @@ function frame() {
 
     if (game.state === 'playing') {
       stage = 'resolveCombat';
-      const events = resolveCombat(fighters, game.sim.isHostile.bind(game.sim), game.sim._ctx());
+      // hostility gate: NPCs use ground-truth isHostile; the player's swings are
+      // allowed to land only on the body they were ordered to attack, so peaceful
+      // villagers aren't friendly-fire pass-through once you choose a victim.
+      const isHostile = (atk, tgt) => atk === game.playerFighter
+        ? commander.targetFighter === tgt
+        : game.sim.isHostile(atk, tgt);
+      const events = resolveCombat(fighters, isHostile, game.sim._ctx());
       if (events.length) {
         stage = 'onCombatEvents'; game.sim.onCombatEvents(events);
-        for (const ev of events) if (ev.target === game.playerFighter && ev.type !== 'blocked') flashHurt();
+        for (const ev of events) if (ev.target === game.playerFighter && ev.type !== 'blocked') hud.flashHurt();
       }
-      if (hpFill) hpFill.style.width = `${Math.max(0, (game.playerFighter.health / TUNE.maxHealth) * 100)}%`;
+      if (hud.hpFill) hud.hpFill.style.width = `${Math.max(0, (game.playerFighter.health / TUNE.maxHealth) * 100)}%`;
     }
 
-    stage = 'inspector';  inspector.update();
-    stage = 'mind';       mind.update();
-    stage = 'questLog';   questLog.render();
-    stage = 'ticker';     updateTicker();
-    stage = 'pstats';     updatePlayerStats();
+    hud.render(game, commander.mouseNDC, stageFn);
     if (game.playerFighter) { stage = 'camera'; orbitCam.update(game.playerFighter.root.position, dt); }
     stage = 'render';     renderer.render(scene, camera);
 
     const n = game.sim ? game.sim.agents.length : 0;
-    dbg.textContent = `state=${game.state}  t=${game.sim ? game.sim.time.toFixed(1) : '-'}  frame=${_frames}  agents=${n}`;
+    hud.setDebug(`state=${game.state}  t=${game.sim ? game.sim.time.toFixed(1) : '-'}  frame=${_frames}  agents=${n}`);
   } catch (err) {
     _crashed = true;
     console.error('FRAME CRASH at stage:', stage, err);
-    dbg.style.color = '#f88';
-    dbg.textContent = `CRASH @ ${stage}\n${err && err.message}\n${(err && err.stack || '').split('\n').slice(1, 4).join('\n')}`;
+    hud.setCrash(`CRASH @ ${stage}\n${err && err.message}\n${(err && err.stack || '').split('\n').slice(1, 4).join('\n')}`);
     setOverlay(`<h1 class="lose">Runtime error</h1><p>stage: <b>${stage}</b></p><p>${err && err.message}</p><p style="font-size:11px;opacity:.7">${(err && err.stack || '').split('\n').slice(1, 5).join('<br>')}</p>`);
     showOverlay();
   }
@@ -328,10 +174,11 @@ addEventListener('resize', () => {
 
 // ---- boot ------------------------------------------------------------------
 const INTRO = `<h1>MARKET TOWN</h1>
-  <p>Farmers, woodcutters, miners and a smith produce goods, eat, and trade at
-  the market using <i>price beliefs</i> that shift with supply, demand and gossip.</p>
-  <p>Watch prices move in the ticker; look at anyone and press <span class="key">F</span> to read their economic mind.</p>
-  <p style="margin-top:16px;"><span class="key">Click</span> to enter.</p>`;
+  <p>You guide a single adventurer through a living town of farmers, miners and a
+  smith who produce, trade and gossip on their own <i>beliefs</i>.</p>
+  <p><b>Left-click</b> to move anywhere · <b>right-click</b> to attack a target.
+  Hover anyone to read their mind; <span class="key">E</span> to talk.</p>
+  <p style="margin-top:16px;"><span class="key">Click</span> to begin.</p>`;
 
 setOverlay(`<h1>MARKET TOWN</h1><p>Loading…</p>`);
 preloadCharacters().then(() => {

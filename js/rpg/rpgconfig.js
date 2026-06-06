@@ -17,8 +17,11 @@ export const RPG = {
 
   // --- XP / leveling --------------------------------------------------------
   xpScoreScalar: 0.5,        // xp_gain = classMatchScore * this * significance
-  xpNeedBase: 50,            // 50 * exp(0.1*level) * (1 + (total/100)^2)
-  xpNeedExp: 0.1,
+  xpNeedBase: 30,            // 30 * exp(0.08*level) * (1 + (total/100)^2). Flattened
+  xpNeedExp: 0.08,           //   from 50/0.1 so a storied agent's handful of
+                             //   narrative beats actually CONVERTS to levels
+                             //   (15-30), while a quiet labourer's tiny routine
+                             //   income still plateaus ~5-8 (headroom + spread).
   routeTopK: 2,              // route an event's XP to its best-matching K classes
 
   // --- significance multiplier (the optional novelty/risk/grind term) -------
@@ -30,6 +33,30 @@ export const RPG = {
   sigGrindHalfLifeSec: 30,   // identical deeds within this window decay toward..
   sigGrindFloor: 0.25,       // ..this floor (repetition is worth less)
   sigCap: 4.0,               // clamp the combined multiplier
+
+  // --- narrative beats (the GRIND-IMMUNE xp channel) ------------------------
+  // The "what a character has LIVED" axis. Routine produce/buy/sell stays the
+  // low, plateauing income above; the dramatic beats episodic memory already
+  // records (a monster slain, a goal-stack closure, a windfall, a witnessed
+  // death, a brush with death) pay SIZABLE xp that bypasses the significance
+  // grind floor entirely. The award is `narrativeXpScalar * salience` so the
+  // memory salience model is the single "how notable" signal — a storied life
+  // (kills/quests/vendettas) climbs; a quiet labourer's life does not.
+  narrativeXpScalar: 165,    // xp = this * episode-salience (salience in 0..1)
+  narrativeGoalBonus: {      // per goal-kind closure multiplier on the scalar
+    avenge: 1.6, defeat: 1.4, delve: 1.5, seek_fortune: 1.0,
+    repay: 0.8, grieve: 0.7,
+  },
+  narrativeWindfallMult: 0.55, // windfalls are FREQUENT for a merchant — discount
+                               //   them so a fat purse doesn't out-story genuine
+                               //   danger (kills/near-death) or goal closure. The
+                               //   biggest beats remain the dramatic ones.
+  nearDeathHpFrac: 0.3,      // surviving a blow at/below this HP fraction is a beat
+  nearDeathSalience: 0.5,    // salience of a near-death survival episode
+  nearDeathCooldownSec: 45,  // min sim-s between near-death beats (a long fight is
+                             //   ONE brush with death, not a torrent of them)
+  narrativeGoalMinAgeSec: 6, // a goal must be PURSUED this long before its closure
+                             //   pays xp (an instantly-resatisfied re-derivation =0)
 
   // --- ability tier milestones ----------------------------------------------
   // a class grants its catalog ability when it crosses one of these levels;

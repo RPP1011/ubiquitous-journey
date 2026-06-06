@@ -6,6 +6,7 @@
 // planted rumours) so a conversation actually changes the social sim.
 
 import { SIM, COMMODITIES, FACTIONS, SOURCE } from '../sim/simconfig.js';
+import { provenanceLabel } from '../sim/beliefs.js';
 
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -59,6 +60,82 @@ export class DialogueSession {
     if (s < -0.35) return `${name} scowls. "What do you want?"`;
     if (s < -0.1) return `${name} regards you coolly.`;
     return `${name} nods. "Yes?"`;
+  }
+
+  // --- LLM persona surface (OPTIONAL; see js/ai/llm.js) -----------------------
+  // Build a plain, dependency-free description of THIS NPC for the language model
+  // to speak as — drawn from the NPC's beliefs + state, never omniscient world
+  // truth (the epistemic split). Returns a plain object the llm client consumes.
+  // Pure read; mutates nothing. Used only when the LLM feature flag is ON; when
+  // OFF this is never called and the templated greeting() above is authoritative.
+  llmPersona(situation) {
+    const npc = this.npc;
+    const s = this.standing();
+    const P = npc.personality || {};
+
+    // disposition toward the player, as a phrase (from the NPC's belief)
+    const b = this._beliefOfPlayer();
+    let aboutPlayer;
+    if (npc.mood && npc.mood.fear > 0.3) aboutPlayer = 'wary and a little afraid of them';
+    else if (b && b.hostile) aboutPlayer = 'you consider them an enemy';
+    else if (s > 0.35) aboutPlayer = 'you like and trust them';
+    else if (s < -0.35) aboutPlayer = 'you dislike and distrust them';
+    else if (s < -0.1) aboutPlayer = 'you regard them coolly, unsure';
+    else aboutPlayer = 'a stranger you have no strong feelings about';
+    if (b && b.suspicion > 0.4) aboutPlayer += ', and something about them seems off';
+
+    // top rumour about a third party, in the NPC's own (possibly wrong) words
+    const rum = this._topRumour();
+    let rumour = null;
+    if (rum) {
+      const subj = this._subjectName(rum.subjectId);
+      let claim;
+      if (rum.hostile) claim = `${subj} is bad business, best avoided`;
+      else if (rum.standing < -0.1) claim = `${subj} is not much to be trusted`;
+      else if (rum.standing > 0.1) claim = `${subj} is solid, good people`;
+      else claim = `${subj} keeps to themselves`;
+      // hedge by provenance: a thing seen first-hand is stated plainly; a thing only
+      // HEARD is repeated as the garbled hearsay it is ("word has it, thirdhand, …").
+      rumour = (rum.hops || 0) >= 1 ? `word has it — ${provenanceLabel(rum)} — that ${claim}` : claim;
+    }
+
+    // strongest unmet need, as a phrase
+    const n = npc.needs || {};
+    let needs = null;
+    if (n.hunger != null && n.hunger < 0.4) needs = 'you are hungry';
+    else if (n.energy != null && n.energy < 0.4) needs = 'you are tired';
+    else if (n.social != null && n.social < 0.4) needs = 'you crave a bit of company';
+
+    // mood phrase
+    const m = npc.mood || {};
+    let mood = 'even-tempered';
+    if (m.anger > 0.4) mood = 'irritated';
+    else if (m.fear > 0.3) mood = 'uneasy';
+    else if (s > 0.35) mood = 'friendly';
+
+    // personality traits, named from the dominant axes
+    const traits = [];
+    if (P.ambition > 0.6) traits.push('ambitious'); else if (P.ambition < 0.3) traits.push('content');
+    if (P.risk_tolerance > 0.6) traits.push('bold'); else if (P.risk_tolerance < 0.3) traits.push('cautious');
+    if (P.social_drive > 0.6) traits.push('chatty'); else if (P.social_drive < 0.3) traits.push('reserved');
+    if (P.curiosity > 0.6) traits.push('curious');
+
+    // current trade want
+    const want = this._wants();
+
+    return {
+      name: npc.name,
+      profession: npc.profession || null,
+      faction: npc.faction || null,
+      traits: traits.length ? traits.join(', ') : null,
+      mood,
+      needs,
+      gold: Math.round(npc.gold || 0),
+      want: want ? `${want.qty > 1 ? want.qty + ' ' : 'some '}${want.commodity}` : null,
+      aboutPlayer,
+      rumour,
+      prompt: situation || null,
+    };
   }
 
   // --- the NPC's loudest rumour about SOMEONE ELSE (theory-of-mind surface) ---
@@ -120,11 +197,21 @@ export class DialogueSession {
       opts.push({ id: 'take_offer', label: o.label || 'About that offer…', kind: 'offer' });
     }
 
-    // 4) social verbs — skill checks against the NPC's disposition
+    // 4) party: recruit a willing NPC, or dismiss an existing companion
+    const party = this.sim && this.sim.party;
+    if (party) {
+      if (party.has(this.npc)) {
+        opts.push({ id: 'dismiss', label: '[Part ways]', kind: 'dismiss' });
+      } else if (party.canRecruit(this.npc)) {
+        opts.push({ id: 'recruit', label: '[Join my party]', kind: 'recruit' });
+      }
+    }
+
+    // 5) social verbs — skill checks against the NPC's disposition
     opts.push({ id: 'persuade',  label: '[Persuade]',  kind: 'persuade' });
     opts.push({ id: 'intimidate', label: '[Intimidate]', kind: 'intimidate' });
 
-    // 5) always leave
+    // 6) always leave
     opts.push({ id: 'leave', label: 'Leave', kind: 'leave' });
 
     this._opts = opts;
@@ -139,6 +226,8 @@ export class DialogueSession {
       case 'gossip':     return this._doRumour();
       case 'trade':      return this._doNeed(opt._want);
       case 'offer':      return this._doOffer();
+      case 'recruit':    return this._doRecruit();
+      case 'dismiss':    return this._doDismiss();
       case 'persuade':   return this._doCheck('persuade');
       case 'intimidate': return this._doCheck('intimidate');
       case 'leave':
@@ -146,6 +235,20 @@ export class DialogueSession {
         this.over = true;
         return (this.lastResult = { text: `${this.npc.name} turns back to their work.`, tone: 'neutral' });
     }
+  }
+
+  _doRecruit() {
+    const ok = this.sim && this.sim.party && this.sim.party.recruit(this.npc);
+    this.over = true;
+    return (this.lastResult = ok
+      ? { text: `${this.npc.name} grins and falls in beside you. "Lead on, then."`, tone: 'good' }
+      : { text: `${this.npc.name} shakes their head. "Not the life for me."`, tone: 'bad' });
+  }
+
+  _doDismiss() {
+    if (this.sim && this.sim.party) this.sim.party.dismiss(this.npc);
+    this.over = true;
+    return (this.lastResult = { text: `${this.npc.name} nods. "Fair enough. Watch yourself out there."`, tone: 'neutral' });
   }
 
   _doRumour() {

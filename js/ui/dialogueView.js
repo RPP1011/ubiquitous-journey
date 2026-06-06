@@ -4,6 +4,14 @@
 // number keys 1..9 select, Esc/Q leave. The greeting is tinted by how the NPC
 // feels about the player (standing). Sim keeps ticking behind the modal; the
 // integrator freezes player control by setting game.state = 'dialogue'.
+//
+// OPTIONAL LLM flavour: when the (default-OFF) LLM feature is enabled and the
+// vLLM server is reachable, the templated greeting/response is shown IMMEDIATELY
+// and then transparently swapped for a model-written line if one arrives in time
+// (~3s budget). If the feature is off, the server is down, or the call fails,
+// nothing here changes and the modal behaves exactly as before.
+
+import { generateLine, isEnabled } from '../ai/llm.js';
 
 const CSS = `
 #dlg { position: fixed; left: 50%; bottom: 7%; transform: translateX(-50%);
@@ -33,6 +41,8 @@ export class DialogueView {
     this.isOpen = false;
     this.session = null;
     this.onClose = null;        // optional callback when the modal closes
+    this._sayToken = 0;         // bumped each time the spoken line changes; lets a
+                                // slow async LLM line refuse to clobber a newer turn
     this._injectCss();
     this._build();
     this._key = (e) => this._onKey(e);
@@ -63,11 +73,33 @@ export class DialogueView {
   open(session) {
     this.session = session;
     this.isOpen = true;
+    this._situation = null;     // greeting uses the persona's default prompt
     this.el.classList.remove('hidden');
-    this._say(session.greeting(), 'neutral');
+    this._say(session.greeting(), 'neutral');   // templated line shows instantly
     this._renderHeader();
     this._renderOpts();
     window.addEventListener('keydown', this._key, true);
+    // OPTIONAL: try to upgrade the greeting to an LLM-written line (no-op if the
+    // feature is off / server unreachable — _say already showed the fallback).
+    this._tryLlmSwap('neutral');
+  }
+
+  // Fire-and-forget LLM call for the CURRENT spoken turn. Captures the say-token
+  // so a line that arrives after the player has moved on is discarded. Never
+  // throws (generateLine resolves null on any failure) and never blocks the UI.
+  _tryLlmSwap(tone) {
+    let on = false;
+    try { on = isEnabled(); } catch { on = false; }
+    if (!on || !this.session || typeof this.session.llmPersona !== 'function') return;
+    const token = this._sayToken;
+    let persona;
+    try { persona = this.session.llmPersona(this._situation); } catch { return; }
+    Promise.resolve(generateLine(persona)).then((line) => {
+      if (!line) return;                         // failure / junk -> keep fallback
+      if (!this.isOpen || this._sayToken !== token) return;  // stale turn
+      // swap text only; keep the tone/colour the fallback already established
+      this.sayEl.textContent = line;
+    }).catch(() => { /* never throws to caller */ });
   }
 
   close() {
@@ -80,6 +112,7 @@ export class DialogueView {
   }
 
   _say(text, tone) {
+    this._sayToken++;            // invalidate any in-flight LLM swap for the old line
     this.sayEl.textContent = text;
     this.sayEl.className = 'dlg-say' + (tone === 'good' ? ' good' : tone === 'bad' ? ' bad' : '');
   }
@@ -108,13 +141,32 @@ export class DialogueView {
     const res = this.session.choose(id);
     if (res) this._say(res.text, res.tone);
     if (this.session.over) {
-      // give the player a beat to read the parting line, then close
+      // give the player a beat to read the parting line, then close. (We don't
+      // LLM-swap a parting line — the modal is about to vanish.)
       this.optsEl.innerHTML = '';
       setTimeout(() => this.close(), 650);
       return;
     }
     this._renderHeader();
     this._renderOpts();
+    // OPTIONAL: upgrade the NPC's response to this choice with an LLM line. The
+    // chosen option id gives the model situational context to react to.
+    this._situation = this._situationFor(id, res);
+    this._tryLlmSwap(res ? res.tone : 'neutral');
+  }
+
+  // Map a chosen option id to a short situational instruction for the model, so
+  // its reply fits what the player just did. Falls back to a generic reply.
+  _situationFor(id, res) {
+    switch (id) {
+      case 'ask_rumour': return 'The traveller asks if you have heard any news lately. Share your latest rumour in your own words.';
+      case 'ask_need':   return 'The traveller asks what goods you need. Tell them, in character.';
+      case 'persuade':   return 'The traveller tries to persuade you. React in character to ' +
+        (res && res.tone === 'good' ? 'being won over' : 'an unconvincing argument') + '.';
+      case 'intimidate': return 'The traveller tries to intimidate you. React in character to ' +
+        (res && res.tone === 'good' ? 'being cowed' : 'a threat that does not scare you') + '.';
+      default:           return 'Respond to the traveller in one short line, in character.';
+    }
   }
 
   _onKey(e) {
