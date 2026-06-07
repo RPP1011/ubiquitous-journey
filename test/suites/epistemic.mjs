@@ -81,7 +81,7 @@ const FORBIDDEN_HANDLES = [
 // is only reachable through the roster handles (banned outright above), so banning the
 // handles transitively bans the foreign-pos read without false-positiving belief refs.
 // An explicit `// EPISTEMIC-OK:` marker on a line still skips this belt (self-documenting).
-const FOREIGN_DEREF = /\b(?:o|foe|target|leader|cp|to|victor|charge|culprit|subj|ben|realTarget|_real|enemy|threat)\.(?:alive|faction|inventory|gold|notoriety|priceBeliefs|needs)\b/;
+const FOREIGN_DEREF = /\b(?:o|foe|target|leader|cp|to|victor|charge|culprit|subj|ben|realTarget|_real|enemy|threat)\.(?:alive|faction|inventory|gold|stash|notoriety|priceBeliefs|needs)\b/;
 
 // --- comment / string stripper (state machine; guarded — never throws) ---------------
 // Replaces // line comments, /* */ blocks, and '...' / "..." / `...` strings with spaces

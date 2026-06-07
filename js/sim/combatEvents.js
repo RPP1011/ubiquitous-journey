@@ -161,7 +161,10 @@ export function onCombatEvents(sim, events) {
     // of a remedy. A real transfer, so the closed economy stays intact.
     if (ev.type === 'dead' && A.controlled && T.faction === MONSTER.faction) {
       sim.quests.bumpHunt(T.faction);
+      // PURSE ONLY: a slain agent's CARRIED coin transfers to the slayer. Its banked
+      // STASH stays put (at home — burglable while away in Phase 4, not lootable in death).
       A.gold += Math.max(0, Math.floor(T.gold || 0)); T.gold = 0;
+      // T.stash is deliberately untouched — it is not on the body.
       if (Math.random() < 0.5) A.inventory.potion = (A.inventory.potion || 0) + 1;
     }
     // vendetta credit: a PLAYER killing blow on ANY agent may settle a grieving

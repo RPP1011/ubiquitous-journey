@@ -21,6 +21,7 @@ import { executionTest } from './suites/execution.mjs';
 import { memoryGoalTest, npcCastTest } from './suites/memoryGoals.mjs';
 import { perceptTest } from './suites/percept.mjs';
 import { schemasTest } from './suites/schemas.mjs';
+import { wealthCheck } from './suites/wealth.mjs';
 import { hearsayTest } from './suites/hearsay.mjs';
 import { obituaryTest } from './suites/obituary.mjs';
 import { constructionTest } from './suites/construction.mjs';
@@ -48,6 +49,8 @@ perceptTest(ok, helpers);
 // Phase-2a reasoning framework (Step 1): IR + vocab evaluators + interpreter, in isolation.
 // Catalogue empty ⇒ behaviour unchanged; the substrate writes' output-stability is the soak.
 schemasTest(ok);
+// Phase-4 economy prerequisite: stored wealth (purse vs stash) — day-one inert.
+await wealthCheck(ok, helpers);
 hearsayTest(ok);
 obituaryTest(ok, helpers);
 // full deterministic scenario suite (docs/goal-system-tests.md): A1–A4, B1–B7,

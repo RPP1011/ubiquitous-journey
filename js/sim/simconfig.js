@@ -142,6 +142,21 @@ export const ECON = {
   caravanFleeRange: 6,        // a laden caravan presses on; only bolts when a raider is THIS close
 };
 
+// --- stored wealth (purse vs stash) — Phase-4 covert-economy prerequisite -----
+// Splits an agent's gold into a CARRIED PURSE (gold, lootable on death) and a
+// BANKED STASH (stash, burglable while away — the urchin's target in Ex. 5).
+// MIGRATION BASELINE-IDENTICAL: enabled=false ⇒ seedStash is a no-op, 100% stays
+// in the purse, stash=0 everywhere, and the 12k soak / econstats are byte-stable.
+// Flip enabled=true in Phase 4 to make merchants bank a fraction of their wealth.
+export const WEALTH = {
+  enabled: false,             // day-one OFF (SCARECROW pattern) — keeps the soak byte-stable
+  // fraction of an agent's INITIAL gold that is moved to the stash at spawn,
+  // keyed by what it produces (_trade) — a settled merchant banks more, a raw
+  // producer keeps it liquid. Read by trade.seedStash; only consulted when enabled.
+  stashRatio: { tool: 0.6, potion: 0.5, default: 0.3 },
+  minPurse: 8,                // never bank below this — an agent must keep coin to trade
+};
+
 // MULTIPLE TOWNS (open world): the world holds several dense town cores with
 // wilderness + trade roads between them, rather than one town spread thin (a
 // bigger map with the SAME townsfolk thins the social drama — measured; more

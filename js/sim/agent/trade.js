@@ -6,8 +6,28 @@
 // verbatim bodies of the old Agent methods. No cycles — imports config + the
 // rpg event bus only.
 
-import { GOODS, COMMODITIES, ECON } from '../simconfig.js';
+import { GOODS, COMMODITIES, ECON, WEALTH } from '../simconfig.js';
 import { bus, makeEvent } from '../../rpg/events.js';
+
+// Deterministically move a fraction of a freshly-spawned agent's PURSE into its
+// STASH per the WEALTH config. Day-one baseline-identical: WEALTH.enabled is false,
+// so this returns immediately and stash stays 0 (the soak is byte-stable). When
+// enabled, it is a pure TRANSFER purse→stash (conserves a.gold+a.stash — no mint).
+// Guarded for professionless agents: monsters/player have profession:null and no
+// _trade, so they fall to the default ratio but, being given no startGold split
+// while disabled, keep their whole purse. Never throws.
+export function seedStash(a) {
+  try {
+    if (!WEALTH || !WEALTH.enabled) return;          // OFF ⇒ no-op (byte-stable migration)
+    if (!a || a.controlled || a.faction === 'monster') return;  // player/monsters: all purse
+    const key = a._trade || a.profession || 'default';
+    const ratio = (WEALTH.stashRatio && (WEALTH.stashRatio[key] ?? WEALTH.stashRatio.default)) || 0;
+    const bank = Math.max(0, Math.floor(((a.gold || 0) - (WEALTH.minPurse || 0)) * ratio));
+    if (bank <= 0) return;
+    a.gold -= bank;                                  // TRANSFER, not a mint
+    a.stash = (a.stash || 0) + bank;
+  } catch { /* never throw on construct */ }
+}
 
 // --- price beliefs (the economic ToM) ---------------------------------------
 export function learnPrice(a, c, price, w) {

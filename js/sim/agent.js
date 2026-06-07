@@ -8,7 +8,7 @@ import { nearestLandmark } from '../arena.js';
 import { BeliefStore } from './beliefs.js';
 import {
   PROFESSIONS, COMMODITIES, BASE_PRICE, ECON,
-  SIM, COMFORT, BUILD, NOVELTY, SCHEMA,
+  SIM, COMFORT, BUILD, NOVELTY, SCHEMA, WEALTH,
   factionHostile,
 } from './simconfig.js';
 import { Progression } from '../rpg/progression.js';
@@ -66,7 +66,13 @@ export class Agent {
     // economy
     this.inventory = {};
     for (const c of COMMODITIES) this.inventory[c] = 0;
-    this.gold = ECON.startGold;
+    this.gold = ECON.startGold;     // PURSE: carried wealth — lootable on death (unchanged field)
+    // STORED WEALTH (Phase-4 prerequisite). stash = banked gold at the agent's home,
+    // NOT carried, NOT lootable on death (burglable while away — Phase 4). Day-one
+    // baseline-identical: WEALTH.enabled is false, so seedStash leaves it 0 everywhere
+    // and the soak/econstats are byte-stable. Guarded everywhere (professionless
+    // agents — player/monsters — keep stash 0 and never read it on the tick).
+    this.stash = 0;
     this.toolWear = 0;
     this._smithTimer = 0;
     this.priceBeliefs = {};
@@ -95,6 +101,7 @@ export class Agent {
       if (prof.inputs) for (const c in prof.inputs) this.inventory[c] = 2;
       this._trade = prof.output;
     }
+    trade.seedStash(this);          // deterministic purse→stash split per WEALTH config (no-op while disabled)
 
     // RPG: class/level/XP brain — built for EVERY agent (townsfolk, monsters,
     // the player). Progression is profession-agnostic: it only ever sees the
@@ -183,6 +190,11 @@ export class Agent {
   homeBelief() {
     return this.homeBeliefId != null ? this.beliefs.get(this.homeBeliefId) : null;
   }
+
+  // Total liquid wealth I own (carried purse + banked stash) — for conservation
+  // summers and UI only. Cognition never reads this (it acts on the purse it can
+  // spend). Own-state; guarded (stash is always 0+ on every agent from the ctor).
+  totalWealth() { return (this.gold || 0) + (this.stash || 0); }
 
   // A townsperson's colour now emerges from WHAT IT DOES, not a birthright trade:
   // its currently-chosen good's colour, else the dominant deed-tag's good colour,

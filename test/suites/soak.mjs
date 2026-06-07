@@ -38,7 +38,7 @@ export async function soak(ok, { makeFighter, stubScene }) {
   ]);
   for (let k = 0; k < 5; k++) await Promise.resolve();
 
-  const sumGold = () => sim.agents.reduce((s, a) => s + a.gold, 0);
+  const sumGold = () => sim.agents.reduce((s, a) => s + a.gold + (a.stash || 0), 0);
   const goldStart = sumGold();
   const npcCount = sim.agents.filter((a) => !a.controlled).length;
   ok(npcCount > 0, `spawn: ${npcCount} NPCs + player`);
@@ -274,7 +274,7 @@ async function lineageBirthCheck(ok, { makeFighter, stubScene }) {
   // a unique tag only the parents carry — its presence on a child proves descent.
   A.progression.behavior_profile.LINEAGE_MARK_A = 8;
   B.progression.behavior_profile.LINEAGE_MARK_B = 8;
-  const goldStart = sim.agents.reduce((s, a) => s + a.gold, 0);
+  const goldStart = sim.agents.reduce((s, a) => s + a.gold + (a.stash || 0), 0);
 
   let stage = 'init';
   const dt = 1 / 60;
@@ -317,7 +317,7 @@ async function lineageBirthCheck(ok, { makeFighter, stubScene }) {
   ok(inherited, 'lineage: a child inherited a parent behaviour tag');
 
   // GOLD CONSERVED — a dowry is MOVED from a parent to the child, never minted.
-  const goldEnd = sim.agents.reduce((s, a) => s + a.gold, 0);
+  const goldEnd = sim.agents.reduce((s, a) => s + a.gold + (a.stash || 0), 0);
   ok(Math.abs(goldEnd - goldStart) < 1e-6,
     `lineage: gold conserved across birth (${goldStart.toFixed(2)} -> ${goldEnd.toFixed(2)})`);
   const child0 = children[0];
@@ -425,7 +425,7 @@ async function intriguePlantCheck(ok, { makeFighter, stubScene }) {
   sim.intrigue.stats.spies = 1;
 
   const trueFactionBefore = spy.faction;       // must be UNCHANGED by deception
-  const goldStart = sim.agents.reduce((s, a) => s + a.gold, 0);
+  const goldStart = sim.agents.reduce((s, a) => s + a.gold + (a.stash || 0), 0);
 
   let stage = 'init';
   const dt = 1 / 60;
@@ -492,7 +492,7 @@ async function intriguePlantCheck(ok, { makeFighter, stubScene }) {
   // 4. EPISTEMIC SPLIT — the spy's TRUE faction is untouched (only beliefs were
   // falsified), and GOLD is conserved (deception mints nothing).
   ok(spy.faction === trueFactionBefore, `intrigue: spy's TRUE faction unchanged by disguise (${spy.faction})`);
-  const goldEnd = sim.agents.reduce((s, a) => s + a.gold, 0);
+  const goldEnd = sim.agents.reduce((s, a) => s + a.gold + (a.stash || 0), 0);
   ok(Math.abs(goldEnd - goldStart) < 1e-6, `intrigue: gold conserved (${goldStart.toFixed(2)} -> ${goldEnd.toFixed(2)})`);
   console.log(`INFO  intrigue: planted feud — Observer believes Victim hostile (conf ${confBefore.toFixed(2)}->${confAfter.toFixed(2)}), spread to ${spread}`);
 }

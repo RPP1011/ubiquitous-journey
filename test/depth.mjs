@@ -48,7 +48,7 @@ async function main() {
   sim._depEconRows = allCommodityStats;
   const off = bus.on((ev) => { if (ev && ev.tags) probe.noteTags(ev.tags); });
 
-  const goldStart = sim.agents.reduce((s, a) => s + a.gold, 0);
+  const goldStart = sim.agents.reduce((s, a) => s + a.gold + (a.stash || 0), 0);
   const FRAMES = 12000, dt = 1 / 60, SAMPLE_EVERY = 60;   // ~200 sim-seconds, 1 Hz sampling
   let stage = 'init';
   try {
@@ -69,7 +69,7 @@ async function main() {
   }
   off();
 
-  const goldEnd = sim.agents.reduce((s, a) => s + a.gold, 0);
+  const goldEnd = sim.agents.reduce((s, a) => s + a.gold + (a.stash || 0), 0);
   const goldConserved = Math.abs(goldEnd - goldStart) < 1e-6;
 
   const rep = probe.report({ allCommodityStats, tradedCommodityCount, xpByVerb, goldConserved });
