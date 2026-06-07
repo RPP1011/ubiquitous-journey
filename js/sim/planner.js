@@ -19,6 +19,7 @@
 
 import { PROFESSIONS, COMMODITIES, ECON, SIM } from './simconfig.js';
 import { POI_KIND } from './world.js';
+import { STAGE, REASON } from './trace.js';
 
 // --- bounds (config-able) ---------------------------------------------------
 export const PLAN = {
@@ -521,6 +522,13 @@ export function plan(agent, goal, ctx) {
     const frontier = { n: 0 };
     const state = initState(agent);
     const r = solveAll(agent, ctx, atoms, 0, frontier, state);
+    // TRACE (write-only, never read back): the GOAP outcome for this goal — a found plan
+    // (with its step count) or a dead end (no feasible primitive chain → the agent replans
+    // or abandons). Own data (goal kind + plan length). note() is internally guarded, and
+    // agent.trace is always present (ctor) — so it is called directly, never read-guarded
+    // (a `.trace` read would trip the write-only scan rule). Bounded — planning is per-goal.
+    if (!r || !r.steps.length) agent.trace.note(STAGE.PLAN, REASON.PLAN_FAILED, { t: ctx.time, a: goal.kind || null });
+    else agent.trace.note(STAGE.PLAN, REASON.PLAN_FOUND, { t: ctx.time, a: r.steps.length, b: goal.kind || null });
     if (!r || !r.steps.length) return null;
     return { steps: r.steps, cost: r.cost };
   } catch (_e) {

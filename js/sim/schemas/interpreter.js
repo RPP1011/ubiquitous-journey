@@ -14,6 +14,7 @@
 
 import { SCHEMA } from '../simconfig.js';
 import { evalPred, evalInfer, evalRespond } from './vocab.js';
+import { STAGE, REASON } from '../trace.js';
 
 // Direct-goal responses (set agent.goal AND stamp a min-dwell lock so decide honours them
 // across a one-tick belief flicker). The flagship disposition kinds (hide/shadow/avoid) are
@@ -89,6 +90,10 @@ function fireOne(s, env, now, tickState) {
 
   // PASSED — record the fire stamp (suppresses re-firing for ttl), then act.
   env.agent._schemaFired[key] = now;
+  // TRACE (write-only, never read back): a schema FIRED — the "why I reasoned this" beat.
+  // Only actual fires are logged (bounded; a `when`-false on every other schema/tick would
+  // flood the ring). `a` = schema id, subject = the believed subject it fired about. Own data.
+  env.agent.trace.note(STAGE.SCHEMA, REASON.SCHEMA_FIRED, { t: now, a: s.id, subjectId: env.subjectId });
   if (s.infer) evalInfer(s.infer, env);
   if (s.respond) applyRespond(s, env, now, tickState);
   return true;

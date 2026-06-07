@@ -11,6 +11,7 @@ import { SIM, WEIGHT, ECON, COMMODITIES, GROUP_TYPES, LEGEND, SOCIAL, COMFORT, N
 import { updateAmbition, ambitionFavor, ambitionWantsFight, deriveGoals, pruneGoals } from '../motivation.js';
 import { chooseOccupation, laborValue } from './occupation.js';
 import { qualifyHome, isUnhoused } from '../construction.js';
+import { STAGE, REASON } from '../trace.js';
 
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
 
@@ -347,6 +348,11 @@ export function decide(a, ctx) {
     if (eff > bestEff) best = c;
   }
   a.goal = best || { kind: a.canWork ? 'work' : 'wander' };
+  // TRACE (write-only, never read back): the everyday utility-arbitration winner + its score —
+  // the headline "why this behaviour and not another" beat. (The override locks above —
+  // duel/avenger/butcher's-shadow/schema flee — commit before this scorer and return; the
+  // schema-driven ones are already covered by SCHEMA_FIRED.) Own scores only; note() guarded.
+  a.trace.note(STAGE.DECIDE, REASON.BEHAVIOUR_WON, { t: ctx.time, a: a.goal.kind, b: best ? +best.score.toFixed(2) : null });
 
   // emergent occupation: when we settle on WORK, decide WHAT to make this stint
   // (belief-priced, proximity- and ambition-weighted, opportunity-gated). Stored
