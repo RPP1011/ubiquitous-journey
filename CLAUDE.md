@@ -99,6 +99,14 @@ reputation); `Agent._nearestHostile`/`considerHostile` is the belief-time one. C
 back into beliefs via `Simulation.onCombatEvents` (victim + witnesses learn the aggressor).
 
 Beliefs live in `js/sim/beliefs.js` (`BeliefStore` = the spec's per-`(observer→subject)` N² table).
+The other half of the world-model is the **mental map** (`js/sim/mentalmap.js`, `MentalMap`/`Place`
+on `sim.map`): a shared, read-only, STATIC places registry (town gates, POIs, arena landmarks)
+queried by **affordance** (`affords('exit'|'conceal'|'safe'|'crowd'|'resource')`), never by scanning
+the roster — what `inferDestination` (`beliefs.js`) reasons over to guess where a lost quarry is
+making for (cached on the belief with a TTL). `js/sim/percept.js` adds **percepts** — hittable,
+perceivable PROPS with no mind (a `Scarecrow` dressed as a person) kept in `sim.percepts` (never
+`sim.agents`); the `fighters`/`perceivables` seams let an agent believe one a person and strike it
+while every `!agent` guard skips all mind-feedback. See [09 — reasoning layer](docs/architecture/09-reasoning-layer.md).
 
 `Agent.decide` is backed by a goal/GOAP layer: `js/sim/motivation.js` derives goals (some from
 episodic `js/sim/memory.js`) and `js/sim/planner.js` plans toward them. Goals still read beliefs

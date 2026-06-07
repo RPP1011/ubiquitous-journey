@@ -45,6 +45,7 @@ export class Scarecrow {
     this.alive = true;
     this.hp = hp;
     this.combatant = false;
+    this.controlled = false;              // never player-driven; the explicit guard perceive/gossip read
     this.agent = null;                    // ← NOT an agent. The tolerance test.
     this.pos = new THREE.Vector3(x, 0, z);
     this.root = { position: this.pos };   // perception/movement read `.pos`; some paths read `.root`

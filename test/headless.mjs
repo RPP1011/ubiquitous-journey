@@ -19,6 +19,7 @@ import { proceduralAbilityTest } from './suites/abilities.mjs';
 import { plannerSelfTest } from './suites/planner.mjs';
 import { executionTest } from './suites/execution.mjs';
 import { memoryGoalTest, npcCastTest } from './suites/memoryGoals.mjs';
+import { perceptTest } from './suites/percept.mjs';
 import { hearsayTest } from './suites/hearsay.mjs';
 import { obituaryTest } from './suites/obituary.mjs';
 import { constructionTest } from './suites/construction.mjs';
@@ -39,6 +40,9 @@ plannerSelfTest(ok, helpers);
 executionTest(ok, helpers);
 memoryGoalTest(ok, helpers);
 npcCastTest(ok, helpers);
+// Phase-1 world-model gate: scarecrow tolerance (perceive→believe-person→strike, no
+// mind-feedback, no throw) + pursuit-intercept (destination inference via the mental map).
+perceptTest(ok, helpers);
 hearsayTest(ok);
 obituaryTest(ok, helpers);
 // full deterministic scenario suite (docs/goal-system-tests.md): A1–A4, B1–B7,

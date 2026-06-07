@@ -754,6 +754,48 @@ export const SIM = {
   safeRange: 20,            // ...and it keeps fleeing until the threat is this far off
 };
 
+// MENTAL MAP / Theory-of-Mind DESTINATION inference. The agent's known PLACES are
+// shared STATIC geography (gates/POIs/landmarks) — never live entities — queried by
+// AFFORDANCE ('exit'/'conceal'/'safe'/'crowd'/'resource'). `inferDestination` scores
+// each known place by (heading match × wHeading) + (intent-conditional affordance
+// bonus × wAfford) − (distance × wNear) and takes the argmax; the chosen destination
+// is CACHED on the belief for `destTTL` seconds (re-inferred only on lapse, cleared the
+// instant perception re-acquires the quarry). Tuning lives here, not in logic.
+export const MAP = {
+  knownPlaces: 8,           // per-agent view cap (~8 places an agent in its town knows)
+  wHeading: 1.0,            // headingMatch (0..1) weight: is the quarry AIMED at it?
+  wAfford:  0.6,            // intent-conditional affordance bonus (flee→exit/conceal, raid/hunt→crowd)
+  wNear:    0.015,          // distance cost per metre (nearer is likelier); tuned vs arena scale
+  destTTL:  6,              // seconds an inferred destination is trusted before re-inference
+  // affordance vocabulary by place kind (data-driven; the affords() lookup table).
+  affordances: {
+    gate:    ['exit', 'safe'],
+    ford:    ['exit'],
+    vale:    ['conceal', 'safe'],
+    peak:    ['conceal'],
+    town:    ['crowd', 'safe', 'resource'],
+    market:  ['crowd', 'safe', 'resource'],
+    forge:   ['resource'], mine: ['resource'], field: ['resource'],
+    forest:  ['conceal', 'resource'], meadow: ['resource'],
+    rest:    ['safe'], hut: ['safe'],
+    home:    ['safe', 'conceal'],
+    frontier:['exit'],       // the heading-extension fallback place
+  },
+};
+
+// SCARECROW — the canonical "mistake a prop for a person" percept (js/sim/percept.js).
+// A config-gated world spawn (default OFF so soak/depth baselines are untouched); tests
+// spawn Scarecrows directly via sim.spawnPercept(). When enabled, `count` props per town
+// are placed in the `ring` annulus, dressed as `appearsAs` so an observer files a person-
+// belief about them and may hunt/strike them — yet nothing that assumes a real mind fires.
+export const SCARECROW = {
+  enabled: false,           // config-gated world spawn (bonus); tests spawn directly
+  count: 0,                 // per-town scarecrows when enabled
+  appearsAs: 'bandit',      // the faction it is dressed as (what it appears to be)
+  hp: 40,
+  ring: [22, 40],           // [minR,maxR] annulus from town centre for a field scarecrow
+};
+
 // Information provenance: how an agent learned something sets its confidence.
 export const SOURCE = {
   WITNESSED: { tag: 'witnessed', conf: 1.0 },
@@ -779,6 +821,12 @@ export const HEARSAY = {
   maxHops: 5,             // provenance-depth cap (5+ all read "a tale much retold")
   tipStanding: 0.85,      // a name blackened past this (by compounding retellings) can curdle…
   tipChancePerHop: 0.10,  // …into a FALSE hostility, this chance per hop past the first (capped 0.5)
+  // DESTINATION-INTENT: the max time gap (s) between two sightings for the second to record an
+  // observed HEADING. Wider than a cognition tick (1/tickHz≈0.167s) so consecutive sightings of
+  // a moving quarry build a heading, but small enough that a long-lost-then-resighted subject
+  // reads as a "jump" (no stale heading). Below this, observe() updates the unit heading; above
+  // it the heading resets (a fresh anchor). Gates the inferDestination heading-match term.
+  predictMaxGap: 0.6,
 };
 
 // Factions (RPG layer). Townsfolk are the village; the player is an outsider.

@@ -41,6 +41,7 @@ const SCANNED = [
   'js/sim/motivation.js',
   'js/sim/planner.js',
   'js/sim/agent.js',          // the decision helpers (with EPISTEMIC-OK carve-outs)
+  'js/sim/mentalmap.js',      // the shared STATIC places registry (static-geography only)
 ];
 
 // ALLOWLISTED bridge/resolver/orchestration files — the two sanctioned reality-touch

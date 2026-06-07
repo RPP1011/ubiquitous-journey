@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { Fighter } from '../fighter.js';
 import { Agent } from './agent.js';
-import { ROSTER, SIM, NAMES, MONSTER, MOTIVE, CAMPS, TOWNS, factionHostile } from './simconfig.js';
+import { ROSTER, SIM, NAMES, MONSTER, MOTIVE, CAMPS, TOWNS, SCARECROW, factionHostile } from './simconfig.js';
 import { assignHouse, founderHouse } from './houses.js';
 import { ARENA_RADIUS, BIOME, findBiomeSpot, regionAt, REGIONS, terrainHeight } from '../arena.js';
 import { resetXpStats } from '../rpg/xpstats.js';
@@ -37,6 +37,8 @@ import { POI_KIND } from './world.js';
 import { PLAN } from './planner.js';
 import { installDeedRouter, recordDeed } from './deedRouter.js';
 import { onCombatEvents } from './combatEvents.js';
+import { MentalMap } from './mentalmap.js';
+import { Scarecrow } from './percept.js';
 
 const rand = (a, b) => a + Math.random() * (b - a);
 
@@ -71,6 +73,15 @@ export class Simulation {
     this.makeFighter = opts.makeFighter || ((model, o = {}) => new Fighter(model, o));
     this.agents = [];
     this.agentsById = new Map();
+    // PERCEPTS: hittable, perceivable PROPS with no mind (Scarecrows). Kept OUT of
+    // `agents` — they have no decide/perceive/progression/memory/act, so they must
+    // never enter a cognition loop. The perceive seam reads them via ctx.perceivables
+    // and the blade lands on them via the `fighters` getter; both default to the bare
+    // `agents` array when empty, so the default world is byte-identical (the freeze lesson).
+    this.percepts = [];
+    // MENTAL MAP: shared, read-only, STATIC geography (gates/POIs/landmarks) the world-
+    // model reasons over. Built lazily from a snapshot (see _mentalMap); null until needed.
+    this.map = null;
     this.time = 0;
     this._acc = 0;
     this._nextId = 1;
@@ -188,6 +199,8 @@ export class Simulation {
     if (this.buildSites && this.buildSites.dispose) this.buildSites.dispose();
     if (this.surveyor && this.surveyor.dispose) this.surveyor.dispose();
     if (this.cities && this.cities.dispose) this.cities.dispose();
+    this.map = null;                 // rebuilt fresh on the next world
+    this.percepts.length = 0;        // drop any props so a rebuilt world starts clean
   }
 
   _takeName() {
@@ -296,6 +309,13 @@ export class Simulation {
     // send out the gazetteer(s) — the press corps that turns the emergent drama
     // into a published town newspaper (the Gazette).
     this.reporter.spawn();
+    // MENTAL MAP: snapshot the now-existing static geography (towns/gates/POIs/landmarks)
+    // into the shared, read-only places registry the world-model reasons over.
+    this.map = MentalMap.build(this.world, this.towns);
+    // SCARECROWS (config-gated, default OFF): dress a few field props as raiders so an
+    // observer mistakes them for people and may hunt/strike them — yet nothing that assumes
+    // a real mind fires. Default-off keeps soak/depth baselines byte-identical.
+    if (SCARECROW && SCARECROW.enabled && SCARECROW.count > 0) this._spawnScarecrows();
     // mark a REAL town as raised: the town-scale drama systems (faith, watch,
     // patrician, the director's trope engine) gate on this so they stay inert in the
     // bare controlled sub-sims that construct a Simulation but never spawn() a town.
@@ -403,13 +423,61 @@ export class Simulation {
     return agent;
   }
 
-  get fighters() { return this.agents.map((a) => a.fighter); }
+  // The fighter bodies the combat resolver iterates. A Scarecrow IS its own body
+  // (isHitActive/torsoCenter/takeHit) — not an Agent wrapping a .fighter — so percept
+  // bodies are concatenated directly. Fast-path returns the bare agent-fighter array
+  // when there are no percepts (the default world), so nothing changes shape there.
+  get fighters() {
+    const f = this.agents.map((a) => a.fighter);
+    return this.percepts.length ? f.concat(this.percepts) : f;
+  }
+
+  // The set perception may SEE: agents + props. A percept is perceivable (truth → belief)
+  // but is NOT an agent, so it is consumed ONLY by the perceive loop (never decide/act/
+  // gossip/subsystems). Empty-percepts fast-path returns the bare roster reference, so the
+  // default world's perceive pass is byte-identical.
+  _perceivables() { return this.percepts.length ? this.agents.concat(this.percepts) : this.agents; }
+
+  // Register a perceivable PROP (Scarecrow) — the test + world-spawn entry point. Lives in
+  // `percepts`, never `agents`, so no cognition loop ever touches a mindless body.
+  spawnPercept(p) { this.percepts.push(p); return p; }
+
+  // Config-gated world spawn (bonus): place SCARECROW.count props per town in the
+  // SCARECROW.ring annulus, dressed as SCARECROW.appearsAs. Guarded; never throws.
+  _spawnScarecrows() {
+    try {
+      const [r0, r1] = SCARECROW.ring || [22, 40];
+      const towns = this.towns || [];
+      for (const town of towns) {
+        const c = town.center;
+        for (let i = 0; i < SCARECROW.count; i++) {
+          const ang = Math.random() * Math.PI * 2;
+          const r = r0 + Math.random() * Math.max(0, r1 - r0);
+          const x = c.x + Math.cos(ang) * r;
+          const z = c.z + Math.sin(ang) * r;
+          this.spawnPercept(new Scarecrow({
+            id: `scare-${town.id}-${i}`, x, z,
+            appearsAs: SCARECROW.appearsAs, hp: SCARECROW.hp,
+          }));
+        }
+      }
+    } catch { /* never throw on world build */ }
+  }
+
+  // Lazy shared MENTAL MAP, built ONCE from a snapshot of static geography. Passes PLAIN
+  // static args (world + towns) into the scan-clean MentalMap.build — mentalmap.js never
+  // names sim.*. Rebuilt on spawn() (POIs/towns exist then); cleared on dispose().
+  _mentalMap() { return this.map || (this.map = MentalMap.build(this.world, this.towns)); }
 
   // FULL BRIDGE ctx: the sanctioned reality-touch + orchestration surface. Handed ONLY
   // to the allowlisted modules (perceive/gossip, onCombatEvents, the combat resolver, and
   // the subsystem ticks) — they legitimately read ground truth to WRITE beliefs / resolve
   // physics. Carries the live roster + player handle.
-  _ctx() { return { agents: this.agents, agentsById: this.agentsById, world: this.world, time: this.time, player: this.player, playerId: this.player ? this.player.id : null, buildSites: this.buildSites, cities: this.cities, resolver: this._cogResolver() }; }
+  // NOTE: `agents` stays the REAL roster (every subsystem + the resolver read it). The NEW
+  // `perceivables` sibling carries agents+props and is consumed ONLY by the perceive loop —
+  // so a 'bandit' Scarecrow never reaches surveyor/intrigue/director/the AoE scan (the seam
+  // is narrow by design, not merely asserted-safe).
+  _ctx() { return { agents: this.agents, perceivables: this._perceivables(), agentsById: this.agentsById, world: this.world, map: this._mentalMap(), time: this.time, player: this.player, playerId: this.player ? this.player.id : null, buildSites: this.buildSites, cities: this.cities, resolver: this._cogResolver() }; }
 
   // RESTRICTED COGNITION ctx: handed to a.decide(ctx) and a.act(dt, ctx). It carries NO
   // live-roster handle (no `agents`, no `agentsById`, no `player` object) — so truth is
@@ -423,6 +491,7 @@ export class Simulation {
   _cognitionCtx() {
     return {
       world: this.world,
+      map: this._mentalMap(),     // shared STATIC geography (places); not the roster
       time: this.time,
       buildSites: this.buildSites,
       cities: this.cities,
