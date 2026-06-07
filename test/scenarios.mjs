@@ -101,6 +101,46 @@ class Stage {
 const primNames = (pl) => (pl ? pl.steps.map((s) => s.prim) : []);
 const lastPrim = (pl) => (pl && pl.steps.length ? pl.steps[pl.steps.length - 1].prim : null);
 
+// DESTINATION-INTENT flee setup: script quarry `A` fleeing along a unit heading (dx,dz)
+// out to ~26m while pursuer `B` WATCHES (perceives) it leave — so B's belief records the
+// heading and infers a fixed DESTINATION (The Thorngate lies on +x) to intercept at. A then
+// idles at the far point. This replaces the old omniscient teleport (A snapped nowhere
+// inferable, expecting an omniscient hunt) with an inferable flight the destination-intent
+// pursuer can actually run down: B closes toward the inferred gate, re-acquires A by sight
+// en route (A sits on the path), and engages. Preserves every downstream assertion.
+function fleeToInferable(st, A, B, dx, dz, dist = 26) {
+  const len = Math.hypot(dx, dz) || 1;
+  const ux = dx / len, uz = dz / len;
+  const x0 = A.pos.x, z0 = A.pos.z;
+  const bx = B.pos.x, bz = B.pos.z;
+  // Snap A to a SAFE start beyond B's melee reach but WITHIN B's sight, so B keeps perceiving
+  // A (its belief stays fresh + a heading forms across sightings) yet can't land a blow.
+  // DISARM + PIN B for the flight so it can neither cast nor close on A — the grudge must NOT
+  // be settled before the avenge GOAL derives (the chain under test). HOLD here long enough
+  // for B's `assaulted` memory to CONSOLIDATE and deriveGoals to push avenge(A); then the
+  // GOAL (not the reactive fight) drives the pursuit, exactly as the old far-teleport setup
+  // arranged — only now toward an INFERABLE destination so it actually catches A.
+  const hold = 16;                                // within vision (B keeps sighting A)
+  const start = 13;                               // out of melee reach, on the heading
+  const steps = 12;
+  const savedAbilities = B.abilities;
+  B.abilities = new Map();
+  let i = 0;
+  for (let f = 0; f < 1500; f++) {
+    if (i < steps) i++;
+    const t = start + (i / steps) * (hold - start);
+    A.fighter.root.position.set(x0 + ux * t, 0, z0 + uz * t);
+    B.fighter.root.position.set(bx, 0, bz);      // keep B put while it watches A flee
+    st.frame();                                   // advances time -> B perceives A's heading
+    if (f >= 4 && B.goals.some((g) => g.kind === 'avenge' && g.subjectId === A.id)) break;
+  }
+  B.abilities = savedAbilities;
+  // now place A at the FAR inferable point (beyond sight, on the heading's path to the gate)
+  // so the destination-intent pursuit must intercept it; put B back at its post.
+  A.fighter.root.position.set(x0 + ux * dist, 0, z0 + uz * dist);
+  B.fighter.root.position.set(bx, 0, bz);
+}
+
 // ===========================================================================
 // A. Primitives — precondition / effect / conservation. We exercise the REAL
 //    transfer executors (_giveStep / _payStep) through act(), the same code the
@@ -299,8 +339,12 @@ function scenC(ok) {
     }
     ok(fledOrFought, 'C4: adjacent hostile makes D flee/fight (plan interrupted)');
     ok(D.goals.some((g) => g.kind === 'repay'), 'C4: the repay goal stayed on the stack during the interruption');
-    // remove the threat; the plan must resume to completion.
+    // remove the threat. In the live sim a death flows through the combat bridge, which
+    // erases the witnesses' belief about the slain + stamps their _slain set; here we
+    // destroy M out-of-band, so mirror that bridge so D doesn't chase a phantom: erase D's
+    // stale belief about M (it would, seeing the empty field, stop reacting to it).
     M.fighter.alive = false; M.fighter.health = 0;
+    D.beliefs.erase(M.id);
     const f = st.runUntil(() => D.goals.length === 0, 3000);
     ok(D.goals.length === 0, `C4: plan resumed to completion after threat gone (${f} frames)`);
     ok(!!(D._repaid && D._repaid[X.id]), 'C4: the gift eventually landed');
@@ -334,8 +378,11 @@ function scenD(ok) {
     st.push(B, goalSeekFortune('market', 140));
     st.push(B, goalAvenge(A.id));
     ok(B.goals[B.goals.length - 1].kind === 'avenge', 'D2: avenge is on top after being pushed (LIFO)');
-    // resolve the avenge: subject gone -> pruneGoals pops it.
+    // resolve the avenge: the death BRIDGE (onCombatEvents) stamps the avenger's _slain set
+    // when its quarry falls — the sanctioned out-of-sight death signal the avenge predicate
+    // reads. Simulate that bridge write here, then pruneGoals pops the satisfied goal.
     A.fighter.alive = false; A.fighter.health = 0;
+    (B._slain || (B._slain = new Set())).add(A.id);
     pruneGoals(B, st.ctx());
     ok(B.goals.length === 1 && B.goals[0].kind === 'seek_fortune', 'D2: avenge popped, seek_fortune is top again (resume)');
     st.dispose();
@@ -430,8 +477,12 @@ function scenG1(ok) {
   // checkpoint 2: B has an assaulted memory of A.
   ok(B.memory.recent().some((e) => e.kind === 'assaulted' && e.withId === A.id), 'G1.2: B has an assaulted memory of A');
 
-  // move A out of belief-reach so the derived GOAL (not raw belief) drives the hunt.
-  A.fighter.root.position.set(45, 0, 5);
+  // A FLEES toward an INFERABLE destination (The Thorngate, +x), with B WATCHING it set off
+  // — so B's belief records a heading and infers a destination to INTERCEPT (the
+  // destination-intent pursuit), instead of teleporting A nowhere-inferable (the omniscient
+  // assumption we removed). A is scripted out to ~26m on +x, then idles there; B closes the
+  // gap, re-acquires A by sight on the way to the gate, and runs it down.
+  fleeToInferable(st, A, B, +1, 0);
 
   // checkpoint 3: within K ticks avenge(A) is on B.goals; B.ambition unchanged.
   const f3 = st.runUntil(() => B.goals.some((g) => g.kind === 'avenge' && g.subjectId === A.id), 3000);
@@ -563,6 +614,7 @@ function scenG4(ok) {
   ok(D.goals.some((g) => g.kind === 'repay'), 'G4: the original repay goal stayed on D.goals through the interruption');
 
   M.fighter.alive = false; M.fighter.health = 0;          // threat removed
+  D.beliefs.erase(M.id);    // mirror the combat-death belief erase (M destroyed out-of-band)
   const f = st.runUntil(() => D.goals.length === 0, 3000);
   ok(D.goals.length === 0, `G4: plan resumed to completion after M gone (${f} frames)`);
   ok(!!(D._repaid && D._repaid[X.id]), 'G4: the gift landed after resuming');
@@ -656,8 +708,10 @@ function scenG5(ok) {
   ok(!!wd, 'G5: B recorded a witnessed_death(C) (grief episode)');
   ok(wd && wd.salience >= 0.6, `G5: grief is high-salience for a liked friend (${wd ? wd.salience.toFixed(2) : 'n/a'})`);
 
-  // move A out of belief-reach so the DERIVED avenge goal (not raw belief) drives the hunt.
-  A.fighter.root.position.set(45, 0, 5);
+  // A FLEES toward an INFERABLE destination (The Thorngate, +x) with B watching it set off,
+  // so the destination-intent pursuit can INTERCEPT it — not an omniscient teleport. B
+  // closes toward the inferred gate, re-acquires A by sight en route, and runs it down.
+  fleeToInferable(st, A, B, +1, 0);
 
   // checkpoint 2: B derives BOTH grieve(C) and avenge(A) (culprit known + alive).
   const fDerive = st.runUntil(

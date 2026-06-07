@@ -8,7 +8,7 @@ import { nearestLandmark } from '../arena.js';
 import { BeliefStore } from './beliefs.js';
 import {
   PROFESSIONS, COMMODITIES, BASE_PRICE, ECON,
-  SIM, COMFORT, BUILD,
+  SIM, COMFORT, BUILD, NOVELTY,
   factionHostile,
 } from './simconfig.js';
 import { Progression } from '../rpg/progression.js';
@@ -57,7 +57,11 @@ export class Agent {
     this._castCd = Math.random() * 1.5;
 
     // needs (1 = satisfied)
-    this.needs = { hunger: rand(0.5, 0.9), energy: rand(0.6, 0.95), social: rand(0.4, 0.85), comfort: rand(COMFORT.init[0], COMFORT.init[1]) };
+    this.needs = { hunger: rand(0.5, 0.9), energy: rand(0.6, 0.95), social: rand(0.4, 0.85), comfort: rand(COMFORT.init[0], COMFORT.init[1]), novelty: rand(NOVELTY.init[0], NOVELTY.init[1]) };
+    // per-field MASTERY (units of a good ever made, slow-decaying): the persistent
+    // skill that gives a steep, lasting productivity edge — what makes a seasoned
+    // specialist nearly impossible to out-compete in its own field. Read by occupation.js.
+    this.mastery = {};
 
     // economy
     this.inventory = {};
@@ -174,6 +178,11 @@ export class Agent {
     this.needs.hunger = clamp01(this.needs.hunger - SIM.hungerDrain * dt);
     this.needs.energy = clamp01(this.needs.energy - SIM.energyDrain * dt);
     this.needs.social = clamp01(this.needs.social - SIM.socialDrain * dt);
+    // NOVELTY drains too (boredom builds) — relieved by sightseeing (act.sightseeStep).
+    if (NOVELTY.enabled) this.needs.novelty = clamp01((this.needs.novelty ?? 1) - SIM.noveltyDrain * dt);
+    // MASTERY does NOT drain — a learned craft stays learned. Commitment compounds over a
+    // lifetime: a specialist's edge only ever grows, and a long-practised trade is a
+    // permanent moat newcomers must out-WORK (not just out-wait) to rival.
     // COMFORT: a 4th need (Phase-1 buildings). An UNHOUSED agent's comfort is
     // capped LOW each tick — that ceiling is the standing demand pressure that
     // makes building a home worthwhile. A housed agent (this.home set) has no cap.
@@ -197,17 +206,22 @@ export class Agent {
   considerHostile(b) {
     return !!b && (b.hostile || factionHostile(this.faction, b.lastFaction));
   }
-  // nearest believed-hostile agent I'm confident enough to act on
-  _nearestHostile(ctx) {
+  // Nearest believed-hostile I'm confident enough to act on — returned as a BELIEF-
+  // REFERENCE handle { id, pos, faction }, NOT the real object. This is the epistemic
+  // split made total: selection AND positioning come from the belief (lastPos), never
+  // ground truth, and true liveness is NOT read — a belief faded below the act threshold
+  // IS "I've lost track" (perception re-confirms it or decay drops it). So an agent will
+  // hunt a foe that has moved, fallen, or is really a scarecrow; reality is resolved only
+  // by perception (in) and geometric combat (out), and a wrong belief simply misses.
+  // `ctx` kept for signature symmetry (callers pass it); intentionally unused now.
+  _nearestHostile(_ctx) {
     let best = null, bd = Infinity;
     for (const b of this.beliefs.all()) {
       if (b.confidence < SIM.actOnBeliefMin || !this.considerHostile(b)) continue;
-      const o = ctx.agentsById.get(b.subjectId);
-      if (!o || !o.alive) continue;
-      const d = this.pos.distanceTo(o.pos);
-      if (d < bd) { bd = d; best = o; }
+      const d = this.pos.distanceTo(b.lastPos);
+      if (d < bd) { bd = d; best = b; }
     }
-    return best;
+    return best ? { id: best.subjectId, pos: best.lastPos, faction: best.lastFaction, belief: best } : null;
   }
 
   // --- Theory-of-Mind passes (run by Simulation each 6Hz tick) ---------------
@@ -307,7 +321,16 @@ export class Agent {
   // the anchor this agent follows/defends: its band leader, set EXPLICITLY by
   // whatever banded it (Party/warband/escort). No universal fallback to the player
   // — an agent follows the player only via an explicit bandLeaderId. Null-safe.
-  _leader(ctx) { return this.bandLeaderId != null ? ctx.agentsById.get(this.bandLeaderId) : null; }
+  // The leader handle for the EXECUTION movement/defend path. The ONLY live handle
+  // cognition may hold is the controlled player-led party's leader, supplied via the
+  // documented ctx.partyLeader exception (a known game mechanic). For an NPC band the
+  // leader is resolved off belief (decideParty / followLeader read belief.lastPos), so
+  // this returns null for them and the belief path takes over. Null-safe.
+  _leader(ctx) {
+    const pl = ctx && ctx.partyLeader;            // EPISTEMIC-OK: controlled party leader (known mechanic)
+    if (pl && this.bandLeaderId === pl.id) return pl;
+    return null;
+  }
 
   _decideParty(ctx) { return decision.decideParty(this, ctx); }
 
@@ -367,9 +390,6 @@ export class Agent {
 
   // give item×n to a benefactor: walk over then MOVE the goods (no minting).
   _giveStep(b, dt, ctx) { return action.giveStep(this, b, dt, ctx); }
-
-  // record a `succoured` episode on a DESPERATE receiver when I hand it value.
-  _recordSuccour(to, item, ctx) { return action.recordSuccour(this, to, item, ctx); }
 
   // pay amt coin to a benefactor: walk over, then MOVE gold (no minting).
   _payStep(b, dt, ctx) { return action.payStep(this, b, dt, ctx); }

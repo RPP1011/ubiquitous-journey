@@ -77,6 +77,16 @@ export function onCombatEvents(sim, events) {
       sim.chronicle.note('legend', A.id, `${A.name} has slain ${T.name} — the town breathes easier.`);
     }
 
+    // THE _slain BRIDGE (epistemic split): when T dies by A's hand, stamp the sanctioned
+    // out-of-sight death signal on the slayer + every avenger of T (and erase their stale
+    // belief) so a vendetta closes the moment T falls — the goal layer reads `_slain`, never
+    // live truth. Shared with the death sweep (sim.stampSlain). Mark it death-processed so
+    // the sweep doesn't re-handle this same death next frame.
+    if (ev.type === 'dead') {
+      sim.stampSlain(T, A);
+      if (sim._deathSeen) sim._deathSeen.add(T.id); else sim._deathSeen = new Set([T.id]);
+    }
+
     // lifetime tallies that feed the killer's 'renown' ambition
     if (ev.type === 'dead' && A.life) {
       A.life.kills += 1;

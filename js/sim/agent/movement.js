@@ -114,8 +114,11 @@ export function fleeFrom(a, threat, dt) {
 // snaps if hopelessly separated (e.g. the leader portalled into a dungeon and
 // this member somehow didn't get teleported). Only x/z move — y is owned by
 // whichever world the member is in.
+// `leader` is a LEADER REF: either the controlled player-led party's real leader handle
+// (the documented ctx.partyLeader mechanic) OR a belief snapshot { pos:lastPos, alive }
+// for an NPC band — both expose only { pos, alive }, never foreign true-state.
 export function followLeader(a, leader, dt) {
-  if (!leader || !leader.alive) { a.fighter.setMoving(0); return; }
+  if (!leader || !leader.alive) { a.fighter.setMoving(0); return; }   // EPISTEMIC-OK: controlled party leader (known mechanic)
   const n = Math.max(1, PARTY.maxSize);
   const ang = (a.partySlot || 0) * (Math.PI * 2 / n) + Math.PI;   // fan out behind
   const tx = leader.pos.x + Math.cos(ang) * PARTY.spacing;

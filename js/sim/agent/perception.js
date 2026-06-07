@@ -7,7 +7,8 @@
 // imports config + pure terrain helpers only.
 
 import { terrainHeight, concealmentAt } from '../../arena.js';
-import { SIM, SOURCE, BAND } from '../simconfig.js';
+import { inferDestination } from '../beliefs.js';
+import { SIM, SOURCE, BAND, COMMODITIES, ECON, factionHostile } from '../simconfig.js';
 
 // perceive: sight of nearby agents writes high-confidence beliefs (the player
 // is just another subject, so NPCs naturally form beliefs about you).
@@ -37,8 +38,38 @@ export function perceive(a, ctx) {
     // strikes is still resolved as the enemy it truly is. Guarded: no disguise
     // field -> true faction, exactly as before.
     const seenFaction = o.disguiseFaction || o.faction;
-    a.beliefs.observe(o.id, seenFaction, o.pos, ctx.time, false);
+    const b = a.beliefs.observe(o.id, seenFaction, o.pos, ctx.time, false);
+    // believed PLAYER FAME: seeing the player (a controlled agent) records its true
+    // notoriety into my belief, so the fear gate (decide.js) reads a believed scalar
+    // rather than a live player handle. An NPC who never saw the player holds no belief
+    // and so feels no dread. Truth-in / belief-out — the sanctioned bridge.
+    if (o.controlled) b.notoriety = o.notoriety || 0;
   }
+  // DESTINATION-INTENT: any tracked subject I am NO LONGER seeing — but still hold a
+  // confident, freshly-stale belief about (just dropped below a full-confidence sighting)
+  // and have NOT yet inferred a destination for — gets one inferred now from its last
+  // heading + known geography. This is what lets a pursuer intercept a quarry that fled
+  // out of sight toward an inferable place, with no omniscient roster read.
+  inferLostQuarries(a, ctx);
+}
+
+// DESTINATION-INTENT upkeep for subjects I did NOT re-see this tick: for a still-confident
+// stale belief with no destination yet, infer where the quarry is making for (so a pursuer
+// can intercept). Re-acquisition by sight (observe) clears destPos. Belief-only + static
+// geography; never reads truth. Guarded; never throws.
+function inferLostQuarries(a, ctx) {
+  try {
+    const now = ctx.time;
+    for (const b of a.beliefs.all()) {
+      if (b.subjectId === a.id) continue;
+      // seen this very tick? observe() cleared destPos and stamped lastTick=now → skip.
+      if (b.lastTick === now) continue;
+      if (b.destPos) continue;                       // already inferred; keep until re-seen
+      if (b.confidence < SIM.actOnBeliefMin) continue;   // too faint to bother pursuing
+      const hostile = b.hostile || factionHostile(a.faction, b.lastFaction);
+      inferDestination(a, b, hostile);
+    }
+  } catch { /* never throw on the tick */ }
 }
 
 // gossip: adopt a nearby ally's more-certain beliefs (carries standing too).
@@ -50,6 +81,16 @@ export function gossipBeliefs(a, ctx) {
     for (const b of o.beliefs.all()) {
       if (b.subjectId === a.id) continue;   // don't gossip about me to myself
       a.beliefs.mergeFrom(b, SOURCE.TALKED);
+    }
+    // RUMOURED PRICES: chatting also drifts my price beliefs toward this neighbour's —
+    // how a price rumour spreads. This lives in the gossip BRIDGE (where reading another
+    // agent's beliefs is sanctioned), not in cognition. Per fixed tick (step), scaled to
+    // approximate the old per-frame drift (priceGossipPerTick). Beliefs only; bounded.
+    if (!a.controlled && a.priceBeliefs && o.priceBeliefs) {
+      const rate = ECON.priceGossipPerTick != null ? ECON.priceGossipPerTick : (ECON.priceGossip * 10);
+      for (const c of COMMODITIES) {
+        a.priceBeliefs[c] += (o.priceBeliefs[c] - a.priceBeliefs[c]) * rate;
+      }
     }
     // chatting peacefully builds familiarity: a small positive standing toward
     // this neighbour. Emergent friendships — they seed social groups and surface

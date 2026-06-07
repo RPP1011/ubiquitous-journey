@@ -31,6 +31,7 @@ beliefs about you too. No build step — ES modules served over HTTP, Three.js v
 | 06 | [World, dungeons & player](06-world-dungeons.md) | terrain/biomes/POIs, the player + party, the deep-Y-offset dungeon isolation trick |
 | 07 | [UI & input](07-ui.md) | the read-only HUD panels, dialogue, the keymap |
 | 08 | [Testing & headless runtime](08-testing.md) | `bun test/headless.mjs`, the headless seam, what still needs a browser |
+| 09 | [The reasoning layer](09-reasoning-layer.md) | **target architecture** — belief-gated cognition at scale: the 3-tier execution hierarchy, the steering/potential-field composition, the `InteractionSchema` IR, destination-intent ToM, GOAP worked examples, and build-time enforcement that cognition cannot read truth |
 
 Design/feature docs (the *why we built it this way*, deeper than this reference) live
 beside these in `docs/`: `goal-system.md`, `drama-plan.md`, `director-levers.md`,

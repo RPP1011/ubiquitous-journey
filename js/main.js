@@ -14,6 +14,7 @@ import { resolveCombat } from './combat.js';
 import { TUNE } from './constants.js';
 import { World } from './sim/world.js';
 import { Simulation } from './sim/simulation.js';
+import { terrainHeight } from './arena.js';
 import { ABILITY_CATALOG } from './rpg/abilities/catalog.js';
 import { DungeonManager } from './world/dungeonManager.js';
 import { boot } from './boot.js';
@@ -124,6 +125,14 @@ function frame() {
       stage = 'dungeon.collide'; if (dungeonMgr && dungeonMgr.active) dungeonMgr.collidePlayer(game.playerFighter.root.position);
       stage = 'sim.update';    game.sim.update(dt);
       stage = 'dungeon.update'; if (dungeonMgr) dungeonMgr.update(dt);
+      // settle the PLAYER onto the terrain surface too (the commander moves it in
+      // x/z without re-grounding, so it would float on the hills). Overworld only —
+      // while below, the dungeon owns the player's deep y, so we leave it alone.
+      stage = 'groundPlayer';
+      if (game.playerFighter && !(dungeonMgr && dungeonMgr.active)) {
+        const p = game.playerFighter.root.position;
+        try { p.y = terrainHeight(p.x, p.z); } catch { /* never throw on the frame */ }
+      }
       stage = 'castInput';     controls.pollCastKeys();
       stage = 'gather';        controls.pollGather(dt);
     } else if (game.state === 'dialogue') {

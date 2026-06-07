@@ -54,16 +54,44 @@ function siteKindForGood(good) {
 // Is `good` a raw resource an agent can gather at a node without a profession?
 const RAW_GOODS = new Set(['food', 'wood', 'ore', 'herb']);
 
+// BRIDGE-BASED "believed dead" — the epistemic-split replacement for every omniscient
+// `o.alive` read in the goal/plan layer. The AUTHORITATIVE death signal is the agent's own
+// `_slain` set, stamped by the combat BRIDGE (onCombatEvents) on the KILLER and on every
+// agent carrying an avenge/duel against the fallen — so a death OUT OF the agent's own
+// sight still resolves its vendetta through a sanctioned write, while a quarry merely fled
+// out of sight is NOT mistaken for dead (its belief just goes stale, and the destination-
+// intent pursuit keeps hunting it until it is re-acquired and slain, or the goal expires).
+// Reads only the agent's OWN state. Never the roster, never a foreign liveness flag.
+//
+// "Believed dead" is TRUE when EITHER:
+//   · the `_slain` BRIDGE marked it — the authoritative, sanctioned out-of-sight death
+//     signal stamped by onCombatEvents on the killer and on every agent carrying an
+//     avenge/duel against the fallen; OR
+//   · I hold NO belief about it AT ALL (the store has no entry). A quarry merely fled out of
+//     sight still has a belief ENTRY (faded, but present) — that is NOT death, so the
+//     destination-intent pursuit keeps hunting it. A belief is only truly ABSENT when it was
+//     never formed, or when perception CONTRADICTED the sighting (I looked right at where I
+//     thought it was, in plain view, and it was gone) and erased it — which is exactly when
+//     a vendetta against a vanished foe should lapse. We test belief ABSENCE, never low
+//     confidence, so an out-of-sight quarry is never mistaken for dead.
+// Reads only the agent's OWN state (_slain + own BeliefStore). Never the roster.
+function believedDead(agent, subjectId) {
+  if (!agent) return true;
+  if (agent._slain && agent._slain.has(subjectId)) return true;
+  return !(agent.beliefs && agent.beliefs.get(subjectId));
+}
+
 // Believed position of a "place". A place is either a POI kind (string POI_KIND)
 // or a target descriptor { subjectId } resolved via the agent's belief.lastPos.
 function believedPos(agent, ctx, place) {
   if (!place) return null;
   if (typeof place === 'object' && place.subjectId != null) {
+    // BELIEF-ONLY: navigate toward where I BELIEVE the subject is (its last sighting),
+    // never its true position. No confident belief -> unknown place (null). The pursuit
+    // model (combatStep) handles re-acquisition + the inferred destination separately.
     const b = agent.beliefs && agent.beliefs.get(place.subjectId);
     if (b && b.confidence > 0) return b.lastPos;
-    // fall back to whatever the ctx can offer (may be null) — kept belief-first
-    const o = ctx.agentsById && ctx.agentsById.get(place.subjectId);
-    return o && o.alive ? o.pos : null;
+    return null;
   }
   // a POI kind string
   const poi = ctx.world && ctx.world.nearest(place, agent.pos);
@@ -132,13 +160,15 @@ function atomHolds(atom, agent, ctx) {
       // satisfied only by an explicit transfer this plan performs; never true a priori
       return false;
     case 'dead': {
-      const o = ctx.agentsById && ctx.agentsById.get(atom.subjectId);
-      return !o || !o.alive;
+      // BELIEF/BRIDGE-BASED: the subject is "believed dead" when a combat bridge stamped it
+      // on my _slain set (I struck the killing blow, even out of my own sight) OR I hold no
+      // confident belief about it any more. No roster/liveness read.
+      return believedDead(agent, atom.subjectId);
     }
     case 'in_reach': {
+      // BELIEF-ONLY reach test: am I at the subject's last-believed position? No live read.
       const b = agent.beliefs && agent.beliefs.get(atom.subjectId);
-      const tp = (b && b.confidence > 0) ? b.lastPos
-        : (ctx.agentsById && ctx.agentsById.get(atom.subjectId)?.pos);
+      const tp = (b && b.confidence > 0) ? b.lastPos : null;
       if (!tp) return false;
       return Math.hypot(tp.x - agent.pos.x, tp.z - agent.pos.z) <= 2.2;
     }
@@ -541,10 +571,8 @@ export function stepEffectHolds(agent, ctx, step) {
         return !!(agent._repaid && agent._repaid[step.bind.to]);
       case 'consume':
         return true;
-      case 'attack': {
-        const o = ctx.agentsById && ctx.agentsById.get(step.bind.target);
-        return !o || !o.alive;
-      }
+      case 'attack':
+        return believedDead(agent, step.bind.target);   // believed-dead (belief/_slain), not a roster read
       case 'loot':
         return true;
       default: return false;
@@ -564,10 +592,10 @@ export function goalAvenge(subjectId) {
   return {
     kind: 'avenge', subjectId,
     atoms: [Atom.dead(subjectId)],
-    predicate(agent, ctx) {
-      const o = ctx.agentsById && ctx.agentsById.get(subjectId);
-      return !o || !o.alive;
-    },
+    // satisfied when the subject is BELIEVED DEAD: a combat bridge marked it slain by me
+    // (_slain — the sanctioned out-of-sight death signal) OR I no longer hold a confident
+    // belief about it. Never reads the live roster.
+    predicate(agent) { return believedDead(agent, subjectId); },
   };
 }
 

@@ -65,9 +65,42 @@ export const ECON = {
   // goods by believed price, proximity to the site, and ambition affinity. It
   // sticks to its current choice (hysteresis) unless another is clearly better,
   // so the town doesn't thrash to a single good.
-  chooseStickiness: 1.35,     // multiplier favouring the agent's current _trade
+  chooseStickiness: 1.5,      // multiplier favouring the agent's current _trade (switching cost)
   proximityWeight: 0.6,       // how strongly nearer sites are preferred (0..1)
   ambitionTradeBoost: 1.5,    // boost a good whose tags serve the agent's ambition
+  // MASTERY → increasing returns + COMPETITIVE EXCLUSION. Per-field mastery (units of a
+  // good ever made, slow-decaying so it persists — agent.mastery) gives a STEEP, lasting
+  // productivity edge: a seasoned specialist out-produces a novice several-fold, floods
+  // the field cheaply, and so makes it EXTREMELY HARD for a low-mastery unit to compete
+  // there — newcomers are economically pushed to open niches. Folded into BOTH production
+  // throughput AND the occupation score (so a master strongly prefers, and dominates, its
+  // craft). This is also the persistent vocation-skill that fixes the idle-decay ceiling.
+  masteryGain: 1.3,           // productivity edge per sqrt(units mastered). Steep + EARLY (production is
+                              //   sparse, so the edge must arrive within a few units): ~4 units→×3.6, ~9→×4.9,
+                              //   ~16→cap. A head-start of a handful of units thus dominates a novice (×1) and
+                              //   compounds (a faster producer masters faster) — the field closes to newcomers.
+  masteryChoiceWeight: 0.45,  // how much of the (steep) productivity edge feeds the occupation CHOICE — kept
+                              //   well below 1 so mastery keeps a master LOYAL to its craft without herding the
+                              //   whole town into the highest-value field (the edge lives mostly in throughput)
+  tradeDeedWeight: 0.35,      // IDENTITY weight of a routine buy/sell deed (vs 1.0 for a produce/craft
+                              //   deed): trading is universal, so it's damped to let what an agent MAKES
+                              //   define its vocation/class — only a DEDICATED trader still reads as a Merchant
+  // goods are scored by NET margin (price minus believed input costs), not gross
+  // sticker price, so the town doesn't all chase the dearest good and bid its inputs
+  // to the moon; and an agent's own unsold glut damps making more of it.
+  marginFloor: 0.25,          // tiny positive margin floor: a break-even good stays a last resort
+  saturationWeight: 0.5,      // how hard the agent's OWN unsold surplus of a good damps choosing it
+  // the effective-value-of-labour valve (decide.js): when the best trade's margin is
+  // thin, the WEALTH motive to work shrinks and leisure-valuing souls down tools —
+  // but an ambitious soul keeps at it (an ambition-scaled intrinsic floor). Subjective,
+  // not a town-wide cutoff, so the town self-thins its glutted trades until value recovers.
+  laborValueRef: 5,           // net margin (gold/unit) that counts as labour "fully worth it" (saturates lv→1)
+  workIntrinsicFloor: 0.4,    // ambition-scaled floor on the work motive (the driven work even unpaid)
+  // DEMAND-AWARENESS: a maker sitting on unsold stock marks its own price belief down,
+  // so a craft whose output won't clear loses its (stale, inflated) margin and the herd
+  // disperses across trades instead of relocating to the next-dearest good.
+  unsoldMarkdown: 0.04,       // belief markdown PER surplus-unit PER second of holding unsold stock
+  unsoldMarkdownMax: 0.06,    // cap on the per-tick markdown (so a big glut can't crash a belief instantly)
 
   produceRate: 0.32,          // units/sec for raw producers
   toolBoost: 1.7,             // production multiplier while holding a tool
@@ -80,6 +113,7 @@ export const ECON = {
   // price-belief learning (decentralised tatonnement -> competitive prices)
   priceLearn: 0.25,           // participant belief moves toward the clearing price
   priceGossip: 0.04,          // per-sec drift toward a chatting neighbour
+  priceGossipPerTick: 0.04 / 6, // per fixed-tick (tickHz=6) drift — the gossip-bridge form
   tatonnementUp: 1.004,       // unfilled buyers raise their bid belief each tick
   tatonnementDown: 0.996,     // unfilled sellers lower their ask belief each tick
   priceBounds: [1, 40],
@@ -223,6 +257,11 @@ export const WEIGHT = {
                      //   that gathers and chats reads as ALIVE. Still below work/eat so the
                      //   economy holds — it claims IDLE time, it doesn't starve commerce.
   wander:    0.15,
+  sightsee:  0.75,   // LEISURE VARIETY: a curious soul takes in a named landmark — purposeful
+                     //   idle-time (restores comfort + a little society, scratches wanderlust) so
+                     //   leisure isn't all home-sitting + aimless wander. Pulled by the leisure
+                     //   valve (when labour is cheap) and scaled by curiosity; below work so it
+                     //   claims IDLE time, never starves commerce.
   fight:     1.60,
   flee:      1.80,
   plan:      1.30,    // a goal-stack plan step: high, but below flee/fight/eat
@@ -486,7 +525,13 @@ export const COMFORT = {
   enabled: true,
   init: [0.4, 0.85],          // [min,max] starting comfort (rand, like other needs)
   drain: 1 / 110,             // comfort lost per sim-second (slower than hunger)
-  unhousedCap: 0.5,           // an agent with no home can't exceed this comfort
+  unhousedCap: 0.65,          // an agent with no home can't exceed this comfort. Set ABOVE the
+                              //   seek/urgent line (0.55) so an unhoused soul is no longer PERMANENTLY
+                              //   comfort-urgent — it reaches contentment for ~11s windows where the
+                              //   OTHER needs (novelty/social/work) get airtime. Home-building pressure
+                              //   is preserved by raising BUILD.qualifyComfort in lockstep (still
+                              //   chronically below it → still wants a home). Part of the need-decomposition:
+                              //   comfort is one drive among several now, not a monopolising attractor.
   restoreRate: 1.2,           // comfort restored per sec at home / a tavern — fast enough that a
                               //   short visit actually tops the need up before the agent drifts off
                               //   to a market/social pull (else comfort limit-cycles around the cap)
@@ -511,6 +556,21 @@ export const COMFORT = {
   urgentBoost: 2.5,
 };
 
+// NOVELTY — a distinct need in the decomposed need-space (the monolithic "comfort"
+// is now one drive among several). Boredom builds over time; a curious soul relieves
+// it by taking in a fresh sight (sightsee) or roving to new places. This is what
+// gives leisure VARIETY a real motive — purposeful outings driven by a need, not a
+// weak also-ran candidate. Restored by visiting a landmark; scaled by curiosity in
+// decide. Sibling needs to add next in this same shape: SAFETY (security near the
+// Watch/town vs the frontier), and finer splits of comfort (coziness vs satiety).
+export const NOVELTY = {
+  enabled: true,
+  init: [0.5, 0.9],           // [min,max] starting novelty (rand, like the other needs)
+  restore: 1.1,               // novelty restored per sec while taking in a fresh sight
+  seekBelow: 0.5,             // bored below this → a curious soul seeks a new sight (sightsee)
+  satisfiedAt: 0.9,           // a good outing tops boredom right up
+};
+
 // --- BUILD: private home commissioning + the multi-tick construction process -
 // A qualifying townsperson commissions a HOME (private capital) paid in WOOD +
 // its OWN labour time. No gold is minted/burned: wood is consumed (a renewable
@@ -521,7 +581,11 @@ export const COMFORT = {
 export const BUILD = {
   enabled: true,
   // --- qualify gate (the ROI-style demand test, read in decide.js) ---
-  qualifyComfort: 0.5,        // owner's comfort must be chronically AT/BELOW this to want a home
+  qualifyComfort: 0.65,       // owner's comfort must be chronically AT/BELOW this to want a home.
+                              //   Raised in lockstep with COMFORT.unhousedCap (0.65) so an unhoused
+                              //   soul — which oscillates 0.55..0.65 — is still chronically below it and
+                              //   still wants a home: leisure variety is unblocked WITHOUT losing the
+                              //   building-pressure demand signal.
   qualifyComfortStreak: 18,   // …for this many sim-seconds continuously (chronic, not a blip)
   wealthGate: 60,             // …and hold at least this much surplus gold (a wealth gate, no spend)
   woodNeeded: 8,              // WOOD units a home costs (reserved+consumed over the build)
@@ -659,6 +723,7 @@ export const SIM = {
   hungerDrain: 1 / 95,
   energyDrain: 1 / 140,
   socialDrain: 1 / 90,
+  noveltyDrain: 1 / 130,    // boredom builds slowly — the NOVELTY need (drives sightsee/exploration)
   restRate: 0.40,
   socializeRate: 0.50,
 
@@ -678,6 +743,10 @@ export const SIM = {
   confidenceDecay: 1 / 240, // belief certainty fades per second
   suspicionDecay: 1 / 120,
   actOnBeliefMin: 0.35,     // min confidence to act on a believed-hostility
+  reacquireConf: 0.75,      // belief confidence at/above which a pursuit chases the last
+                            //   SIGHTING (lastPos); below it (but >= actOnBeliefMin) the
+                            //   quarry is out of sight and stale, so the pursuer instead
+                            //   intercepts at the INFERRED destination (destination-intent)
   // flee hysteresis (Schmitt band) — kills the flee<->work pacing limit-cycle:
   // start fleeing a threat within dangerRange, stop only once it's beyond the
   // larger safeRange. While in danger, economic activity is suppressed.

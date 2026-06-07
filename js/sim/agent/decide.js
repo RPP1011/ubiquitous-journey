@@ -7,9 +7,9 @@
 // Behaviour-preserving: verbatim bodies of the old Agent methods. No cycles —
 // imports config, pure helpers, motivation, and the occupation chooser.
 
-import { SIM, WEIGHT, ECON, COMMODITIES, GROUP_TYPES, LEGEND, SOCIAL, COMFORT, BUILD, factionHostile } from '../simconfig.js';
+import { SIM, WEIGHT, ECON, COMMODITIES, GROUP_TYPES, LEGEND, SOCIAL, COMFORT, NOVELTY, BUILD, factionHostile } from '../simconfig.js';
 import { updateAmbition, ambitionFavor, ambitionWantsFight, deriveGoals, pruneGoals } from '../motivation.js';
-import { chooseOccupation } from './occupation.js';
+import { chooseOccupation, laborValue } from './occupation.js';
 import { qualifyHome, BUILD_KIND } from '../construction.js';
 
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
@@ -25,9 +25,10 @@ export function decide(a, ctx) {
 
   // DUEL OF HONOUR: a 1v1 LOCK — a duelist seeks and fights only its opponent, with no
   // flee and no economic distraction (we return before those candidates are scored).
+  // The opponent's liveness is answered by the resolver (no roster handle in cognition);
+  // combatStep navigates off the belief (lastPos / inferred destination) and re-acquires.
   if (a._duelWith != null && a.autonomous) {
-    const foe = ctx.agentsById.get(a._duelWith);
-    if (foe && foe.alive) { a.goal = { kind: 'fight', targetId: foe.id }; return; }
+    if (ctx.resolver && ctx.resolver.isLiveAgent(a._duelWith)) { a.goal = { kind: 'fight', targetId: a._duelWith }; return; }
   }
 
   // THE AVENGER: an NPC whose kin the PLAYER murdered — a relentless personal nemesis.
@@ -35,8 +36,7 @@ export function decide(a, ctx) {
   // flee and no economic distraction, until one of them falls. The Director keeps the
   // grudge hot (so it never cools) and narrates the vendetta + files it as a saga.
   if (a.avengerOf != null && a.autonomous) {
-    const foe = ctx.agentsById.get(a.avengerOf);
-    if (foe && foe.alive) { a.goal = { kind: 'fight', targetId: foe.id }; return; }
+    if (ctx.resolver && ctx.resolver.isLiveAgent(a.avengerOf)) { a.goal = { kind: 'fight', targetId: a.avengerOf }; return; }
   }
 
   // THE BUTCHER'S SHADOW: the street empties before a known killer. A FEARFUL townsperson
@@ -46,9 +46,13 @@ export function decide(a, ctx) {
   if (LEGEND && LEGEND.enabled && a.autonomous && a.faction === 'townsfolk' &&
       a.guardianOf == null && !a.inParty && !a.combatant && a.personality &&
       a.personality.risk_tolerance < (LEGEND.fearRisk || 0.42)) {
-    const p = ctx.player;
-    if (p && p.alive && (p.notoriety || 0) >= (LEGEND.villainAt || 0.66) &&
-        a.pos.distanceTo(p.pos) < (LEGEND.fearRange || 9)) { a.goal = { kind: 'flee', fromId: p.id }; return; }
+    // BELIEF-GATED FEAR: read my OWN belief about the player (a scalar id, never a live
+    // handle). I only dread a villain I've actually SEEN (a confident belief carrying its
+    // notoriety, written by perception) and that I believe is right beside me. An NPC who
+    // never laid eyes on the player feels nothing.
+    const pb = ctx.playerId != null ? a.beliefs.get(ctx.playerId) : null;
+    if (pb && pb.confidence >= SIM.actOnBeliefMin && (pb.notoriety || 0) >= (LEGEND.villainAt || 0.66) &&
+        a.pos.distanceTo(pb.lastPos) < (LEGEND.fearRange || 9)) { a.goal = { kind: 'flee', fromId: ctx.playerId }; return; }
   }
 
   // BOUNTY-HUNTER: a townsperson who answered a Gazette bounty hunts its quarry —
@@ -56,18 +60,25 @@ export function decide(a, ctx) {
   // close; else marches toward the threat zone the notice named.
   if (a.bounty && a.autonomous) {
     const b = a.bounty;
-    let target = null;
-    if (b.killerId != null) target = ctx.agentsById.get(b.killerId);
-    else {
-      let bd = Infinity;
-      for (const o of ctx.agents) {
-        if (!o.alive || o.controlled || o.faction !== b.faction) continue;
-        const d = a.pos.distanceTo(o.pos);
-        if (d < bd) { bd = d; target = o; }
+    // NAMED quarry: navigate off my BELIEF of it (lastPos / inferred destination). If I
+    // hold a confident belief I close to fight (combatStep re-acquires by sight); else I
+    // march toward where I last believed it / the notice's threat zone.
+    if (b.killerId != null) {
+      const bel = a.beliefs.get(b.killerId);
+      if (bel && bel.confidence >= SIM.actOnBeliefMin && a.pos.distanceTo(bel.lastPos) <= SIM.visionRange) {
+        a.goal = { kind: 'fight', targetId: b.killerId };
+      } else {
+        const toward = bel ? { x: bel.lastPos.x, z: bel.lastPos.z } : b.toward;
+        a.goal = { kind: 'bounty', toward };
       }
+      return;
     }
-    if (target && target.alive && a.pos.distanceTo(target.pos) <= SIM.visionRange) a.goal = { kind: 'fight', targetId: target.id };
-    else a.goal = { kind: 'bounty', toward: (target && target.alive) ? { x: target.pos.x, z: target.pos.z } : b.toward };
+    // FACTION bounty: the execution layer scans for the nearest VISIBLE foe of the bounty's
+    // faction (vision-gated; returns a belief-style snapshot, never the live object). With
+    // one in sight I fight it; else I march toward the notice's named threat zone.
+    const ref = ctx.resolver ? ctx.resolver.nearestVisibleOfFaction(a, b.faction) : null;
+    if (ref) a.goal = { kind: 'fight', targetId: ref.id };
+    else a.goal = { kind: 'bounty', toward: b.toward };
     return;
   }
 
@@ -108,17 +119,17 @@ export function decide(a, ctx) {
     // core). It only drops cover when a NON-cover hostile (e.g. a frontier
     // monster) is right on top of it; otherwise it keeps MOVING to scout/exfil.
     // Combat, when it happens, is truthful (true faction), preserving the split.
-    let foe = null, fd = Infinity;
+    let foeId = null, fd = Infinity;
     for (const b of a.beliefs.all()) {
       if (b.confidence < SIM.actOnBeliefMin || !a.considerHostile(b)) continue;
       if (b.lastFaction === a.disguiseFaction) continue;   // don't fight my cover
-      const o = ctx.agentsById.get(b.subjectId);
-      if (!o || !o.alive) continue;
-      const d = a.pos.distanceTo(o.pos);
-      if (d < fd) { fd = d; foe = o; }
+      // BELIEF-ONLY: judge "cornered" off where I BELIEVE the threat is (lastPos), never a
+      // live read. combat (truthful) still resolves who is actually struck if I do fight.
+      const d = a.pos.distanceTo(b.lastPos);
+      if (d < fd) { fd = d; foeId = b.subjectId; }
     }
-    if (foe && fd <= SIM.arriveDist + 1.6) {
-      a.goal = { kind: 'fight', targetId: foe.id };   // cornered by a real threat
+    if (foeId != null && fd <= SIM.arriveDist + 1.6) {
+      a.goal = { kind: 'fight', targetId: foeId };   // cornered by a real threat
     } else {
       a.goal = { kind: 'spy', phase: a.spy.phase };   // scout / exfil (act.js moves)
     }
@@ -198,7 +209,17 @@ export function decide(a, ctx) {
       // overstock of WHATEVER it's currently making damps the urge to keep at it
       const made = a._trade ? (inv[a._trade] || 0) : 0;
       const overstock = clamp01(made / ECON.maxStack);
-      push('work', WEIGHT.work * (0.4 + P.ambition) * (0.5 + 0.5 * goldNeed) * (1 - 0.7 * overstock));
+      // EFFECTIVE VALUE OF LABOUR, weighed against THIS agent's OWN values. When the
+      // best trade's net margin is thin (a glutted market), the WEALTH motive to work
+      // shrinks toward nothing — so a leisure-valuing soul tips to rest/socialise/wander
+      // instead of toiling for free. But the AMBITIOUS keep at it via an ambition-scaled
+      // intrinsic floor, so the dropout is personality-graded, not a town-wide cutoff.
+      // In a HEALTHY economy lv≈1 and this reduces to the old (0.5+0.5·goldNeed) term —
+      // behaviour only changes once labour stops paying. Belief-only; never throws.
+      const lv = laborValue(a);                                  // 0..1 effective value of labour
+      const wealthMotive = (0.5 + 0.5 * goldNeed) * lv;          // pay-driven, scaled by real value
+      const motive = Math.max(ECON.workIntrinsicFloor * P.ambition, wealthMotive);
+      push('work', WEIGHT.work * (0.4 + P.ambition) * motive * (1 - 0.7 * overstock));
       push('rest', Math.pow(1 - a.needs.energy, 1.5) * WEIGHT.rest);
       // SOCIALISE = seek out a believed-friend (belief-only target). A known friend
       // is a stronger pull than a generic market trip — heading to a face you like is
@@ -207,6 +228,16 @@ export function decide(a, ctx) {
       const friendPull = friend != null ? 1.25 : 1;
       push('socialize', (1 - a.needs.social) * (0.5 + P.social_drive) * WEIGHT.socialize * friendPull,
         friend != null ? { withId: friend } : undefined);
+
+      // SIGHTSEE — driven by the NOVELTY need (a distinct drive in the decomposed need-
+      // space). Boredom builds until a curious soul takes in a fresh sight; because it's
+      // a real, growing deficit it fires PERIODICALLY (not never), giving leisure genuine
+      // variety. Scaled by the deficit × curiosity, amplified by the leisure valve when
+      // labour is cheap. It doesn't out-pull URGENT comfort/hunger (a desperate soul isn't
+      // bored) — it claims ordinary idle time, which the comfort de-monopolisation now frees.
+      if (NOVELTY.enabled && a.needs.novelty < NOVELTY.seekBelow)
+        push('sightsee', (1 - a.needs.novelty) * WEIGHT.sightsee * (0.4 + P.curiosity) * (0.7 + 0.5 * (1 - lv)));
+
 
       // MARKET TRIP (logistics): trade only clears AT a market now, so a producer must
       // HAUL its load in to SELL — or come to BUY a pressing need (food/a tool). The
@@ -231,15 +262,18 @@ export function decide(a, ctx) {
       const seeking = a.goal && a.goal.kind === 'comfort';
       const comfortCeil = seeking ? COMFORT.satisfiedAt : COMFORT.seekBelow;
       if (COMFORT.enabled && a.needs.comfort < comfortCeil) {
+        // base comfort pull from the deficit (urgent when critically low) — shared by
+        // BOTH the home/tavern seek and the sightsee alternative, so they truly compete.
+        let cBase = (1 - a.needs.comfort) * WEIGHT.comfort;
+        // COMFORT EMERGENCY: when comfort runs critically low it becomes urgent like
+        // hunger — a near-survival pull that out-ranks a routine market/plan haul, so
+        // the agent actually goes home instead of grinding the market into the ground.
+        if (a.needs.comfort < (COMFORT.urgentBelow || 0)) cBase *= (COMFORT.urgentBoost || 1);
         const src = nearestComfortSource(a, ctx);
         if (src) {
           // strong, linear pull: a low-comfort agent commits to heading home rather
           // than being out-pulled by a market/plan urge (WEIGHT.comfort carries it).
-          let cs = (1 - a.needs.comfort) * WEIGHT.comfort;
-          // COMFORT EMERGENCY: when comfort runs critically low it becomes urgent like
-          // hunger — a near-survival pull that out-ranks a routine market/plan haul, so
-          // the agent actually goes home instead of grinding the market into the ground.
-          if (a.needs.comfort < (COMFORT.urgentBelow || 0)) cs *= (COMFORT.urgentBoost || 1);
+          let cs = cBase;
           if (seeking) {
             // already on my way home: stick with it (don't get yanked off mid-walk),
             // and once AT the source dwell hard until topped up (the limit-cycle fix).
@@ -330,23 +364,24 @@ function nearestComfortSource(a, ctx) {
 // companion decision: defend the leader. Engage a believed-hostile within
 // vision of me OR of the leader; otherwise keep formation (goal 'follow').
 export function decideParty(a, ctx) {
-  const leader = a._leader(ctx);
+  // The leader handle: for the PLAYER-led party, a documented controlled-leader exception
+  // supplies ctx.partyLeader (the execution layer reads it). For an NPC band, resolve the
+  // leader off MY belief about it (confidence-gated lastPos) — no roster.
+  const leader = a._leader(ctx);                 // controlled-party leader handle, or null
+  const lbel = (!leader && a.bandLeaderId != null) ? a.beliefs.get(a.bandLeaderId) : null;
+  const leaderLive = leader ? leader.alive : !!(lbel && lbel.confidence >= SIM.actOnBeliefMin); // EPISTEMIC-OK: controlled party leader (known mechanic)
   // a banded agent whose leader is gone (dead/disbanded) has no one to follow —
   // it reverts to wandering rather than assuming the player or chasing a null.
-  if (!leader || !leader.alive) { a.goal = { kind: 'wander' }; return; }
+  if (!leaderLive) { a.goal = { kind: 'wander' }; return; }
   const gt = a.groupType ? GROUP_TYPES[a.groupType] : null;
   const combatant = gt ? gt.combatant : true;   // player party + warbands fight; hearths flee
   let enemy = a._nearestHostile(ctx);
-  // a fighting band also picks up an enemy the leader is tangling with, even
-  // beyond my own sight, so the group converges on the leader's fight.
-  if (!enemy && combatant && leader && leader.alive) {
-    let bd = SIM.visionRange * SIM.visionRange;
-    for (const o of ctx.agents) {
-      if (o === a || o === leader || !o.alive || o.controlled || o.inParty) continue;
-      if (!factionHostile(a.faction, o.faction)) continue;
-      const d = leader.pos.distanceToSquared(o.pos);
-      if (d < bd) { bd = d; enemy = o; }
-    }
+  // a fighting band also picks up an enemy the leader is tangling with, even beyond my own
+  // sight, so the group converges on the leader's fight. The execution layer performs this
+  // vision-gated scan around the leader and returns a belief-style ref (never the object).
+  if (!enemy && combatant && ctx.resolver) {
+    const ref = ctx.resolver.enemyNearLeader(a, leader);
+    if (ref) enemy = ref;
   }
   if (enemy && !combatant) { a.goal = { kind: 'flee', fromId: enemy.id }; return; }  // hearth runs
   // even on the march, a safe-but-starving companion stops to eat (it has no economic

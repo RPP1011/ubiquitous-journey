@@ -10,12 +10,23 @@
 // omniscient world truth). Progress is measured from lightweight per-agent
 // counters (agent.life) plus the gold/level the agent genuinely holds.
 
-import { MOTIVE } from './simconfig.js';
+import { MOTIVE, SIM } from './simconfig.js';
 import { RPG } from '../rpg/rpgconfig.js';
 import { goalAvenge, goalSeekFortune, goalRepay, goalGrieve, goalDelve } from './planner.js';
 
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
 const lvl = (a) => (a.progression ? a.progression.totalLevel || 0 : 0);
+
+// BELIEF-BASED liveness: do I still hold a confident-enough belief that `subjectId`
+// exists? A subject I've lost all track of (belief gone / faded below the act threshold)
+// reads as "believed gone". This replaces every omniscient `o.alive` read in the goal
+// layer — the epistemic split: I act on what I BELIEVE, and the combat bridge's `_slain`
+// signal handles the case where I truly killed someone out of my own sight.
+function beliefAlive(a, subjectId) {
+  if (!a || !a.beliefs) return false;
+  const b = a.beliefs.get(subjectId);
+  return !!(b && b.confidence >= SIM.actOnBeliefMin);
+}
 
 // Ambition catalogue. `favors` multiplies the score of matching decide() action
 // kinds (1 = neutral). `weight(P)` is the assignment propensity from personality.
@@ -89,8 +100,10 @@ export function updateAmbition(a, ctx) {
   if (!amb) { assignAmbition(a, ctx.time); return; }
   const now = ctx.time;
   if (amb.revenge) {
-    const subj = ctx.agentsById.get(amb.subjectId);
-    const done = !subj || !subj.alive;                          // wrongdoer dead/gone -> satisfied
+    // BELIEF/BRIDGE-BASED "believed dead": the wrongdoer is satisfied-dead when a combat
+    // bridge stamped it on my `_slain` set (a sanctioned onCombatEvents write) OR I hold
+    // no confident belief about it any more (I've lost all track of it). No roster read.
+    const done = (a._slain && a._slain.has(amb.subjectId)) || !beliefAlive(a, amb.subjectId);
     const stale = now - amb.t0 > MOTIVE.revengeTimeout;          // or the grudge simply cools
     amb.progress = done ? 1 : clamp01((now - amb.t0) / MOTIVE.revengeTimeout) * 0.4;
     if (done || stale) assignAmbition(a, now);
@@ -151,9 +164,11 @@ export function deriveGoals(a, ctx) {
     if (!ep) continue;
     try {
       if (ep.kind === 'assaulted' && ep.withId != null) {
-        // don't avenge a culprit who's already dead/gone, or one's own self
-        const culprit = ctx.agentsById && ctx.agentsById.get(ep.withId);
-        if (!culprit || !culprit.alive || culprit === a) continue;
+        // don't avenge oneself, or a culprit a combat BRIDGE has already marked slain by
+        // me (_slain). We do NOT require the culprit to be in sight — the whole point is to
+        // HUNT one that fled out of belief-reach (the avenge goal drives destination-intent
+        // pursuit). No roster/liveness read here.
+        if (ep.withId === a.id || (a._slain && a._slain.has(ep.withId))) continue;
         const g = goalAvenge(ep.withId);
         g.priority = 0.9; g.from = 'assaulted';
         g.expiresAt = now + (MOTIVE.avengeExpiry || 120);
@@ -165,23 +180,24 @@ export function deriveGoals(a, ctx) {
         a.pushGoal(g, ctx);
       } else if (ep.kind === 'succoured' && ep.withId != null) {
         // a kindness received while desperate -> repay the benefactor (give OR pay).
-        const ben = ctx.agentsById && ctx.agentsById.get(ep.withId);
-        if (!ben || !ben.alive || ben === a) continue;   // can't repay the dead/gone/self
+        // Can't repay one's own self or a benefactor I believe is gone (no confident
+        // belief left). Belief-based; no roster read.
+        if (ep.withId === a.id || !beliefAlive(a, ep.withId)) continue;
         const g = goalRepay(ep.withId, 1, 'any');
         g.priority = 0.7; g.from = 'succoured';
         g.expiresAt = now + (MOTIVE.repayExpiry || 240);
         a.pushGoal(g, ctx);
       } else if (ep.kind === 'witnessed_death' && ep.withId != null) {
-        // saw a (liked) friend fall -> mourn them; if the killer is known and still
-        // alive, also carry a vendetta. Grieve is plan-less (just decays); avenge plans.
-        const subj = ctx.agentsById && ctx.agentsById.get(ep.withId);
-        if (subj && subj.alive) continue;               // not actually dead -> nothing to mourn
+        // saw a (liked) friend fall -> mourn them; if the killer is known (and I haven't
+        // already slain it), carry a vendetta. The witnessed_death memory IS the evidence
+        // of death (I saw it / word reached me), so no liveness read is needed to grieve.
+        // Grieve is plan-less (just decays); avenge plans + drives the hunt.
         const grief = goalGrieve(ep.withId);
         grief.priority = 0.55; grief.from = 'witnessed_death';
         grief.expiresAt = now + (MOTIVE.grieveExpiry || 90);
         a.pushGoal(grief, ctx);
-        const culprit = ep.byId != null && ctx.agentsById && ctx.agentsById.get(ep.byId);
-        if (culprit && culprit.alive && culprit !== a) {
+        const haveCulprit = ep.byId != null && ep.byId !== a.id && !(a._slain && a._slain.has(ep.byId));
+        if (haveCulprit) {
           const av = goalAvenge(ep.byId);
           av.priority = 0.85; av.from = 'witnessed_death';
           av.expiresAt = now + (MOTIVE.avengeExpiry || 120);

@@ -32,6 +32,9 @@ import { Bounties } from './bounties.js';
 import { Arbitrage } from './arbitrage.js';
 import { Intrigue } from './intrigue.js';
 import { runMarket } from './market.js';
+import { castSpec } from '../rpg/abilities/interpreter.js';
+import { POI_KIND } from './world.js';
+import { PLAN } from './planner.js';
 import { installDeedRouter, recordDeed } from './deedRouter.js';
 import { onCombatEvents } from './combatEvents.js';
 
@@ -401,12 +404,188 @@ export class Simulation {
   }
 
   get fighters() { return this.agents.map((a) => a.fighter); }
-  _ctx() { return { agents: this.agents, agentsById: this.agentsById, world: this.world, time: this.time, player: this.player, buildSites: this.buildSites, cities: this.cities }; }
+
+  // FULL BRIDGE ctx: the sanctioned reality-touch + orchestration surface. Handed ONLY
+  // to the allowlisted modules (perceive/gossip, onCombatEvents, the combat resolver, and
+  // the subsystem ticks) — they legitimately read ground truth to WRITE beliefs / resolve
+  // physics. Carries the live roster + player handle.
+  _ctx() { return { agents: this.agents, agentsById: this.agentsById, world: this.world, time: this.time, player: this.player, playerId: this.player ? this.player.id : null, buildSites: this.buildSites, cities: this.cities, resolver: this._cogResolver() }; }
+
+  // RESTRICTED COGNITION ctx: handed to a.decide(ctx) and a.act(dt, ctx). It carries NO
+  // live-roster handle (no `agents`, no `agentsById`, no `player` object) — so truth is
+  // STRUCTURALLY UNREACHABLE from cognition: a roster scan / lookup simply has nothing to
+  // dereference. The few LEGIT cross-agent needs are met without the roster:
+  //   · playerId    — a primitive id, so the fear gate reads a's OWN belief about the player
+  //   · resolver    — a narrow facade exposing ONLY the sanctioned execution operations
+  //                   (vision-gated perception, ability target, conserved market/transfer)
+  //   · partyLeader — the controlled player-led party's leader handle, a documented game
+  //                   mechanic, supplied to the EXECUTION movement path (followLeader) only.
+  _cognitionCtx() {
+    return {
+      world: this.world,
+      time: this.time,
+      buildSites: this.buildSites,
+      cities: this.cities,
+      playerId: this.player ? this.player.id : null,
+      partyLeader: (this.party && this.party.leader) ? this.party.leader : null,
+      resolver: this._cogResolver(),
+    };
+  }
+
+  // The cognition RESOLVER: a narrow facade the restricted ctx hands to combatStep /
+  // transfers. Cognition holds only these methods — never the internal agentsById — so it
+  // cannot scan or dereference arbitrary entities. Every method is vision-/conservation-
+  // gated and guarded (never throws on the tick). Built once, lazily.
+  _cogResolver() {
+    if (this._resolver) return this._resolver;
+    const sim = this;
+    this._resolver = {
+      // VISION-GATED ACTIVE PERCEPTION: if `observer` can SEE subjectId, write a fresh
+      // belief (truth in → belief out, the sanctioned bridge) and return the real agent;
+      // else null. Lets combatStep re-acquire a visible quarry without holding the roster.
+      perceive(observer, subjectId) {
+        try {
+          const o = sim.agentsById.get(subjectId);
+          if (!o || !o.alive || !observer) return null;
+          if (observer.pos.distanceTo(o.pos) > SIM.visionRange) return null;
+          observer.beliefs.observe(o.id, o.disguiseFaction || o.faction, o.pos, sim.time, true);
+          return o;
+        } catch { return null; }
+      },
+      // ABILITY EXECUTION bridge: cast `spec` from `caster`, resolving area/range targets
+      // over the TRUE roster INSIDE the sim (the interpreter is geometric execution, like
+      // the combat resolver) — cognition never holds the roster it scans. Returns whether
+      // the spec fired. Guarded; never throws on the tick.
+      cast(spec, caster) {
+        try { return castSpec(spec, caster, sim._ctx()); } catch { return false; }
+      },
+      // The real Agent for ability casting — ONLY when vision-confirmed alive (a spec
+      // resolves on a real body). A belief about a non-agent (a scarecrow) returns null.
+      castTarget(observer, subjectId) {
+        try {
+          const o = sim.agentsById.get(subjectId);
+          if (!o || !o.alive || !observer) return null;
+          if (observer.pos.distanceTo(o.pos) > SIM.visionRange) return null;
+          return o;
+        } catch { return null; }
+      },
+      // BOUNTY/COMPANION target acquisition: the nearest VISIBLE live agent of `faction`
+      // hostile-eligible to `observer`. Returns a belief-style ref { id, pos } (a snapshot,
+      // not the live object) or null — the execution layer performs the scan so cognition
+      // never holds the roster. Vision-gated (only what the observer can actually see).
+      nearestVisibleOfFaction(observer, faction) {
+        try {
+          let best = null, bd = Infinity;
+          for (const o of sim.agents) {
+            if (!o.alive || o.controlled || o.faction !== faction) continue;
+            const d = observer.pos.distanceTo(o.pos);
+            if (d <= SIM.visionRange && d < bd) { bd = d; best = o; }
+          }
+          return best ? { id: best.id, pos: { x: best.pos.x, y: best.pos.y, z: best.pos.z } } : null;
+        } catch { return null; }
+      },
+      // COMPANION leader-fight: the nearest live agent (within vision of the leader) that
+      // is faction-hostile to `observer` and not in a party — so a band converges on the
+      // leader's fight. Returns { id, pos } or null. Execution-side scan; vision-gated.
+      enemyNearLeader(observer, leader) {
+        try {
+          if (!leader || !leader.alive) return null;
+          let best = null, bd = SIM.visionRange * SIM.visionRange;
+          for (const o of sim.agents) {
+            if (o === observer || o === leader || !o.alive || o.controlled || o.inParty) continue;
+            if (!factionHostile(observer.faction, o.faction)) continue;
+            const d = leader.pos.distanceToSquared(o.pos);
+            if (d < bd) { bd = d; best = o; }
+          }
+          return best ? { id: best.id, pos: { x: best.pos.x, y: best.pos.y, z: best.pos.z } } : null;
+        } catch { return null; }
+      },
+      // Live world position of subjectId — ONLY when vision-confirmed (used by the player's
+      // controlled `approach`/`fight` execution, which legitimately tracks a seen target).
+      // Returns a {x,y,z} snapshot or null. Cognition never gets the live object.
+      seenPos(observer, subjectId) {
+        try {
+          const o = sim.agentsById.get(subjectId);
+          if (!o || !o.alive || !observer) return null;
+          if (observer.pos.distanceTo(o.pos) > SIM.visionRange) return null;
+          return { x: o.pos.x, y: o.pos.y, z: o.pos.z, alive: true };
+        } catch { return null; }
+      },
+      // Is subjectId a real, currently-alive agent? A belief-erasing convenience for the
+      // duel/avenger locks — answers liveness WITHOUT exposing the object. Guarded.
+      isLiveAgent(subjectId) {
+        try { const o = sim.agentsById.get(subjectId); return !!(o && o.alive); }
+        catch { return false; }
+      },
+      // CONSERVED MARKET CLEAR: clear ONE unit of `good` for `a` against a willing
+      // counterparty at the market POI (the execution clearing house). buying=true → a
+      // buys; else a sells. Belief-priced at the midpoint. Returns true on a settled deal.
+      // a never reads cp.gold/pos/priceBeliefs — the resolver does, inside the sim.
+      marketClear(a, good, buying) {
+        try {
+          const m = sim.world && sim.world.nearest(POI_KIND.MARKET, a.pos);
+          if (!m) return false;
+          if (a.pos.distanceTo(m.pos) > SIM.talkRange) return false;
+          let cp = null;
+          for (const o of sim.agents) {
+            if (o === a || !o.alive || o.controlled || o.faction === 'monster') continue;
+            if (o.pos.distanceTo(m.pos) > SIM.talkRange) continue;
+            if (buying ? o.sellQty(good) > 0 : (o.wantQty(good) > 0 && o.gold >= 1)) { cp = o; break; }
+          }
+          if (!cp) return false;
+          const price = +(((a.priceBeliefs[good] || 1) + (cp.priceBeliefs[good] || 1)) / 2).toFixed(2);
+          if (buying) {
+            if (a.gold < price) return false;
+            a.applyBuy(good, price); cp.applySell(good, price);
+          } else {
+            if (a.surplus(good) < 1 || cp.gold < price) return false;
+            a.applySell(good, price); cp.applyBuy(good, price);
+          }
+          return true;
+        } catch { return false; }
+      },
+      // CONSERVED TRANSFER: move item×n OR gold from `from` to the agent `toId`, ONLY when
+      // they are co-located (at reach). Fires the RECEIVER's own succour/standing hook via
+      // ITS store. Returns true on a landed transfer. The giver never touches to.* — the
+      // resolver performs the move inside the sim. Closed money loop (no minting).
+      deliverTo(from, toId, payload) {
+        try {
+          const to = sim.agentsById.get(toId);
+          if (!to || !to.alive || !from) return false;
+          if (from.pos.distanceTo(to.pos) > (PLAN.reachRange || 2.2) + 0.5) return false;
+          const item = payload.item, n = payload.n || 1, gold = payload.gold || 0;
+          if (item) {
+            if ((from.inventory[item] || 0) < n) return false;
+            sim.recordSuccoured(to, from.id, 1);    // receiver records succour (its own memory)
+            from.inventory[item] -= n;
+            to.inventory[item] = (to.inventory[item] || 0) + n;
+          } else if (gold) {
+            if ((from.gold || 0) < gold) return false;
+            sim.recordSuccoured(to, from.id, 1);
+            from.gold -= gold;
+            to.gold = (to.gold || 0) + gold;
+          } else return false;
+          // receiver warms toward the giver via ITS OWN belief store.
+          if (to.beliefs) { const rel = to.beliefs.get(from.id); if (rel) rel.standing = Math.min(1, rel.standing + 0.15); }
+          return true;
+        } catch { return false; }
+      },
+    };
+    return this._resolver;
+  }
 
   update(dt) {
     this.time += dt;
     this.world.update(dt);
-    const ctx = this._ctx();
+    // DEATH SWEEP: catch agents that died WITHOUT a melee combat event — a ranged/instant
+    // ABILITY kill (interpreter applies damage directly, no resolveCombat 'dead' event), a
+    // watchtower bolt, etc. — and route their death through the SAME belief/_slain bridge
+    // (resolveDeath) the melee path uses, so an out-of-sight avenger's vendetta still closes
+    // and witnesses still learn the death however the killing blow was delivered. Idempotent
+    // (each id processed once via _deathSeen). Guarded; never throws on the tick.
+    this._sweepDeaths();
+    const ctx = this._ctx();                  // FULL bridge ctx (perceive/gossip/subsystems/resolver)
+    const cog = this._cognitionCtx();         // RESTRICTED cognition ctx (decide/act): no live roster
 
     for (const a of this.agents) {
       if (!a.alive) { a.setLabelVisible(false); continue; }
@@ -423,7 +602,7 @@ export class Simulation {
       for (const a of this.agents) a.perceive(ctx);
       for (const a of this.agents) a.beliefs.decay(step);
       for (const a of this.agents) a.gossipBeliefs(ctx);
-      for (const a of this.agents) a.decide(ctx);
+      for (const a of this.agents) a.decide(cog);   // cognition: beliefs + resolver only
       this._runMarket();
       // RPG: behavior-profile decay + class matching on the same fixed-rate tick.
       for (const a of this.agents) a.progression.tick(this.time);
@@ -474,7 +653,7 @@ export class Simulation {
       this.arbitrage.tick(ctx, step);
     }
 
-    for (const a of this.agents) a.act(dt, ctx);
+    for (const a of this.agents) a.act(dt, cog);   // execution: beliefs + resolver only
     this.party.prune();   // drop companions who died this frame
     // reputation drifts every frame (dt seconds): faction rollups fade toward
     // neutral, personal standings drift toward each NPC's faction bias.
@@ -549,4 +728,54 @@ export class Simulation {
 
   // Fold combat outcomes back into beliefs/reputation/memory (see combatEvents.js).
   onCombatEvents(events) { return onCombatEvents(this, events); }
+
+  // THE _slain / belief-death BRIDGE (shared by the melee combat path in combatEvents.js
+  // AND the death sweep below). When `dead` falls — by whoever's hand `killer` (may be null)
+  // — stamp every agent that holds an avenge/duel/avenger vendetta against it (the killer
+  // too) with the dead id in their OWN `_slain` set, the sanctioned out-of-sight death
+  // signal the goal layer reads, and ERASE their stale belief about it. This is what lets a
+  // vendetta close the instant its quarry dies, wherever the avenger is, however the killing
+  // blow landed. Reads/writes only agent state; never throws (the freeze lesson).
+  stampSlain(dead, killer = null) {
+    if (!dead) return;
+    try {
+      const id = dead.id;
+      if (killer) { (killer._slain || (killer._slain = new Set())).add(id); }
+      for (const w of this.agents) {
+        if (w === dead || w.controlled) continue;
+        // anyone pursuing it (active goal) — OR who COULD re-derive a vendetta against it
+        // (a hostile belief, an assaulted/witnessed_death memory of it) — learns it is dead.
+        // Stamping the broader set (not just the active goal) closes a race where an
+        // avenge goal is transiently absent (mid re-derivation) at the death instant: the
+        // `_slain` mark both pops any present goal AND blocks deriveGoals from re-pushing one.
+        const byGoal = (Array.isArray(w.goals) && w.goals.some((g) => g && (g.kind === 'avenge' || g.kind === 'defeat') && g.subjectId === id))
+          || w._duelWith === id || w.avengerOf === id;
+        const bel = w.beliefs && w.beliefs.get(id);
+        const byBelief = !!(bel && (bel.hostile || bel.standing < 0));
+        const byMemory = !!(w.memory && typeof w.memory.recent === 'function' &&
+          w.memory.recent(12).some((e) => e && (e.kind === 'assaulted' || e.kind === 'witnessed_death') && (e.withId === id || e.byId === id)));
+        if (byGoal || byBelief || byMemory) {
+          (w._slain || (w._slain = new Set())).add(id);
+          if (w.beliefs) w.beliefs.erase(id);   // I KNOW it's dead now — drop the stale sighting
+        }
+      }
+    } catch { /* never throw on the tick */ }
+  }
+
+  // Catch deaths that did NOT flow through a melee combat 'dead' event (ranged/instant
+  // ability kills, tower bolts, scripted removals): for each agent newly not-alive that we
+  // haven't yet processed, run the death bridge so vendettas/beliefs resolve. Killer is
+  // unknown here (no event), so `_slain` is stamped on the avengers (who close their goal),
+  // not on a specific slayer. Idempotent via `_deathSeen`. Guarded.
+  _sweepDeaths() {
+    try {
+      if (!this._deathSeen) this._deathSeen = new Set();
+      for (const a of this.agents) {
+        if (a.alive) continue;
+        if (this._deathSeen.has(a.id)) continue;
+        this._deathSeen.add(a.id);
+        this.stampSlain(a, null);
+      }
+    } catch { /* never throw on the tick */ }
+  }
 }

@@ -6,7 +6,7 @@
 // verbatim bodies of the old Agent methods. No cycles — imports config + the
 // rpg event bus only.
 
-import { GOODS, COMMODITIES, ECON, SIM } from '../simconfig.js';
+import { GOODS, COMMODITIES, ECON } from '../simconfig.js';
 import { bus, makeEvent } from '../../rpg/events.js';
 
 // --- price beliefs (the economic ToM) ---------------------------------------
@@ -16,16 +16,27 @@ export function learnPrice(a, c, price, w) {
   a.priceBeliefs[c] = +pb.toFixed(2);
 }
 
-// drift toward a chatting neighbour's prices — how rumoured prices spread
+// SELF demand-awareness from my OWN unsold stock (belief-clean; reads only my inventory).
+// The cross-agent rumoured-price drift moved into the gossip BRIDGE (perception.js's
+// gossipBeliefs) where reading a chatting neighbour's prices is sanctioned — so this
+// cognition-layer step touches no other entity.
+//
+// DEMAND-AWARENESS: a good this agent is SITTING ON — unsold surplus beyond what it
+// keeps — is worth less than it believes. Mark the belief DOWN, proportional to the
+// glut (capped per tick). A maker drowning in unsellable stock (a smith with a pile of
+// tools, a brewer with crates of potion) cuts its price, deflating the inflated CRAFT
+// MARGIN that otherwise herds the whole town into the single dearest good. Self-
+// correcting: selling drops the surplus and trades re-learn the price upward. Beliefs
+// only (mints nothing); bounded; never throws.
 export function priceGossip(a, ctx, dt) {
   if (a.controlled) return;
-  for (const o of ctx.agents) {
-    if (o === a || !o.alive || o.controlled) continue;
-    if (a.pos.distanceTo(o.pos) > SIM.talkRange) continue;
-    for (const c of COMMODITIES) {
-      a.priceBeliefs[c] += (o.priceBeliefs[c] - a.priceBeliefs[c]) * ECON.priceGossip * dt;
+  for (const c of COMMODITIES) {
+    const glut = (a.inventory[c] || 0) - (ECON.keep[c] || 0);
+    if (glut > 0) {
+      const markdown = 1 - Math.min(ECON.unsoldMarkdownMax, ECON.unsoldMarkdown * glut * dt);
+      const pb = Math.max(ECON.priceBounds[0], a.priceBeliefs[c] * markdown);
+      a.priceBeliefs[c] = +pb.toFixed(2);
     }
-    break; // one conversation partner per tick is enough
   }
 }
 
@@ -62,9 +73,13 @@ export function applyBuy(a, c, price) {
   a.inventory[c] += 1; a.gold -= price; a.learnPrice(c, price, ECON.priceLearn); a._tradeFlash = 0.6;
   const belief = a.priceBeliefs[c] || price;
   const bargain = Math.max(0, (belief - price) / Math.max(1, belief));
+  // damp the IDENTITY weight of a routine trade: every agent buys/sells constantly, so
+  // at full weight the universal TRADE/HAGGLE tags swamp the profile and make everyone a
+  // generic "merchant", drowning the production vocation. Scaled down, a soul's identity
+  // is shaped by what it MAKES — only a DEDICATED trader (many deals) still reads as one.
   bus.emit(makeEvent({
     actorId: a.id, verb: 'buy', tags: ['TRADE', 'BARTER', 'HAGGLE'],
-    magnitude: 1 + bargain, t: a._rpgNow,
+    magnitude: (1 + bargain) * ECON.tradeDeedWeight, t: a._rpgNow,
   }));
 }
 export function applySell(a, c, price) {
@@ -73,6 +88,6 @@ export function applySell(a, c, price) {
   const profit = Math.max(0, (price - belief) / Math.max(1, belief));
   bus.emit(makeEvent({
     actorId: a.id, verb: 'sell', tags: ['TRADE', 'PROFIT', 'HAGGLE'],
-    magnitude: 1 + profit, t: a._rpgNow,
+    magnitude: (1 + profit) * ECON.tradeDeedWeight, t: a._rpgNow,
   }));
 }

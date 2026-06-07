@@ -7,6 +7,7 @@
 // "what A thinks about B" layer) and the Source/confidence provenance model.
 
 import * as THREE from 'three';
+import { LANDMARKS, ARENA_RADIUS } from '../arena.js';
 import { SIM, SOURCE, HEARSAY } from './simconfig.js';
 
 const clampStanding = (s) => Math.max(-1, Math.min(1, s));
@@ -36,7 +37,17 @@ export class BeliefState {
   constructor(subjectId) {
     this.subjectId = subjectId;
     this.lastFaction = null;     // believed faction (a disguise can fake this)
-    this.lastPos = new THREE.Vector3();
+    this.lastPos = new THREE.Vector3();   // where I last SAW it (the anchor of my mental map)
+    // DESTINATION-INTENT pursuit (Theory of Mind, NOT velocity dead-reckoning): when a
+    // tracked quarry leaves sight I do NOT extrapolate a vector. I record its OBSERVED
+    // heading and INFER a likely destination from known geography + context, then move to
+    // intercept there. heading is observed (not projected forward); destPos is a STATIC
+    // geography point (shared knowledge, legit), so committing to it reads no live truth.
+    this.heading = new THREE.Vector3();   // last-seen unit direction of motion (observed)
+    this.destId = null;          // believed destination key (a landmark/place name) or null
+    this.destPos = null;         // resolved world pos of that destination (static geography) or null
+    this.intent = null;          // 'flee'|'raid'|'home'|null — why it's headed there
+    this.notoriety = 0;          // believed player fame (fear gate); written by perception
     this.lastTick = 0;
     this.confidence = 0;         // 0..1, decays over time
     this.hostile = false;        // do I think this agent is hostile to me?
@@ -85,11 +96,27 @@ export class BeliefStore {
   observe(subjectId, perceivedFaction, pos, tick, hostile) {
     const b = this._ensure(subjectId);
     b.lastFaction = perceivedFaction;
+    // record the observed HEADING (unit direction of motion): the displacement since I
+    // last saw it, normalised. This is OBSERVED (not extrapolated forward) — the
+    // destination-intent pursuit reads it to infer WHERE the quarry is making for and
+    // intercept there. A fresh sighting (no prior, or a long gap = a "jump") records no
+    // heading, so I don't infer off a stale anchor.
+    const dt = tick - b.lastTick;
+    if (b.lastTick > 0 && dt > 0 && dt <= HEARSAY.predictMaxGap) {
+      const hx = pos.x - b.lastPos.x, hz = pos.z - b.lastPos.z;
+      const hl = Math.hypot(hx, hz);
+      if (hl > 1e-4) b.heading.set(hx / hl, 0, hz / hl);
+      else b.heading.set(0, 0, 0);
+    } else {
+      b.heading.set(0, 0, 0);
+    }
     b.lastPos.copy(pos);
     b.lastTick = tick;
     b.confidence = SOURCE.WITNESSED.conf;
     b.source = SOURCE.WITNESSED.tag;
     b.hops = 0;
+    // re-acquired by sight: the quarry is here, so any stale inferred destination is moot.
+    b.destId = null; b.destPos = null; b.intent = null;
     if (hostile) b.hostile = true;       // sighting hostility latches on
     return b;
   }
@@ -173,4 +200,73 @@ export class BeliefStore {
       b.suspicion = Math.max(0, b.suspicion - SIM.suspicionDecay * dt);
     }
   }
+}
+
+// DESTINATION-INTENT inference (Theory of Mind). Called when a tracked quarry leaves
+// the observer's sight (confidence first drops below 1.0 after having been seen): infer
+// the STATIC geography point the quarry is likely making for, from
+//   (a) its last-seen HEADING projected onto known fixed places (LANDMARKS),
+//   (b) CONTEXT/intent — a fleeing quarry makes for an exit (a gate) or a hiding vale; a
+//       raider makes for the wild frontier; a neutral drifts on its heading,
+//   (c) FALLBACK — heading zero / nothing fits → stand-and-search at lastPos.
+// It writes belief.destId/destPos/intent. Reads only STATIC shared geography (arena
+// LANDMARKS) + the belief itself — no live roster, no foreign truth. Pure; never throws.
+//   `observer` — the pursuer (its faction/aggression colours the intent).
+//   `belief`   — the BeliefState about the quarry (already updated to last sighting).
+//   `hostileToObserver` — is the quarry believed hostile to the observer (the chaser)?
+export function inferDestination(observer, belief, hostileToObserver = false) {
+  try {
+    if (!belief) return;
+    const last = belief.lastPos;
+    const hx = belief.heading.x, hz = belief.heading.z;
+    const moving = Math.hypot(hx, hz) > 1e-3;
+
+    // pick an intent from context: a quarry the chaser is hunting/that is hostile is
+    // FLEEING (makes for an exit/hiding spot); a monster/bandit makes for the wild frontier
+    // (a RAID/withdraw); everyone else simply drifts on toward where it was last headed.
+    const fac = belief.lastFaction;
+    let intent = null;
+    if (hostileToObserver || (observer && observer.combatant)) intent = 'flee';
+    if (fac === 'monster' || fac === 'bandit') intent = 'raid';
+
+    let dest = null;
+    if (moving && LANDMARKS && LANDMARKS.length) {
+      // project the last position a little along the heading and snap to the nearest
+      // known place that lies roughly IN the heading cone (dot >= 0): the quarry is
+      // heading toward it. Prefer an EXIT/hiding place when fleeing.
+      let best = null, bestScore = Infinity;
+      for (const L of LANDMARKS) {
+        const dx = L.x - last.x, dz = L.z - last.z;
+        const dl = Math.hypot(dx, dz) || 1;
+        const dot = (dx / dl) * hx + (dz / dl) * hz;   // how aligned with the heading
+        if (dot < 0.2) continue;                        // not in the heading cone
+        // bias by intent: fleeing favours gates/vales (exits/hideouts); raiding favours
+        // the frontier (a gate at the arena edge); neutral favours the nearest aligned place.
+        let pref = 1;
+        if (intent === 'flee') pref = (L.kind === 'gate' || L.kind === 'vale') ? 0.5 : 1.4;
+        else if (intent === 'raid') pref = (L.kind === 'gate' || L.kind === 'peak') ? 0.6 : 1.3;
+        const score = (dl / Math.max(0.25, dot)) * pref;
+        if (score < bestScore) { bestScore = score; best = L; }
+      }
+      if (best) dest = best;
+    }
+
+    if (dest) {
+      belief.destId = dest.name;
+      belief.destPos = new THREE.Vector3(dest.x, 0, dest.z);
+      belief.intent = intent;
+    } else if (moving) {
+      // no fixed place fits the cone: presume it keeps going a bounded distance along the
+      // heading toward the frontier (still a static, derived point — not a live read).
+      const reach = Math.min(ARENA_RADIUS, SIM.visionRange * 1.6);
+      belief.destPos = new THREE.Vector3(last.x + hx * reach, 0, last.z + hz * reach);
+      belief.destId = null;
+      belief.intent = intent;
+    } else {
+      // heading unknown → stand-and-search where last seen.
+      belief.destPos = new THREE.Vector3(last.x, 0, last.z);
+      belief.destId = null;
+      belief.intent = null;
+    }
+  } catch { /* never throw on the tick */ }
 }

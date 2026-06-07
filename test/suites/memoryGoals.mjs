@@ -50,9 +50,40 @@ export function memoryGoalTest(ok, { makeFighter, stubScene }) {
   ok(B.memory.recent().some((e) => e.kind === 'assaulted' && e.withId === A.id),
     'mem E1: B holds an `assaulted` memory of A');
 
-  // Move A out of reach so B can't finish it on belief alone before the assaulted
-  // memory consolidates (~8s) into a derived avenge GOAL — the chain we're testing.
-  A.fighter.root.position.set(40, 0, 0);
+  // A FLEES toward an INFERABLE destination (The Thorngate lies on +x), with B WATCHING it
+  // set off — so B's belief records a heading and infers a destination to INTERCEPT (the
+  // destination-intent pursuit), instead of the old omniscient teleport that snapped A
+  // nowhere-inferable and expected an omniscient hunt. A is scripted out to ~26m on +x over
+  // real frames (so sim time advances and the heading forms), then idles there on the path
+  // to the gate; B re-acquires it by sight on the way and runs it down. This also keeps A
+  // out of immediate belief-reach so the DERIVED avenge goal (not raw belief) drives it.
+  {
+    // snap A to a SAFE start beyond B's strike reach first (so B can't kill A mid-flight,
+    // before the avenge goal can DERIVE), then walk it out so the heading forms over time.
+    // Hold A WITHIN B's sight but beyond melee reach while B's `assaulted` memory
+    // consolidates and deriveGoals pushes avenge(A) — then the GOAL (not the reactive fight)
+    // drives the hunt, as the old far-teleport arranged. DISARM + PIN B so it can neither
+    // cast nor close on A during the hold. Then place A at the FAR inferable point (beyond
+    // sight, toward the gate) so the destination-intent pursuit must intercept it.
+    const dt0 = 1 / 60, x0 = A.pos.x, z0 = A.pos.z, bx = B.pos.x, bz = B.pos.z;
+    const steps = 12, far = 26, hold = 16, start = 13;
+    const savedAbilities = B.abilities;
+    B.abilities = new Map();
+    let i = 0;
+    for (let f = 0; f < 1500; f++) {
+      if (i < steps) i++;
+      A.fighter.root.position.set(x0 + start + (i / steps) * (hold - start), 0, z0);
+      B.fighter.root.position.set(bx, 0, bz);                 // keep B put while it watches
+      sim.update(dt0);
+      for (const ff of sim.fighters) ff.update(dt0);
+      const ev = resolveCombat(sim.fighters, sim.isHostile.bind(sim), sim._ctx());
+      if (ev.length) sim.onCombatEvents(ev);
+      if (f >= 4 && B.goals.some((g) => g.kind === 'avenge' && g.subjectId === A.id)) break;
+    }
+    B.abilities = savedAbilities;
+    A.fighter.root.position.set(x0 + far, 0, z0);
+    B.fighter.root.position.set(bx, 0, bz);
+  }
 
   // --- run the loop until B carries the avenge goal (memory must consolidate) -
   const dt = 1 / 60;
