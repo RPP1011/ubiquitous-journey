@@ -469,6 +469,30 @@ export const PARTY = {
   teleportDist: 90,         // snap a hopelessly-lost companion to the leader
 };
 
+// --- STEER: the potential-field locomotion primitive (Phase 2b) -------------
+// One executor (js/sim/agent/steer.js) drives ALL locomotion-shaped behaviours
+// from a weighted force field: attractors pull, repulsors push, the agent steps
+// along the normalised weighted sum. Each "behaviour" is a steer-FILL — a pure
+// (agent, ctx) -> { attractors[], repulsors[], speed } built from the agent's OWN
+// beliefs + mental map + own state (NEVER the roster), so it is belief-gated by
+// construction. The field reuses goTo's exact stepping body (_stepAlong), so the
+// feel — speeds, arrival radius, barrier-deflection, terrain slow, arena clamp,
+// wall collision, grounding — is byte-identical to the old goTo/fleeFrom path.
+//
+// Speeds reuse SIM.moveSpeed/runSpeed; arrival reuses SIM.arriveDist; the stand-off
+// gaps reuse SOCIAL.shadowGap / ECON.marketRange directly (NOT duplicated here — a
+// duplicate could drift). The ONLY value this block owns is fleeAway (was the literal
+// `6` in fleeFrom). The force WEIGHTS are dimensionless ratios; every fill in the 2b
+// pass is single-force (a strict XOR refuge-OR-threat, matching the old code, NOT the
+// simultaneous refuge+threat field the doc sketches — that is a NEW behaviour, out of
+// scope for this preserving refactor), so the weights are all effectively 1 until a
+// future simultaneous-field feature uses the ratios. Kept so that path stays tunable.
+export const STEER = {
+  wAttract: 1.0,   // default attractor weight (single-attractor fills)
+  wThreat:  1.0,   // repulsor weight in the flee/avoid away-branch
+  fleeAway: 6,     // synthetic away-target distance (was the literal 6 in fleeFrom)
+};
+
 // --- NPC bands (parties as an AI abstraction beyond the player) --------------
 // Townsfolk who like each other (mutual positive belief-standing, which emerges
 // from chatting) and are near each other form small adventuring/mutual-defense

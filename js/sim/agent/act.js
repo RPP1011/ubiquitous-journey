@@ -8,7 +8,7 @@
 
 import * as THREE from 'three';
 import { DIR, TUNE } from '../../constants.js';
-import { ARENA_RADIUS, LANDMARKS } from '../../arena.js';
+import { ARENA_RADIUS } from '../../arena.js';
 import { POI_KIND } from '../world.js';
 import { GOODS, ECON, SIM, SOCIAL, BAND, BUILD, COMFORT, NOVELTY } from '../simconfig.js';
 import { castSpec, onCooldown } from '../../rpg/abilities/interpreter.js';
@@ -16,7 +16,8 @@ import { isMelee } from '../../rpg/abilities/ir.js';
 import { bus, makeEvent } from '../../rpg/events.js';
 import { awardGoalClosureXP } from '../motivation.js';
 import { stepTargetPos, stepEffectHolds } from '../planner.js';
-import { goTo, fleeFrom, followLeader, groundY } from './movement.js';
+import { goTo, groundY } from './movement.js';
+import { steer, STEER_FILLS } from './steer.js';
 import { masteryMul } from './occupation.js';
 import { collideWalls } from '../walls.js';
 
@@ -30,21 +31,11 @@ const OUTPUT_TAGS = Object.fromEntries(
 
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
 const DIRS = [DIR.UP, DIR.DOWN, DIR.LEFT, DIR.RIGHT];
-const ZERO = new THREE.Vector3(0, 0, 0);   // world centre fallback when an agent has no town
 const randDir = () => DIRS[(Math.random() * 4) | 0];
 
-// Resolve the band leader to a { pos, alive } REF for followLeader. The controlled
-// player-led party reads its real leader handle (the documented ctx.partyLeader
-// exception). An NPC band follows where it BELIEVES its leader is (belief lastPos),
-// confidence-gated — no roster read. Returns null when the leader is unknown/gone.
-function resolveLeaderRef(a, ctx) {
-  const pl = a._leader(ctx);                       // EPISTEMIC-OK: controlled party leader (known mechanic)
-  if (pl) return pl;
-  if (a.bandLeaderId == null) return null;
-  const b = a.beliefs.get(a.bandLeaderId);
-  if (!b || b.confidence < SIM.actOnBeliefMin) return null;
-  return { pos: b.lastPos, alive: true };
-}
+// resolveLeaderRef + the follow locomotion moved to steer.js (fillFollow) in Phase 2b:
+// follow is now a steer-fill (formation-slot attractor + snapTo teleport), dispatched
+// through steer() like every other locomotion behaviour.
 
 // --- act ---------------------------------------------------------------------
 export function act(a, dt, ctx) {
@@ -56,206 +47,71 @@ export function act(a, dt, ctx) {
     a.fighter.health = Math.min(TUNE.maxHealth, a.fighter.health + 45);
   }
 
-  switch (a.goal.kind) {
-    case 'plan': execPlanStep(a, dt, ctx); break;
-    case 'fight': combatStep(a, dt, ctx); break;
-    case 'follow': followLeader(a, resolveLeaderRef(a, ctx), dt); break;
-    case 'bounty': {
-      // a bounty-hunter marches (at speed) toward the quarry / the threat zone the
-      // Gazette notice named; the 'fight' goal takes over once a target is in sight.
-      const t = a.goal.toward;
-      if (t) goTo(a, t, dt, true);
-      break;
+  // DISPATCH (Phase 2b — the steering substrate). The locomotion-shaped goal.kinds
+  // are DATA: a steer-fill (in steer.js) returns the {attractors/repulsors/speed}
+  // force-field for that behaviour from beliefs/map/own-state, and the single steer()
+  // executor moves the body. The on-arrival/in-place VERB stays EXPLICIT here, fired
+  // on the boolean steer() returns (locomotion is a field; world-interactions are
+  // verbs — the doc's hard caution). The genuinely-special executors (plan/fight/spy/
+  // build, the multi-tick state machines, and the not-yet-migrated locomotion kinds)
+  // stay dispatched, not table-filled, and fall through to the shared epilogue below.
+  const k = a.goal.kind;
+  if (k === 'plan') execPlanStep(a, dt, ctx);
+  else if (k === 'fight') combatStep(a, dt, ctx);
+  else if (k === 'spy') spyStep(a, dt, ctx);
+  else if (k === 'build') buildStep(a, dt, ctx);
+  else if (k === 'eat') {
+    if (a.inventory.food > 0 && a.needs.hunger < 1) {
+      const amt = ECON.eatRate * dt;
+      a.needs.hunger = clamp01(a.needs.hunger + amt);
+      a.inventory.food = Math.max(0, a.inventory.food - amt);
     }
-    case 'arbitrage': {
-      // haul the load to the dear town's market; once within trading range, HOLD so
-      // the localized auction (market.js) sells the goods there at the better price.
-      const ar = a.arbitrage;
-      if (ar && ar.destPos) {
-        if (a.pos.distanceTo(ar.destPos) > (ECON.marketRange || 18) - 2) goTo(a, ar.destPos, dt, true);
-        else a.fighter.setMoving(0);
-      } else a.fighter.setMoving(0);
-      break;
-    }
-    case 'reporter': {
-      // the gazetteer hurries toward its current subject; with none yet, it ambles
-      // around its home town waiting for a story to break.
-      const t = a.reporterTarget;
-      if (t) goTo(a, t, dt, true);
-      else {
-        if (!a.wanderTarget || a.pos.distanceTo(a.wanderTarget) < 1.0) {
-          const c = a.townAnchor || ZERO, rr = (a.townRadius || 40) * 0.5;
-          const ang = Math.random() * Math.PI * 2, r = Math.random() * rr;
-          a.wanderTarget = new THREE.Vector3(c.x + Math.cos(ang) * r, 0, c.z + Math.sin(ang) * r);
-        }
-        goTo(a, a.wanderTarget, dt, false);
+    a.fighter.setMoving(0);
+  }
+  // --- MIGRATED locomotion kinds (Phase 2b steps 2-4): table-filled, motored by steer().
+  // This now includes the Phase-2a SCHEMA DISPOSITIONS (flee/hide/shadow/avoid), collapsed
+  // into XOR single-force steer-fills (fillFlee/fillHide/fillShadow/fillAvoid in steer.js).
+  else {
+    const fill = STEER_FILLS[k] || STEER_FILLS.wander;   // unknown kind -> wander (the old default)
+    const field = fill(a, ctx);
+    const arrived = field ? steer(a, field, dt) : (a.fighter.setMoving(0), false);
+    // ON-ARRIVAL / IN-PLACE VERB — explicit, per behaviour, NEVER inside steer/a fill.
+    if (k === 'rest' && arrived) {
+      a.needs.energy = clamp01(a.needs.energy + SIM.restRate * dt);
+    } else if (k === 'work' && arrived) {
+      produce(a, dt);
+    } else if (k === 'comfort' && arrived) {
+      // restore comfort; a tavern also tops up social (and feeds belonging warmth).
+      a.needs.comfort = clamp01((a.needs.comfort ?? 1) + COMFORT.restoreRate * dt);
+      if (a.goal.srcKind === 'tavern') {
+        a.needs.social = clamp01(a.needs.social + COMFORT.tavernSocialRate * dt);
+        a.life.social += COMFORT.tavernSocialRate * dt;   // tavern colocation feeds belonging
       }
-      break;
-    }
-    case 'sightsee': sightseeStep(a, dt, ctx); break;
-    case 'flee': {
-      // SCHEMA FLEE-TO-REFUGE: the flee-to-safety schema sets a concrete `toPos` (the
-      // nearest static place affording exit/conceal) — RUN TO IT rather than merely away
-      // from the threat. A static-geography point (shared map), never a live read. If no
-      // refuge was found (toPos null) fall through to the away-from-threat steering below.
-      if (a.goal.toPos) { goTo(a, a.goal.toPos, dt, true); break; }
-      // BELIEF-GATED: flee from where I BELIEVE the threat is (its belief lastPos), never
-      // a live read. A faded belief just means I steer away from my last sighting of it.
-      const fb = a.beliefs.get(a.goal.fromId);
-      fleeFrom(a, fb ? { pos: fb.lastPos } : null, dt);
-      break;
-    }
-    case 'eat': {
-      if (a.inventory.food > 0 && a.needs.hunger < 1) {
-        const amt = ECON.eatRate * dt;
-        a.needs.hunger = clamp01(a.needs.hunger + amt);
-        a.inventory.food = Math.max(0, a.inventory.food - amt);
-      }
-      a.fighter.setMoving(0);
-      break;
-    }
-    case 'work': {
-      if (!a.canWork) break;               // monsters/player have no workplace
-      if (!a._trade) a.chooseOccupation(ctx);
-      const g = a._trade && GOODS[a._trade];
-      if (!g) break;
-      const site = ctx.world.nearest(g.site, a.pos);
-      if (site && goTo(a, site.pos, dt)) produce(a, dt);
-      break;
-    }
-    case 'rest': {
-      const r = ctx.world.nearest(POI_KIND.REST, a.pos);
-      if (r && goTo(a, r.pos, dt)) a.needs.energy = clamp01(a.needs.energy + SIM.restRate * dt);
-      break;
-    }
-    case 'socialize': {
-      // walk to a believed-FRIEND and stand with them (decide picked withId from my
-      // beliefs; I head for where I THINK they are). With no friend known, fall back to
-      // the market — the town's gathering place — so a newcomer still finds company.
-      // Belief-only: a moved/dead friend leaves an empty spot, the need just doesn't fill
-      // and I re-choose next decide. Either way, ARRIVING restores social + feeds belonging.
+    } else if (k === 'socialize' && arrived) {
+      a.needs.social = clamp01(a.needs.social + SIM.socializeRate * dt);
+      a.life.social += SIM.socializeRate * dt;     // feeds the 'belonging' ambition
+      // QUALITY TIME: deliberately standing beside this friend deepens the bond faster
+      // than the incidental gossip-pass affinity. Belief-only (my own standing toward
+      // them); capped like all familiarity warmth. Re-derive the friend belief here (the
+      // same lookup fillSocialize used). PRESERVED EXACTLY: the old branch applied this
+      // bond to ANY non-null `rel` on arrival (including arriving at the market fallback
+      // with a below-knownConf rel), so the condition deliberately does NOT re-gate on
+      // confidence — only the standing/hostility cap, as before.
       const rel = (a.goal.withId != null) ? a.beliefs.get(a.goal.withId) : null;
-      let here = false;
-      if (rel && rel.confidence > SOCIAL.knownConf) here = goTo(a, rel.lastPos, dt);
-      else {
-        const m = ctx.world.nearest(POI_KIND.MARKET, a.pos);
-        if (m) here = goTo(a, m.pos, dt);
-      }
-      if (here) {
-        a.needs.social = clamp01(a.needs.social + SIM.socializeRate * dt);
-        a.life.social += SIM.socializeRate * dt;     // feeds the 'belonging' ambition
-        // QUALITY TIME: deliberately spending time beside this friend deepens the bond
-        // faster than the incidental affinity the gossip pass grants from mere proximity.
-        // Belief-only (my own standing toward them); capped like all familiarity warmth.
-        if (rel && !rel.hostile && rel.standing >= 0)
-          rel.standing = Math.min(BAND.affinityCap, rel.standing + SOCIAL.bondBonus * dt);
-      }
-      break;
-    }
-    case 'market': {
-      // HAUL the load to market and stand the stall — the localized double-auction
-      // (runMarket) clears deals for whoever is within marketRange. goTo halts on
-      // arrival; the agent holds there until its load is sold / need met (decide).
-      const m = ctx.world.nearest(POI_KIND.MARKET, a.pos);
-      if (m) goTo(a, m.pos, dt); else a.fighter.setMoving(0);
-      break;
-    }
-    case 'spy': spyStep(a, dt, ctx); break;
-    case 'expedition': {
-      // march toward the company's current objective (the wilds, or home on return).
-      const tgt = a.expedition && a.expedition.target;
-      if (tgt) goTo(a, tgt, dt, true); else a.fighter.setMoving(0);
-      break;
-    }
-    case 'caravan': {
-      // plod the trade road at WALKING pace toward the current waypoint (out, then
-      // home). A laden caravan is SLOW — which is exactly what lets the ambush catch
-      // it (it only breaks into a fast flee once a raider is right on top of it).
-      const ct = a.caravanRun && a.caravanRun.target;
-      if (ct) goTo(a, ct, dt, false); else a.fighter.setMoving(0);
-      break;
-    }
-    case 'comfort': {
-      // walk to my home or a tavern and restore comfort; a tavern also tops up social (and
-      // feeds the existing belonging/colocation warmth). BELIEF-BACKED (debt #2 retired):
-      // decide picked the destination (toPos) + kind (srcKind) from my OWN home-belief or a
-      // STATIC shelter Place — no live BuildSites lookup here. Walk-through benefit zone (no
-      // collision). Guarded so a missing destination just idles (decide re-routes).
-      const cp = a.goal.toPos;
-      if (cp && goTo(a, cp, dt)) {
-        a.needs.comfort = clamp01((a.needs.comfort ?? 1) + COMFORT.restoreRate * dt);
-        if (a.goal.srcKind === 'tavern') {
-          a.needs.social = clamp01(a.needs.social + COMFORT.tavernSocialRate * dt);
-          a.life.social += COMFORT.tavernSocialRate * dt;   // tavern colocation feeds belonging
-        }
-      } else if (!cp) { a.fighter.setMoving(0); }            // no comfort source known: idle (decide re-routes)
-      break;
-    }
-    case 'build': buildStep(a, dt, ctx); break;
-    // --- SCHEMA DISPOSITIONS (Phase 2a) -------------------------------------
-    // Phase 2b COLLAPSE-FODDER: hide/shadow/avoid are three special-cases of the
-    // same steer() potential-field primitive — when steer() lands these three
-    // cases collapse into one goal.kind -> steer-fills branch and are deleted.
-    case 'hide': {
-      // go to ground at a concealing place (toPos, a static map point set by the
-      // go-to-ground schema), then stand still. No threat ref deref. Guarded.
-      if (a.goal.toPos) { if (goTo(a, a.goal.toPos, dt, true)) a.fighter.setMoving(0); }
-      else a.fighter.setMoving(0);
-      break;
-    }
-    case 'shadow': {
-      // trail a SUSPECTED mask at a stand-off distance: close to within a tail gap of
-      // where I BELIEVE it is (belief lastPos — no live read), then hold. A faded/absent
-      // belief just leaves me idling (the suspect moved out of my knowledge).
-      const sb = (a.goal.subjectId != null) ? a.beliefs.get(a.goal.subjectId) : null;
-      if (sb && sb.confidence >= SIM.actOnBeliefMin) {
-        const gap = a.pos.distanceTo(sb.lastPos);
-        if (gap > (SOCIAL.shadowGap || 6)) goTo(a, sb.lastPos, dt); else a.fighter.setMoving(0);
-      } else a.fighter.setMoving(0);
-      break;
-    }
-    case 'avoid': {
-      // clear a believed danger zone: steer toward the safe place (toPos) the schema
-      // picked; with none, steer directly AWAY from the believed brawl centre (around).
-      // Both are static/belief points — no live read.
-      if (a.goal.toPos) goTo(a, a.goal.toPos, dt, true);
-      else if (a.goal.around) fleeFrom(a, { pos: a.goal.around }, dt);
-      else a.fighter.setMoving(0);
-      break;
-    }
-    default: {
-      if (!a.wanderTarget || a.pos.distanceTo(a.wanderTarget) < 1.0) {
-        if (a.roam) {
-          // dungeon dwellers pace within their room (set at spawn): a small
-          // patrol radius around a fixed centre instead of the whole arena.
-          const ang = Math.random() * Math.PI * 2, r = Math.random() * a.roam.r;
-          a.wanderTarget = new THREE.Vector3(a.roam.x + Math.cos(ang) * r, a.pos.y, a.roam.z + Math.sin(ang) * r);
-        } else if (a.campAnchor) {
-          // camp combatants PATROL near their camp anchor (a frontier lair) rather
-          // than roaming the inner village — they're a fixed territorial hazard, not
-          // a wandering mob (drama-plan §3). So they only menace townsfolk who come
-          // out to the frontier, exactly as the monsters do — without that, a camp
-          // member falls into the townsfolk roam band and drifts into town, where it
-          // constantly perceives + hunts civilians (the source of the massacre).
-          const ang = Math.random() * Math.PI * 2, r = Math.random() * (a.campPatrolR || 20);
-          a.wanderTarget = new THREE.Vector3(a.campAnchor.x + Math.cos(ang) * r, a.pos.y, a.campAnchor.z + Math.sin(ang) * r);
-        } else if (a.faction === 'monster') {
-          // monsters prowl the mid-to-outer wilds around the world centre (danger
-          // lives on the frontier, between the towns).
-          const minR = ARENA_RADIUS * 0.45, maxR = ARENA_RADIUS * 0.92;
-          const ang = Math.random() * Math.PI * 2, r = minR + Math.random() * (maxR - minR);
-          a.wanderTarget = new THREE.Vector3(Math.cos(ang) * r, 0, Math.sin(ang) * r);
-        } else {
-          // townsfolk roam within THEIR town's home band (around its centre) — this
-          // is what keeps each town socially dense and stops agents diffusing into
-          // the wilderness / drifting toward another town.
-          const c = a.townAnchor || ZERO;
-          const maxR = (a.townRadius || ARENA_RADIUS * 0.65) * 0.85;
-          const ang = Math.random() * Math.PI * 2, r = Math.random() * maxR;
-          a.wanderTarget = new THREE.Vector3(c.x + Math.cos(ang) * r, 0, c.z + Math.sin(ang) * r);
-        }
-      }
-      goTo(a, a.wanderTarget, dt);
+      if (rel && !rel.hostile && rel.standing >= 0)
+        rel.standing = Math.min(BAND.affinityCap, rel.standing + SOCIAL.bondBonus * dt);
+    } else if (k === 'sightsee' && arrived) {
+      // the PRIMARY payoff: relieve boredom (the NOVELTY need). A fresh sight tops it up.
+      a.needs.novelty = clamp01((a.needs.novelty ?? 1) + NOVELTY.restore * dt);
+      // a little comfort + society too — a pleasant outing lightly serves those needs.
+      a.needs.comfort = clamp01((a.needs.comfort ?? 1) + COMFORT.restoreRate * dt * 0.5);
+      a.needs.social = clamp01(a.needs.social + SIM.socializeRate * dt * 0.3);
+      a.life.social += SIM.socializeRate * dt * 0.3;   // a touch of belonging
+      // hold at the sight until boredom is genuinely topped up, THEN pick a fresh one
+      // (so it doesn't bounce off the instant it arrives). Wanderlust feeds via life.dist.
+      if ((a.needs.novelty ?? 1) >= NOVELTY.satisfiedAt) a.sightTarget = null;
+    } else if (k === 'hide' && arrived) {
+      a.fighter.setMoving(0);   // go to ground: stand still at the concealing place
     }
   }
   // Settle the body onto the terrain surface every frame — NOT just inside goTo.
@@ -267,33 +123,9 @@ export function act(a, dt, ctx) {
   a._updateLabel();
 }
 
-// SIGHTSEE (leisure variety): a townsperson takes in a named LANDMARK. To rove the
-// map for variety WITHOUT trekking to the deadly frontier, it picks at random among
-// the few NEAREST landmarks (regional, not always the closest), walks there, and on
-// arrival takes it in — a little comfort + society (feeds belonging). A threat still
-// interrupts via decide's flee/fight, so a sightseer near danger bolts. Picks a fresh
-// landmark each outing. Guarded; never throws on the tick.
-function sightseeStep(a, dt, ctx) {
-  if (!a.sightTarget) {
-    if (!LANDMARKS || !LANDMARKS.length) { a.fighter.setMoving(0); return; }
-    const near = LANDMARKS.slice()
-      .sort((p, q) => ((p.x - a.pos.x) ** 2 + (p.z - a.pos.z) ** 2) - ((q.x - a.pos.x) ** 2 + (q.z - a.pos.z) ** 2))
-      .slice(0, 3);
-    const L = near[(Math.random() * near.length) | 0];
-    a.sightTarget = new THREE.Vector3(L.x, a.pos.y, L.z);
-  }
-  if (goTo(a, a.sightTarget, dt)) {        // goTo halts + returns true on arrival
-    // the PRIMARY payoff: relieve boredom (the NOVELTY need). A fresh sight tops it up.
-    a.needs.novelty = clamp01((a.needs.novelty ?? 1) + NOVELTY.restore * dt);
-    // a little comfort + society too — a pleasant outing lightly serves those needs.
-    a.needs.comfort = clamp01((a.needs.comfort ?? 1) + COMFORT.restoreRate * dt * 0.5);
-    a.needs.social = clamp01(a.needs.social + SIM.socializeRate * dt * 0.3);
-    a.life.social += SIM.socializeRate * dt * 0.3;   // a touch of belonging
-    // hold at the sight until boredom is genuinely topped up, THEN pick a fresh one
-    // (so it doesn't bounce off the instant it arrives). Wanderlust feeds via goTo dist.
-    if ((a.needs.novelty ?? 1) >= NOVELTY.satisfiedAt) a.sightTarget = null;
-  }
-}
+// SIGHTSEE (leisure variety) is now a steer-fill (fillSightsee in steer.js): it picks
+// among the few NEAREST landmarks and walks there; the on-arrival novelty/comfort/social
+// restore + sightTarget reset are the explicit verb in act()'s dispatch (Phase 2b).
 
 // SPY locomotion (intrigue): an infiltrator under cover SCOUTS toward the town
 // core (origin/market) to whisper a planted rumour, then EXFILTRATES back to its
@@ -331,18 +163,23 @@ export function actControlled(a, dt, ctx) {
   switch (a.goal.kind) {
     case 'fight': combatStep(a, dt, ctx); break;
     case 'goto': {
+      // a controlled GOTO is a single-attractor steer to the ordered target; arrival
+      // (or a missing target) drops back to idle. steer() faces/arrives/clamps exactly
+      // as the old goTo did (same shared stepper).
       const t = a.goal.target;
-      if (!t || goTo(a, t, dt, a.goal.run)) a.goal = { kind: 'idle' };
+      const field = t ? { attractors: [{ pos: t }], run: a.goal.run } : null;
+      if (!field || steer(a, field, dt)) a.goal = { kind: 'idle' };
       break;
     }
     case 'approach': {
       // the player's controlled body walks to a SEEN target (vision-gated via the
       // resolver, which returns a position snapshot, not the live object). Lost from
-      // sight -> idle. Reads no roster handle.
+      // sight -> idle. Reads no roster handle. steer() handles the walk + arrival halt;
+      // arrival sets the `arrived` flag (talkRange-gated below, not steer's arriveDist).
       const sp = ctx.resolver ? ctx.resolver.seenPos(a, a.goal.targetId) : null;
       if (!sp) { a.goal = { kind: 'idle' }; break; }
       if (a.pos.distanceTo(sp) <= SIM.talkRange) { a.fighter.setMoving(0); a.goal.arrived = true; }
-      else goTo(a, sp, dt);
+      else steer(a, { attractors: [{ pos: sp }] }, dt);
       break;
     }
     default: a.fighter.setMoving(0); break;   // idle / post-kill 'wander'
@@ -680,8 +517,10 @@ export function execPrimitive(a, step, dt, ctx) {
   const b = step.bind || {};
   switch (step.exec ? step.exec.verb : step.prim) {
     case 'goto': {
+      // plan-step locomotion: a single-attractor steer to the believed/static step target
+      // (walk). Null target -> idle, exactly as the old goTo-or-setMoving(0) guard did.
       const tp = stepTargetPos(a, ctx, b.place);
-      if (tp) goTo(a, tp, dt); else a.fighter.setMoving(0);
+      if (tp) steer(a, { attractors: [{ pos: tp }] }, dt); else a.fighter.setMoving(0);
       break;
     }
     case 'attack': {
@@ -692,8 +531,10 @@ export function execPrimitive(a, step, dt, ctx) {
       const bel = a.beliefs.get(b.target);
       if (bel && bel.confidence >= SIM.actOnBeliefMin) { a.goal.targetId = b.target; combatStep(a, dt, ctx); }
       else {
+        // no/faded belief: march (walk) to the last believed spot via a single-attractor
+        // steer. combatStep itself stays special (not migrated). Null target -> idle.
         const tp = stepTargetPos(a, ctx, { subjectId: b.target });
-        if (tp) goTo(a, tp, dt); else a.fighter.setMoving(0);
+        if (tp) steer(a, { attractors: [{ pos: tp }] }, dt); else a.fighter.setMoving(0);
       }
       break;
     }

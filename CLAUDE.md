@@ -61,8 +61,16 @@ npm/import-from-CDN; keep everything local and import-mapped.
 > **Post-refactor module layout (SRP).** The former god-objects were split into single-
 > responsibility modules — behavior moved, call sites unchanged (thin delegating methods):
 > - **Agent** = a thin state class (`js/sim/agent.js`) delegating to `js/sim/agent/{perception,
->   decide,occupation,movement,act,trade,decor}.js` (free fns over the instance). So
+>   decide,occupation,movement,act,steer,trade,decor}.js` (free fns over the instance). So
 >   `Agent.decide` now lives in `agent/decide.js`, perception in `agent/perception.js`, etc.
+>   **Locomotion is one potential-field primitive** (`agent/steer.js`, Phase 2b): `steer(a,
+>   {attractors[],repulsors[],speed}, dt)` motors every locomotion behaviour, and the
+>   `STEER_FILLS` table maps each `goal.kind` (work/market/wander/flee/follow/comfort/…) to a
+>   pure `(a,ctx)→field` fill built from the agent's OWN beliefs/map/state (belief-gated by
+>   construction; in the epistemic scan). `act.js` dispatches through it and fires the explicit
+>   world-interaction verb (gather/strike/transfer/produce/build) on arrival — locomotion is a
+>   field, world-interactions are verbs. `goTo` survives as a thin stepper delegate for the
+>   still-special executors (combat, spy, plan-step transfers).
 > - **Simulation** orchestration in `simulation.js`; mechanics in `js/sim/market.js` (auction),
 >   `combatEvents.js` (combat→belief/rep/memory), `deedRouter.js` (bus→progression/memory).
 > - **Bootstrap** split: `js/boot.js` (renderer/scene), `js/ui/hud.js` (panels), `js/playerControls.js`
@@ -220,7 +228,8 @@ information itself into a resource agents act on:
 
 ## Conventions & gotchas
 
-- **Tuning lives in config, not logic.** Sim behaviour: `SIM`, `WEIGHT`, `ECON`, `FACTIONS`,
+- **Tuning lives in config, not logic.** Sim behaviour: `SIM`, `WEIGHT`, `ECON`, `STEER`
+  (steer-fill force weights + `fleeAway`), `FACTIONS`,
   `PROFESSIONS`, `MONSTER`, `ROSTER`, `COMMODITIES`, `BASE_PRICE` in `js/sim/simconfig.js`
   (+ `ROSTER` count in `simulation.js`). RPG curves/caps in `js/rpg/rpgconfig.js` (`RPG`). Combat
   feel in `js/constants.js` (`TUNE`). Prefer changing constants over hardcoding.

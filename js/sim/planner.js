@@ -649,45 +649,18 @@ export function goalRepay(subjectId, value = 1, kind = 'any') {
 }
 
 // ---------------------------------------------------------------------------
-// SCHEMA DISPOSITIONS (Phase 2a) — the minimal new goal kinds the flagship
-// InteractionSchemas adopt when no EXISTING kind fits the response. They are
-// PLAN-LESS dispositions (atoms:[]) so _currentPlanStep lets them sit on the
-// stack and pruneGoals ages them off by expiresAt (the interpreter stamps it),
-// exactly like grief. act.js carries the matching locomotion case for each.
-//
-// Phase 2b COLLAPSE-FODDER: hide/shadow/avoid are three special-cases of the
-// same steer() potential-field primitive (attract to cover / trail at a stand-
-// off / repel from a danger zone toward safety). When Phase 2b lands steer(),
-// these three kinds collapse into goal.kind -> steer-fills and this trio of
-// factories + their act.js cases are deleted. Kept minimal + commented so the
-// retirement is mechanical.
+// SCHEMA DISPOSITIONS (Phase 2a → 2b LANDED) — hide/shadow/avoid are the
+// plan-less goal kinds the flagship InteractionSchemas adopt as a response.
+// They were Phase-2a collapse-fodder; Phase 2b LANDED them as steer-fills:
+//   · the GOAL OBJECT is now built INLINE by the schema response ops in
+//     js/sim/schemas/vocab.js (`hide`/`shadow`/`avoid`/`fleeTo`), which carry
+//     toPos/around/subjectId exactly as the steer-fills read them;
+//   · the LOCOMOTION is fillHide/fillShadow/fillAvoid/fillFlee in
+//     js/sim/agent/steer.js, dispatched through the single steer() executor
+//     (no per-kind branch in act.js — they fall through STEER_FILLS[k]).
+// The standalone goalHide/goalShadow/goalAvoid factories that once lived here
+// (Phase-2a placeholders) were retired with that collapse — they had no callers
+// and the inline vocab builders supersede them. Disposition goals stay PLAN-LESS
+// (atoms:[]) so _currentPlanStep lets them sit on the stack and pruneGoals ages
+// them off by the interpreter-stamped expiresAt, exactly like grief.
 // ---------------------------------------------------------------------------
-
-// hide(toPos): go to ground at a concealing place and stay still until the
-// disposition times out. Plan-less; pos carried on the goal by the schema.
-export function goalHide(toPos) {
-  return {
-    kind: 'hide', toPos: toPos || null,
-    atoms: [],                          // disposition: no plan, runs its course
-    predicate() { return false; },      // only the expiresAt timeout pops it
-  };
-}
-
-// shadow(subjectId): trail a SUSPECTED mask at a distance (collapse-fodder).
-export function goalShadow(subjectId) {
-  return {
-    kind: 'shadow', subjectId,
-    atoms: [],
-    predicate() { return false; },
-  };
-}
-
-// avoid(around, toPos): clear a believed danger zone — steer away from `around`
-// (a believed brawl's lastPos) toward a safe place (collapse-fodder).
-export function goalAvoid(around, toPos) {
-  return {
-    kind: 'avoid', around: around || null, toPos: toPos || null,
-    atoms: [],
-    predicate() { return false; },
-  };
-}

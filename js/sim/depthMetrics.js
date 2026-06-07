@@ -207,6 +207,12 @@ export class DepthProbe {
     const alive = npcs.filter((a) => a.alive);
 
     // ===== NPC BEHAVIOUR DEPTH ============================================
+    // distinctGoals/goalEntropy are keyed on goal.kind (sampled directly above). After
+    // the Phase 2b steering-substrate collapse this STILL counts the active behavioural
+    // repertoire: each locomotion goal.kind maps 1:1 to a steer-fill (STEER_FILLS in
+    // agent/steer.js), and the special executors (plan/fight/spy/build/eat) keep their
+    // own kinds — no kind was unified, so the count is invariant under the dispatch
+    // collapse (see test/suites/soak.mjs's STEER superset net, the additive proof).
     const distinctGoals = this.goalCounts.size;
     const goalEntropy = normEntropy(this.goalCounts);
     const breadth = pct(

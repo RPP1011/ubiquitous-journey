@@ -449,13 +449,8 @@ export class Agent {
   // pay amt coin to a benefactor: walk over, then MOVE gold (no minting).
   _payStep(b, dt, ctx) { return action.payStep(this, b, dt, ctx); }
 
-  _fleeFrom(threat, dt) { return movement.fleeFrom(this, threat, dt); }
-
-  // hold a slot in a ring around the leader. Runs to catch up when straggling;
-  // snaps if hopelessly separated (e.g. the leader portalled into a dungeon and
-  // this member somehow didn't get teleported). Only x/z move — y is owned by
-  // whichever world the member is in.
-  _followLeader(leader, dt) { return movement.followLeader(this, leader, dt); }
+  // _fleeFrom / _followLeader retired (Phase 2b): flee and follow are now steer-fills
+  // (fillFlee / fillFollow in agent/steer.js), motored by the single steer() executor.
 
   // --- decoration -----------------------------------------------------------
   _buildDecor() { return decor.buildDecor(this); }

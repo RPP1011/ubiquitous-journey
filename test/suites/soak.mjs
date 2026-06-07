@@ -51,6 +51,16 @@ export async function soak(ok, { makeFighter, stubScene }) {
   const FRAMES = 12000, dt = 1 / 60;     // ~200 sim-seconds
   let trades = 0, stage = 'init';
   const typesSeen = new Set();   // group TYPES that emerge at ANY point (de-flakes the snapshot)
+  // Phase 2b STEER REGRESSION NET (additive — does NOT touch depthMetrics.js, the depth
+  // gate's own measuring instrument). The steering-substrate refactor collapses the ~12
+  // locomotion goal.kind branches in act.js into steer-fills dispatched by goal.kind. The
+  // collapse must PRESERVE the behavioural repertoire: every goal.kind the old code
+  // produced must still appear. We sample the distinct goal.kind set over the run and
+  // assert it is a SUPERSET of a pre-refactor baseline (kinds that reliably emerge each
+  // run; RNG-rarer ones — plan/arbitrage/expedition — are deliberately excluded so this
+  // never flakes). A kind silently vanishing (a fill that idles forever, a mis-keyed
+  // dispatch) trips this BEFORE it could deflate the depth repertoire score.
+  const goalKindsSeen = new Set();
   // DIRECTOR watch: town population must never be INSTANTLY wiped (anti-massacre
   // valve) — sample the living-townsfolk count over the run and keep the minimum.
   const townPop = () => sim.agents.filter((a) => a.alive && !a.controlled && a.faction === 'townsfolk').length;
@@ -70,6 +80,8 @@ export async function soak(ok, { makeFighter, stubScene }) {
       // (it never lowers the >=2 bar) — it just stops us missing a transient type.
       if (i % 60 === 0) for (const a of sim.agents) if (!a.controlled && a.groupType) typesSeen.add(a.groupType);
       if (i % 120 === 0) { const p = townPop(); if (p < townMin) townMin = p; }
+      // sample the distinct goal.kind set every ~0.5s (the steer-collapse regression net).
+      if (i % 30 === 0) for (const a of sim.agents) if (a.goal && a.goal.kind) goalKindsSeen.add(a.goal.kind);
     }
   } catch (err) {
     ok(false, `soak: threw at stage '${stage}' frame loop -> ${err && err.message}`);
@@ -77,6 +89,19 @@ export async function soak(ok, { makeFighter, stubScene }) {
     return;
   }
   ok(true, `soak: ${FRAMES} frames ran without throwing`);
+
+  // STEER-COLLAPSE REGRESSION NET (Phase 2b, additive): the distinct goal.kind set the
+  // soak produced must be a SUPERSET of the pre-refactor baseline — no locomotion
+  // behaviour disappeared when its act.js branch became a steer-fill. The baseline is
+  // the set of kinds that reliably emerge each run (RNG-rare plan/arbitrage/expedition
+  // are excluded so this is a hard floor, never a flake).
+  const STEER_BASELINE = ['avoid', 'build', 'caravan', 'comfort', 'eat', 'fight', 'flee',
+    'follow', 'hide', 'market', 'reporter', 'rest', 'shadow', 'sightsee', 'socialize',
+    'spy', 'wander', 'work'];
+  const missing = STEER_BASELINE.filter((k) => !goalKindsSeen.has(k));
+  ok(missing.length === 0,
+    `steer: behavioural repertoire preserved — every baseline goal.kind still emerges ` +
+    `(${goalKindsSeen.size} distinct${missing.length ? ', MISSING: ' + missing.join(', ') : ''})`);
 
   // invariants after the soak
   const goldEnd = sumGold();

@@ -189,7 +189,9 @@ forbidden ground-truth access:
   resolver snapshot both legitimately carry one, and a foreign agent's *true* `.pos` is only
   reachable through the (already-banned) roster handles.
 
-Scanned (must be clean): `decide.js`, `act.js`, `movement.js`, `occupation.js`, `trade.js`,
+Scanned (must be clean): `decide.js`, `act.js`, `steer.js` (Phase 2b — the potential-field
+locomotion primitive + the steer-fill catalogue; every force pos is a belief/own-state/static-map
+point, never a roster read), `movement.js`, `occupation.js`, `trade.js`,
 `motivation.js`, `planner.js`, `agent.js`, `mentalmap.js` (the shared static places registry —
 static-geography reads only), and the **reasoning layer** `schemas/{ir,vocab,interpreter,
 catalogue}.js` (Phase 2a — the schema evaluators read only the agent's own beliefs/state/map).

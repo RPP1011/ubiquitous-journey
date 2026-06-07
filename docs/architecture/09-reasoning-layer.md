@@ -43,10 +43,29 @@
 >   is now discovered by sight/decay, the comfort branch is belief-backed). The **homecoming gate**
 >   (`test/suites/homecoming.mjs`) passes: a miner with a stale home-intact belief walks home,
 >   discovers the ruin by perception (case A) or self-corrects by belief decay (case B), then
->   reroutes — no telepathic re-route. The **`goal.kind → steer-fills` collapse and the `steer()`
->   potential-field primitive remain Phase 2b** (its own workflow) — see the roadmap row.
-> - **Phases 2b–5 (designed)** — the steering substrate, LOD/amortization, the covert/domestic
->   substrate, breadth. Marked *(designed)* below until landed.
+>   reroutes — no telepathic re-route.
+> - **Phase 2b (✓ landed)** — the **steering substrate**. Delivered by the `steering-substrate`
+>   workflow: ONE potential-field locomotion primitive `steer(a, {attractors[], repulsors[],
+>   speed}, dt)` (`js/sim/agent/steer.js`, in the epistemic scan) — a weighted-sum move along the
+>   normalised force field, with goTo-identical arrival/grounding (it reuses goTo's exact
+>   `_stepAlong` stepping body, so speeds/arrival-radius/barrier-deflect/terrain-slow/wall-collision
+>   are byte-identical). The ~12-entry `goal.kind` locomotion switch in `act.js` **collapsed** into a
+>   `STEER_FILLS` dispatch table: each locomotion-shaped behaviour (work/market/rest/comfort/socialize/
+>   wander/sightsee/bounty/arbitrage/expedition/caravan/reporter/follow + the Phase-2a dispositions
+>   flee/hide/shadow/avoid) is a pure `(a, ctx) → field` **steer-fill** built from the agent's OWN
+>   beliefs/mental-map/own-state, motored by the single `steer()` executor. **World-interaction verbs
+>   stay explicit** (gather/strike/block/transfer/produce/build, fired on the boolean `steer()`
+>   returns — locomotion is a field, world-interactions are verbs). `fleeFrom`/`followLeader` retired
+>   (now `fillFlee`/`fillFollow`); `goTo` stays as a thin `_stepAlong` delegate for the
+>   still-special executors (spy state-machine, the plan-step transfer verbs, combatStep). The
+>   dispositions fold in cleanly: the schema response ops (`vocab.js` `hide`/`shadow`/`avoid`/`fleeTo`)
+>   build the goal inline with the fields the steer-fills read. **Behaviour-preserving** — every
+>   baseline `goal.kind` still emerges (the `steer:` repertoire gate), the soak/scenario/homecoming/
+>   percept/schema suites are green, and the depth index held (84/100, 21 distinct goal-kinds,
+>   entropy H=0.68). Config in `STEER` (`simconfig.js`; only `fleeAway` is new — speeds/arrival/
+>   stand-off gaps reuse the existing `SIM`/`SOCIAL`/`ECON` constants).
+> - **Phases 3–5 (designed)** — LOD/amortization, the covert/domestic substrate, breadth. Marked
+>   *(designed)* below until landed.
 >
 > Read [02 — the epistemic split](02-epistemic-split.md) first. This doc takes that
 > invariant to its conclusion: agents reason **and execute** purely on their world-model,
@@ -144,7 +163,8 @@ fleeing-to-the-gate.
   (~6). Irreducible physical states.
 - **interaction verbs** — `strike`, `block`, `gather`, `transfer`, `wait` (~5). Discrete
   world actions.
-- **one locomotion primitive** — `steer(attractors[], repulsors[], speed)`.
+- **one locomotion primitive** — `steer(attractors[], repulsors[], speed)` *(✓ landed, Phase 2b —
+  `js/sim/agent/steer.js`; the `STEER_FILLS` table is the open behaviour layer over it)*.
 
 **What is open (compositional, unbounded):** every "behaviour" is a *fill* of that
 vocabulary, produced by data, never a code branch:
@@ -160,11 +180,15 @@ patrol = steer(attract:[nextWaypoint],   repel:[],        walk)
 Flee and pursue are the **same primitive** — they differ only in the *sign and target* of
 the field.
 
-### The belief table *is* the potential field
+### The belief table *is* the potential field *(✓ landed, Phase 2b)*
 
 Each belief contributes a force; steering is the weighted sum over my ≤8 beliefs + ≤8 known
 places — **O(k), trivially cheap, and belief-gated by construction** (the field is literally
-made of beliefs):
+made of beliefs). As built, `steer()` (`js/sim/agent/steer.js`) is exactly this weighted sum: every
+force `pos` comes from the agent's own `beliefs.*.lastPos`, its own-state targets, the static
+mental map / world POIs, or the resolver-facade snapshots — never the roster (the file is in the
+epistemic scan). A force whose `pos` is missing/NaN (a belief pointing at a despawned percept) is
+SKIPPED, and an empty/all-stale field idles (never NaN-steps) — the freeze lesson made structural.
 
 | belief | force |
 | --- | --- |
@@ -182,12 +206,28 @@ behaviour is `(field-fill + optional verb)`, optionally sequenced, never a behav
 actual swing stay explicit primitives — a behaviour fires them on arrival/contact. Hybrid,
 not pure potential-field.
 
-**Effect on the current code (Phase 2b, not yet landed):** the ~12-entry `goal.kind` enum
-(`work/flee/fight/wander/market/comfort/…`) **collapses** into one steering executor +
-the handful of verbs; the named behaviours move *up* into tier-1 data. Fewer code paths,
-unbounded behaviours. As of Phase 2a the enum is intact and schema responses map onto existing
-goal kinds; the three dispositions with no prior kind (`hide`/`shadow`/`avoid`) were added as
-minimal direct goal-kinds and are tagged collapse-fodder for this step.
+**Effect on the current code (Phase 2b ✓ landed):** the ~12-entry `goal.kind` locomotion enum
+(`work/flee/wander/market/comfort/socialize/sightsee/rest/bounty/arbitrage/expedition/caravan/
+reporter/follow/hide/shadow/avoid`) **collapsed** into one steering executor (`steer()`,
+`js/sim/agent/steer.js`) + the handful of explicit verbs; each named behaviour is now a
+**steer-fill** — a pure `(a, ctx) → {attractors,repulsors,speed}` `STEER_FILLS` table entry that
+reads the agent's own beliefs/map/state — dispatched through the single `steer()` executor in
+`act.js` (the on-arrival/in-place verb fires on the boolean `steer()` returns). Fewer code paths,
+unbounded behaviours. The genuinely-special executors (combat, the spy/plan state machines, build)
+stay dispatched, not table-filled. The three dispositions with no prior kind (`hide`/`shadow`/
+`avoid`) folded in as `fillHide`/`fillShadow`/`fillAvoid` (their goals built inline by the schema
+response ops in `vocab.js`).
+
+> **As-built divergence from the sketch above.** The `flee = steer(attract:[refuge?],
+> repel:[threat])` sketch shows a *simultaneous* refuge-attract + threat-repel field (curved flight
+> past a threat toward cover). The shipped fills are strictly **XOR** — a refuge attractor OR a
+> threat repulsor, never both in one field — because the old `goTo`/`fleeFrom` code had no such
+> case, and a simultaneous field is a NEW behaviour (out of scope for this behaviour-preserving
+> collapse). `steer()` implements the full weighted sum (the correct substrate for a future
+> simultaneous-field feature), but no current fill exercises the divergent path: an attractor fill's
+> weighted-sum heading equals its single-attractor arrival point exactly, so it reproduces `goTo`
+> byte-for-byte; a pure-repulsor fill reproduces `fleeFrom` (a 6m synthetic away-point + the
+> radial-from-origin fallback) and never "arrives".
 
 ---
 
@@ -659,7 +699,7 @@ against the soak + the depth/perf harness), so the build-up stays orchestrated a
 | **0 — Foundation** *(✓ landed)* | belief-gating + restricted ctx (`_cognitionCtx`) + the build-time scan (`test/suites/epistemic.mjs`) + first-cut destination-intent pursuit | **met** — soak green (40+ runs), gate proven to fail on an injected violation, 0 leaks |
 | **1 — World-model** *(✓ landed)* | mental-map/places registry (`mentalmap.js`) + affordance-weighted destination-intent inference (TTL-cached, invalidation on re-sight) + the Scarecrow percept wired in | **met** — soak green (incl. epistemic scan, 0 leaks); scarecrow tolerance + pursuit-intercept suite passes; depth 84/100 |
 | **2a — Interaction framework** *(✓ landed)* | the `InteractionSchema` IR + interpreter + shared vocabulary + the 6 flagship schemas (all six drive behaviour); the **animacy tally** feeding schema #6; **places-as-percepts** — buildings/own-home as percepts with belief entries (the Scarecrow substrate generalised; affordances gained `shelter`/`rest`), retiring **both** [known debts](#known-debts--leaks-the-gate-cannot-catch) | **met** — soak green (incl. epistemic scan, 0 leaks); the **homecoming test** passes (stale home-intact belief → walk home → discover by sight / decay → reroute, no telepathy); depth floors hold (≈86/100, 19–20 distinct goal-kinds — up from 18 as the schema dispositions became active) |
-| **2b — Steering substrate** | collapse the ~12-entry `goal.kind` enum → one `steer()` potential-field executor + the handful of verbs (the named behaviours move up into tier-1 data; hide/shadow/avoid — today minimal direct goal-kinds, marked collapse-fodder in `act.js`/`planner.js` — fold into it) | fewer code paths, same/higher behavioural breadth + entropy |
+| **2b — Steering substrate** *(✓ landed)* | the ~12-entry `goal.kind` locomotion enum collapsed → one `steer()` potential-field executor (`js/sim/agent/steer.js`) + a `STEER_FILLS` table of pure `(a,ctx)→field` steer-fills; the named behaviours moved up into data; world-interaction verbs stay explicit (fired on arrival/contact); `fleeFrom`/`followLeader` retired (→ `fillFlee`/`fillFollow`); the Phase-2a dispositions hide/shadow/avoid folded in (goals built inline by `vocab.js`, locomotion by `fillHide`/`fillShadow`/`fillAvoid`) | **met** — fewer code paths, behaviour preserved: soak + scenario + homecoming + percept + schema suites green (incl. epistemic scan, 0 leaks; `steer:` repertoire gate — every baseline goal.kind still emerges), depth held (84/100, 21 distinct goal-kinds, entropy H=0.68) |
 | **3 — Scale** | LOD / amortized cognition + the reasoning-cost metric | per-agent reasoning cost flat as N grows |
 | **4 — Covert & domestic substrate** | **epistemic atoms** in the planner (`know_assoc`/`know(recipe)` pre/eff; `shadow`/`ask`/`teach`/`quiz` actions that acquire or distribute beliefs), **subject↔place association beliefs** (consolidated from sightings, explicit eviction), the **perception-modelling standoff** (second-order ToM v1, shared by the urchin's stalk and the teacher's curriculum model). Two **economy commits land first**, each baseline-identical via seeding + conservation-preserved: **stored wealth** (purse vs stash — burglable vs lootable) and **recipe-gating** (`knows(recipe_X)` own-state gating production chains). Then the adversarial flagship (**urchin**, Ex. 5) and the cooperative flagship (**teacher**, Ex. 6) over the same substrate; **witness-gated property deeds** (combatEvents' witness logic generalised to crime) | **urchin**: case → infer-stash → burgle end-to-end headless; counter-relocation stales the belief → empty cache; gold conserved. **teacher A/B cohort gate**: a taught cohort beats a same-seed control on trade margin / wilds mortality / time-to-class, gold conserved (tuition is a transfer); **kill the teacher → the next cohort measurably degrades** (knowledge loss is real). If taught ≈ control, the feature fails by its own test |
 | **5 — Breadth + capstone** | grow the interaction catalogue (data only) across the [situation library](#the-situation-library-the-design-bar-for-the-catalogue); **place-occupancy (aggregate-strength) beliefs**, group-level `outmatchedBy`, **captive state + the `free` verb** | depth + perf measured each addition; **the camp-rescue capstone** (Ex. 7, `test/suites/camp-rescue.mjs`): 4 beat 30+ **via the scouted window**, the knowledge-blind **control loses** (refused by its own planner or wiped), and a **scout absent at departure never detects the window** (no telepathic raid-sensing) — the proof the catalogue *composes* into operations |

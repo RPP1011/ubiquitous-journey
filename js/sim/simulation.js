@@ -502,7 +502,8 @@ export class Simulation {
   //   · resolver    — a narrow facade exposing ONLY the sanctioned execution operations
   //                   (vision-gated perception, ability target, conserved market/transfer)
   //   · partyLeader — the controlled player-led party's leader handle, a documented game
-  //                   mechanic, supplied to the EXECUTION movement path (followLeader) only.
+  //                   mechanic, supplied to the follow steer-fill (resolveLeaderRef in
+  //                   agent/steer.js — // EPISTEMIC-OK) only.
   _cognitionCtx() {
     return {
       world: this.world,

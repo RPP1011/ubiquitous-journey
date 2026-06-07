@@ -35,6 +35,7 @@ const REPORT_ONLY = false;
 const SCANNED = [
   'js/sim/agent/decide.js',
   'js/sim/agent/act.js',
+  'js/sim/agent/steer.js',    // Phase 2b — the steering substrate (potential-field locomotion + fills)
   'js/sim/agent/movement.js',
   'js/sim/agent/occupation.js',
   'js/sim/agent/trade.js',

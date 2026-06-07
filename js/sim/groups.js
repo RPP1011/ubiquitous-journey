@@ -9,8 +9,9 @@
 //   guild    loose                — same trade: cluster as professional allies
 //   circle   loose                — friends: gather to socialise
 //
-// "travel" members flip inParty and reuse Agent._decideParty/_followLeader (the
-// same path the player's companions use), now pointed at their own leader.
+// "travel" members flip inParty and reuse Agent._decideParty + the follow steer-fill
+// (fillFollow in agent/steer.js — the same path the player's companions use, since
+// Phase 2b the steering substrate), now pointed at their own leader.
 // "loose" members don't follow — membership is an affiliation tag that biases
 // behaviour (Agent.decide) and reads in the relations view. No new AI fork.
 //

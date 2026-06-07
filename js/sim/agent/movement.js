@@ -1,32 +1,44 @@
 // Agent locomotion — pure movement primitives extracted from Agent as free
 // functions over a passed agent instance. goTo is the steering core (face the
-// target, barrier-deflect toward fords, terrain-slow, arrive, clamp to arena);
-// groundY settles the body onto the terrain surface (browser-visual only);
-// fleeFrom steers directly away from a threat; followLeader holds a fan slot
-// behind the band leader. Behaviour-preserving: verbatim bodies of the old
-// Agent methods. No cycles — imports config + pure arena helpers only.
+// target, barrier-deflect toward fords, terrain-slow, arrive, clamp to arena),
+// re-expressed in Phase 2b as a thin _stepAlong delegate (the shared stepping body
+// that steer() also drives); groundY settles the body onto the terrain surface
+// (browser-visual only). fleeFrom/followLeader RETIRED (Phase 2b) — flee/follow are
+// now steer-fills. Behaviour-preserving. No cycles — config + pure arena helpers only.
 
-import * as THREE from 'three';
 import { ARENA_RADIUS, terrainHeight, barrierAt } from '../../arena.js';
-import { SIM, PARTY, CITY } from '../simconfig.js';
+import { SIM, CITY } from '../simconfig.js';
 import { collideWalls, gateWaypoint } from '../walls.js';
-
-const _flee = new THREE.Vector3();
 
 export function goTo(a, target, dt, run = false) {
   const dx = target.x - a.pos.x, dz = target.z - a.pos.z;
   const d = Math.hypot(dx, dz);
   a.fighter.setFacing(Math.atan2(-dx, -dz));
   if (d <= SIM.arriveDist) { a.fighter.setMoving(0); groundY(a); return true; }
-  let sp = run ? SIM.runSpeed : SIM.moveSpeed;
+  const sp = run ? SIM.runSpeed : SIM.moveSpeed;
+  // delegate the actual stepping (gate funnel, barrier deflect, terrain slow, arena
+  // clamp, wall collision, grounding) to the shared body so goTo and steer() drive
+  // the body through byte-identical code.
+  _stepAlong(a, dx, dz, target, dt, sp);
+  return false;
+}
+
+// THE SHARED STEPPING BODY — extracted verbatim from goTo's lines 21-89 (Phase 2b,
+// the steer() substrate). Takes a movement HEADING (hx,hz — the direction the body
+// wants to move, before barrier deflection) and the EFFECTIVE TARGET (effTarget —
+// the destination used for the gate-waypoint funnel; facing/arrival are decided by
+// the CALLER, so _stepAlong never re-faces or re-arrives). `sp` is the base speed
+// BEFORE terrain slow. Used by goTo (straight-at-target), fleeFrom's synthetic
+// away-point, and steer()'s resolved force heading — all share one stepper so the
+// feel can never drift. NEVER throws (the freeze lesson). x/z only; y via groundY.
+export function _stepAlong(a, hx, hz, effTarget, dt, sp) {
   // town walls: if a wall ring lies between us and the target, steer THROUGH the
   // nearest gate first (a waypoint just past the doorway). A chord to the gate
   // stays inside the ring, so the body funnels head-on through the opening instead
   // of clipping its edge — which is where "aim straight at an off-to-the-side
   // goal" deadlocks at a narrow gate. Once through, gateWaypoint returns null and
-  // we re-lock on the real target. Face/arrive (above) stay on the real target.
-  let hx = dx, hz = dz;
-  const wp = gateWaypoint(a.pos.x, a.pos.z, target.x, target.z);
+  // we re-lock on the real heading. Face/arrive (caller's job) stay on the real target.
+  const wp = effTarget ? gateWaypoint(a.pos.x, a.pos.z, effTarget.x, effTarget.z) : null;
   if (wp) { hx = wp.x - a.pos.x; hz = wp.z - a.pos.z; }
   // movement heading: by default straight at the target/gate. If the NEXT footstep
   // would land in a water/ravine barrier, steer along it (try a left/right tangent)
@@ -40,7 +52,8 @@ export function goTo(a, target, dt, run = false) {
   const probe = Math.max(1.5, sp * dt * 3);
   // If the next footstep would enter a water/ravine barrier, deflect along it
   // toward a crossing. We blend the chosen tangent with the straight heading
-  // (not a hard 90° turn) and LATCH the deflection side per-agent so the body
+  // (not a hard 90° turn) and LATCH the deflection side per-agent (a._barrierSide,
+  // ON THE AGENT — not a stepper-local side, or fords oscillate) so the body
   // doesn't oscillate at the bank — it slides along to the nearest ford/bridge
   // and keeps net progress toward the goal. Never fully stops (freeze lesson).
   if (barrierAt(a.pos.x + ux * probe, a.pos.z + uz * probe) !== 0) {
@@ -86,7 +99,6 @@ export function goTo(a, target, dt, run = false) {
   }
   groundY(a);
   a.fighter.setMoving(sp);
-  return false;
 }
 
 // settle the body onto the terrain surface so agents walk the hills, not a
@@ -102,32 +114,10 @@ export function groundY(a) {
   try { a.pos.y = terrainHeight(a.pos.x, a.pos.z); } catch { /* never throw */ }
 }
 
-export function fleeFrom(a, threat, dt) {
-  let ax = a.pos.x, az = a.pos.z;
-  if (threat) { ax = a.pos.x - threat.pos.x; az = a.pos.z - threat.pos.z; }
-  const d = Math.hypot(ax, az) || 1;
-  _flee.set(a.pos.x + (ax / d) * 6, 0, a.pos.z + (az / d) * 6);
-  goTo(a, _flee, dt, true);
-}
-
-// hold a slot in a ring around the leader. Runs to catch up when straggling;
-// snaps if hopelessly separated (e.g. the leader portalled into a dungeon and
-// this member somehow didn't get teleported). Only x/z move — y is owned by
-// whichever world the member is in.
-// `leader` is a LEADER REF: either the controlled player-led party's real leader handle
-// (the documented ctx.partyLeader mechanic) OR a belief snapshot { pos:lastPos, alive }
-// for an NPC band — both expose only { pos, alive }, never foreign true-state.
-export function followLeader(a, leader, dt) {
-  if (!leader || !leader.alive) { a.fighter.setMoving(0); return; }   // EPISTEMIC-OK: controlled party leader (known mechanic)
-  const n = Math.max(1, PARTY.maxSize);
-  const ang = (a.partySlot || 0) * (Math.PI * 2 / n) + Math.PI;   // fan out behind
-  const tx = leader.pos.x + Math.cos(ang) * PARTY.spacing;
-  const tz = leader.pos.z + Math.sin(ang) * PARTY.spacing;
-  const gap = Math.hypot(leader.pos.x - a.pos.x, leader.pos.z - a.pos.z);
-  if (gap > PARTY.teleportDist) {
-    a.pos.x = tx; a.pos.z = tz; a.pos.y = leader.pos.y; a.fighter.setMoving(0);
-    return;
-  }
-  _flee.set(tx, a.pos.y, tz);
-  goTo(a, _flee, dt, gap > PARTY.catchUpDist);
-}
+// fleeFrom + followLeader RETIRED (Phase 2b, the steering substrate): every caller is
+// now on steer(). flee/avoid's away-from-threat steering is the pure-repulsor path inside
+// steer() (it reproduces fleeFrom's 6m synthetic away-point + radial-from-origin fallback
+// exactly); follow's formation slot + teleport snap + catch-up run is fillFollow in
+// steer.js. goTo STAYS (re-expressed as a thin _stepAlong delegate above) — buildStep /
+// combatStep / the plan transfer verbs (give/pay/gather/market) still call it and benefit
+// from the shared stepper transparently.
