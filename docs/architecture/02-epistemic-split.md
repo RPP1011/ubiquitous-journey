@@ -191,7 +191,9 @@ forbidden ground-truth access:
 
 Scanned (must be clean): `decide.js`, `act.js`, `movement.js`, `occupation.js`, `trade.js`,
 `motivation.js`, `planner.js`, `agent.js`, `mentalmap.js` (the shared static places registry —
-static-geography reads only). Allowlisted (the sanctioned bridge/resolver/
+static-geography reads only), and the **reasoning layer** `schemas/{ir,vocab,interpreter,
+catalogue}.js` (Phase 2a — the schema evaluators read only the agent's own beliefs/state/map).
+Allowlisted (the sanctioned bridge/resolver/
 orchestration): `perception.js`, `combat.js`, `combatEvents.js`, `simulation.js`. A
 deliberate carve-out on a single line is self-documented with a trailing
 `// EPISTEMIC-OK: <reason>` marker the scan recognises and skips (used only for the
@@ -199,11 +201,17 @@ controlled-party-leader reads). The suite also asserts the **structural** proper
 `simulation.js`'s `_cognitionCtx()` literal hands cognition no `agentsById:` / `player:`
 handle. Belt (scan) + suspenders (restricted ctx) are both verified by the gate.
 
-> **Known debts (the gate's blind spot).** Belt + suspenders catch cognition *reading*
-> truth; they cannot catch the world *writing* cognition state (`construction.js:375`'s
-> instant `owner.home = null` on shelter loss) or a sanctioned ctx field carrying dynamic
-> truth (`buildSites`, live-queried by `act.js`'s comfort branch). Both are tracked with
-> retirement paths in [09 — known debts](09-reasoning-layer.md#known-debts--leaks-the-gate-cannot-catch).
+> **Known debts (the gate's blind spot) — both RETIRED in Phase 2a.** Belt + suspenders
+> catch cognition *reading* truth; they could not catch the world *writing* cognition state
+> nor a sanctioned ctx field carrying dynamic truth. The two named instances are now closed by
+> **places-as-percepts**: (1) the instant `owner.home = null` on shelter loss is gone — a
+> building is a **percept** (namespaced id `B:<n>`) the owner DISCOVERS by sight (binding
+> `homeBeliefId` to a `placeKind:'home'` belief with a believed `sheltered`), and discovers the
+> LOSS by perception or by belief decay (no percept) — never telepathically; (2) the comfort
+> branch no longer live-queries `buildSites` — `nearestComfortSource` reads the owner's home
+> *belief* (trusted while believed-intact and fresh) else a STATIC shelter/rest Place. The world
+> systems (raid/ruin/construction-demand) still read ground truth — only the agent's *knowledge*
+> of its home is belief-gated. See [09 — known debts](09-reasoning-layer.md#known-debts--leaks-the-gate-cannot-catch).
 
 ## Destination-intent pursuit (Theory of Mind, not dead-reckoning)
 

@@ -25,10 +25,28 @@
 >   believe it a person, close on it and strike it — with no system faulting (the `!agent`
 >   guards skip all mind-feedback). Config in `MAP`/`SCARECROW` (`simconfig.js`); both
 >   default-off paths keep the soak/depth baselines byte-identical. The `no-threat-no-response`
->   self-correction (the prop figuring) is schema #6 — Phase 2, deliberately out of scope.
-> - **Phases 2–5 (designed)** — the `InteractionSchema` framework, the steering substrate,
->   LOD/amortization, the covert/domestic substrate, breadth. Marked *(designed)* below
->   until landed.
+>   self-correction (the prop figuring) is schema #6 — landed in Phase 2a (it reads the animacy
+>   tally added there).
+> - **Phase 2a (✓ landed)** — the **additive** half of Phase 2. Delivered by the
+>   `interaction-schemas` workflow: the `InteractionSchema` **IR + interpreter + shared
+>   predicate/inference/response vocabulary** (`js/sim/schemas/{ir,vocab,interpreter,catalogue}.js`,
+>   data-only, no `eval`, evaluated per-agent at the cognition tick over that agent's own
+>   beliefs/state/mental-map — bounded O(beliefs × rules), priority/ttl-cached), the **animacy
+>   tally** on beliefs (evidence a subject acted alive — moved/struck/blocked/harmed-me — feeding
+>   schema #6), the **6 flagship schemas as data rows** (flee-to-safety, intercept-fleer,
+>   go-to-ground, doubt-the-mask, flee-the-brawl, no-threat-no-response — all six now drive
+>   behaviour: flee/fight set the active goal directly, and the dispositions hide/shadow/avoid are
+>   ALSO direct schema-set goals with the act.js executor, not inert stack entries), and
+>   **places-as-percepts**: buildings (the agent's own home + taverns) are perceivable percepts
+>   with a *believed* `sheltered` state and a `placeKind`, affordances gained `shelter`/`rest`,
+>   and **both [known debts](#known-debts--leaks-the-gate-cannot-catch) are RETIRED** (home state
+>   is now discovered by sight/decay, the comfort branch is belief-backed). The **homecoming gate**
+>   (`test/suites/homecoming.mjs`) passes: a miner with a stale home-intact belief walks home,
+>   discovers the ruin by perception (case A) or self-corrects by belief decay (case B), then
+>   reroutes — no telepathic re-route. The **`goal.kind → steer-fills` collapse and the `steer()`
+>   potential-field primitive remain Phase 2b** (its own workflow) — see the roadmap row.
+> - **Phases 2b–5 (designed)** — the steering substrate, LOD/amortization, the covert/domestic
+>   substrate, breadth. Marked *(designed)* below until landed.
 >
 > Read [02 — the epistemic split](02-epistemic-split.md) first. This doc takes that
 > invariant to its conclusion: agents reason **and execute** purely on their world-model,
@@ -164,17 +182,22 @@ behaviour is `(field-fill + optional verb)`, optionally sequenced, never a behav
 actual swing stay explicit primitives — a behaviour fires them on arrival/contact. Hybrid,
 not pure potential-field.
 
-**Effect on the current code:** the ~12-entry `goal.kind` enum
+**Effect on the current code (Phase 2b, not yet landed):** the ~12-entry `goal.kind` enum
 (`work/flee/fight/wander/market/comfort/…`) **collapses** into one steering executor +
 the handful of verbs; the named behaviours move *up* into tier-1 data. Fewer code paths,
-unbounded behaviours.
+unbounded behaviours. As of Phase 2a the enum is intact and schema responses map onto existing
+goal kinds; the three dispositions with no prior kind (`hide`/`shadow`/`avoid`) were added as
+minimal direct goal-kinds and are tagged collapse-fodder for this step.
 
 ---
 
-## The `InteractionSchema` IR *(designed)*
+## The `InteractionSchema` IR *(✓ landed, Phase 2a)*
 
 A schema is a data entry the interpreter evaluates — the social analogue of an
-`AbilitySpec`:
+`AbilitySpec`. As built: the IR + `validate()` live in `js/sim/schemas/ir.js`; the builder/
+evaluator vocabulary in `vocab.js` (in the epistemic scan); the bounded, priority/ttl-cached
+`reason(agent, ctx, catalogue)` in `interpreter.js`; the rows in `catalogue.js`. Config (master
+gate, dwell, inert threshold) in `SCHEMA` (`simconfig.js`).
 
 ```js
 InteractionSchema = {
@@ -209,10 +232,15 @@ raise(field, amount)
 goal(kind, args)  intercept(at)  fleeTo(place)  shadow(subj)  avoid(around,to)
 ```
 
-### Five flagship interactions — as data
+### The flagship interactions — as data *(✓ landed: all six in `catalogue.js`)*
 
-Five very different behaviours — flee, intercept, hide, suspect, scatter — each ~6 lines
-reusing the *same* primitives. A new interaction is a data row, not a branch in `decide.js`.
+Six very different behaviours — flee, intercept, hide, suspect, scatter, unmask-the-inert —
+each ~6 lines reusing the *same* primitives. A new interaction is a data row, not a branch in
+`decide.js`. The sketches below are near-verbatim what shipped; two as-built notes: (1) schema
+#5's proximity clause is `nearSubject('@a', 7)` (a real belief-lastPos-vs-my-pos gate), not the
+degenerate `nearKnown('me', …)` the early sketch used; (2) doubt-the-mask only fires while the
+subject is *not yet* believed hostile (`believe('@x','hostile','==',false)`) — once you're sure,
+the committed avenge/fight intent owns you and shadowing would be regressive.
 
 ```js
 // 1. QUARRY — believe I'm hunted and I'm no fighter → break for an EXIT or COVER.
@@ -482,16 +510,24 @@ freeze lesson, [01](01-sim-spine.md)).
 ### Known debts — leaks the gate cannot catch
 
 The gate catches cognition *reading* truth. It cannot catch the **world writing cognition
-state**, nor a sanctioned ctx field that carries *dynamic* truth. Two known instances, both
-retired by **places-as-percepts** (Phase 2):
+state**, nor a sanctioned ctx field that carries *dynamic* truth. Two instances were named here;
+**both are now RETIRED by places-as-percepts (Phase 2a):**
 
-1. **`construction.js:375`** — when a building stops sheltering, `owner.home = null` flips
-   instantly, even with the owner across the map: omniscient discovery. Retirement: home
-   state becomes a belief about a building *percept*, updated only by sight or gossip
-   (Example 4 is the scene this cheat currently deletes).
-2. **`buildSites` on the restricted cognition ctx** — the comfort branch (`act.js:178`)
-   live-queries dynamic build state (`nearest(TAVERN)`). Retirement: *dynamic* place state
-   is believed per-agent; the shared mental map stays static geography only.
+1. **`owner.home = null` on shelter loss — RETIRED.** The world no longer writes the owner's
+   cognition. A finished building is registered as a **percept** (`construction.js _finalize`,
+   `kind: PERCEPT_KIND.BUILDING`, namespaced id `B:<n>` so it can never collide with an agent id in
+   the shared per-observer belief table) carrying a perceivable `alive`/`sheltered` surface. The
+   owner **discovers** his home by sight (`perceiveBuilding` binds `homeBeliefId` and files a
+   *belief* with `placeKind:'home'` + believed `sheltered`), and discovers its **loss** the same
+   way — perception flips the believed `sheltered` to false and files a `home_lost` episode *when
+   learned*, not when it burned. A fully-ruined+despawned home (no percept) self-corrects by belief
+   **decay** instead. Construction-demand bookkeeping stays truth-side (deliberate seam: building
+   ownership/raid/ruin are world systems; only the agent's *knowledge* of its home is belief-gated).
+2. **`buildSites` on the restricted cognition ctx — RETIRED.** The comfort branch no longer
+   live-queries dynamic build state. `nearestComfortSource` (`decide.js`) reads the agent's OWN
+   home-belief (trusted only while believed-intact AND confidence ≥ the act-on floor) and otherwise
+   falls back to a **static** `shelter`/`rest` Place on the shared mental map (a finished tavern is
+   added once as static geography — homes are NOT, so a razed home can't poison shared geography).
 
 Add to this list rather than silently accepting a third — a debt named here with a
 retirement path is a design decision; an unnamed one is a regression.
@@ -513,9 +549,11 @@ thousands of O(1) evals/sec — trivial — **provided** these hold:
 - **Shared static facts** — geography / gate / destination candidates precomputed once,
   read-only. Destination *inference* is a cheap lookup, not a per-agent search.
 - **Profiled** — extend the depth harness ([08](08-testing.md), `depthMetrics`) with a
-  **reasoning-cost-per-agent-per-tick** metric so "tractable" is *measured*. Adding breadth is
-  free of compute risk: 50 interactions is 50 data rows over one interpreter; cost scales with
-  *firings*, not catalogue size.
+  **reasoning-cost-per-agent-per-tick** metric so "tractable" is *measured*. *(A first cut landed
+  in Phase 2a: the depth report prints `N schema firings · X/agent-tick · M agents reasoned` as
+  additive, non-scored context from the interpreter's `_schemaFireCount`. The full per-tick cost
+  budget/ceiling is Phase 3.)* Adding breadth is free of compute risk: 50 interactions is 50 data
+  rows over one interpreter; cost scales with *firings*, not catalogue size.
 - **Bounded derived state** — the per-`(subject, place)` sighting tallies behind association
   beliefs (Phase 4, Ex. 5) are the first state that grows O(beliefs × places). It stays ≤8×8,
   but it is the first spot where the bound needs an **explicit eviction rule** (mirror the
@@ -533,7 +571,8 @@ against the soak + the depth/perf harness), so the build-up stays orchestrated a
 | --- | --- | --- |
 | **0 — Foundation** *(✓ landed)* | belief-gating + restricted ctx (`_cognitionCtx`) + the build-time scan (`test/suites/epistemic.mjs`) + first-cut destination-intent pursuit | **met** — soak green (40+ runs), gate proven to fail on an injected violation, 0 leaks |
 | **1 — World-model** *(✓ landed)* | mental-map/places registry (`mentalmap.js`) + affordance-weighted destination-intent inference (TTL-cached, invalidation on re-sight) + the Scarecrow percept wired in | **met** — soak green (incl. epistemic scan, 0 leaks); scarecrow tolerance + pursuit-intercept suite passes; depth 84/100 |
-| **2 — Interaction framework** | the `InteractionSchema` IR + interpreter + the flagship schemas; collapse `goal.kind` → steer-fills; **places-as-percepts** — buildings/own-home as percepts with belief entries (the Scarecrow substrate generalised; affordances gain `shelter`/`rest`/`private`), retiring the two [known debts](#known-debts--leaks-the-gate-cannot-catch) | depth harness shows new distinct behaviours + higher entropy; **the homecoming test** passes (a miner with a stale home-intact belief walks home and discovers the ruin — no telepathic re-route) |
+| **2a — Interaction framework** *(✓ landed)* | the `InteractionSchema` IR + interpreter + shared vocabulary + the 6 flagship schemas (all six drive behaviour); the **animacy tally** feeding schema #6; **places-as-percepts** — buildings/own-home as percepts with belief entries (the Scarecrow substrate generalised; affordances gained `shelter`/`rest`), retiring **both** [known debts](#known-debts--leaks-the-gate-cannot-catch) | **met** — soak green (incl. epistemic scan, 0 leaks); the **homecoming test** passes (stale home-intact belief → walk home → discover by sight / decay → reroute, no telepathy); depth floors hold (≈86/100, 19–20 distinct goal-kinds — up from 18 as the schema dispositions became active) |
+| **2b — Steering substrate** | collapse the ~12-entry `goal.kind` enum → one `steer()` potential-field executor + the handful of verbs (the named behaviours move up into tier-1 data; hide/shadow/avoid — today minimal direct goal-kinds, marked collapse-fodder in `act.js`/`planner.js` — fold into it) | fewer code paths, same/higher behavioural breadth + entropy |
 | **3 — Scale** | LOD / amortized cognition + the reasoning-cost metric | per-agent reasoning cost flat as N grows |
 | **4 — Covert & domestic substrate** | **epistemic atoms** in the planner (`know_assoc` pre/eff; `shadow`/`ask` actions that acquire beliefs), **subject↔place association beliefs** (consolidated from sightings, explicit eviction), the **perception-modelling standoff** (second-order ToM v1), **stored wealth** (purse vs stash — lands as its own commit *before* the covert schemas; conservation preserved), **witness-gated property deeds** (combatEvents' witness logic generalised to crime) | the urchin scenario end-to-end headless (case → infer-stash → burgle; counter-relocation stales the belief and the heist hits an empty cache); gold conserved throughout |
 | **5 — Breadth** | grow the interaction catalogue (data only) across the [situation library](#the-situation-library-the-design-bar-for-the-catalogue) | depth + perf measured each addition |
