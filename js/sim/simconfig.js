@@ -1470,3 +1470,20 @@ export const INTRIGUE = {
                              //   blown, the town now perceives its true faction and hunts it
 };
 
+// --- TRACE: the reasoning-trace diagnostic side-channel (docs/reasoning-traces.md) ---
+// A small, bounded, per-agent ring buffer of *why this mind did what it did this tick*,
+// WRITTEN BY cognition (own-view only) and NEVER read back by a decision (the one
+// non-negotiable rule). Read only by the UI (truth-side) + tests. Entries are CHEAP
+// STRUCTURED records; the human string is built lazily on read (traceLabel) — the
+// label-cache lesson, so tracing the whole town costs no per-frame string work.
+//   enabled — global off switch for a pure-perf soak; off → note() is a guarded
+//             early-return (byte-stable, zero allocation), so the soak baseline is
+//             unchanged either way. Default ON (always-available diagnostics; tests want it).
+//   depth   — entries retained per agent (a ring; appending past the cap overwrites the
+//             oldest). 24 balances "enough to see a decision chain" against memory
+//             (~agents × depth tiny objects). See js/sim/trace.js.
+export const TRACE = {
+  enabled: true,
+  depth: 24,
+};
+

@@ -7,6 +7,7 @@ import { ambitionText } from '../sim/motivation.js';
 import { memoryPhrase } from '../sim/memory.js';
 import { agentBiography } from '../sim/biography.js';
 import { provenanceTag } from '../sim/beliefs.js';
+import { traceLabel } from '../sim/trace.js';
 
 const hex = (c) => `#${c.toString(16).padStart(6, '0')}`;
 
@@ -20,6 +21,9 @@ export class Inspector {
     this.agents = [];
     this.hover = null;
     this.pinned = null;
+    // Thoughts panel cache (the label-cache discipline): the rendered reasoning HTML is
+    // rebuilt ONLY when a NEW trace entry lands. Keyed by (agentId, newest entry's t).
+    this._thoughtsCache = { key: null, html: '' };
     window.addEventListener('keydown', (e) => {
       if (e.code === 'KeyF') this.pinned = this.pinned ? null : this.hover;
     });
@@ -245,8 +249,32 @@ export class Inspector {
     if (!brows) brows = '<div class="empty">knows of no-one yet</div>';
     const beliefSec = `<div class="sec">Believes (${beliefs.length})</div>${brows}`;
 
-    return head + storySec + goal + goalSec + ambition + group + classes + behavior + repSec + relSec + bio + needs + inv + prices + beliefSec +
+    const thoughtsSec = this._thoughtsSec(a);
+
+    return head + storySec + goal + goalSec + thoughtsSec + ambition + group + classes + behavior + repSec + relSec + bio + needs + inv + prices + beliefSec +
       `<div class="foot">${this.pinned ? 'pinned · F to release' : 'look + press F to pin'}</div>`;
+  }
+
+  // Reasoning / Thoughts: the agent's recent reasoning trace (why-I-acted), newest-first
+  // through traceLabel. READ-ONLY + truth-side (the UI is allowed to read minds; cognition
+  // is not allowed to read traces). CACHED by a signature (the newest entry's t) so the
+  // HTML is rebuilt only when a NEW entry lands — the label-cache discipline. DOM-guarded:
+  // returns '' for any agent without a trace (headless/fixtures), so it never throws.
+  _thoughtsSec(a) {
+    if (!a || !a.trace || typeof a.trace.recent !== 'function') return '';
+    let newest = null;
+    try { newest = a.trace.newestT(); } catch { return ''; }
+    if (newest == null) return '';                       // no reasoning recorded yet
+    const key = `${a.id}|${newest}`;
+    if (this._thoughtsCache.key === key) return this._thoughtsCache.html;
+    let rows = '';
+    try {
+      const entries = a.trace.recent(8);
+      rows = entries.map((e) => `<div class="goal" style="color:#9fc0d8">${traceLabel(e)}</div>`).join('');
+    } catch { rows = ''; }
+    const html = rows ? `<div class="sec">Thoughts</div>${rows}` : '';
+    this._thoughtsCache = { key, html };
+    return html;
   }
 
   _name(id) {

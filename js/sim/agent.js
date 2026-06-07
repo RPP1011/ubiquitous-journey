@@ -14,6 +14,7 @@ import {
 import { Progression } from '../rpg/progression.js';
 import { assignAmbition } from './motivation.js';
 import { Memory } from './memory.js';
+import { Trace } from './trace.js';
 import { plan as planGoal, PLAN, stepPrecondsHold } from './planner.js';
 import * as trade from './agent/trade.js';
 import * as decor from './agent/decor.js';
@@ -185,6 +186,12 @@ export class Agent {
     // in three consolidating ring buffers. Fed from the event bus + combat hooks
     // (Simulation), read by the inspector biography. See js/sim/memory.js.
     this.memory = new Memory();
+
+    // REASONING TRACE: a bounded per-agent ring of *why I acted this tick*. WRITTEN BY
+    // cognition (own-view), NEVER read back by a decision — read only by the UI/tests.
+    // Cheap structured entries; the string is built lazily on read (traceLabel). See
+    // js/sim/trace.js + docs/reasoning-traces.md.
+    this.trace = new Trace();   // EPISTEMIC-OK: field init (write), not a trace read
 
     this._buildDecor();
   }

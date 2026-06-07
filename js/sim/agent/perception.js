@@ -10,6 +10,7 @@ import { terrainHeight, concealmentAt } from '../../arena.js';
 import { inferDestination } from '../beliefs.js';
 import { SIM, SOURCE, BAND, COMMODITIES, ECON, MAP, factionHostile } from '../simconfig.js';
 import { PERCEPT_KIND } from '../percept.js';
+import { STAGE, REASON } from '../trace.js';
 
 // perceive: sight of nearby agents writes high-confidence beliefs (the player
 // is just another subject, so NPCs naturally form beliefs about you).
@@ -134,7 +135,16 @@ function inferLostQuarries(a, ctx) {
       const hostile = b.hostile || factionHostile(a.faction, b.lastFaction);
       const intent = (hostile || a.combatant) ? 'flee'
                    : (b.lastFaction === 'monster' || b.lastFaction === 'bandit') ? 'raid' : null;
+      const hadDest = !!b.destPos;
       inferDestination(a, b, intent, ctx.map, now);
+      // TRACE (write-only, never read back): record when inference COMMITS a place for a
+      // lost quarry — the destination-intent pursuit's "I think it's making for X" beat.
+      // We log only on a fresh commit (it had none, now it does). Own-state; guarded.
+      if (!hadDest && b.destPos) {
+        a.trace.note(STAGE.INFER, REASON.DEST_INFERRED, {
+          t: now, subjectId: b.subjectId, a: b.destId || 'frontier', b: b.intent || null,
+        });
+      }
     }
   } catch { /* never throw on the tick */ }
 }

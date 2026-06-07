@@ -50,6 +50,7 @@ const SCANNED = [
   'js/sim/schemas/vocab.js',
   'js/sim/schemas/interpreter.js',
   'js/sim/schemas/catalogue.js',
+  'js/sim/trace.js',          // the trace substrate itself — clean (own-array only)
 ];
 
 // ALLOWLISTED bridge/resolver/orchestration files — the two sanctioned reality-touch
@@ -82,6 +83,17 @@ const FORBIDDEN_HANDLES = [
 // handles transitively bans the foreign-pos read without false-positiving belief refs.
 // An explicit `// EPISTEMIC-OK:` marker on a line still skips this belt (self-documenting).
 const FOREIGN_DEREF = /\b(?:o|foe|target|leader|cp|to|victor|charge|culprit|subj|ben|realTarget|_real|enemy|threat)\.(?:alive|faction|inventory|gold|stash|notoriety|priceBeliefs|needs)\b/;
+
+// TRACE WRITE-ONLY belt (docs/reasoning-traces.md, "the one non-negotiable rule"): a
+// trace is WRITTEN BY cognition but NEVER READ BACK by a decision (reading it would feed
+// past reasoning into the next — a hidden state channel outside the belief model). So in
+// the SCANNED cognition files, the ONLY sanctioned `.trace` touch is the write call
+// `…trace.note(…)`. Any OTHER `.trace` reference (`x = a.trace`, `a.trace.recent(…)`,
+// `if (a.trace)…`) is a READ → a violation. The regex flags `.trace` NOT immediately
+// followed by `.note` — exactly the `note(...)` write is allowed, every read trips.
+// (The substrate file `trace.js` defines the class via `this.buf/head/len`, never via a
+// `.trace` property, so it is clean under this rule too.)
+const TRACE_READ = /\.trace\b(?!\.note\b)/;
 
 // --- comment / string stripper (state machine; guarded — never throws) ---------------
 // Replaces // line comments, /* */ blocks, and '...' / "..." / `...` strings with spaces
@@ -151,6 +163,13 @@ export function epistemicScan(ok) {
       if (!allowed && FOREIGN_DEREF.test(line)) {
         violations++;
         console.log(`  [epistemic] ${rel}:${li + 1}: foreign true-deref (use belief.lastPos / resolver) :: ${rawLine.trim()}`);
+      }
+      // TRACE write-only: a `.trace` READ in cognition (anything but the `.note(...)`
+      // write) is a violation. The same EPISTEMIC-OK carve-out skips it (used by the
+      // trace suite to prove the rule trips on an injected `x = a.trace` read).
+      if (!allowed && TRACE_READ.test(line)) {
+        violations++;
+        console.log(`  [epistemic] ${rel}:${li + 1}: trace READ in cognition (write-only — use a.trace.note(...)) :: ${rawLine.trim()}`);
       }
     }
   }

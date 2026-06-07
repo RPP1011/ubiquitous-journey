@@ -23,6 +23,7 @@ import { perceptTest } from './suites/percept.mjs';
 import { schemasTest } from './suites/schemas.mjs';
 import { wealthCheck } from './suites/wealth.mjs';
 import { recipeTest } from './suites/recipes.mjs';
+import { traceTest } from './suites/trace.mjs';
 import { hearsayTest } from './suites/hearsay.mjs';
 import { obituaryTest } from './suites/obituary.mjs';
 import { constructionTest } from './suites/construction.mjs';
@@ -54,6 +55,9 @@ schemasTest(ok);
 await wealthCheck(ok, helpers);
 // Phase-4 economy prerequisite: recipe-gating of crafted production — day-one inert.
 recipeTest(ok, helpers);
+// REASONING TRACES: the trace substrate + the implemented write-sites (DEST_INFERRED,
+// GOAL_DERIVED) + the write-only scan rule. Matches on the stable `code` enum.
+traceTest(ok, helpers);
 hearsayTest(ok);
 obituaryTest(ok, helpers);
 // full deterministic scenario suite (docs/goal-system-tests.md): A1–A4, B1–B7,

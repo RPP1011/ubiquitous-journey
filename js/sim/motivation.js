@@ -13,6 +13,20 @@
 import { MOTIVE, SIM } from './simconfig.js';
 import { RPG } from '../rpg/rpgconfig.js';
 import { goalAvenge, goalSeekFortune, goalRepay, goalGrieve, goalDelve } from './planner.js';
+import { STAGE, REASON } from './trace.js';
+
+// TRACE (write-only, never read back): a goal genuinely landed on the stack. pushGoal
+// DEDUPS — it returns the EXISTING goal on a repeat — so we log only a FRESH push (the
+// returned object IS the one we built). Own-state; guarded; never throws on the tick.
+function traceDerived(a, ctx, built, pushed) {
+  // pushGoal DEDUPS — on a repeat it returns the EXISTING goal, not `built` — so a
+  // mismatch means "already on the stack, not a fresh derive". note() is internally
+  // guarded (never throws); an Agent always carries `.trace`.
+  if (!built || pushed !== built) return;
+  a.trace.note(STAGE.GOAL, REASON.GOAL_DERIVED, {
+    t: ctx ? ctx.time : 0, subjectId: built.subjectId ?? null, a: built.kind || null,
+  });
+}
 
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
 const lvl = (a) => (a.progression ? a.progression.totalLevel || 0 : 0);
@@ -172,12 +186,12 @@ export function deriveGoals(a, ctx) {
         const g = goalAvenge(ep.withId);
         g.priority = 0.9; g.from = 'assaulted';
         g.expiresAt = now + (MOTIVE.avengeExpiry || 120);
-        a.pushGoal(g, ctx);
+        traceDerived(a, ctx, g, a.pushGoal(g, ctx));
       } else if (ep.kind === 'windfall') {
         const g = goalSeekFortune(ep.place || 'market', MOTIVE.fortuneTarget || 140);
         g.priority = 0.6; g.from = 'windfall';
         g.expiresAt = now + (MOTIVE.fortuneExpiry || 180);
-        a.pushGoal(g, ctx);
+        traceDerived(a, ctx, g, a.pushGoal(g, ctx));
       } else if (ep.kind === 'succoured' && ep.withId != null) {
         // a kindness received while desperate -> repay the benefactor (give OR pay).
         // Can't repay one's own self or a benefactor I believe is gone (no confident
@@ -186,7 +200,7 @@ export function deriveGoals(a, ctx) {
         const g = goalRepay(ep.withId, 1, 'any');
         g.priority = 0.7; g.from = 'succoured';
         g.expiresAt = now + (MOTIVE.repayExpiry || 240);
-        a.pushGoal(g, ctx);
+        traceDerived(a, ctx, g, a.pushGoal(g, ctx));
       } else if (ep.kind === 'witnessed_death' && ep.withId != null) {
         // saw a (liked) friend fall -> mourn them; if the killer is known (and I haven't
         // already slain it), carry a vendetta. The witnessed_death memory IS the evidence
@@ -195,20 +209,20 @@ export function deriveGoals(a, ctx) {
         const grief = goalGrieve(ep.withId);
         grief.priority = 0.55; grief.from = 'witnessed_death';
         grief.expiresAt = now + (MOTIVE.grieveExpiry || 90);
-        a.pushGoal(grief, ctx);
+        traceDerived(a, ctx, grief, a.pushGoal(grief, ctx));
         const haveCulprit = ep.byId != null && ep.byId !== a.id && !(a._slain && a._slain.has(ep.byId));
         if (haveCulprit) {
           const av = goalAvenge(ep.byId);
           av.priority = 0.85; av.from = 'witnessed_death';
           av.expiresAt = now + (MOTIVE.avengeExpiry || 120);
-          a.pushGoal(av, ctx);
+          traceDerived(a, ctx, av, a.pushGoal(av, ctx));
         }
       } else if (ep.kind === 'relic') {
         // found / heard of a relic in a place -> delve there (aspirational for NPCs).
         const g = goalDelve(ep.place || 'a ruin');
         g.priority = 0.5; g.from = 'relic';
         g.expiresAt = now + (MOTIVE.delveExpiry || 200);
-        a.pushGoal(g, ctx);
+        traceDerived(a, ctx, g, a.pushGoal(g, ctx));
       }
     } catch { /* never throw on the tick */ }
   }
@@ -268,6 +282,11 @@ export function pruneGoals(a, ctx) {
             } catch { /* never throw */ }
           }
           awardGoalClosureXP(a, g, now, 0.5);   // narrative-beat xp for the closure
+          // TRACE (write-only): the goal's predicate became satisfied — it pops. Own-state.
+          // note() is internally guarded (never throws); a.trace always exists on an Agent.
+          a.trace.note(STAGE.GOAL, REASON.GOAL_POPPED, {
+            t: now, subjectId: g.subjectId ?? null, a: g.kind || null,
+          });
           return false;
         }
       } catch { /* keep on error */ }
