@@ -399,19 +399,20 @@ appearance. The exact vendetta path runs: `goal=defeat(S)` → `[approach(S), st
   outcome is that he realises it was never a foe.) He was fooled at first and reasoned his
   way out, and not one system faulted on the way.
 
-### Example 4 — the homecoming (the domestic counterpart)
+### Example 4 — the homecoming (the domestic counterpart) *(✓ landed, Phase 2a)*
 *Mirek the miner has been at the eastern vein since dawn; raiders torched his home at noon.*
 
-- **Today (the cheat this example exists to retire):** the instant the roof fails,
-  `construction.js` clears `owner.home` — the world writes into the miner's head from across
-  the map, no perception involved — and the comfort branch then live-queries `buildSites` for
-  a tavern. He "knows" telepathically; the homecoming never happens. (Both are tracked in
-  [known debts](#known-debts--leaks-the-gate-cannot-catch).)
-- **Target:** his home is a *percept* he holds a belief about (`intact`, conf high,
-  `lastSeen: dawn`). The comfort plan runs in belief space: `[goto(believed-home), rest]`.
-  He walks home — to ash. **Perception contradicts the belief on arrival**: belief revised,
-  plan invalidated, replan against the next-best *believed* shelter —
-  `nearKnown(affords('shelter'))` → the tavern.
+- **The cheat this example retired:** the instant the roof failed, `construction.js` used to
+  clear `owner.home` — the world writing into the miner's head from across the map, no
+  perception involved — and the comfort branch live-queried `buildSites` for a tavern. He
+  "knew" telepathically; the homecoming never happened. Both were [known debts](#known-debts--leaks-the-gate-cannot-catch),
+  now retired (see the gate `test/suites/homecoming.mjs`).
+- **As built:** his home is a *percept* he holds a belief about (a believed `sheltered`
+  state, conf high, last refreshed at dawn). The comfort plan runs in belief space:
+  `[goto(believed-home), rest]`. He walks home — to ash. **Perception contradicts the belief
+  on arrival** (case A, discovery by sight) *or* the stale belief decays past the act-on
+  floor with the percept despawned (case B): belief revised, plan invalidated, replan
+  against the next-best *believed* shelter — `nearKnown(affords('shelter'))` → the tavern.
 - An episodic `home_lost` memory derives goals: **rebuild** (feeding the existing
   construction-demand loop) and **avenge** if a witness gossips him the culprit's name. The
   Chronicle gets its beat *when he learns*, not when it burned.
@@ -459,11 +460,95 @@ ask(informant)   pre: near(inf.)     eff: know_assoc(Olen,'stash')     // fast, 
   economy change: carried gold is lootable on death, stored gold is burglable while away,
   and both stay inside the closed money loop.
 
+### Example 6 — the teacher (the *useful* cooperative mirror of the urchin)
+*Mistress Edda, a master smith, is the cooperative twin of Pip: covert belief **acquisition**
+becomes overt belief **distribution** — the same `know(X)` substrate, opposite intent.*
+
+The trap to avoid: a teacher who transmits beliefs nobody's decisions depend on is a gossip
+NPC in a mortarboard. A teacher is *useful* only when what's taught is **scarce**,
+**consequential**, and **cheaper than the alternative** — so the design starts from where an
+agent provably does worse for lack of knowledge. Four teachable goods, each with a metric:
+
+| Good | The deficit today | Metric (taught vs control) |
+| --- | --- | --- |
+| **Price calibration** | per-agent price beliefs already drift (soak: herb cleared 7.6 vs belief 9.6±2.8) | gold lost to belief-vs-clearing spread |
+| **Danger geography** | agents die in the wilds learning the hard way; `travelCost` already routes around believed threats | wilds mortality / 1000 ticks |
+| **Craft know-how (recipes)** | — *see below; the load-bearing one* — | time-to-first-produce; chain survival |
+| **Map spots** (waits on per-agent known-places) | shared-static map means everyone "knows" the same geography | time-to-first-gather |
+
+- **Demand emerges from the planner, not a script.** A `learn(topic)` step
+  (`pre: near(teacher), gold ≥ tuition; eff: know(topic)`) competes inside an ordinary plan:
+  a young trader's `seek_fortune` weighs `[learn(prices) → trade]` against `[trade blindly]`,
+  and buys the lesson exactly when tuition < the expected losses it avoids. Same epistemic
+  atoms as the urchin's `know_assoc`, pointed at a legitimate market.
+- **Transmission stays belief-gated:** `teach` writes through the existing **gossip bridge**
+  with `source: 'taught'` provenance (higher trust than street rumour) — the student *hears*
+  the lesson; the teacher never writes another mind directly. A `quiz` step updates the
+  teacher's *model of what the student knows* through perception (cooperative, bounded
+  second-order ToM — a teacher models ~2 apprentices, not the town).
+- **Supply rides existing rails:** tuition is closed-loop gold income; `teach`/`learn` deeds
+  drift the `behavior_profile` → an emergent **Teacher** class (the "Wise" epithet), nobody
+  assigned. **Refuse-list:** no direct XP transfer (that cheapens *earned* emergent classes —
+  teaching seeds beliefs + unlocks know-how; the student still levels by doing), no
+  shared-static curricula (useless by construction), no ambient "mentor buff" (a stat aura
+  bypasses the belief system entirely).
+
+**Recipe knowledge — where teaching becomes infrastructure.** Gate a production chain on
+own-state `knows(recipe_X)` (own-state, so cognition reads it freely — no split issue),
+transferable only by teaching/apprenticeship or **observation** (`shadow` the apothecary —
+the urchin machinery verbatim, now industrial espionage) or slow self-rediscovery (an
+"invention" Chronicle beat). Now knowledge transmission is *economically load-bearing*:
+
+- the last apothecary dying **untaught** removes potions from the economy until someone
+  re-discovers the craft → scarcity → price spike → a Gazette story (the market does this
+  for free);
+- **guild secrets** (`groups.js` — teach only in-group → a knowledge cartel), **family
+  recipes** (`houses.js` + lineage → a house asset that dies with an untaught line),
+  **monopoly pricing** (one knower → concentrated supply → the existing clearing prices it).
+
+Guards: a *belief* about whether someone else knows a recipe is second-order and can be wrong
+(pay tuition to a fraud). **Migration is baseline-identical** (the `SCARECROW.enabled`
+pattern): seed every current professional with their recipe, so the soak is unchanged on day
+one — scarcity emerges only through generational turnover, where it belongs. Recipe-gating
+lands as its own small economy commit *before* the teaching schemas (like purse-vs-stash).
+
+### Example 7 — the camp rescue (asymmetric operations; the catalogue *composes*)
+*An adventuring party of **4** takes a bandit **camp of 30+** — and wins because of the
+**knowledge gap**, not the sword-count.* This is the capstone: it works only if Examples 1–6's
+primitives compose, with no new behaviour code.
+
+- **Scout, don't charge.** A scout surveils the camp from a concealment standoff (the urchin's
+  `shadow` machinery). The ≤8-entry belief cap makes tracking 30 individual bandits
+  *inexpressible* — so observation necessarily **aggregates** into a **place-occupancy belief**
+  on the camp percept (believed strength ≈ N). That bound is a *feature*: it's why armies are
+  reasoned about as *forces at places*, not rosters.
+- **The planner refuses the frontal assault.** Group-level `outmatchedBy` (party strength vs
+  believed occupancy) fails the `[assault]` plan outright — the party does *not* suicide. It
+  waits.
+- **The window is event-triggered (v1).** The scout perceives the **raid column departing** →
+  revises camp occupancy 30 → ~5. *Now* `[infiltrate → free(captives) → exfiltrate]` becomes
+  feasible. (Learned routines/schedules — "they always raid at dusk" — are explicitly a v2;
+  v1 only needs *perceive the departure*.)
+- **Infiltrate** via `affords('conceal')` routes outside modelled sentry vision (second-order
+  ToM again); **`free(captive)`** is a new verb on a **captive state** (held agents can't act
+  until freed, then `follow` the party out — ties into the quest `recover` type).
+- **The system becomes its own antagonist:** the returning bandits run **Phase-1
+  destination-intent inference** to pursue the fleeing party — the rescue is a race against the
+  same machinery that powers every pursuit.
+
+**The gate is the point** (`test/suites/camp-rescue.mjs`, a Phase-5 capstone): (a) 4 beat 30+
+**with** the scouted window; (b) **control** — the same party *without* the knowledge is
+refused by its own planner, or wiped if forced; (c) **epistemic honesty** — if the scout is
+absent when the column leaves, the window is never detected (no telepathic raid-sensing);
+(d) the scan + structural checks stay green; captives are real agents. If the knowledge-blind
+control doesn't *lose*, the feature is a fraud — the win must be *the knowledge*. (`expeditions.js`
+then makes NPC-run rescues an emergent follow-on.)
+
 **What to notice:** one executor, many behaviours (every locomotion is a steer-fill);
 GOAP runs in belief-space end-to-end, so planning, replanning, pursuit, *mistakes*,
-*discoveries* (Ex. 4) and *heists on stale information* (Ex. 5) all flow through the same
-pipe; deliberative depth is all tier-1 (amortized), tier-3 per frame is just *steer + maybe
-a verb*.
+*discoveries* (Ex. 4), *heists on stale information* (Ex. 5), *teaching* (Ex. 6) and
+*asymmetric operations* (Ex. 7) all flow through the same pipe; deliberative depth is all
+tier-1 (amortized), tier-3 per frame is just *steer + maybe a verb*.
 
 ---
 
@@ -482,6 +567,8 @@ it; this table is the proof of generality.)
 | **D** | **Second-order ToM** | "they think I did it" (framed agent flees/hides/petitions the patrician *because he believes they believe*); `sense-the-tail` (Ex. 5's counter-schema) | beliefs about others' beliefs — `notoriety` is the existing one-off special case |
 | **E** | **Epistemic atoms** | every "ask around" ending above; Ex. 5's `know_assoc` precondition with `shadow`/`ask` chosen by cost | `know(X)` pre/eff atoms in the planner; actions whose effects acquire beliefs. (`know(X)` as a *terminal* goal exists for exactly two professions where information is the job: the reporter and the spy.) |
 | **F** | **Compound invalidation** | Rip van Winkle: an expedition returns after three days to a raided town — buildings gone, a friend dead, prices shifted. **A test, not a feature**: assert mass belief-revision happens via perception/gossip on re-entry, never a sync from truth | nothing new — the gate that proves A–E compose |
+| **G** | **Cooperative knowledge distribution** | the teacher (Ex. 6) — price calibration, danger geography, **recipe know-how**, map spots, demand priced by the planner (`learn` when tuition < losses-avoided); the priest as a teacher of god-beliefs (faith propagation made principled) | the *write* side of family E: `teach`/`quiz`; `source:'taught'` gossip provenance; `knows(recipe)` own-state gating production; bounded cooperative second-order ToM |
+| **H** | **Asymmetric operations** | the camp rescue (Ex. 7) — scout → place-occupancy belief → refuse frontal assault → exploit a perceived window → infiltrate/`free(captive)`/exfiltrate while the foe's own destination-intent pursues you | **place-occupancy (aggregate-strength) beliefs** (the ≤8 cap forces aggregation — armies as forces-at-places); group-level `outmatchedBy`; captive state + `free` verb; the catalogue composing into operations |
 
 ---
 
@@ -574,8 +661,8 @@ against the soak + the depth/perf harness), so the build-up stays orchestrated a
 | **2a — Interaction framework** *(✓ landed)* | the `InteractionSchema` IR + interpreter + shared vocabulary + the 6 flagship schemas (all six drive behaviour); the **animacy tally** feeding schema #6; **places-as-percepts** — buildings/own-home as percepts with belief entries (the Scarecrow substrate generalised; affordances gained `shelter`/`rest`), retiring **both** [known debts](#known-debts--leaks-the-gate-cannot-catch) | **met** — soak green (incl. epistemic scan, 0 leaks); the **homecoming test** passes (stale home-intact belief → walk home → discover by sight / decay → reroute, no telepathy); depth floors hold (≈86/100, 19–20 distinct goal-kinds — up from 18 as the schema dispositions became active) |
 | **2b — Steering substrate** | collapse the ~12-entry `goal.kind` enum → one `steer()` potential-field executor + the handful of verbs (the named behaviours move up into tier-1 data; hide/shadow/avoid — today minimal direct goal-kinds, marked collapse-fodder in `act.js`/`planner.js` — fold into it) | fewer code paths, same/higher behavioural breadth + entropy |
 | **3 — Scale** | LOD / amortized cognition + the reasoning-cost metric | per-agent reasoning cost flat as N grows |
-| **4 — Covert & domestic substrate** | **epistemic atoms** in the planner (`know_assoc` pre/eff; `shadow`/`ask` actions that acquire beliefs), **subject↔place association beliefs** (consolidated from sightings, explicit eviction), the **perception-modelling standoff** (second-order ToM v1), **stored wealth** (purse vs stash — lands as its own commit *before* the covert schemas; conservation preserved), **witness-gated property deeds** (combatEvents' witness logic generalised to crime) | the urchin scenario end-to-end headless (case → infer-stash → burgle; counter-relocation stales the belief and the heist hits an empty cache); gold conserved throughout |
-| **5 — Breadth** | grow the interaction catalogue (data only) across the [situation library](#the-situation-library-the-design-bar-for-the-catalogue) | depth + perf measured each addition |
+| **4 — Covert & domestic substrate** | **epistemic atoms** in the planner (`know_assoc`/`know(recipe)` pre/eff; `shadow`/`ask`/`teach`/`quiz` actions that acquire or distribute beliefs), **subject↔place association beliefs** (consolidated from sightings, explicit eviction), the **perception-modelling standoff** (second-order ToM v1, shared by the urchin's stalk and the teacher's curriculum model). Two **economy commits land first**, each baseline-identical via seeding + conservation-preserved: **stored wealth** (purse vs stash — burglable vs lootable) and **recipe-gating** (`knows(recipe_X)` own-state gating production chains). Then the adversarial flagship (**urchin**, Ex. 5) and the cooperative flagship (**teacher**, Ex. 6) over the same substrate; **witness-gated property deeds** (combatEvents' witness logic generalised to crime) | **urchin**: case → infer-stash → burgle end-to-end headless; counter-relocation stales the belief → empty cache; gold conserved. **teacher A/B cohort gate**: a taught cohort beats a same-seed control on trade margin / wilds mortality / time-to-class, gold conserved (tuition is a transfer); **kill the teacher → the next cohort measurably degrades** (knowledge loss is real). If taught ≈ control, the feature fails by its own test |
+| **5 — Breadth + capstone** | grow the interaction catalogue (data only) across the [situation library](#the-situation-library-the-design-bar-for-the-catalogue); **place-occupancy (aggregate-strength) beliefs**, group-level `outmatchedBy`, **captive state + the `free` verb** | depth + perf measured each addition; **the camp-rescue capstone** (Ex. 7, `test/suites/camp-rescue.mjs`): 4 beat 30+ **via the scouted window**, the knowledge-blind **control loses** (refused by its own planner or wiped), and a **scout absent at departure never detects the window** (no telepathic raid-sensing) — the proof the catalogue *composes* into operations |
 
 ## How we measure
 
