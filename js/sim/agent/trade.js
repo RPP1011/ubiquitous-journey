@@ -6,7 +6,7 @@
 // verbatim bodies of the old Agent methods. No cycles — imports config + the
 // rpg event bus only.
 
-import { GOODS, COMMODITIES, ECON, WEALTH } from '../simconfig.js';
+import { GOODS, COMMODITIES, ECON, WEALTH, RECIPES } from '../simconfig.js';
 import { bus, makeEvent } from '../../rpg/events.js';
 
 // Deterministically move a fraction of a freshly-spawned agent's PURSE into its
@@ -80,9 +80,14 @@ export function wantQty(a, c) {
   if (c === 'tool') return a.inventory.tool < 1 ? 1 : 0;
   if (c === 'potion') return a.inventory.potion < 1 ? 1 : 0;  // everyone keeps a remedy
   // buy the recipe inputs for the good I'm currently crafting (tool: wood+ore;
-  // potion: herb). Raw producers have no inputs and buy none.
+  // potion: herb) — but only if I actually KNOW that recipe (else the inputs are
+  // useless to me). Master-gated + guarded; inert on day one. Raw producers have
+  // no inputs and buy none.
   const inputs = tradeInputs(a);
-  if (inputs && inputs[c]) return Math.max(0, 2 - Math.floor(a.inventory[c]));
+  if (inputs && inputs[c]) {
+    if (RECIPES.enabled && a._trade && !(a.recipes && a.recipes.has(a._trade))) return 0;
+    return Math.max(0, 2 - Math.floor(a.inventory[c]));
+  }
   return 0;
 }
 export function sellQty(a, c) { return Math.max(0, Math.floor(a.surplus(c))); }

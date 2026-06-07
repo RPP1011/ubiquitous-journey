@@ -8,7 +8,7 @@ import { nearestLandmark } from '../arena.js';
 import { BeliefStore } from './beliefs.js';
 import {
   PROFESSIONS, COMMODITIES, BASE_PRICE, ECON,
-  SIM, COMFORT, BUILD, NOVELTY, SCHEMA, WEALTH,
+  SIM, COMFORT, BUILD, NOVELTY, SCHEMA, WEALTH, RECIPES,
   factionHostile,
 } from './simconfig.js';
 import { Progression } from '../rpg/progression.js';
@@ -25,6 +25,18 @@ import * as occupation from './agent/occupation.js';
 
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
 const rand = (a, b) => a + Math.random() * (b - a);
+
+// Resolve which crafted recipes a fresh CURRENT PRODUCER is seeded with. Day-1:
+// RECIPES.seedKnown:'all' ⇒ every gated recipe, so every working townsperson keeps
+// crafting exactly as before (baseline-identical). Phase 4 narrows this per-lineage.
+const seedRecipesFor = (out /* a producer's own output, or null */) => {
+  const set = new Set();
+  const gated = (RECIPES && RECIPES.gated) || [];
+  if (RECIPES && RECIPES.seedKnown === 'all') for (const g of gated) set.add(g);
+  // always include the agent's OWN crafted output even if seedKnown narrows later.
+  if (out && gated.includes(out)) set.add(out);
+  return set;
+};
 
 export class Agent {
   constructor(fighter, cfg) {
@@ -75,6 +87,11 @@ export class Agent {
     this.stash = 0;
     this.toolWear = 0;
     this._smithTimer = 0;
+    // CRAFT RECIPES KNOWN (own-state; read freely by cognition — no epistemic split).
+    // ALWAYS a Set so the produce() gate is safe on professionless agents (monsters/
+    // player get an empty Set, never undefined — the freeze lesson). Populated below
+    // for current producers; Phase 4 adds/removes via teach/apprentice/shadow.
+    this.recipes = new Set();
     this.priceBeliefs = {};
     for (const c of COMMODITIES) this.priceBeliefs[c] = +(BASE_PRICE[c] * rand(0.8, 1.2)).toFixed(2);
 
@@ -91,6 +108,7 @@ export class Agent {
     this._trade = null;
     if (this.townsperson && this.autonomous && !this.combatant) {
       for (const c in ECON.starterKit) this.inventory[c] = ECON.starterKit[c];
+      this.recipes = seedRecipesFor(null);   // a working townsperson can craft any gated good today
     } else if (this.profession) {
       // legacy path: an explicitly-professioned agent (test fixtures) keeps the
       // old kit so scenario tests that pass a profession still behave.
@@ -100,6 +118,7 @@ export class Agent {
       this.inventory.tool = 1;
       if (prof.inputs) for (const c in prof.inputs) this.inventory[c] = 2;
       this._trade = prof.output;
+      this.recipes = seedRecipesFor(prof.output);   // born knowing at least its own craft
     }
     trade.seedStash(this);          // deterministic purse→stash split per WEALTH config (no-op while disabled)
 

@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { DIR, TUNE } from '../../constants.js';
 import { ARENA_RADIUS } from '../../arena.js';
 import { POI_KIND } from '../world.js';
-import { GOODS, ECON, SIM, SOCIAL, BAND, BUILD, COMFORT, NOVELTY } from '../simconfig.js';
+import { GOODS, ECON, SIM, SOCIAL, BAND, BUILD, COMFORT, NOVELTY, RECIPES } from '../simconfig.js';
 import { castSpec, onCooldown } from '../../rpg/abilities/interpreter.js';
 import { isMelee } from '../../rpg/abilities/ir.js';
 import { bus, makeEvent } from '../../rpg/events.js';
@@ -203,6 +203,16 @@ export function produce(a, dt) {
   // to compete there. 1.0 for a novice, growing uncapped with mastery for a grandmaster.
   const skillMul = masteryMul(a, output);
   if (g.inputs) {
+    // RECIPE GATE (own-state): a crafted good is producible only if I KNOW its recipe.
+    // Master-gated by RECIPES.enabled (off ⇒ byte-identical baseline). Guarded for the
+    // freeze lesson: a professionless agent's `recipes` is an empty Set (never undefined),
+    // and a missing field still can't throw. No event emitted, no timer touched — a silent
+    // no-op, so an un-taught maker simply idles and re-chooses next decide (Phase 4 supplies
+    // the learn/teach step that fills `recipes`).
+    if (RECIPES.enabled && !(a.recipes && a.recipes.has(output))) {
+      maybeRediscover(a, output, dt);     // Phase-4 stub: rate 0 on day one ⇒ never fires
+      a.fighter.setMoving(0); return;
+    }
     // crafted good: convert inputs -> output on the smithing timer
     const has = Object.keys(g.inputs).every((c) => (inv[c] || 0) >= g.inputs[c]);
     if (has) {
@@ -243,6 +253,19 @@ export function produce(a, dt) {
     a.toolWear += gained * ECON.toolWearPerGain;
     while (a.toolWear >= 1 && inv.tool > 0) { a.toolWear -= 1; inv.tool -= 1; }
   }
+}
+
+// SELF-REDISCOVERY (Phase-4 hook; STUB). A maker stuck without a recipe may, very slowly,
+// re-invent it. Gated on RECIPES.rediscoverPerSec (0 on day one ⇒ this never adds a recipe,
+// so the soak is byte-identical). Phase 4 raises the rate and emits an 'invention' Chronicle
+// beat here. Fully guarded — never throws on the tick (the freeze lesson). The rate<=0
+// early-return runs BEFORE any Math.random() draw, so day-one doesn't perturb the RNG stream.
+function maybeRediscover(a, output, dt) {
+  try {
+    const rate = (RECIPES && RECIPES.rediscoverPerSec) || 0;
+    if (rate <= 0 || !a.recipes) return;
+    if (Math.random() < rate * dt) a.recipes.add(output);   // Phase 4: + chronicle 'invention'
+  } catch { /* never throw on the tick */ }
 }
 
 // THE MULTI-TICK CONSTRUCTION PROCESS (the execution half of Phase-1 buildings).

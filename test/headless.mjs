@@ -22,6 +22,7 @@ import { memoryGoalTest, npcCastTest } from './suites/memoryGoals.mjs';
 import { perceptTest } from './suites/percept.mjs';
 import { schemasTest } from './suites/schemas.mjs';
 import { wealthCheck } from './suites/wealth.mjs';
+import { recipeTest } from './suites/recipes.mjs';
 import { hearsayTest } from './suites/hearsay.mjs';
 import { obituaryTest } from './suites/obituary.mjs';
 import { constructionTest } from './suites/construction.mjs';
@@ -51,6 +52,8 @@ perceptTest(ok, helpers);
 schemasTest(ok);
 // Phase-4 economy prerequisite: stored wealth (purse vs stash) — day-one inert.
 await wealthCheck(ok, helpers);
+// Phase-4 economy prerequisite: recipe-gating of crafted production — day-one inert.
+recipeTest(ok, helpers);
 hearsayTest(ok);
 obituaryTest(ok, helpers);
 // full deterministic scenario suite (docs/goal-system-tests.md): A1–A4, B1–B7,

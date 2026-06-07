@@ -43,6 +43,28 @@ export const GOODS = {
 export const RAW_OUTPUTS     = Object.keys(GOODS).filter((g) => GOODS[g].raw);
 export const CRAFTED_OUTPUTS = Object.keys(GOODS).filter((g) => !GOODS[g].raw);
 
+// --- recipe knowledge (own-state craft gating; Phase-4 prerequisite) ---------
+// A crafted good is producible only by an agent that KNOWS its recipe (own-state
+// `agent.recipes`, read freely by cognition — no epistemic-split issue). Raw goods
+// (food/wood/ore/herb) need no recipe: anyone may gather them. Phase 4 makes recipe
+// knowledge transferable (teach/apprentice/shadow) and forgettable at generational
+// turnover; THIS commit only adds the gate + own-state field + baseline-identical
+// seeding, so the soak is byte-identical on day one (the SCARECROW.enabled pattern).
+// ORDERING DEPENDENCY: `gated` reads CRAFTED_OUTPUTS above — keep this block BELOW it.
+export const RECIPES = {
+  enabled: false,            // MASTER GATE — off ⇒ produce() never checks recipes ⇒
+                             //   byte-identical baseline (proof commit; turned on with Phase 4).
+  // Which crafted goods are recipe-gated. Derived from GOODS (every non-raw good),
+  // pinned here so the gate set is config, not a logic scan.
+  gated: CRAFTED_OUTPUTS.slice(),     // ['tool','potion']
+  // DAY-1 SEEDING: which recipes a freshly-spawned current PRODUCER is born knowing.
+  // 'all' ⇒ every gated recipe (so every working townsperson keeps crafting exactly
+  // as today). Phase 4 narrows this (children inherit a subset; newcomers learn).
+  seedKnown: 'all',
+  rediscoverPerSec: 0,       // self-rediscovery rate while stuck without a recipe
+                             //   (Phase-4 hook; 0 ⇒ stub never fires on day one).
+};
+
 // who spawns: a town of GENERIC townsfolk (no birthright trade). Each gets a
 // starter kit (see ECON.starterKit) and CHOOSES what to do from GOODS each work
 // decision. Same headcount as the old profession roster (23 souls).
