@@ -12,9 +12,23 @@
 >   cut of **destination-intent pursuit** shipped with it, and the omniscient-pursuit
 >   scenarios were reconciled with their original assertions intact. See also the updated
 >   [02 — the epistemic split](02-epistemic-split.md).
-> - **Phases 1–4 (designed)** — the mental-map + richer destination-intent inference, the
->   `InteractionSchema` framework, the steering substrate, LOD/amortization. Marked
->   *(designed)* below until landed.
+> - **Phase 1 (✓ landed)** — the **world-model substrate**. Delivered by the
+>   `world-model` workflow: a shared, read-only **mental map** (`js/sim/mentalmap.js`,
+>   `MentalMap`/`Place`) snapshotted once from static geography (town gates, POIs, arena
+>   landmarks) and queried by **affordance** (`affords('exit'|'conceal'|'safe'|'crowd'|
+>   'resource')`) — never by scanning the roster (it holds no live entity; it is in the
+>   epistemic scan). **Destination-intent inference** upgraded to the doc's `inferDestination`
+>   argmax: heading-match + intent-conditional affordance bonus − distance, **cached on the
+>   belief with a TTL** (`MAP.destTTL`) and invalidated the instant perception re-acquires the
+>   quarry. And the **Scarecrow percept** (`js/sim/percept.js`) is now wired into the sim:
+>   `sim.percepts` + the `fighters`/`perceivables` seams let an agent perceive a mindless prop,
+>   believe it a person, close on it and strike it — with no system faulting (the `!agent`
+>   guards skip all mind-feedback). Config in `MAP`/`SCARECROW` (`simconfig.js`); both
+>   default-off paths keep the soak/depth baselines byte-identical. The `no-threat-no-response`
+>   self-correction (the prop figuring) is schema #6 — Phase 2, deliberately out of scope.
+> - **Phases 2–5 (designed)** — the `InteractionSchema` framework, the steering substrate,
+>   LOD/amortization, the covert/domestic substrate, breadth. Marked *(designed)* below
+>   until landed.
 >
 > Read [02 — the epistemic split](02-epistemic-split.md) first. This doc takes that
 > invariant to its conclusion: agents reason **and execute** purely on their world-model,
@@ -87,10 +101,12 @@ Everything reasons off one private world-model per agent:
   contradicting evidence, not a truth-read.
 - **Episodic memory** (`memory.js`) — the autobiography; goals derive from it.
 - **Own state** — needs, inventory, mastery, personality, ambition.
-- **Mental map** *(designed)* — the agent's known **places**: town gates (`walls.js`),
-  POIs (`world.js`), landmarks (`arena.js`), and its *believed* home/hideout. A handful of
-  entries, read-only, shared static geography. Queried by affordance (`affords('exit',
-  'conceal', 'safe', 'crowd')`), never by scanning the roster.
+- **Mental map** *(✓ landed, Phase 1)* — the agent's known **places**: town gates
+  (computed from `TOWNS.wall`), POIs (`world.js`), landmarks (`arena.js`). A handful of
+  entries, read-only, shared static geography (`js/sim/mentalmap.js`, `MentalMap`/`Place`,
+  on `sim.map`). Queried by affordance (`affords('exit','conceal','safe','crowd','resource')`),
+  never by scanning the roster. It holds **no live entity** — a *believed* home/hideout stays
+  a BELIEF field, never a shared Place. In the epistemic scan; never throws on the tick.
 
 > **The bound is the budget.** Reasoning may only ever quantify over *my* ~8 beliefs and
 > ~8 known places. No rule can iterate the roster — the [enforcement](#build-time-enforcement)
@@ -248,12 +264,22 @@ reusing the *same* primitives. A new interaction is a data row, not a branch in 
 
 ---
 
-## Destination-intent inference *(designed)*
+## Destination-intent inference *(✓ landed, Phase 1)*
 
 The one piece of real "new code," and it is tiny and bounded — **Theory of Mind, not
 dead-reckoning.** When an agent loses sight of a pursued subject it does **not** extrapolate
 a velocity; it infers *where the subject is trying to go* from its last-seen heading + known
 geography + context, and intercepts there.
+
+> **As built** (`inferDestination(observer, belief, intent, map, now)` in `beliefs.js`,
+> called from `inferLostQuarries` in `perception.js`): the sketch below shipped almost
+> verbatim — the argmax is over `map.known(observer.townId, lastPos, MAP.knownPlaces)`, the
+> weights are `MAP.wHeading/wAfford/wNear`, and the result is cached on the belief
+> (`destId`/`destPos`/`intent`/`destInferredAt`) for `MAP.destTTL` seconds, re-inferred only
+> on lapse and zeroed by `observe()` on a re-sighting. Fallbacks: a moving quarry with no
+> fitting place extends along the heading toward the frontier; a still quarry stands and
+> searches at `lastPos`. `raid`/`hunt` reward a `crowd` place. All static-geography + belief
+> reads — it is in the epistemic scan and never throws.
 
 ```js
 // "Where is this quarry trying to GO?" — pure belief + mental map + context. O(#places).
@@ -345,10 +371,89 @@ appearance. The exact vendetta path runs: `goal=defeat(S)` → `[approach(S), st
   outcome is that he realises it was never a foe.) He was fooled at first and reasoned his
   way out, and not one system faulted on the way.
 
+### Example 4 — the homecoming (the domestic counterpart)
+*Mirek the miner has been at the eastern vein since dawn; raiders torched his home at noon.*
+
+- **Today (the cheat this example exists to retire):** the instant the roof fails,
+  `construction.js` clears `owner.home` — the world writes into the miner's head from across
+  the map, no perception involved — and the comfort branch then live-queries `buildSites` for
+  a tavern. He "knows" telepathically; the homecoming never happens. (Both are tracked in
+  [known debts](#known-debts--leaks-the-gate-cannot-catch).)
+- **Target:** his home is a *percept* he holds a belief about (`intact`, conf high,
+  `lastSeen: dawn`). The comfort plan runs in belief space: `[goto(believed-home), rest]`.
+  He walks home — to ash. **Perception contradicts the belief on arrival**: belief revised,
+  plan invalidated, replan against the next-best *believed* shelter —
+  `nearKnown(affords('shelter'))` → the tavern.
+- An episodic `home_lost` memory derives goals: **rebuild** (feeding the existing
+  construction-demand loop) and **avenge** if a witness gossips him the culprit's name. The
+  Chronicle gets its beat *when he learns*, not when it burned.
+- **The gossip variant is the ToM payoff:** a neighbour who watched it burn tells him at the
+  mine — he grieves early and the trip never happens. Same machinery, different information
+  flow. No combat anywhere in this example: the split is not a combat feature.
+
+### Example 5 — the urchin and the merchant (covert; epistemic atoms in the planner)
+*Pip, an urchin with an empty purse, marks Master Olen, a merchant believed rich.*
+
+The goal is **`steal(Olen)`** — derived from the wealth need like any motivation. *Knowing
+where he keeps it is a precondition*, not a goal: the planner backward-chains through an
+**epistemic atom**, and knowledge-acquisition appears inside the plan only when the
+knowledge is missing (the same stock-vs-acquire shape as the B5 planner test — `shadow` is
+the epistemic `gather`):
+
+```
+burgle(stash)    pre: know_assoc(Olen,'stash'), at(stash),
+                      believedFar(Olen,stash), noWitnessBelievedNear   eff: have(gold)
+approach(stash)  pre: know_assoc(Olen,'stash')                         eff: at(stash)
+shadow(Olen)     pre: —              eff: know_assoc(Olen,'stash')     // slow, safe
+ask(informant)   pre: near(inf.)     eff: know_assoc(Olen,'stash')     // fast, alerts the mark
+```
+
+- **Plan-step choice is the behavioural modelling:** `shadow` vs `ask` is an ordinary cost
+  decision — a charming agent asks around, a despised urchin stalks. If gossip already
+  supplied the stash, `know_assoc` is pre-satisfied and the plan collapses to
+  `[approach, burgle]` — a tip is literally *plan-cost saved*, pricing information through
+  the planner (the journalism layer's info-as-resource theme, made mechanical).
+- `shadow` steers at a standoff **outside the mark's modelled sight** (assume his vision
+  mirrors my own config — rule-based second-order ToM v1). Its effect is *non-guaranteed*:
+  sightings accumulate in episodic memory and consolidate into a **subject↔place association
+  belief** (`assoc(Olen,'stash') = P`, role-tagged); the step runs under a budget and the
+  existing goal-expiry path (the D4 test) drains plans whose acquisition never lands.
+- **The counter-schema** (`sense-the-tail`): repeated sightings of the same face near me →
+  `vigilant` → vary route / **relocate the stash** / report to the Watch. Relocation silently
+  stales Pip's association belief — the heist hits an empty cache and he must re-case.
+  Cat-and-mouse, fully emergent, no scripted heist.
+- **Consequences ride existing rails:** `steal`/`shadow` deeds → `behavior_profile` → an
+  emergent Thief class; witnessed theft → gossip → Watch → bounty → a Gazette crime story.
+  With lineage spawning children into poverty, the career arc — urchin → cutpurse → wanted —
+  is emergent, not authored.
+- **Prerequisite:** stored wealth. Today gold is purse-only, so the scenario is
+  *unrepresentable* — there is nothing to stash. Purse vs stash is its own (small, prior)
+  economy change: carried gold is lootable on death, stored gold is burglable while away,
+  and both stay inside the closed money loop.
+
 **What to notice:** one executor, many behaviours (every locomotion is a steer-fill);
-GOAP runs in belief-space end-to-end, so planning, replanning, pursuit, and *mistakes* all
-flow through the same pipe; deliberative depth is all tier-1 (amortized), tier-3 per frame
-is just *steer + maybe a verb*.
+GOAP runs in belief-space end-to-end, so planning, replanning, pursuit, *mistakes*,
+*discoveries* (Ex. 4) and *heists on stale information* (Ex. 5) all flow through the same
+pipe; deliberative depth is all tier-1 (amortized), tier-3 per frame is just *steer + maybe
+a verb*.
+
+---
+
+## The situation library (the design bar for the catalogue)
+
+What the schema catalogue must cover **out of the box**, organised by the substrate each
+family *forces* — every entry is a future schema/test candidate, and a family lands when its
+test passes headless. (Pursuit was the first consumer of the world-model, not the shape of
+it; this table is the proof of generality.)
+
+| | Family | Situations | Substrate it forces |
+| --- | --- | --- | --- |
+| **A** | **Place-state beliefs** | the homecoming (Ex. 4); the dry vein (miner treks to a believed-rich, actually-depleted mine; gossips "played out" — supply rumours, true or false); the closed gate (curfew → detour to another `affords('exit')`); the desecrated shrine (the small god *actually weakens* as believers learn — faith ⨯ belief-propagation) | places-as-percepts: believed *state* on known places, revised by perception/gossip |
+| **B** | **Liveness & whereabouts in non-combat plans** | the dead vendor (plan `buy(potion)` → empty hut → replan/ask); the apprentice's dead master (→ `find_new_mentor`, lineage); the unwitting widow (belief decays → worry → *seek information*; grief lands by hearsay days late, or never) | `believedDead` generalised beyond vengeance; absence-of-evidence as evidence |
+| **C** | **Institutional / information staleness** | the claimed bounty (wasted trip → the gazette earns a *credibility*, like gossip provenance); the arbitrage bust (widely-published prices are already priced in — herding from shared beliefs) | news/quest state as belief-with-staleness, not live reads |
+| **D** | **Second-order ToM** | "they think I did it" (framed agent flees/hides/petitions the patrician *because he believes they believe*); `sense-the-tail` (Ex. 5's counter-schema) | beliefs about others' beliefs — `notoriety` is the existing one-off special case |
+| **E** | **Epistemic atoms** | every "ask around" ending above; Ex. 5's `know_assoc` precondition with `shadow`/`ask` chosen by cost | `know(X)` pre/eff atoms in the planner; actions whose effects acquire beliefs. (`know(X)` as a *terminal* goal exists for exactly two professions where information is the job: the reporter and the spy.) |
+| **F** | **Compound invalidation** | Rip van Winkle: an expedition returns after three days to a raided town — buildings gone, a friend dead, prices shifted. **A test, not a feature**: assert mass belief-revision happens via perception/gossip on re-entry, never a sync from truth | nothing new — the gate that proves A–E compose |
 
 ---
 
@@ -374,6 +479,23 @@ Every belief→object dereference that *does* remain must be guarded for `undefi
 may point at a non-agent percept — a scarecrow, a phantom): **never throw on the tick** (the
 freeze lesson, [01](01-sim-spine.md)).
 
+### Known debts — leaks the gate cannot catch
+
+The gate catches cognition *reading* truth. It cannot catch the **world writing cognition
+state**, nor a sanctioned ctx field that carries *dynamic* truth. Two known instances, both
+retired by **places-as-percepts** (Phase 2):
+
+1. **`construction.js:375`** — when a building stops sheltering, `owner.home = null` flips
+   instantly, even with the owner across the map: omniscient discovery. Retirement: home
+   state becomes a belief about a building *percept*, updated only by sight or gossip
+   (Example 4 is the scene this cheat currently deletes).
+2. **`buildSites` on the restricted cognition ctx** — the comfort branch (`act.js:178`)
+   live-queries dynamic build state (`nearest(TAVERN)`). Retirement: *dynamic* place state
+   is believed per-agent; the shared mental map stays static geography only.
+
+Add to this list rather than silently accepting a third — a debt named here with a
+retirement path is a design decision; an unnamed one is a regression.
+
 ---
 
 ## Scalability engineering
@@ -394,6 +516,11 @@ thousands of O(1) evals/sec — trivial — **provided** these hold:
   **reasoning-cost-per-agent-per-tick** metric so "tractable" is *measured*. Adding breadth is
   free of compute risk: 50 interactions is 50 data rows over one interpreter; cost scales with
   *firings*, not catalogue size.
+- **Bounded derived state** — the per-`(subject, place)` sighting tallies behind association
+  beliefs (Phase 4, Ex. 5) are the first state that grows O(beliefs × places). It stays ≤8×8,
+  but it is the first spot where the bound needs an **explicit eviction rule** (mirror the
+  belief table's least-certain-stalest eviction) rather than falling out of a table size —
+  the Phase 3 cost metric watches it from day one.
 
 ---
 
@@ -405,10 +532,11 @@ against the soak + the depth/perf harness), so the build-up stays orchestrated a
 | Phase | Delivers | Gate |
 | --- | --- | --- |
 | **0 — Foundation** *(✓ landed)* | belief-gating + restricted ctx (`_cognitionCtx`) + the build-time scan (`test/suites/epistemic.mjs`) + first-cut destination-intent pursuit | **met** — soak green (40+ runs), gate proven to fail on an injected violation, 0 leaks |
-| **1 — World-model** | mental-map/places registry + destination-intent inference + predicted behaviour | belief-gated pursuit works (scenarios reconciled); scarecrow test passes |
-| **2 — Interaction framework** | the `InteractionSchema` IR + interpreter + the 5 flagship schemas; collapse `goal.kind` → steer-fills | depth harness shows new distinct behaviours + higher entropy |
+| **1 — World-model** *(✓ landed)* | mental-map/places registry (`mentalmap.js`) + affordance-weighted destination-intent inference (TTL-cached, invalidation on re-sight) + the Scarecrow percept wired in | **met** — soak green (incl. epistemic scan, 0 leaks); scarecrow tolerance + pursuit-intercept suite passes; depth 84/100 |
+| **2 — Interaction framework** | the `InteractionSchema` IR + interpreter + the flagship schemas; collapse `goal.kind` → steer-fills; **places-as-percepts** — buildings/own-home as percepts with belief entries (the Scarecrow substrate generalised; affordances gain `shelter`/`rest`/`private`), retiring the two [known debts](#known-debts--leaks-the-gate-cannot-catch) | depth harness shows new distinct behaviours + higher entropy; **the homecoming test** passes (a miner with a stale home-intact belief walks home and discovers the ruin — no telepathic re-route) |
 | **3 — Scale** | LOD / amortized cognition + the reasoning-cost metric | per-agent reasoning cost flat as N grows |
-| **4 — Breadth** | grow the interaction catalogue (data only) | depth + perf measured each addition |
+| **4 — Covert & domestic substrate** | **epistemic atoms** in the planner (`know_assoc` pre/eff; `shadow`/`ask` actions that acquire beliefs), **subject↔place association beliefs** (consolidated from sightings, explicit eviction), the **perception-modelling standoff** (second-order ToM v1), **stored wealth** (purse vs stash — lands as its own commit *before* the covert schemas; conservation preserved), **witness-gated property deeds** (combatEvents' witness logic generalised to crime) | the urchin scenario end-to-end headless (case → infer-stash → burgle; counter-relocation stales the belief and the heist hits an empty cache); gold conserved throughout |
+| **5 — Breadth** | grow the interaction catalogue (data only) across the [situation library](#the-situation-library-the-design-bar-for-the-catalogue) | depth + perf measured each addition |
 
 ## How we measure
 

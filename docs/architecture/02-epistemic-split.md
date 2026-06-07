@@ -190,13 +190,20 @@ forbidden ground-truth access:
   reachable through the (already-banned) roster handles.
 
 Scanned (must be clean): `decide.js`, `act.js`, `movement.js`, `occupation.js`, `trade.js`,
-`motivation.js`, `planner.js`, `agent.js`. Allowlisted (the sanctioned bridge/resolver/
+`motivation.js`, `planner.js`, `agent.js`, `mentalmap.js` (the shared static places registry —
+static-geography reads only). Allowlisted (the sanctioned bridge/resolver/
 orchestration): `perception.js`, `combat.js`, `combatEvents.js`, `simulation.js`. A
 deliberate carve-out on a single line is self-documented with a trailing
 `// EPISTEMIC-OK: <reason>` marker the scan recognises and skips (used only for the
 controlled-party-leader reads). The suite also asserts the **structural** property: that
 `simulation.js`'s `_cognitionCtx()` literal hands cognition no `agentsById:` / `player:`
 handle. Belt (scan) + suspenders (restricted ctx) are both verified by the gate.
+
+> **Known debts (the gate's blind spot).** Belt + suspenders catch cognition *reading*
+> truth; they cannot catch the world *writing* cognition state (`construction.js:375`'s
+> instant `owner.home = null` on shelter loss) or a sanctioned ctx field carrying dynamic
+> truth (`buildSites`, live-queried by `act.js`'s comfort branch). Both are tracked with
+> retirement paths in [09 — known debts](09-reasoning-layer.md#known-debts--leaks-the-gate-cannot-catch).
 
 ## Destination-intent pursuit (Theory of Mind, not dead-reckoning)
 
@@ -211,13 +218,18 @@ intent    'flee' | 'raid' | 'home' | null
 notoriety believed player fame (the fear gate)
 ```
 
-- `inferDestination(observer, belief, hostile)` (`beliefs.js`) — called from perception when
-  a tracked subject leaves sight — projects the last position along the observed `heading`
-  and snaps to the nearest known fixed place in that cone (arena `LANDMARKS`: gates / vales /
-  the market / the frontier), biased by an inferred `intent` (a fleeing quarry makes for an
-  exit or a hideout; a raider for the frontier). Falls back to "keep going along the heading"
-  or "stand and search at the last sighting". It reads only STATIC shared geography + the
-  belief itself — no live roster.
+- `inferDestination(observer, belief, intent, map, now)` (`beliefs.js`) — called from
+  perception (`inferLostQuarries`) when a tracked subject leaves sight — runs an argmax over
+  the observer's **mental map** (`MentalMap`, the shared static places registry — town
+  gates / POIs / arena landmarks, `js/sim/mentalmap.js`), scoring each known place by
+  `headingMatch × MAP.wHeading + intent-conditional affordance bonus × MAP.wAfford −
+  distance × MAP.wNear`. The affordance term is intent-conditional: a `flee` quarry is drawn
+  to places that `affords('exit','conceal')`, a `raid`/`hunt` quarry to a `crowd`. Falls back
+  to "keep going along the heading toward the frontier" or "stand and search at the last
+  sighting". The chosen destination is **cached on the belief** (`destId`/`destPos`/`intent`/
+  `destInferredAt`) for `MAP.destTTL` seconds and re-inferred only on lapse; a re-sighting
+  (`observe()`) clears it (contradicting-perception invalidation). It reads only the static
+  shared `map` + the belief itself — no live roster. Tuning lives in `MAP` (`simconfig.js`).
 - `combatStep` (`act.js`) navigates the pursuit: while the belief is **fresh** (confidence
   ≥ `SIM.reacquireConf`, just sighted) it closes on `lastPos`; once the belief goes **stale**
   (out of sight, below `reacquireConf`) it intercepts at `destPos` instead. `resolver.perceive`
