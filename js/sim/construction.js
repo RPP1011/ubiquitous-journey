@@ -31,17 +31,37 @@
 // throws inside the fixed loop.
 
 import * as THREE from 'three';
-import { BUILD, SURVEYOR, CITY } from './simconfig.js';
+import { BUILD, SURVEYOR, CITY, MAP } from './simconfig.js';
 import { bus, makeEvent } from '../rpg/events.js';
 import { terrainHeight } from '../arena.js';
 import { BEAT } from './chronicle.js';
+import { PERCEPT_KIND } from './percept.js';
+import { Place } from './mentalmap.js';
+
+// the affordance table (data-driven), so a registered tavern Place advertises shelter/rest.
+const MAP_AFF = (MAP && MAP.affordances) || {};
 import {
   generateShell, shelterReport, anyBurning, torch, strikeNearestWall, tickFire, MATERIAL,
 } from '../world/buildingParts.js';
 
 // Construction's own POI kinds, so callers (act.js/decide.js) never need World to
-// learn about buildings — BuildSites is itself the nearest()-style lookup.
+// learn about buildings — BuildSites is itself the nearest()-style lookup. (These are
+// the BUILD-TYPE of a site/building, kept on `buildKind`; a finished building's `.kind`
+// is the PERCEPT kind so perception can file a place-belief about it.)
 export const BUILD_KIND = { HOME: 'home', TAVERN: 'tavern' };
+
+// BELIEF-BACKED HOUSING TEST (Phase 2a): is this agent unhoused, AS FAR AS IT KNOWS? Reads
+// ONLY the agent's OWN belief about its home (homeBelief) — never a truth-side Building. An
+// agent with no home-belief, or one whose home-belief has been revised to sheltered=false
+// (it DISCOVERED the ruin by sight), is unhoused. This is the cognition-visible housing state
+// the comfort/build demand reads; the world's truth-side building bookkeeping is separate.
+// Pure + guarded (own-state only); never throws on a fixture missing fields.
+export function isUnhoused(a) {
+  try {
+    const b = (a && a.homeBeliefId != null && a.beliefs) ? a.beliefs.get(a.homeBeliefId) : null;
+    return !b || b.sheltered === false;
+  } catch { return true; }
+}
 
 // ROI / QUALIFY HELPER (pure, exported for decide.js + tests). True iff a
 // townsperson genuinely wants — and can afford to start — a private home:
@@ -52,7 +72,7 @@ export function qualifyHome(agent, ctx) {
   try {
     if (!agent || !BUILD.enabled) return false;
     if (!agent.canWork || agent.faction !== 'townsfolk') return false;
-    if (agent.home || agent._buildSiteId) return false;          // housed / already building
+    if (!isUnhoused(agent) || agent._buildSiteId) return false;  // housed (believes) / already building
     if (!agent.needs || typeof agent.needs.comfort !== 'number') return false;
     if (agent._comfortLowSince == null) return false;            // never been chronically low
     const t = (ctx && ctx.time) || 0;
@@ -72,7 +92,7 @@ export function qualifyHome(agent, ctx) {
 export function isHomeBuilder(agent) {
   try {
     if (!agent || !BUILD.enabled) return false;
-    if (!agent.canWork || agent.faction !== 'townsfolk' || agent.home) return false;
+    if (!agent.canWork || agent.faction !== 'townsfolk' || !isUnhoused(agent)) return false;
     if (agent._buildSiteId != null) return true;                 // committed to a site
     if (agent._comfortLowSince == null) return false;            // not even chronically low yet
     if (!agent.needs || typeof agent.needs.comfort !== 'number') return false;
@@ -108,6 +128,12 @@ export class BuildSites {
     this._nextId = 1;
     this._acc = 0;
     this._pending = [];      // finished buildings awaiting the lazy mesh import (browser)
+    // TRUTH-SIDE DISPLACEMENT QUEUE (Phase 2a backstop): owners whose home was razed.
+    // Each entry { ownerId, town, plotPos, at }. Drained in tick() with a grace timer:
+    // if the owner stays away (truth: still no building carrying his ownerId) past the
+    // grace window, the TOWN re-commissions the rebuild on his behalf. Reads ground-truth
+    // building presence ONLY — never an owner's beliefs (demand bookkeeping stays truth-side).
+    this._displaced = [];
     this.stats = { commissioned: 0, completed: 0, homes: 0, taverns: 0 };
     // No bus subscription: this module EMITS deeds (build), it doesn't consume
     // them, so a rebuilt world can't double-route XP through here. No mesh either.
@@ -159,7 +185,7 @@ export class BuildSites {
   nearest(kind, pos) {
     let best = null, bd = Infinity;
     for (const b of this._buildings) {
-      if (b.kind !== kind) continue;
+      if (b.buildKind !== kind) continue;    // build-type (home/tavern); b.kind is now the PERCEPT kind
       if (b.sheltered === false) continue;   // a razed/burnt building confers no benefit
       const dx = b.pos.x - pos.x, dz = b.pos.z - pos.z;
       const d = dx * dx + dz * dz;
@@ -176,7 +202,7 @@ export class BuildSites {
   // never double-commissions one).
   hasTavern(townId) {
     for (const s of this._sites) if (s.kind === BUILD_KIND.TAVERN && s.town === townId) return true;
-    for (const b of this._buildings) if (b.kind === BUILD_KIND.TAVERN && b.town === townId) return true;
+    for (const b of this._buildings) if (b.buildKind === BUILD_KIND.TAVERN && b.town === townId) return true;
     return false;
   }
 
@@ -310,7 +336,9 @@ export class BuildSites {
         // PUBLIC TAVERN: abstracted town labour. While the town holds enough
         // townsfolk, the tavern rises a little each tick (capped by the wood that
         // passing builders have actually contributed — so the commodity loop holds).
-        if (site.ownerId == null && site.kind === BUILD_KIND.TAVERN) {
+        // A TOWN-FUNDED rebuild (the displacement backstop) rises the same way, so a
+        // displaced owner's home is restored even if he never returns to build it.
+        if ((site.ownerId == null && site.kind === BUILD_KIND.TAVERN) || site.townFunded) {
           this._townLabour(site, ctx, dt);
         }
 
@@ -330,6 +358,9 @@ export class BuildSites {
       // where raiders hit, the fire spread, and the shelter-loss consequences). Reads
       // the public sim.director._raiders field; fully guarded inside the fixed tick.
       this._raidPass(ctx, dt);
+      // TRUTH-SIDE displacement backstop: rebuild a displaced owner's home after a grace
+      // window if he never returned to discover the ruin and re-commission it himself.
+      this._drainDisplaced(ctx);
     } catch { /* never throw on the fixed tick (freeze lesson) */ }
   }
 
@@ -364,15 +395,21 @@ export class BuildSites {
       // FIRE: advance any spreading fire (consumes parts + collapses unsupported mass).
       if (anyBurning(b.struct)) tickFire(b.struct, dt, Math.random);
 
-      // SHELTER re-eval: when a building loses shelter, kill its benefit, free a home's
-      // owner (unhoused → re-commission demand), and file a best-effort razing beat.
+      // SHELTER re-eval: when a building loses shelter, kill its benefit and file a best-
+      // effort razing beat. The owner is NOT unhoused here by fiat (debt #1 retired) — the
+      // world no longer writes the owner's cognition. Instead the PERCEIVABLE state flips
+      // (b.alive = b.sheltered), so an owner who walks home DISCOVERS the loss by sight; and
+      // a TRUTH-SIDE displacement record (the demand backstop) is filed so housing stock
+      // still recovers if the owner never returns.
       const rep = shelterReport(b.struct);
       const wasSheltered = b.sheltered !== false;
       b.sheltered = rep.sheltered;
+      // a building's perceivable liveness tracks its shelter — perception reads o.alive and
+      // writes the believed `sheltered`, so a torched-but-standing home advertises alive=false.
+      b.alive = b.sheltered;
       if (wasSheltered && !b.sheltered) {
-        if (b.kind === BUILD_KIND.HOME && b.ownerId != null) {
-          const owner = this.sim.agentsById.get(b.ownerId);
-          if (owner && owner.home === b) owner.home = null;   // UNHOUSED → comfort re-caps
+        if (b.buildKind === BUILD_KIND.HOME && b.ownerId != null) {
+          this._recordDisplaced(b);   // TRUTH-SIDE demand backstop (no cognition write)
         }
         try {
           if (this.sim.chronicle) {
@@ -415,8 +452,20 @@ export class BuildSites {
   // is attached. All field accesses guarded.
   _finalize(site, ctx) {
     const building = {
-      id: this._nextId++,
-      kind: site.kind,
+      // NAMESPACED percept id (Phase 2a fix): a building's belief-keying id MUST be disjoint
+      // from agent ids, which are bare integers from Simulation._nextId (1..N). Buildings and
+      // agents share ONE per-observer BeliefStore keyed by raw id, so a bare integer here would
+      // COLLIDE with a live agent's id — a perceived building would then overwrite (and be
+      // overwritten by) a person-belief on the same key, corrupting home/place AND person state.
+      // The `B:` prefix gives buildings their own namespace (mirrors the Scarecrow's `scare-…`
+      // string ids and the static-map Place key below). homeBeliefId/homeBuildingOf compare this
+      // same prefixed id, so the seam stays consistent.
+      id: `B:${this._nextId++}`,
+      // PERCEPT SURFACE (Phase 2a, places-as-percepts): a finished building is a percept.
+      // `kind` is the PERCEPT kind (so perception files a place-belief about it); the BUILD
+      // type (home/tavern) is preserved on `buildKind` (read by nearest/hasTavern/raid/ruin).
+      kind: PERCEPT_KIND.BUILDING,
+      buildKind: site.kind,
       ownerId: site.ownerId,
       town: site.town,
       pos: site.pos.clone(),
@@ -432,16 +481,27 @@ export class BuildSites {
       struct: site.struct,
       plotTiles: site.plotTiles,
       sheltered: true,
+      // perceivable liveness mirrors shelter: a finished, intact building reads alive=true,
+      // a torched one alive=false. Perception writes the believed `sheltered` from this.
+      alive: true,
+      faction: null,            // a place has no faction (perception records 'unknown')
+      disguiseFaction: null,    // never disguised; keeps appearanceOf()/perceive() guards happy
       label: null,
       mesh: null,
     };
     this._buildings.push(building);
     site.done = true;
     site.building = building;
+    // register the building as a PERCEPT so agents can SEE it (and discover its home/shelter
+    // state by sight). It lives in sim.percepts (never sim.agents), so no cognition/gossip/
+    // subsystem loop touches a mindless body — exactly like a Scarecrow.
+    try { if (this.sim.spawnPercept) this.sim.spawnPercept(building); } catch { /* */ }
 
     const owner = site.ownerId != null ? this.sim.agentsById.get(site.ownerId) : null;
     if (site.kind === BUILD_KIND.HOME && owner) {
-      owner.home = building;
+      // debt #1 retired: the world no longer writes owner.home (cognition state). The owner
+      // DISCOVERS his finished home by perceiving it (perception sets homeBeliefId). We only
+      // release his build-site commitment here (truth-side bookkeeping).
       owner._buildSiteId = null;
     }
 
@@ -471,7 +531,19 @@ export class BuildSites {
     if (typeof document !== 'undefined') this._attachMesh(building);
 
     this.stats.completed++;
-    if (building.kind === BUILD_KIND.TAVERN) this.stats.taverns++; else this.stats.homes++;
+    if (building.buildKind === BUILD_KIND.TAVERN) this.stats.taverns++; else this.stats.homes++;
+
+    // PLACES-AS-STATIC-GEOGRAPHY (Phase 2a): register a finished TAVERN as a shared, STATIC
+    // mental-map Place (position only, never `sheltered`) so the belief-backed comfort path
+    // can reach the town hearth via map.nearest(['shelter','rest']). HOMES are deliberately
+    // NOT added to the shared map (a razed home must not poison shared geography — the owner
+    // reaches his home through his OWN belief, homeBeliefId). Guarded; never throws.
+    try {
+      if (building.buildKind === BUILD_KIND.TAVERN && this.sim.map && typeof this.sim.map.add === 'function') {
+        this.sim.map.add(new Place(building.id, 'tavern', building.pos,
+          (MAP_AFF.tavern || ['shelter', 'rest']), building.town));
+      }
+    } catch { /* the shared map is best-effort static geography */ }
   }
 
   // ---- mesh (browser-only, fully guarded) -----------------------------------
@@ -501,7 +573,7 @@ export class BuildSites {
       if (!_gen) { this._pending.push(building); return; }
       const rng = mulberry32(building.seed);
       const group = _gen(rng, {
-        kind: building.kind,
+        kind: building.buildKind,   // the mesh generator keys on the BUILD type (home/tavern)
         wealth: building.wealth,
         footprint: building.footprint,
         storeys: building.storeys,
@@ -531,20 +603,85 @@ export class BuildSites {
     this._sites.splice(i, 1);
   }
 
-  // RUIN a finished building that has been gutted: remove it from the roster, free its
-  // grid tiles (rebuild demand returns), drop its mesh (browser), and unhouse a home's
-  // owner. Closed-money-loop safe — releasing tiles destroys wood parts, not gold.
+  // RUIN a finished building that has been gutted: remove it from the roster, DESPAWN its
+  // percept (no more place to perceive), free its grid tiles (rebuild demand returns), and
+  // drop its mesh (browser). Debt #1 retired: the world no longer writes owner.home — a HOME
+  // owner whose home is gutted-and-despawned discovers the loss either by sight (a torched-
+  // but-standing home is the common case; this full-ruin path leaves no percept) OR via
+  // BELIEF DECAY (his stale home-belief is never re-confirmed, so confidence falls below the
+  // act-on threshold and the comfort path stops trusting it — see decide.nearestComfortSource).
+  // The TRUTH-SIDE displacement record (filed on shelter loss in _raidPass) drives the town
+  // rebuild backstop. Closed-money-loop safe — releasing tiles destroys wood parts, not gold.
   _ruin(b) {
     try {
       const i = this._buildings.indexOf(b);
       if (i >= 0) this._buildings.splice(i, 1);
-      if (b.kind === BUILD_KIND.HOME && b.ownerId != null) {
-        const owner = this.sim.agentsById.get(b.ownerId);
-        if (owner && owner.home === b) owner.home = null;
-      }
+      // mark it down + despawn the percept so no agent perceives a ghost-home at the rubble.
+      b.alive = false; b.sheltered = false;
+      try { if (this.sim.despawnPercept) this.sim.despawnPercept(b); } catch { /* */ }
+      if (b.buildKind === BUILD_KIND.HOME && b.ownerId != null) this._recordDisplaced(b);
       try { if (this.sim.cities && b.plotTiles) this.sim.cities.release(b.town, b.plotTiles); } catch { /* */ }
       if (typeof document !== 'undefined' && b.mesh) { try { this.sim.scene.remove(b.mesh); } catch { /* */ } }
     } catch { /* never throw on the tick */ }
+  }
+
+  // TRUTH-SIDE displacement record (the demand backstop): note that a home owner has been
+  // displaced. Deduped per owner. Reads ground truth only (no cognition write). The grace
+  // drain in tick() decides if the town must rebuild on the owner's behalf.
+  _recordDisplaced(b) {
+    try {
+      if (!b || b.ownerId == null) return;
+      if (this._displaced.some((d) => d.ownerId === b.ownerId)) return;
+      this._displaced.push({ ownerId: b.ownerId, town: b.town, plotPos: b.pos.clone(), at: this.sim.time || 0 });
+    } catch { /* */ }
+  }
+
+  // Drain the displacement queue (TRUTH-SIDE demand backstop). For each displaced owner: if
+  // the town now holds a sheltered building carrying his ownerId he has re-housed → clear the
+  // record. Else, once the grace window elapses, the TOWN re-commissions a rebuild on his
+  // behalf (town-funded labour, like the tavern — mints no gold) and clears the record. This
+  // keeps housing stock from permanently decaying when an owner never returns to discover his
+  // ruin, WITHOUT the world writing the owner's cognition. Reads ground truth only. Guarded.
+  _drainDisplaced(ctx) {
+    if (!this._displaced.length) return;
+    const grace = BUILD.rebuildGraceTicks || 120;
+    for (let i = this._displaced.length - 1; i >= 0; i--) {
+      const d = this._displaced[i];
+      // re-housed already? (truth: a sheltered home with his ownerId exists, or a site is up)
+      const housed = this._buildings.some((b) => b.buildKind === BUILD_KIND.HOME && b.ownerId === d.ownerId && b.sheltered !== false);
+      const building = this._sites.some((s) => s.kind === BUILD_KIND.HOME && s.ownerId === d.ownerId);
+      if (housed || building) { this._displaced.splice(i, 1); continue; }
+      if ((ctx.time - d.at) < grace) continue;                 // still within grace; wait
+      // grace elapsed and the owner never re-housed → the town rebuilds on his behalf.
+      const town = this._townOf(d.town);
+      const owner = this.sim.agentsById ? this.sim.agentsById.get(d.ownerId) : null;
+      if (town && this._activeHomesIn(town.id) < BUILD.maxConcurrentPerTown) {
+        const site = this._townFundedHome(town, owner, ctx);
+        if (site) this._displaced.splice(i, 1);               // committed; record discharged
+      }
+    }
+  }
+
+  // Town-funded rebuild of a displaced owner's home: a HOME site with the owner's id but no
+  // personal labour required — it rises via the same ambient town-labour path the tavern uses
+  // (_townLabour). Mints no gold (wood+labour abstraction). Returns the site or null.
+  _townFundedHome(town, owner, ctx) {
+    try {
+      if (!this.sim.cities) return null;
+      const seed = (Math.random() * 1e9) | 0;
+      const p = this._paramsFor(BUILD_KIND.HOME, 1, seed);
+      const tp = p.tiles;
+      const plot = this.sim.cities.claimPlot(town.id, tp.w, tp.d, tp.levels);
+      if (!plot) return null;
+      const site = this._makeSite({
+        kind: BUILD_KIND.HOME, ownerId: owner ? owner.id : null, town: town.id, plot, params: p,
+        woodNeeded: BUILD.woodNeeded, benefit: BUILD.homeBenefit, ctx,
+      });
+      site.townFunded = true;   // _townLabour raises it without the owner hauling materials
+      this._sites.push(site);
+      this.stats.commissioned++;
+      return site;
+    } catch { return null; }
   }
 
   // a town's display name (reuse _townOf) for chronicle beats. Guarded.
@@ -562,6 +699,7 @@ export class BuildSites {
     this._sites = [];
     this._buildings = [];
     this._pending = [];
+    this._displaced = [];
   }
 }
 

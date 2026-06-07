@@ -8,7 +8,7 @@ import { nearestLandmark } from '../arena.js';
 import { BeliefStore } from './beliefs.js';
 import {
   PROFESSIONS, COMMODITIES, BASE_PRICE, ECON,
-  SIM, COMFORT, BUILD, NOVELTY,
+  SIM, COMFORT, BUILD, NOVELTY, SCHEMA,
   factionHostile,
 } from './simconfig.js';
 import { Progression } from '../rpg/progression.js';
@@ -114,10 +114,15 @@ export class Agent {
     this.canWork = (this.autonomous && !this.combatant && this.faction !== 'monster')
       && (this.townsperson || !!this.profession);
     this.goal = { kind: this.canWork ? 'work' : 'wander' };
-    // Phase-1 buildings: a finished home (comfort source), the build site the
-    // agent is committed to, and the chronic-low-comfort streak start (the
-    // demand signal qualifyHome reads). _buildAccum batches build deeds.
-    this.home = null;            // finished home Building (null until built)
+    // Phase-2a buildings: the agent's home is now KNOWN ONLY THROUGH BELIEF — homeBeliefId
+    // is the percept id of the building it has perceived as its own home (discovered by
+    // sight, set in perception.js; null until it lays eyes on its finished home). The old
+    // truth-side `this.home = Building` was the world writing cognition state (telepathy);
+    // retired in Phase 2a so the agent must DISCOVER its home's loss by perception (the
+    // homecoming). _buildSiteId is the build site it is committed to; _comfortLowSince the
+    // chronic-low-comfort streak start (the demand signal qualifyHome reads). _buildAccum
+    // batches build deeds.
+    this.homeBeliefId = null;    // percept id of the building I believe is my home (belief-backed)
     this._buildSiteId = null;    // committed BuildSite id while building
     this._comfortLowSince = null;// sim-time comfort first dipped below qualify (chronic-demand streak)
     this._buildAccum = 0;        // fractional build progress awaiting a deed emit
@@ -134,6 +139,14 @@ export class Agent {
     // received-flags set by the give/pay executor: agent._repaid[toId] = true
     // when a transfer to that benefactor lands. goalRepay's predicate reads this.
     this._repaid = {};
+
+    // SELF-ENGAGEMENT tally (lazy; null until I land my first blow) — how many times I've
+    // struck each target, keyed on the TARGET id (a real agent OR an inert prop). This is
+    // MY OWN action count (own-state), written by the combatEvents bridge on a landed blow
+    // and read by schema #6's selfEngaged(): repeated strikes with zero observed animacy on
+    // the target's belief is what lets me reason a believed-foe is actually inert. Bounded
+    // to SCHEMA.strikeLogCap (evict the stalest `first`); read by nothing on the combat path.
+    this.strikeLog = null;
 
     // lifetime tallies that feed longer-term ambitions (monster kills, distance
     // roamed, time spent socialising). Cheap counters incremented on the hot
@@ -163,6 +176,14 @@ export class Agent {
   knowsAbility(id) { return this.abilities.has(id); }
   abilityList() { return [...this.abilities.values()]; }   // stable order for key binding
 
+  // The agent's BELIEF about its own home (a BeliefState with placeKind:'home' + a believed
+  // `sheltered`), or null if it has never perceived/learned of a home. Cognition reads ONLY
+  // this belief — never a truth-side Building handle — so it acts on what it KNOWS: a stale
+  // "intact" belief survives until perception (or, later, gossip) revises it. Guarded.
+  homeBelief() {
+    return this.homeBeliefId != null ? this.beliefs.get(this.homeBeliefId) : null;
+  }
+
   // A townsperson's colour now emerges from WHAT IT DOES, not a birthright trade:
   // its currently-chosen good's colour, else the dominant deed-tag's good colour,
   // else its faction colour. So a town reads as a spread of trades again even
@@ -188,7 +209,13 @@ export class Agent {
     // makes building a home worthwhile. A housed agent (this.home set) has no cap.
     if (COMFORT.enabled) {
       this.needs.comfort = clamp01((this.needs.comfort ?? 1) - COMFORT.drain * dt);
-      if (!this.home && this.needs.comfort > COMFORT.unhousedCap) this.needs.comfort = COMFORT.unhousedCap;
+      // UNHOUSED CAP — now belief-backed (homeBelief): an agent that holds no believed-intact
+      // home is capped low (the demand pressure). A torched home it has DISCOVERED (sheltered
+      // belief flipped false by perception) re-caps it, exactly as losing the truth-side home
+      // used to — but only once the agent has actually SEEN/heard of the loss.
+      const hb = this.homeBelief();
+      if ((!hb || hb.sheltered === false) && this.needs.comfort > COMFORT.unhousedCap)
+        this.needs.comfort = COMFORT.unhousedCap;
       // chronic-demand streak: track how long comfort has sat at/below the qualify
       // line (read by qualifyHome via _comfortLowSince). Only working townsfolk bother.
       if (this.canWork && this.needs.comfort <= BUILD.qualifyComfort) {
@@ -202,9 +229,37 @@ export class Agent {
     if (this._tradeFlash > 0) this._tradeFlash -= dt;
   }
 
+  // Record that I landed a blow on `targetId` (own-state, written by the combatEvents
+  // bridge). Lazily allocates the bounded log; evicts the stalest `first` entry when over
+  // SCHEMA.strikeLogCap so the table can't grow unbounded. Read only by schema #6's
+  // selfEngaged() — nothing on the combat/cast path reads it, so eviction never changes
+  // combat output. Guarded; never throws on the tick.
+  _logStrike(targetId, now) {
+    try {
+      if (targetId == null) return;
+      if (!this.strikeLog) this.strikeLog = new Map();
+      let rec = this.strikeLog.get(targetId);
+      if (rec) { rec.count += 1; return; }
+      const cap = (SCHEMA && SCHEMA.strikeLogCap) || 8;
+      if (this.strikeLog.size >= cap) {
+        let stalestId = null, stalest = Infinity;
+        for (const [id, r] of this.strikeLog) { if (r.first < stalest) { stalest = r.first; stalestId = id; } }
+        if (stalestId != null) this.strikeLog.delete(stalestId);
+      }
+      this.strikeLog.set(targetId, { count: 1, first: now || 0 });
+    } catch { /* never throw on the tick */ }
+  }
+
   // do I treat this belief's subject as hostile? (believed faction, or latched)
+  // A belief I've REVISED to "proven inert" (schema #6 `no-threat-no-response`: I struck
+  // it repeatedly and it never moved/struck/blocked/harmed me) overrides BOTH the latched
+  // and the faction prior — by my own accumulated evidence it is no threat (a scarecrow, a
+  // corpse, a statue), so I stop treating its bandit costume as a reason to fight. Own-
+  // belief read only (the `inert` flag is written by the reasoning interpreter over my
+  // beliefs); the epistemic split holds.
   considerHostile(b) {
-    return !!b && (b.hostile || factionHostile(this.faction, b.lastFaction));
+    if (!b || b.inert) return false;
+    return b.hostile || factionHostile(this.faction, b.lastFaction);
   }
   // Nearest believed-hostile I'm confident enough to act on — returned as a BELIEF-
   // REFERENCE handle { id, pos, faction }, NOT the real object. This is the epistemic

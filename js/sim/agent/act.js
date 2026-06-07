@@ -11,7 +11,6 @@ import { DIR, TUNE } from '../../constants.js';
 import { ARENA_RADIUS, LANDMARKS } from '../../arena.js';
 import { POI_KIND } from '../world.js';
 import { GOODS, ECON, SIM, SOCIAL, BAND, BUILD, COMFORT, NOVELTY } from '../simconfig.js';
-import { BUILD_KIND } from '../construction.js';
 import { castSpec, onCooldown } from '../../rpg/abilities/interpreter.js';
 import { isMelee } from '../../rpg/abilities/ir.js';
 import { bus, makeEvent } from '../../rpg/events.js';
@@ -95,6 +94,11 @@ export function act(a, dt, ctx) {
     }
     case 'sightsee': sightseeStep(a, dt, ctx); break;
     case 'flee': {
+      // SCHEMA FLEE-TO-REFUGE: the flee-to-safety schema sets a concrete `toPos` (the
+      // nearest static place affording exit/conceal) — RUN TO IT rather than merely away
+      // from the threat. A static-geography point (shared map), never a live read. If no
+      // refuge was found (toPos null) fall through to the away-from-threat steering below.
+      if (a.goal.toPos) { goTo(a, a.goal.toPos, dt, true); break; }
       // BELIEF-GATED: flee from where I BELIEVE the threat is (its belief lastPos), never
       // a live read. A faded belief just means I steer away from my last sighting of it.
       const fb = a.beliefs.get(a.goal.fromId);
@@ -172,21 +176,53 @@ export function act(a, dt, ctx) {
       break;
     }
     case 'comfort': {
-      // walk to my home or a tavern and restore comfort; a tavern also tops up
-      // social (and feeds the existing belonging/colocation warmth). Walk-through
-      // benefit zone — no collision. Guarded so a missing source just idles.
-      const src = a.home || (ctx.buildSites && ctx.buildSites.nearest(BUILD_KIND.TAVERN, a.pos));
-      if (src && goTo(a, src.pos, dt)) {
-        const isTavern = src.kind === BUILD_KIND.TAVERN;
+      // walk to my home or a tavern and restore comfort; a tavern also tops up social (and
+      // feeds the existing belonging/colocation warmth). BELIEF-BACKED (debt #2 retired):
+      // decide picked the destination (toPos) + kind (srcKind) from my OWN home-belief or a
+      // STATIC shelter Place — no live BuildSites lookup here. Walk-through benefit zone (no
+      // collision). Guarded so a missing destination just idles (decide re-routes).
+      const cp = a.goal.toPos;
+      if (cp && goTo(a, cp, dt)) {
         a.needs.comfort = clamp01((a.needs.comfort ?? 1) + COMFORT.restoreRate * dt);
-        if (isTavern) {
+        if (a.goal.srcKind === 'tavern') {
           a.needs.social = clamp01(a.needs.social + COMFORT.tavernSocialRate * dt);
           a.life.social += COMFORT.tavernSocialRate * dt;   // tavern colocation feeds belonging
         }
-      } else if (!src) { a.fighter.setMoving(0); }           // no comfort source known: idle (decide re-routes)
+      } else if (!cp) { a.fighter.setMoving(0); }            // no comfort source known: idle (decide re-routes)
       break;
     }
     case 'build': buildStep(a, dt, ctx); break;
+    // --- SCHEMA DISPOSITIONS (Phase 2a) -------------------------------------
+    // Phase 2b COLLAPSE-FODDER: hide/shadow/avoid are three special-cases of the
+    // same steer() potential-field primitive — when steer() lands these three
+    // cases collapse into one goal.kind -> steer-fills branch and are deleted.
+    case 'hide': {
+      // go to ground at a concealing place (toPos, a static map point set by the
+      // go-to-ground schema), then stand still. No threat ref deref. Guarded.
+      if (a.goal.toPos) { if (goTo(a, a.goal.toPos, dt, true)) a.fighter.setMoving(0); }
+      else a.fighter.setMoving(0);
+      break;
+    }
+    case 'shadow': {
+      // trail a SUSPECTED mask at a stand-off distance: close to within a tail gap of
+      // where I BELIEVE it is (belief lastPos — no live read), then hold. A faded/absent
+      // belief just leaves me idling (the suspect moved out of my knowledge).
+      const sb = (a.goal.subjectId != null) ? a.beliefs.get(a.goal.subjectId) : null;
+      if (sb && sb.confidence >= SIM.actOnBeliefMin) {
+        const gap = a.pos.distanceTo(sb.lastPos);
+        if (gap > (SOCIAL.shadowGap || 6)) goTo(a, sb.lastPos, dt); else a.fighter.setMoving(0);
+      } else a.fighter.setMoving(0);
+      break;
+    }
+    case 'avoid': {
+      // clear a believed danger zone: steer toward the safe place (toPos) the schema
+      // picked; with none, steer directly AWAY from the believed brawl centre (around).
+      // Both are static/belief points — no live read.
+      if (a.goal.toPos) goTo(a, a.goal.toPos, dt, true);
+      else if (a.goal.around) fleeFrom(a, { pos: a.goal.around }, dt);
+      else a.fighter.setMoving(0);
+      break;
+    }
     default: {
       if (!a.wanderTarget || a.pos.distanceTo(a.wanderTarget) < 1.0) {
         if (a.roam) {
@@ -383,34 +419,33 @@ export function produce(a, dt) {
 export function buildStep(a, dt, ctx) {
   try {
     if (!a.canWork) { a.fighter.setMoving(0); return; }     // monsters/player never build
-    const bs = ctx.buildSites;
-    if (!bs) { a.fighter.setMoving(0); return; }
+    // DEBT #2 RETIRED (Phase 2a): build state is reached ONLY through the EXECUTION facade
+    // ctx.resolver.buildSite — buildStep names neither `ctx.buildSites` (a dynamic-state
+    // handle banned on the cognition ctx) NOR `ctx.world` (geography routed via the facade's
+    // nearestWood). buildStep IS execution (it runs in act(), which legitimately mutates the
+    // truth-side site through the facade), exactly as marketStep consumes the market resolver.
+    const rb = ctx.resolver && ctx.resolver.buildSite;
+    if (!rb) { a.fighter.setMoving(0); return; }
 
-    // resolve (or lazily commission) the committed site.
-    let site = (a._buildSiteId != null) ? bs.siteById(a._buildSiteId) : null;
-    if (!site) {
-      site = bs.commission(a, ctx);                          // re-checks qualifyHome internally
-      if (!site) {                                            // no room / at cap / unqualified
-        a._buildSiteId = null;
-        a.fighter.setMoving(0);                              // brief idle; decide re-routes next tick
-        return;
-      }
-    }
+    // resolve (or lazily commission) the committed site — an OPAQUE handle.
+    const site = rb.resolve(a, ctx);
+    if (!site) { a._buildSiteId = null; a.fighter.setMoving(0); return; }  // no room/at cap/unqualified
+    const sitePos = rb.pos(site);
+    if (!sitePos) { a.fighter.setMoving(0); return; }
 
     const inv = a.inventory || (a.inventory = {});
 
     // MATERIALS FIRST — the site is paid in WOOD. If the owner can't yet finish the
     // build with the wood it has IN HAND PLUS what's already on site, it must go FELL
     // WOOD: walk to the nearest forest and gather (wood is a RENEWABLE commodity — its
-    // production mints wood, never gold, so the closed money loop is untouched). This
-    // is what makes an organic build actually COMPLETE instead of stalling at whatever
-    // wood the owner happened to be carrying. Guarded: no forest => just build with
-    // what's on hand (degrades gracefully).
-    const needTotal = site.woodNeeded - site.woodHave;          // wood still owed to the site
-    if (needTotal > 0 && (inv.wood || 0) < needTotal && ctx.world) {
-      const forest = ctx.world.nearest(POI_KIND.FOREST, a.pos);
-      if (forest) {
-        if (!goTo(a, forest.pos, dt)) return;                   // travelling to fell wood
+    // production mints wood, never gold, so the closed money loop is untouched). The forest
+    // destination comes through the facade (nearestWood) so buildStep doesn't name ctx.world.
+    // Guarded: no forest => just build with what's on hand (degrades gracefully).
+    const owed = rb.woodOwed(site);                             // wood still owed to the site
+    if (owed > 0 && (inv.wood || 0) < owed) {
+      const forestPos = rb.nearestWood(a);
+      if (forestPos) {
+        if (!goTo(a, forestPos, dt)) return;                    // travelling to fell wood
         a.fighter.setMoving(0);                                 // at the forest — gather
         const boosted = (inv.tool || 0) >= 1;
         const gained = ECON.produceRate * (boosted ? ECON.toolBoost : 1) * dt;
@@ -426,24 +461,16 @@ export function buildStep(a, dt, ctx) {
     }
 
     // travel to the plot — not there yet, keep walking (goTo halts on arrival).
-    if (!goTo(a, site.pos, dt)) return;
+    if (!goTo(a, sitePos, dt)) return;
 
-    // ON THE PLOT — WOOD RESERVATION (closed money loop: a commodity transfer).
-    // The owner contributes its own wood into the site (no gold moves here).
-    while (site.woodHave < site.woodNeeded && (inv.wood || 0) > 0) {
-      inv.wood -= 1; site.woodHave += 1;                     // pure commodity transfer (no mint)
-    }
+    // ON THE PLOT — WOOD RESERVATION (closed money loop: a commodity transfer via the facade).
+    rb.feedWood(a, site, site.woodNeeded);                     // contribute all carried wood
 
-    // PROGRESS ACCRUAL — capped by the wood actually contributed, so the owner
-    // must keep feeding wood (gathered/bought) to finish.
-    a.fighter.setMoving(0);                                   // standing, building
-    const woodCap = site.woodHave / (site.woodNeeded || 1);
-    const inc = BUILD.progressPerSec * dt;
-    const next = Math.min(woodCap, site.progress + inc);
-    if (next > site.progress) {
-      const adv = next - site.progress;
-      site.progress = next;
-      site.lastProgressAt = ctx.time;
+    // PROGRESS ACCRUAL — capped by the wood actually contributed (the facade clamps it), so
+    // the owner must keep feeding wood (gathered/bought) to finish.
+    a.fighter.setMoving(0);                                    // standing, building
+    const adv = rb.advance(site, dt, ctx);
+    if (adv > 0) {
       // labour cost: drain energy + wear a tool (both guarded/optional).
       a.needs.energy = clamp01((a.needs.energy ?? 1) - BUILD.staminaPerSec * dt);
       a.toolWear = (a.toolWear || 0) + BUILD.toolWearPerSec * dt;

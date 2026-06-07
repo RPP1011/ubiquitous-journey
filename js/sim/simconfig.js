@@ -505,6 +505,7 @@ export const SOCIAL = {
   distancePenalty: 0.02,// per-metre discount when choosing among friends (favour near & dear)
   bondBonus: 0.03,      // EXTRA standing/sec for deliberately spending time together (vs incidental
                         //   proximity) — quality time bonds faster than just passing nearby
+  shadowGap: 6,         // stand-off distance the `shadow` disposition (doubt-the-mask schema) trails a suspect at
 };
 
 // ============================================================================
@@ -597,6 +598,13 @@ export const BUILD = {
   commissionCooldown: 40,     // sim-seconds an owner waits after a failed/aborted commission
   abandonAfter: 220,          // abort a site with no progress for this long (owner gives up)
   tavernTownLabor: 0.5,       // public-tavern ambient town-labour accrual factor (× progressPerSec)
+  // TRUTH-SIDE DISPLACEMENT BACKSTOP (Phase 2a): when a home is razed while the owner is
+  // away, the owner won't PERSONALLY re-commission until he DISCOVERS the ruin by sight
+  // (his cognition gates his own build). So housing stock could decay if he never returns.
+  // After this grace window (sim-seconds) with the owner still unhoused (truth: no building
+  // carries his ownerId), the TOWN re-commissions the rebuild on his behalf via the public
+  // town-labour path. Truth-side (reads ground-truth building presence, never beliefs).
+  rebuildGraceTicks: 120,
   // benefit a finished home confers (comfort source; homes are not social hubs)
   homeBenefit: { comfort: 1.0, social: 0.0 },
 };
@@ -752,6 +760,9 @@ export const SIM = {
   // larger safeRange. While in danger, economic activity is suppressed.
   dangerRange: 12,          // a believed-hostile this close puts an agent in danger
   safeRange: 20,            // ...and it keeps fleeing until the threat is this far off
+  // ANIMACY (schema substrate): a subject must move at least this far (m², squared) BETWEEN
+  // consecutive sightings to register as having acted alive (filters perception jitter).
+  moveEvidenceEps: 0.04,
 };
 
 // MENTAL MAP / Theory-of-Mind DESTINATION inference. The agent's known PLACES are
@@ -777,8 +788,12 @@ export const MAP = {
     market:  ['crowd', 'safe', 'resource'],
     forge:   ['resource'], mine: ['resource'], field: ['resource'],
     forest:  ['conceal', 'resource'], meadow: ['resource'],
-    rest:    ['safe'], hut: ['safe'],
-    home:    ['safe', 'conceal'],
+    // PLACES-AS-PERCEPTS (Phase 2a): a tavern/rest site affords shelter+rest (a hearth to sit
+    // by), a home affords shelter+rest+private (your own roof). `shelter`/`rest`/`private` are
+    // the new affordance strings the belief-backed comfort path queries via map.nearest().
+    rest:    ['safe', 'shelter', 'rest'], hut: ['safe', 'shelter', 'rest'],
+    tavern:  ['crowd', 'safe', 'shelter', 'rest'],
+    home:    ['safe', 'conceal', 'shelter', 'rest', 'private'],
     frontier:['exit'],       // the heading-extension fallback place
   },
 };
@@ -794,6 +809,19 @@ export const SCARECROW = {
   appearsAs: 'bandit',      // the faction it is dressed as (what it appears to be)
   hp: 40,
   ring: [22, 40],           // [minR,maxR] annulus from town centre for a field scarecrow
+};
+
+// SCHEMA — the InteractionSchema reasoning layer (js/sim/schemas/). The schema CATALOGUE
+// is DATA (catalogue.js); this block is the interpreter's bounds/tuning only. `enabled`
+// is the master gate (reason() no-ops when false → the byte-stable framework proof). The
+// priority bands are documented for the catalogue rows (Step 2 authors them).
+export const SCHEMA = {
+  enabled: true,            // master gate — reason() early-returns when false
+  strikeLogCap: 8,          // bounded self-engagement tally (evict the stalest `first`)
+  inertThreshold: 2,        // schema #6: inertEvidence above which a 'hostile' flips false
+  goalDwellTicks: 4,        // min-dwell (ticks) for a schema-set direct-goal lock (anti-thrash)
+  // priority bands (used by catalogue rows, Step 2):
+  //   flee .9 · intercept .85 · hide .95 · suspect .5 · brawl .7 · inert .6
 };
 
 // Information provenance: how an agent learned something sets its confidence.

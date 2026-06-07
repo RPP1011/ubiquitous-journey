@@ -98,6 +98,14 @@ export class DepthProbe {
     this.sigFired = new Set();            // keys that ever advanced
     this.firstFire = [];                  // [{t, key, label}] emergence timeline
     this.coPairs = new Map();             // pairKey -> times co-activated
+    // REASONING-FIRE telemetry (Phase 2a Step 4) — STRICTLY ADDITIVE: a context probe of how
+    // often the InteractionSchema layer actually fires, sampled from each agent's own-state
+    // _schemaFireCount (set by the interpreter every cognition tick). It feeds NO scored metric
+    // and NO floor — it does not touch the behaviour/mechanics axes or the distinctGoals
+    // denominator — so it can never inflate a score; it is reported as a context line only.
+    this.schemaFires = 0;                 // Σ schemas fired across all samples
+    this.schemaFireSamples = 0;           // agent-samples observed (for the per-agent-tick mean)
+    this.schemaFireAgents = new Set();    // distinct agents that ever fired a schema
   }
 
   // Call each sampling window. `now` is sim time (seconds). Cheap + guarded.
@@ -128,6 +136,12 @@ export class DepthProbe {
           this.agentsWithStackedGoal.add(a.id);
           for (const g of a.goals) if (g && g.from) this.goalFroms.add(g.from);
         }
+        // reasoning-fire telemetry (additive context): how many schemas fired for this agent
+        // on the most recent cognition tick. Own-state read; degrades to 0 if absent.
+        const fires = a._schemaFireCount || 0;
+        this.schemaFireSamples++;
+        this.schemaFires += fires;
+        if (fires > 0) this.schemaFireAgents.add(a.id);
         // ToM peaks
         if (a.beliefs && typeof a.beliefs.all === 'function') {
           let rumor = 0;
@@ -305,11 +319,19 @@ export class DepthProbe {
     ]);
 
     const overall = (behaviour.score + mechanics.score) / 2;
+    // reasoning-fire CONTEXT (Phase 2a, strictly additive — NOT a scored axis): mean schemas
+    // fired per agent-sample + how many distinct agents ever fired one. Reported, never scored.
+    const reasoning = {
+      perAgentTick: pct(this.schemaFires, this.schemaFireSamples),
+      totalFires: this.schemaFires,
+      agents: this.schemaFireAgents.size,
+    };
     return {
       overall,
       axes: { behaviour, mechanics },
       timeline: this.firstFire.slice().sort((a, b) => a.t - b.t),
       interactions: { pairs: interactions, top: topPairs(this.coPairs, 6) },
+      reasoning,
       samples: this.samples,
     };
   }
@@ -356,6 +378,11 @@ export function formatReport(rep) {
   L.push('    ' + (rep.interactions.top.length
     ? rep.interactions.top.map((p) => `${p.pair}×${p.n}`).join('   ')
     : '(none)'));
+  if (rep.reasoning) {
+    L.push('\n  REASONING LAYER (InteractionSchemas — context, not scored):');
+    L.push(`    ${rep.reasoning.totalFires} schema firings · ${rep.reasoning.perAgentTick.toFixed(3)}/agent-tick · ` +
+      `${rep.reasoning.agents} agents reasoned`);
+  }
   L.push('╚══════════════════════════════════════════════════════════════════');
   return L.join('\n');
 }

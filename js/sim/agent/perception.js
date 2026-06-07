@@ -9,6 +9,7 @@
 import { terrainHeight, concealmentAt } from '../../arena.js';
 import { inferDestination } from '../beliefs.js';
 import { SIM, SOURCE, BAND, COMMODITIES, ECON, MAP, factionHostile } from '../simconfig.js';
+import { PERCEPT_KIND } from '../percept.js';
 
 // perceive: sight of nearby agents writes high-confidence beliefs (the player
 // is just another subject, so NPCs naturally form beliefs about you).
@@ -25,7 +26,13 @@ export function perceive(a, ctx) {
   // files a person-belief about it — the "mistake a scarecrow for a person" case. It has NO
   // .agent/.beliefs, but perception only WRITES to a.beliefs, so a mindless subject is fine.
   for (const o of (ctx.perceivables || ctx.agents)) {
-    if (o === a || !o.alive) continue;
+    if (o === a) continue;
+    // A BUILDING percept's `alive` encodes its SHELTER state, NOT whether it EXISTS — a
+    // torched-but-standing home reads alive=false yet must still be PERCEIVABLE so its owner can
+    // DISCOVER the ruin by sight (the homecoming). A gutted building is removed via despawnPercept,
+    // so a present BUILDING is always worth perceiving. Every OTHER perceivable (a person/prop) is
+    // skipped when not alive, exactly as before — a corpse/toppled prop forms no fresh belief.
+    if (o.kind !== PERCEPT_KIND.BUILDING && !o.alive) continue;
     // HORIZONTAL distance: the whole sim reasons in x/z (terrain y is cosmetic
     // for the body); using 3D here would let a hill's elevation spuriously
     // "hide" an adjacent agent. Keep perception on the ground plane.
@@ -35,6 +42,13 @@ export function perceive(a, ctx) {
     const cover = concealmentAt(o.pos.x, o.pos.z);      // 0..0.7
     const eff = SIM.visionRange * vantage * (1 - SIM.concealWeight * cover);
     if (d > eff) continue;                              // hidden by wood / low ground
+    // PLACES-AS-PERCEPTS (Phase 2a): a finished building is a perceivable PLACE, not a person.
+    // I file a PLACE-belief (placeKind + believed `sheltered` = its perceivable alive state),
+    // NOT a person-belief — so it never enters the hostile/social/pursuit reasoning. If this
+    // is MY OWN home I learn that fact here (homeBeliefId) — discovering my home BY SIGHT, and
+    // discovering its LOSS the same way (the homecoming). A building has no .agent/.mind, so
+    // perception only WRITES my belief — nothing downstream assumes a mind behind it.
+    if (o.kind === PERCEPT_KIND.BUILDING) { perceiveBuilding(a, o, ctx); continue; }
     // DISGUISE (intrigue): record the PERCEIVED faction — a spy's cover identity
     // (o.disguiseFaction) if it wears one, else its true faction. This is the
     // epistemic split: beliefs hold the disguise, but ground-truth combat
@@ -42,7 +56,19 @@ export function perceive(a, ctx) {
     // strikes is still resolved as the enemy it truly is. Guarded: no disguise
     // field -> true faction, exactly as before.
     const seenFaction = o.disguiseFaction || o.faction;
+    // ANIMACY (observed motion): capture my PRIOR belief BEFORE observe() overwrites its
+    // lastPos, so I can tell whether the subject MOVED since I last saw it. Gated by a
+    // displacement threshold AND a recency guard (prior seen on the IMMEDIATELY-preceding
+    // tick) so a stale belief re-acquired after eviction+recreate does NOT register its big
+    // lastPos jump as "motion" — an inert prop evicted then re-perceived stays inert, while
+    // a real subject seen continuously animates. A Scarecrow never moves → never accrues.
+    const prior = a.beliefs.get(o.id);
+    const tickDt = 1 / SIM.tickHz;
+    const movedAlive = !!(prior && prior.lastPos &&
+      Math.abs(prior.lastTick - (ctx.time - tickDt)) < tickDt * 0.5 &&
+      prior.lastPos.distanceToSquared(o.pos) > (SIM.moveEvidenceEps || 0.04));
     const b = a.beliefs.observe(o.id, seenFaction, o.pos, ctx.time, false);
+    if (movedAlive) b.recordAnimacy('moved', ctx.time);
     // believed PLAYER FAME: seeing the player (a controlled agent) records its true
     // notoriety into my belief, so the fear gate (decide.js) reads a believed scalar
     // rather than a live player handle. An NPC who never saw the player holds no belief
@@ -57,6 +83,34 @@ export function perceive(a, ctx) {
   inferLostQuarries(a, ctx);
 }
 
+// Perceive a BUILDING percept (Phase 2a, places-as-percepts): write a PLACE-belief into my own
+// store recording what KIND of place it is (home/tavern/building) and its believed SHELTER
+// state (= the percept's perceivable `alive`, which construction sets to its shelter). This is
+// truth-in / belief-out (the sanctioned bridge): perception READS the percept's surface and
+// WRITES only my belief. If it is MY home I bind homeBeliefId (discover my home by sight); and
+// if a previously-intact home-belief flips to sheltered=false I file a `home_lost` episode WHEN
+// LEARNED (not when it burned). Guarded; never throws. `o.ownerId === a.id` compares my own id
+// to a percept surface field (allowlisted, like reading o.faction).
+function perceiveBuilding(a, o, ctx) {
+  try {
+    const bb = a.beliefs.observe(o.id, 'unknown', o.pos, ctx.time, false);
+    // classify the place (home if it's mine, else tavern if dressed as one, else a building).
+    bb.placeKind = (o.ownerId === a.id) ? 'home'
+      : ((o.buildKind === 'tavern' || o.benefitKind === 'tavern') ? 'tavern' : 'building');
+    const wasSheltered = bb.sheltered;
+    bb.sheltered = (o.alive !== false);                 // believed shelter = perceivable liveness
+    // discover MY OWN home by sight: bind the home-belief id the first time I lay eyes on it.
+    if (o.ownerId === a.id) {
+      if (a.homeBeliefId == null) a.homeBeliefId = o.id;
+      // LEARNED the loss: a home I believed intact is now perceived razed → file the episode
+      // WHEN LEARNED (the homecoming), not when it burned. Best-effort flavour memory.
+      if (a.homeBeliefId === o.id && wasSheltered === true && bb.sheltered === false && a.memory) {
+        a.memory.record({ t: ctx.time, kind: 'home_lost', place: 'home', withId: a.id, valence: -1, salience: 0.7 });
+      }
+    }
+  } catch { /* never throw on the tick */ }
+}
+
 // DESTINATION-INTENT upkeep for subjects I did NOT re-see this tick: for a still-confident
 // stale belief with no destination yet, infer where the quarry is making for (so a pursuer
 // can intercept). Re-acquisition by sight (observe) clears destPos. Belief-only + static
@@ -66,6 +120,7 @@ function inferLostQuarries(a, ctx) {
     const now = ctx.time, ttl = MAP.destTTL;
     for (const b of a.beliefs.all()) {
       if (b.subjectId === a.id) continue;
+      if (b.placeKind) continue;   // a PLACE-belief (building) is static — never a fleeing quarry
       // seen this very tick? observe() cleared destPos + destInferredAt, stamped lastTick=now → skip.
       if (b.lastTick === now) continue;
       if (b.confidence < SIM.actOnBeliefMin) continue;   // too faint to bother pursuing
@@ -95,6 +150,12 @@ export function gossipBeliefs(a, ctx) {
     if (a.pos.distanceTo(o.pos) > SIM.talkRange) continue;
     for (const b of o.beliefs.all()) {
       if (b.subjectId === a.id) continue;   // don't gossip about me to myself
+      // Phase 2a: NEVER gossip PLACE-beliefs (buildings). mergeFrom copies only person-belief
+      // fields (not placeKind/sheltered), so a gossiped building belief would land as a MALFORMED
+      // person-belief keyed on a building percept-id — junk that consumes a slot in the recipient's
+      // bounded ~8-entry table and is never refreshable by sight of a person. A place is something
+      // you DISCOVER by going there (perception), not something hearsay files as a person.
+      if (b.placeKind) continue;
       a.beliefs.mergeFrom(b, SOURCE.TALKED);
     }
     // RUMOURED PRICES: chatting also drifts my price beliefs toward this neighbour's —

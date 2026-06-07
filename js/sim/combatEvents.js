@@ -49,6 +49,26 @@ export function onCombatEvents(sim, events) {
   const pid = sim.reputation.playerId;
   for (const ev of events) {
     const A = ev.attacker.agent, T = ev.target.agent;
+
+    // SELF-ENGAGEMENT LOG (schema #6 substrate) — written on EVERY landed blow, BEFORE the
+    // !A||!T person-guard, keyed on the target's id (a real agent's id, or a PROP's own id
+    // — a Scarecrow IS its own body and carries `.id`). This is what lets selfEngaged('@x',3)
+    // count my strikes on a scarecrow (whose belief never accrues animacy) so #6 fires. A
+    // block is not a strike on the target. The attacker is always a real agent (a prop never
+    // swings). Own-state write; guarded inside _logStrike; never throws.
+    if (A && A._logStrike && ev.type !== 'blocked') {
+      const tid = ev.target && ev.target.agent ? ev.target.agent.id : (ev.target ? ev.target.id : null);
+      if (tid != null) A._logStrike(tid, sim.time);
+    }
+    // BLOCK ANIMACY (the prop is naturally inert — it never blocks): a real target that
+    // blocked my blow is, by my own perception, acting alive. Guarded; a belief about a
+    // prop is absent/untouched.
+    if (ev.type === 'blocked' && A && A.beliefs) {
+      const tid = ev.target && ev.target.agent ? ev.target.agent.id : (ev.target ? ev.target.id : null);
+      const ab = tid != null ? A.beliefs.get(tid) : null;
+      if (ab) ab.recordAnimacy('blocked');
+    }
+
     if (!A || !T) continue;
 
     // RPG combat deeds (classes/XP). A landed/lethal blow is a MELEE (+RISK,
@@ -203,6 +223,9 @@ export function onCombatEvents(sim, events) {
 
     // victim now knows the attacker is hostile
     const tb = T.beliefs.observe(A.id, A.faction, A.pos, sim.time, true);
+    // ANIMACY: the attacker just acted alive against me (struck + harmed me) — first-hand
+    // liveness evidence on the victim's belief about the aggressor (schema #6 substrate).
+    tb.recordAnimacy('struck'); tb.recordAnimacy('harmedMe');
     tb.standing = Math.max(-1, tb.standing - 0.4);
     T.mood.fear = Math.min(1, T.mood.fear + 0.4);
     T.mood.anger = Math.min(1, T.mood.anger + 0.5);
@@ -250,6 +273,9 @@ export function onCombatEvents(sim, events) {
       if (w === A || w === T || !w.alive || w.controlled) continue;
       if (w.pos.distanceTo(A.pos) > SIM.visionRange) continue;
       const wb = w.beliefs.observe(A.id, A.faction, A.pos, sim.time, factionHostile(w.faction, A.faction));
+      // ANIMACY: a witness SAW the aggressor strike — liveness evidence on the witness's
+      // belief about it (so a witnessed brawler reads as alive, never inert).
+      wb.recordAnimacy('struck');
       wb.suspicion = Math.min(1, wb.suspicion + 0.3);
       if (ev.type === 'dead' && T.faction !== MONSTER.faction && w.memory) {
         const liked = Math.max(0, w.beliefs.get(T.id)?.standing || 0);

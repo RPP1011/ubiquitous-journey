@@ -647,3 +647,47 @@ export function goalRepay(subjectId, value = 1, kind = 'any') {
     predicate(agent) { return !!(agent._repaid && agent._repaid[subjectId]); },
   };
 }
+
+// ---------------------------------------------------------------------------
+// SCHEMA DISPOSITIONS (Phase 2a) — the minimal new goal kinds the flagship
+// InteractionSchemas adopt when no EXISTING kind fits the response. They are
+// PLAN-LESS dispositions (atoms:[]) so _currentPlanStep lets them sit on the
+// stack and pruneGoals ages them off by expiresAt (the interpreter stamps it),
+// exactly like grief. act.js carries the matching locomotion case for each.
+//
+// Phase 2b COLLAPSE-FODDER: hide/shadow/avoid are three special-cases of the
+// same steer() potential-field primitive (attract to cover / trail at a stand-
+// off / repel from a danger zone toward safety). When Phase 2b lands steer(),
+// these three kinds collapse into goal.kind -> steer-fills and this trio of
+// factories + their act.js cases are deleted. Kept minimal + commented so the
+// retirement is mechanical.
+// ---------------------------------------------------------------------------
+
+// hide(toPos): go to ground at a concealing place and stay still until the
+// disposition times out. Plan-less; pos carried on the goal by the schema.
+export function goalHide(toPos) {
+  return {
+    kind: 'hide', toPos: toPos || null,
+    atoms: [],                          // disposition: no plan, runs its course
+    predicate() { return false; },      // only the expiresAt timeout pops it
+  };
+}
+
+// shadow(subjectId): trail a SUSPECTED mask at a distance (collapse-fodder).
+export function goalShadow(subjectId) {
+  return {
+    kind: 'shadow', subjectId,
+    atoms: [],
+    predicate() { return false; },
+  };
+}
+
+// avoid(around, toPos): clear a believed danger zone — steer away from `around`
+// (a believed brawl's lastPos) toward a safe place (collapse-fodder).
+export function goalAvoid(around, toPos) {
+  return {
+    kind: 'avoid', around: around || null, toPos: toPos || null,
+    atoms: [],
+    predicate() { return false; },
+  };
+}

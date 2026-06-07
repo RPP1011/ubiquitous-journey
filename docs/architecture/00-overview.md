@@ -106,7 +106,7 @@ to where it's explained in full.
 
 | Domain | Where | Notable blocks |
 | --- | --- | --- |
-| Simulation behaviour | `js/sim/simconfig.js` | `SIM`, `WEIGHT`, `ECON`, `MOTIVE`, `MEMORY`, `HEARSAY`, `MAP`, `SCARECROW`, `FACTIONS`, `FACTION_RELATIONS`, `PROFESSIONS`, `GOODS`, `COMMODITIES`, `BASE_PRICE`, `MONSTER`, `ROSTER`, `TOWNS`, `CAMPS`, `DUNGEON` |
+| Simulation behaviour | `js/sim/simconfig.js` | `SIM`, `WEIGHT`, `ECON`, `MOTIVE`, `MEMORY`, `HEARSAY`, `MAP`, `SCARECROW`, `SCHEMA` (InteractionSchema interpreter bounds — the catalogue itself is data in `schemas/catalogue.js`), `FACTIONS`, `FACTION_RELATIONS`, `PROFESSIONS`, `GOODS`, `COMMODITIES`, `BASE_PRICE`, `MONSTER`, `ROSTER`, `TOWNS`, `CAMPS`, `DUNGEON` |
 | Drama/society | `js/sim/simconfig.js` | `DIRECTOR`, `SEEDS`, `LINEAGE`, `HOUSES`, `EPITHETS`, `INTRIGUE`, `PATRICIAN`, `WATCH`, `DEFENSE`, `FAITH`, `EXPEDITION`, `CHRONICLE`, `GROUP_TYPES`, `BAND`, `PARTY` |
 | Economy/news | `js/sim/simconfig.js` | `ECON`, `REPORTER`, `GAZETTE`, `BOUNTY`, `ALERT`, `ARBITRAGE`; `REP` in `reputation.js`; `QUEST` in `quest/quest.js` |
 | RPG curves/caps | `js/rpg/rpgconfig.js` | `RPG` (class matching, XP, significance, tiers) |

@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { Fighter } from '../fighter.js';
 import { Agent } from './agent.js';
-import { ROSTER, SIM, NAMES, MONSTER, MOTIVE, CAMPS, TOWNS, SCARECROW, factionHostile } from './simconfig.js';
+import { ROSTER, SIM, NAMES, MONSTER, MOTIVE, CAMPS, TOWNS, SCARECROW, BUILD, factionHostile } from './simconfig.js';
 import { assignHouse, founderHouse } from './houses.js';
 import { ARENA_RADIUS, BIOME, findBiomeSpot, regionAt, REGIONS, terrainHeight } from '../arena.js';
 import { resetXpStats } from '../rpg/xpstats.js';
@@ -39,6 +39,8 @@ import { installDeedRouter, recordDeed } from './deedRouter.js';
 import { onCombatEvents } from './combatEvents.js';
 import { MentalMap } from './mentalmap.js';
 import { Scarecrow } from './percept.js';
+import { reason } from './schemas/interpreter.js';
+import { ACTIVE as SCHEMA_CATALOGUE } from './schemas/catalogue.js';
 
 const rand = (a, b) => a + Math.random() * (b - a);
 
@@ -424,12 +426,17 @@ export class Simulation {
   }
 
   // The fighter bodies the combat resolver iterates. A Scarecrow IS its own body
-  // (isHitActive/torsoCenter/takeHit) — not an Agent wrapping a .fighter — so percept
-  // bodies are concatenated directly. Fast-path returns the bare agent-fighter array
-  // when there are no percepts (the default world), so nothing changes shape there.
+  // (isHitActive/torsoCenter/takeHit) — not an Agent wrapping a .fighter — so combat-body
+  // percepts are concatenated directly. A BUILDING percept (Phase 2a) is a PLACE, not a
+  // combat body (no isHitActive/torsoCenter/takeHit/update), so it is EXCLUDED here — it is
+  // perceivable (in _perceivables) and raid-damaged separately (construction._raidPass), but
+  // the combat/fighter loop never touches it. Fast-path returns the bare agent-fighter array
+  // when there are no combat-body percepts (the default world), so nothing changes shape there.
   get fighters() {
     const f = this.agents.map((a) => a.fighter);
-    return this.percepts.length ? f.concat(this.percepts) : f;
+    if (!this.percepts.length) return f;
+    const bodies = this.percepts.filter((p) => typeof p.isHitActive === 'function' && typeof p.update === 'function');
+    return bodies.length ? f.concat(bodies) : f;
   }
 
   // The set perception may SEE: agents + props. A percept is perceivable (truth → belief)
@@ -438,9 +445,17 @@ export class Simulation {
   // default world's perceive pass is byte-identical.
   _perceivables() { return this.percepts.length ? this.agents.concat(this.percepts) : this.agents; }
 
-  // Register a perceivable PROP (Scarecrow) — the test + world-spawn entry point. Lives in
-  // `percepts`, never `agents`, so no cognition loop ever touches a mindless body.
+  // Register a perceivable PROP (Scarecrow) or PLACE (finished building) — the test +
+  // world-spawn + construction entry point. Lives in `percepts`, never `agents`, so no
+  // cognition loop ever touches a mindless body.
   spawnPercept(p) { this.percepts.push(p); return p; }
+
+  // Remove a perceivable (a gutted/ruined building) so no agent perceives a ghost at the
+  // rubble — the symmetric teardown of spawnPercept. Idempotent; guarded; never throws.
+  despawnPercept(p) {
+    try { const i = this.percepts.indexOf(p); if (i >= 0) this.percepts.splice(i, 1); } catch { /* */ }
+    return p;
+  }
 
   // Config-gated world spawn (bonus): place SCARECROW.count props per town in the
   // SCARECROW.ring annulus, dressed as SCARECROW.appearsAs. Guarded; never throws.
@@ -493,7 +508,11 @@ export class Simulation {
       world: this.world,
       map: this._mentalMap(),     // shared STATIC geography (places); not the roster
       time: this.time,
-      buildSites: this.buildSites,
+      // DEBT #2 RETIRED (Phase 2a): `buildSites` (a DYNAMIC build-state handle) is NO LONGER
+      // on the cognition ctx. The comfort path is belief-backed (homeBelief + the static map's
+      // shelter/rest Places); buildStep reaches build state through resolver.buildSite (the
+      // EXECUTION facade), exactly as the market path consumes the market resolver. So a
+      // cognition roster/build-state scan simply has nothing to dereference.
       cities: this.cities,
       playerId: this.player ? this.player.id : null,
       partyLeader: (this.party && this.party.leader) ? this.party.leader : null,
@@ -639,6 +658,56 @@ export class Simulation {
           return true;
         } catch { return false; }
       },
+      // BUILD-STATE EXECUTION FACADE (Phase 2a, debt #2 retirement): the truth-side build
+      // state (BuildSites), exposed as a narrow set of execution operations — exactly like
+      // the market resolver. `buildStep` runs in act() (execution), which legitimately reads
+      // ground truth, but it must NOT name `ctx.buildSites` (a dynamic-state handle banned on
+      // the cognition ctx). It reaches build state ONLY through this facade. Every method is
+      // guarded; returns null/0 on any fault (never throws on the tick).
+      buildSite: {
+        // resolve-or-commission the agent's committed site; returns an OPAQUE site handle or null.
+        resolve(agent, ctx) {
+          try {
+            const bs = sim.buildSites; if (!bs) return null;
+            let site = (agent._buildSiteId != null) ? bs.siteById(agent._buildSiteId) : null;
+            if (!site) { site = bs.commission(agent, ctx); if (!site) { agent._buildSiteId = null; return null; } }
+            return site;
+          } catch { return null; }
+        },
+        // wood still owed to a site handle (drives the fell-wood branch).
+        woodOwed(handle) { try { return handle ? Math.max(0, handle.woodNeeded - handle.woodHave) : 0; } catch { return 0; } },
+        // contribute up to `units` of the agent's carried wood into the site (a pure commodity
+        // transfer — closed money loop). Mutates inv.wood + site.woodHave; returns units moved.
+        feedWood(agent, handle, units) {
+          try {
+            if (!handle || !agent) return 0;
+            const inv = agent.inventory || (agent.inventory = {});
+            let moved = 0, want = Math.min(units || 0, handle.woodNeeded - handle.woodHave, inv.wood || 0);
+            while (want > 0 && (inv.wood || 0) > 0 && handle.woodHave < handle.woodNeeded) {
+              inv.wood -= 1; handle.woodHave += 1; moved += 1; want -= 1;
+            }
+            return moved;
+          } catch { return 0; }
+        },
+        // advance progress capped by woodHave/woodNeeded; returns the advance delta (>=0).
+        advance(handle, dtSeconds, ctx) {
+          try {
+            if (!handle) return 0;
+            const woodCap = handle.woodHave / (handle.woodNeeded || 1);
+            const next = Math.min(woodCap, handle.progress + BUILD.progressPerSec * (dtSeconds || 0));
+            if (next <= handle.progress) return 0;
+            const adv = next - handle.progress;
+            handle.progress = next; handle.lastProgressAt = (ctx && ctx.time) || handle.lastProgressAt;
+            return adv;
+          } catch { return 0; }
+        },
+        pos(handle) { try { return handle ? handle.pos : null; } catch { return null; } },
+        // nearest forest POI to the agent (the fell-wood destination) — execution geography,
+        // routed through the facade so buildStep names neither ctx.buildSites NOR ctx.world.
+        nearestWood(agent) {
+          try { const f = sim.world && sim.world.nearest(POI_KIND.FOREST, agent.pos); return f ? f.pos : null; } catch { return null; }
+        },
+      },
     };
     return this._resolver;
   }
@@ -671,6 +740,11 @@ export class Simulation {
       for (const a of this.agents) a.perceive(ctx);
       for (const a of this.agents) a.beliefs.decay(step);
       for (const a of this.agents) a.gossipBeliefs(ctx);
+      // REASONING pass (Phase 2a): the InteractionSchema interpreter evaluates the
+      // catalogue per agent over the RESTRICTED cognition ctx (beliefs + own state +
+      // static map, never the roster), writing cached beliefs + adopting goals BEFORE
+      // decide arbitrates them the same tick. Empty catalogue ⇒ early return ⇒ no-op.
+      for (const a of this.agents) reason(a, cog, SCHEMA_CATALOGUE);
       for (const a of this.agents) a.decide(cog);   // cognition: beliefs + resolver only
       this._runMarket();
       // RPG: behavior-profile decay + class matching on the same fixed-rate tick.

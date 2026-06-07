@@ -19,6 +19,13 @@ import * as THREE from 'three';
 export const PERCEPT_KIND = {
   PERSON:    'person',     // a living agent (the normal case — Agent.percept-shaped)
   SCARECROW: 'scarecrow',  // an inert decoy that LOOKS like a person but has no mind
+  // A BUILDING is a perceivable PLACE — a finished home/tavern registered into sim.percepts
+  // (Phase 2a, places-as-percepts). Like a Scarecrow it has NO `.agent`/`.mind`, so every
+  // agent-only system skips it; perception only WRITES beliefs, so it files a PLACE-belief
+  // (placeKind/sheltered). Crucially a building's `alive == sheltered`: a torched-but-standing
+  // home advertises `alive=false`, so an owner walking home on a stale "intact" belief
+  // DISCOVERS the loss by sight (the homecoming) rather than being told telepathically.
+  BUILDING:  'building',
   // future: CORPSE, STATUE, ILLUSION, MIMIC … all just "appear as a person" to perception
 };
 

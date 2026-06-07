@@ -10,13 +10,30 @@
 import { SIM, WEIGHT, ECON, COMMODITIES, GROUP_TYPES, LEGEND, SOCIAL, COMFORT, NOVELTY, BUILD, factionHostile } from '../simconfig.js';
 import { updateAmbition, ambitionFavor, ambitionWantsFight, deriveGoals, pruneGoals } from '../motivation.js';
 import { chooseOccupation, laborValue } from './occupation.js';
-import { qualifyHome, BUILD_KIND } from '../construction.js';
+import { qualifyHome, isUnhoused } from '../construction.js';
 
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
 
 export function decide(a, ctx) {
   a._rpgNow = ctx.time;   // stamp sim time for this tick's emitted deeds
   if (!a.alive || a.controlled) return;
+
+  // SCHEMA GOAL DWELL-LOCK (anti-thrash): a high-priority schema response (flee/fight set
+  // directly by reason()) stamps a short min-dwell lock so a one-tick belief flicker (the
+  // triggering belief decays for a tick, then gossip re-raises it) doesn't let decide
+  // immediately override it back to comfort/work — eliminating the flee<->comfort thrash.
+  // Honour the lock only while it holds AND the locked goal is still set. Reads a.* +
+  // ctx.time only (scan-clean). Empty in Step 1 (no schema sets a lock until the catalogue
+  // lands), so this is dead code with the empty catalogue — byte-stable.
+  if (a._schemaGoalLock && ctx.time < a._schemaGoalLock.until &&
+      a.goal && a.goal.kind === a._schemaGoalLock.kind) {
+    // STILL maintain the goal stack while the lock holds: derive new goals from memory and
+    // PRUNE satisfied/expired ones (so e.g. an avenge goal still POPS the tick its quarry dies,
+    // even if a schema momentarily locked the active goal to a disposition). The lock only
+    // suppresses re-SCORING/overriding the committed goal, never the bookkeeping. Guarded.
+    try { deriveGoals(a, ctx); pruneGoals(a, ctx); } catch { /* never throw on the tick */ }
+    return;
+  }
 
   // THE REPORTER: a gazetteer doesn't work, fight, or plan — it pursues the story.
   // The Reporter subsystem sets a.reporterTarget; act.js walks the body there. This
@@ -280,7 +297,7 @@ export function decide(a, ctx) {
             cs *= (a.pos.distanceTo(src.pos) <= (SIM.arriveDist || 1.5) + 1)
               ? (COMFORT.dwellBoost || 1) : (COMFORT.seekBoost || 1);
           }
-          push('comfort', cs, { toPos: { x: src.pos.x, z: src.pos.z } });
+          push('comfort', cs, { toPos: { x: src.pos.x, z: src.pos.z }, srcKind: src.kind });
         }
       }
 
@@ -294,9 +311,14 @@ export function decide(a, ctx) {
         // floor a low-ambition qualifier was out-pulled by a routine market trip and
         // never committed, so the build only happened for ambitious agents (flaky).
         push('build', WEIGHT.build * (1.4 + 0.4 * P.ambition));
-      } else if (BUILD.enabled && a._buildSiteId != null) {
-        // already committed to a site → keep building it (an even stronger, sticky
-        // pull so the project finishes instead of being abandoned for a market trip).
+      } else if (BUILD.enabled && a._buildSiteId != null && isUnhoused(a)) {
+        // already committed to a site AND still believe I need a home → keep building it (an
+        // even stronger, sticky pull so the project finishes instead of being abandoned for a
+        // market trip). Phase 2a: gated on isUnhoused too — debt #1's retirement opened a
+        // one-tick gap where a just-finished owner (not yet having PERCEIVED its home) could
+        // commission a SECOND site; once it discovers its home (housed) it must drop that
+        // stale commitment rather than keep raising a home it no longer needs. The site
+        // itself is abandoned by BuildSites.tick's no-progress timer (truth-side cleanup).
         push('build', WEIGHT.build * 1.8);
       }
     }
@@ -350,14 +372,22 @@ function pickSocialTarget(a) {
   return best;
 }
 
-// nearest comfort source for the comfort goal: the agent's OWN home always
-// counts, else any finished tavern (ground truth via the BuildSites lookup — an
-// execution helper, not a belief read). Guarded; null when none exists.
+// nearest comfort source for the comfort goal — now BELIEF-BACKED (debt #2 retired). The
+// agent's OWN home counts ONLY while it BELIEVES it intact AND that belief is still fresh
+// enough to act on: a stale-intact home-belief whose confidence has decayed below the act-on
+// threshold (because perception stopped re-confirming it — the home was razed and despawned)
+// is no longer trusted, so the agent reroutes to a tavern. This is what self-corrects the
+// fully-ruined/despawned home case via belief DECAY (no percept to learn from), bounding the
+// homecoming so it never loops toward a vanished home forever. The fallback is a STATIC
+// shelter/rest Place from the shared mental map (a tavern/rest site) — never a live read.
+// Returns { pos, kind } or null. Guarded; never throws.
 function nearestComfortSource(a, ctx) {
   try {
-    if (a.home) return a.home;                       // own home always counts
-    const bs = ctx.buildSites; if (!bs) return null;
-    return bs.nearest(BUILD_KIND.TAVERN, a.pos);     // else any tavern
+    const hb = a.homeBeliefId != null ? a.beliefs.get(a.homeBeliefId) : null;
+    if (hb && hb.sheltered !== false && hb.lastPos && hb.confidence >= SIM.actOnBeliefMin)
+      return { pos: hb.lastPos, kind: 'home' };                 // believed-intact, still-fresh home
+    const t = ctx.map && ctx.map.nearest(['shelter', 'rest'], a.pos, a.townId);
+    return t ? { pos: t.pos, kind: 'tavern' } : null;           // STATIC tavern/rest Place
   } catch { return null; }
 }
 

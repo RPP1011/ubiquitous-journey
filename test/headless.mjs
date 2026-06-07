@@ -20,9 +20,11 @@ import { plannerSelfTest } from './suites/planner.mjs';
 import { executionTest } from './suites/execution.mjs';
 import { memoryGoalTest, npcCastTest } from './suites/memoryGoals.mjs';
 import { perceptTest } from './suites/percept.mjs';
+import { schemasTest } from './suites/schemas.mjs';
 import { hearsayTest } from './suites/hearsay.mjs';
 import { obituaryTest } from './suites/obituary.mjs';
 import { constructionTest } from './suites/construction.mjs';
+import { homecomingTest } from './suites/homecoming.mjs';
 import { cityTest } from './suites/city.mjs';
 import { soak } from './suites/soak.mjs';
 import { runScenarios } from './scenarios.mjs';
@@ -43,6 +45,9 @@ npcCastTest(ok, helpers);
 // Phase-1 world-model gate: scarecrow tolerance (perceive→believe-person→strike, no
 // mind-feedback, no throw) + pursuit-intercept (destination inference via the mental map).
 perceptTest(ok, helpers);
+// Phase-2a reasoning framework (Step 1): IR + vocab evaluators + interpreter, in isolation.
+// Catalogue empty ⇒ behaviour unchanged; the substrate writes' output-stability is the soak.
+schemasTest(ok);
 hearsayTest(ok);
 obituaryTest(ok, helpers);
 // full deterministic scenario suite (docs/goal-system-tests.md): A1–A4, B1–B7,
@@ -50,6 +55,10 @@ obituaryTest(ok, helpers);
 runScenarios(ok);
 // Phase-1 emergent buildings: homes + tavern, gold-neutral, headless-safe.
 await constructionTest(ok, helpers);
+// Phase-2a homecoming gate: a miner's home is torched while he's away — he walks home on his
+// STALE intact belief, DISCOVERS the ruin by perception (or by decay if it despawned), THEN
+// reroutes. No telepathic re-route. The semantic gate that proves the building-state split.
+await homecomingTest(ok, helpers);
 // Phase-1 tile-city: CityGrid invariants + buildingParts raid/collapse/shelter (sync).
 cityTest(ok, helpers);
 await soak(ok, helpers);

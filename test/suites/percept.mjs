@@ -151,6 +151,72 @@ function scarecrowTolerance(ok) {
   ok(!Bram.memory.recent().some((e) => e.withId === 'S'),
     'tolerance: Bram recorded NO memory episode naming the prop');
 
+  // Phase 2a: with the reasoning catalogue live, schema #6 (no-threat-no-response) can now
+  // let Bram DISENGAGE from a proven-inert prop — a real new behaviour we ASSERT rather than
+  // tune away. The hp:40 here is this test's ORIGINAL value (NOT chosen to outrace #6): at
+  // hp:40 the prop TOPPLES quickly, so the legitimate disengage path here is "the prop is
+  // down" (combat resolved) — the ≥3-strike predicate guarantees the killing strikes PRECEDE
+  // any #6 revision, so #6 never starves the struck-count path. We assert disengagement by
+  // SOME valid means (the prop toppled, OR — had #6 fired first — the belief was revised).
+  // The dedicated hp:400 self-correction test below proves the BELIEF-REVISION path in
+  // isolation, where toppling can't pre-empt #6. The tolerance assertions above (no deed/XP/
+  // memory, no throw) are structurally independent of #6: it only writes Bram's OWN belief.
+  const sBel = Bram.beliefs.get('S');
+  const disengaged = !S.alive || !sBel || sBel.inert === true || sBel.hostile === false;
+  ok(disengaged, `tolerance: Bram disengaged from the prop (down=${!S.alive}, inert=${sBel && sBel.inert}, hostile=${sBel && sBel.hostile})`);
+
+  st.dispose();
+}
+
+// ---------------------------------------------------------------------------
+// (1b) Scarecrow SELF-CORRECTION (Phase 2a, schema #6 "no-threat-no-response") —
+// the inverse of tolerance: Bram believes the bandit-dressed prop hostile, closes and
+// strikes it ≥3 times, and — because the prop accrues ZERO observed animacy (it never
+// moves/strikes/blocks/harms him) — schema #6 accrues inertEvidence over his OWN belief,
+// crosses the threshold, REVISES hostile→false + inert→true (correction by reasoning, not
+// omniscience: only his own strikes + his own perception of its lack of reaction are read),
+// and Bram disengages. hp:400 so it's the BELIEF REVISION (not toppling) that ends the fight.
+// ---------------------------------------------------------------------------
+function scarecrowSelfCorrection(ok) {
+  const st = MAKE();
+  const { sim, add } = st;
+
+  const Bram = add('Bram', 0, 0, { combatant: true });
+  // a TOUGH prop (hp:400): it cannot topple inside the window, so disengagement can ONLY
+  // come from Bram revising his belief — the whole point of the test.
+  const S = sim.spawnPercept(new Scarecrow({ id: 'S', x: 4, z: 0, appearsAs: 'bandit', hp: 400 }));
+
+  let threw = null;
+  try {
+    st.runFrames(20);                       // form the person-belief about S
+    const b0 = Bram.beliefs.get('S');
+    ok(!!b0 && b0.lastFaction === 'bandit', 'self-correct: Bram believes the prop a bandit person');
+    if (b0) b0.hostile = true;              // latch hostility so he commits to the fight
+    // run the strike window; schema #6 needs ≥3 strikes + 2 inertEvidence accruals (ttl-gated).
+    st.runUntil(() => {
+      const b = Bram.beliefs.get('S');
+      return !!b && (b.inert === true || b.hostile === false);
+    }, 1600);
+  } catch (e) { threw = e; }
+
+  ok(threw === null, `self-correct: ran with no exception${threw ? ` (THREW: ${threw.message})` : ''}`);
+
+  const b = Bram.beliefs.get('S');
+  // (a) he ENGAGED it: struck it at least 3 times (his own strikeLog over the prop's id).
+  const rec = Bram.strikeLog && Bram.strikeLog.get ? Bram.strikeLog.get('S') : null;
+  ok(!!rec && rec.count >= 3, `self-correct: Bram struck the prop ≥3 times (count=${rec ? rec.count : 0})`);
+  // (b) the prop showed ZERO animacy — its belief never accrued a liveness tally.
+  const tally = b && b.animacyTally;
+  const animacy = tally ? (tally.struck + tally.blocked + tally.harmedMe + tally.moved) : 0;
+  ok(animacy === 0, `self-correct: the prop accrued ZERO observed animacy (tally=${animacy})`);
+  // (c) THE REVISION: schema #6 flipped his belief — hostile→false AND inert→true.
+  ok(!!b && b.hostile === false && b.inert === true,
+    `self-correct: belief REVISED by reasoning (hostile=${b && b.hostile}, inert=${b && b.inert}, inertEvidence=${b && b.inertEvidence})`);
+  // (d) he DISENGAGED: he no longer considers the prop hostile, so decide stops the fight.
+  ok(!Bram.considerHostile(b), 'self-correct: Bram no longer treats the proven-inert prop as hostile (disengage)');
+  // the prop is intact (hp:400 — disengagement was the BELIEF revision, not toppling).
+  ok(S.alive && S.hp > 0, `self-correct: the prop is intact — disengage was belief-revision, not toppling (hp ${S.hp.toFixed(0)}/400)`);
+
   st.dispose();
 }
 
@@ -239,8 +305,9 @@ let MAKE = null;
 // ---------------------------------------------------------------------------
 export function perceptTest(ok, { makeFighter, stubScene }) {
   MAKE = () => makeStage(makeFighter, stubScene);
-  console.log('\n— percept suite (scarecrow tolerance + pursuit intercept) —');
+  console.log('\n— percept suite (scarecrow tolerance + self-correction + pursuit intercept) —');
   inferAffordanceWeight(ok);
   scarecrowTolerance(ok);
+  scarecrowSelfCorrection(ok);
   pursuitIntercept(ok);
 }

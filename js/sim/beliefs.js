@@ -58,6 +58,33 @@ export class BeliefState {
     this.source = SOURCE.WITNESSED.tag;
     this.hops = 0;               // provenance depth (0 = first-hand; grows with each retelling)
     this.rumorBorn = false;      // this hostility was curdled from gossip, not witnessed
+    // ANIMACY TALLY (lazy; null until the subject is observed acting alive) — cumulative
+    // evidence the subject MOVED, STRUCK, BLOCKED, or HARMED ME since I started tracking
+    // it. A believed-foe I've struck repeatedly that never accrues a tally is, by my own
+    // evidence, inert (a scarecrow / corpse / statue) — schema #6 (no-threat-no-response)
+    // revises the belief off this. Written ONLY by the allowlisted bridges (perception's
+    // observed-motion + combatEvents' struck/blocked/harmedMe); NOT reset by observe()
+    // (liveness evidence is cumulative). A scarecrow re-perceived forever never gains one.
+    this.animacyTally = null;
+    // PLACE-as-percept fields (Phase 2a, places-as-percepts) — null for a person-belief.
+    // placeKind: 'building'|'home'|'tavern'; sheltered: believed shelter state (true/false).
+    this.placeKind = null;
+    this.sheltered = null;
+    // higher-order reasoning scalars the schema layer accrues (e.g. inertEvidence).
+    this.inertEvidence = 0;
+    // REVISED-INERT flag: schema #6 sets this once inertEvidence crosses its threshold —
+    // a subject I've proven harmless by my own repeated strikes + zero observed animacy.
+    // considerHostile() honours it, so it overrides BOTH a latched hostile and the faction
+    // prior (the disengage from a proven scarecrow). False for every live subject.
+    this.inert = false;
+  }
+
+  // record one piece of liveness evidence on this belief (lazy-allocates the tally on the
+  // first observed action). `kind` ∈ 'struck'|'blocked'|'harmedMe'|'moved'. Guarded.
+  recordAnimacy(kind /*, now */) {
+    if (!kind) return;
+    if (!this.animacyTally) this.animacyTally = { struck: 0, blocked: 0, harmedMe: 0, moved: 0 };
+    if (this.animacyTally[kind] != null) this.animacyTally[kind] += 1;
   }
 }
 
@@ -86,6 +113,12 @@ export class BeliefStore {
     if (this.map.size < SIM.beliefsPerAgent) return;
     let worst = null, worstScore = Infinity;
     for (const b of this.map.values()) {
+      // PLACES-AS-PERCEPTS (Phase 2a): never evict the observer's OWN HOME belief — it is the
+      // agent's cognition-visible housing state (homeBelief), which must survive a long
+      // absence (the homecoming relies on the stale-intact belief persisting until perception
+      // or decay revises it). It is revised by SIGHT, never by eviction. Other place-beliefs
+      // (taverns) are evictable like any subject — they are re-perceivable / map-backed.
+      if (b.placeKind === 'home') continue;
       const score = b.confidence - (b.hostile ? 0.5 : 0) - b.suspicion * 0.3;
       if (score < worstScore) { worstScore = score; worst = b; }
     }

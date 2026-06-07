@@ -42,6 +42,13 @@ const SCANNED = [
   'js/sim/planner.js',
   'js/sim/agent.js',          // the decision helpers (with EPISTEMIC-OK carve-outs)
   'js/sim/mentalmap.js',      // the shared STATIC places registry (static-geography only)
+  // Phase 2a — the InteractionSchema reasoning layer: pure IR + the belief/own-state/map
+  // evaluators + the bounded interpreter. Cognition: reads ONLY agent.*, the agent's own
+  // BeliefStore, episodic memory, and the static mental map — never the roster.
+  'js/sim/schemas/ir.js',
+  'js/sim/schemas/vocab.js',
+  'js/sim/schemas/interpreter.js',
+  'js/sim/schemas/catalogue.js',
 ];
 
 // ALLOWLISTED bridge/resolver/orchestration files — the two sanctioned reality-touch
@@ -57,6 +64,11 @@ const FORBIDDEN_HANDLES = [
   { re: /\bctx\.agentsById\b/, why: 'roster lookup (ctx.agentsById)' },
   { re: /\bctx\.player\b(?!Id)/, why: 'live player handle (ctx.player) — use ctx.playerId scalar' },
   { re: /\bsim\.agents(?:ById)?\b/, why: 'roster via sim handle (sim.agents/agentsById)' },
+  // DEBT #2 RETIRED (Phase 2a): `ctx.buildSites` is a DYNAMIC build-state handle. Cognition
+  // must reach build/comfort state via BELIEFS (homeBelief) or the STATIC map (shelter/rest
+  // Places); EXECUTION (buildStep) reaches it via the resolver facade (ctx.resolver.buildSite).
+  // Banning the handle outright makes the retirement structural — buildStep names it nowhere.
+  { re: /\bctx\.buildSites\b/, why: 'dynamic build state on cognition ctx — use beliefs/map (comfort) or the execution resolver (build)' },
 ];
 
 // SECONDARY belt: a foreign TRUE-STATE deref off a local conventionally named for a
@@ -155,8 +167,11 @@ export function epistemicScan(ok) {
       const body = m[1];   // the returned-object fields only
       const hasRoster = /\bagents(?:ById)?\s*:/.test(body);
       const hasPlayerObj = /\bplayer\b(?!Id)\s*:/.test(body);
-      structOk = !hasRoster && !hasPlayerObj;
-      if (!structOk) console.log('  [epistemic] simulation.js _cognitionCtx still hands cognition a roster/player handle');
+      // DEBT #2 RETIRED (Phase 2a): assert `buildSites:` is ABSENT from the cognition ctx
+      // literal (the dynamic build-state handle was removed; build goes via the resolver).
+      const hasBuildSites = /\bbuildSites\s*:/.test(body);
+      structOk = !hasRoster && !hasPlayerObj && !hasBuildSites;
+      if (!structOk) console.log('  [epistemic] simulation.js _cognitionCtx still hands cognition a roster/player/buildSites handle');
     } else {
       console.log('  [epistemic] simulation.js has no _cognitionCtx() return literal — cognition ctx not split');
     }

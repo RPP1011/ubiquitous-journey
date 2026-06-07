@@ -30,8 +30,9 @@ It drives the sim exactly like the render loop (`sim.update` → `fighter.update
 `onCombatEvents`) and asserts the invariants: no freeze over 12k frames, gold conservation, trades
 happen, beliefs form, every NPC has a valid ambition that progresses. `headless.mjs` is a thin runner
 that loads `test/harness.mjs` (`makeOk` tally, `stubScene`, `makeFighter`) and the suites in
-`test/suites/*.mjs` (`combat`, `execution`, `hearsay`, `abilities`, `planner`, `memoryGoals`,
-`obituary`, `soak`) plus `test/scenarios.mjs`. There's no single-suite CLI flag — to run one suite,
+`test/suites/*.mjs` (`epistemic`, `combat`, `abilities`, `planner`, `execution`, `memoryGoals`,
+`percept`, `schemas`, `hearsay`, `obituary`, `construction`, `homecoming`, `city`, `soak`) plus
+`test/scenarios.mjs`. There's no single-suite CLI flag — to run one suite,
 comment out the others in `headless.mjs` or import the suite into a scratch runner. Other runners:
 `test/scenarios.mjs`, `test/history.mjs`, and the `test/bench.mjs` / `test/levelbench.mjs` benchmarks.
 The seam is a logic-only
@@ -111,6 +112,17 @@ while every `!agent` guard skips all mind-feedback. See [09 — reasoning layer]
 `Agent.decide` is backed by a goal/GOAP layer: `js/sim/motivation.js` derives goals (some from
 episodic `js/sim/memory.js`) and `js/sim/planner.js` plans toward them. Goals still read beliefs
 only, preserving the epistemic split.
+
+Above that, the **reasoning layer** (`js/sim/schemas/`, Phase 2a) runs `reason(agent, ctx,
+catalogue)` once per agent per cognition tick (between gossip and decide): a data-only
+`InteractionSchema` IR (`ir.js` shape + `validate()`), the shared predicate/inference/response
+vocabulary (`vocab.js`, in the epistemic scan), the bounded priority/ttl-cached interpreter
+(`interpreter.js`), and the 6 flagship schemas as data rows (`catalogue.js`). Every predicate
+reads only the agent's OWN beliefs/state/memory/mental-map — never the roster (config: `SCHEMA`).
+Buildings are now **places-as-percepts**: `construction.js` spawns a finished building into
+`sim.percepts` with a namespaced id (`B:<n>`, disjoint from agent ids) and a believed `sheltered`
+state; an agent DISCOVERS its home by sight (`homeBeliefId`) and its loss by perception or belief
+decay — no telepathic re-route (the `test/suites/homecoming.mjs` gate).
 
 ### The RPG event spine
 
