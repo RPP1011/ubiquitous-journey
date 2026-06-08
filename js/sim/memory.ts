@@ -13,27 +13,35 @@
 // Bounded by construction (ring overwrite) — no unbounded growth on the tick.
 
 import { MEMORY } from './simconfig.js';
+import type { Ring as IRing, Memory as IMemory, Episode } from '../../types/sim.js';
 
 // Fixed-capacity circular buffer. push() overwrites the oldest when full and
 // returns whatever it evicted (or null). items() yields newest-first.
-export class Ring {
-  constructor(capacity) { this.cap = Math.max(1, capacity | 0); this.buf = []; this.head = 0; }
+export class Ring<T> implements IRing<T> {
+  cap: number;
+  buf: T[];
+  head: number;
+  constructor(capacity: number) { this.cap = Math.max(1, capacity | 0); this.buf = []; this.head = 0; }
   get size() { return this.buf.length; }
-  push(item) {
+  push(item: T): T | null {
     if (this.buf.length < this.cap) { this.buf.push(item); return null; }
     const evicted = this.buf[this.head];
     this.buf[this.head] = item;
     this.head = (this.head + 1) % this.cap;
-    return evicted;
+    return evicted ?? null;
   }
-  items() {                       // newest -> oldest
-    const n = this.buf.length, out = [];
-    for (let i = 0; i < n; i++) out.push(this.buf[(this.head + n - 1 - i) % n]);
+  items(): T[] {                  // newest -> oldest
+    const n = this.buf.length, out: T[] = [];
+    for (let i = 0; i < n; i++) out.push(this.buf[(this.head + n - 1 - i) % n] as T);
     return out;
   }
 }
 
-export class Memory {
+export class Memory implements IMemory {
+  stm: Ring<Episode>;
+  mtm: Ring<Episode>;
+  ltm: Ring<Episode>;
+  _acc: number;
   constructor() {
     this.stm = new Ring(MEMORY.stm);
     this.mtm = new Ring(MEMORY.mtm);
@@ -44,7 +52,7 @@ export class Memory {
   // record a fresh episode (no-op if too trivial to bother remembering). A repeat
   // of the same recent episode REINFORCES it (memory strengthens with repetition)
   // instead of flooding the buffer with duplicates.
-  record(ep) {
+  record(ep: Episode) {
     if (!ep || ep.salience < MEMORY.minSalience) return;
     const last = this.stm.items()[0];   // newest
     if (last && last.kind === ep.kind && last.withId === ep.withId && (ep.t - last.t) < MEMORY.dedupWindow) {
@@ -56,7 +64,7 @@ export class Memory {
   }
 
   // periodic consolidation + slow forgetting; call on the fixed tick (self-throttled)
-  tick(dt, now) {
+  tick(dt: number, now: number) {
     this._acc += dt;
     if (this._acc < MEMORY.consolidateEvery) return;
     const elapsed = this._acc; this._acc = 0;
@@ -78,7 +86,7 @@ export class Memory {
     }
   }
 
-  _fade(ring, amt) { for (const ep of ring.items()) ep.salience = Math.max(0, ep.salience - amt); }
+  _fade(ring: Ring<Episode>, amt: number) { for (const ep of ring.items()) ep.salience = Math.max(0, ep.salience - amt); }
 
   // the formative few (LTM, then MTM), strongest first — for goals + the biography
   salient(k = 5) {
@@ -89,7 +97,7 @@ export class Memory {
 }
 
 // Render an episode as a short past-tense phrase for the biography / dialogue.
-export function memoryPhrase(ep, nameOf) {
+export function memoryPhrase(ep: Episode, nameOf?: ((id: number | string) => string) | null) {
   const who = ep.withId != null ? (nameOf ? nameOf(ep.withId) : `#${ep.withId}`) : null;
   switch (ep.kind) {
     case 'triumph':         return who ? `bested ${who}` : 'won a victory';

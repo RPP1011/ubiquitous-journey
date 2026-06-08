@@ -9,13 +9,17 @@
 import * as THREE from 'three';
 import { ARENA_RADIUS } from '../arena.js';
 import { SIM, SOURCE, HEARSAY, MAP } from './simconfig.js';
+import type {
+  AnimacyTally, BeliefState as IBeliefState, BeliefStore as IBeliefStore,
+  PlantOpts, EntityId, MentalMap, Place,
+} from '../../types/sim.js';
 
-const clampStanding = (s) => Math.max(-1, Math.min(1, s));
+const clampStanding = (s: number) => Math.max(-1, Math.min(1, s));
 
 // How garbled is a belief? `hops` is its provenance depth: 0 = seen first-hand,
 // and every social retelling adds one (capped). The narrative layer reads this to
 // hedge what it prints ("as told thirdhand"); the sim reads it to garble further.
-export function provenanceLabel(b) {
+export function provenanceLabel(b: IBeliefState | null | undefined) {
   const h = (b && b.hops) || 0;
   if (!b || b.source === SOURCE.WITNESSED.tag || h <= 0) return 'seen first-hand';
   if (h === 1) return 'heard from a witness';
@@ -24,7 +28,7 @@ export function provenanceLabel(b) {
   return 'a tale much retold';
 }
 // a compact tag for tight UI (the inspector belief rows).
-export function provenanceTag(b) {
+export function provenanceTag(b: IBeliefState | null | undefined) {
   const h = (b && b.hops) || 0;
   if (!b || b.source === SOURCE.WITNESSED.tag || h <= 0) return 'seen';
   if (h === 1) return 'heard';
@@ -33,8 +37,32 @@ export function provenanceTag(b) {
   return 'hearsay';
 }
 
-export class BeliefState {
-  constructor(subjectId) {
+export class BeliefState implements IBeliefState {
+  subjectId: EntityId;
+  lastFaction: string | null;
+  lastPos: THREE.Vector3;
+  heading: THREE.Vector3;
+  destId: string | null;
+  destPos: THREE.Vector3 | null;
+  intent: string | null;
+  destInferredAt: number;
+  notoriety: number;
+  lastTick: number;
+  confidence: number;
+  hostile: boolean;
+  suspicion: number;
+  standing: number;
+  knownDeeds: unknown[];
+  source: string;
+  hops: number;
+  rumorBorn: boolean;
+  animacyTally: AnimacyTally | null;
+  placeKind: string | null;
+  sheltered: boolean | null;
+  inertEvidence: number;
+  inert: boolean;
+
+  constructor(subjectId: EntityId) {
     this.subjectId = subjectId;
     this.lastFaction = null;     // believed faction (a disguise can fake this)
     this.lastPos = new THREE.Vector3();   // where I last SAW it (the anchor of my mental map)
@@ -81,23 +109,26 @@ export class BeliefState {
 
   // record one piece of liveness evidence on this belief (lazy-allocates the tally on the
   // first observed action). `kind` ∈ 'struck'|'blocked'|'harmedMe'|'moved'. Guarded.
-  recordAnimacy(kind /*, now */) {
+  recordAnimacy(kind: 'struck' | 'blocked' | 'harmedMe' | 'moved' /*, now */) {
     if (!kind) return;
     if (!this.animacyTally) this.animacyTally = { struck: 0, blocked: 0, harmedMe: 0, moved: 0 };
     if (this.animacyTally[kind] != null) this.animacyTally[kind] += 1;
   }
 }
 
-export class BeliefStore {
-  constructor(observerId) {
+export class BeliefStore implements IBeliefStore {
+  observerId: EntityId;
+  map: Map<EntityId, BeliefState>;
+
+  constructor(observerId: EntityId) {
     this.observerId = observerId;
     this.map = new Map();        // subjectId -> BeliefState
   }
 
-  get(subjectId) { return this.map.get(subjectId) || null; }
+  get(subjectId: EntityId): BeliefState | null { return this.map.get(subjectId) || null; }
   all() { return this.map.values(); }
 
-  _ensure(subjectId) {
+  _ensure(subjectId: EntityId): BeliefState {
     let b = this.map.get(subjectId);
     if (!b) {
       this._evictIfFull();
@@ -111,7 +142,7 @@ export class BeliefStore {
   // stalest belief when full.
   _evictIfFull() {
     if (this.map.size < SIM.beliefsPerAgent) return;
-    let worst = null, worstScore = Infinity;
+    let worst: BeliefState | null = null, worstScore = Infinity;
     for (const b of this.map.values()) {
       // PLACES-AS-PERCEPTS (Phase 2a): never evict the observer's OWN HOME belief — it is the
       // agent's cognition-visible housing state (homeBelief), which must survive a long
@@ -127,7 +158,7 @@ export class BeliefStore {
 
   // Direct sighting: overwrite with ground truth at full confidence. Seeing for
   // yourself RESETS provenance — a first-hand look beats any tale (hops -> 0).
-  observe(subjectId, perceivedFaction, pos, tick, hostile) {
+  observe(subjectId: EntityId, perceivedFaction: string | null, pos: THREE.Vector3, tick: number, hostile: boolean): BeliefState {
     const b = this._ensure(subjectId);
     b.lastFaction = perceivedFaction;
     // record the observed HEADING (unit direction of motion): the displacement since I
@@ -160,9 +191,10 @@ export class BeliefStore {
   // Social merge: adopt another agent's belief if it's more certain than ours.
   // Confidence is capped (second-hand) and faded (per hop) — provenance-aware —
   // and the CONTENT garbles in the retelling (the telephone game): see _garble.
-  mergeFrom(other /* BeliefState */, src /* SOURCE.* */) {
+  mergeFrom(other: BeliefState | null | undefined /* BeliefState */, src: unknown /* SOURCE.* */) {
     if (!other) return;
-    const incoming = Math.min(other.confidence * SIM.gossipFalloff, src.conf, SIM.gossipCap);
+    const s = src as { tag: string; conf: number };   // a SOURCE.* descriptor
+    const incoming = Math.min(other.confidence * SIM.gossipFalloff, s.conf, SIM.gossipCap);
     let b = this.map.get(other.subjectId);
     if (b && b.confidence >= incoming) {
       // we already know it fresher — keep our facts, but talk still colours opinion.
@@ -176,7 +208,7 @@ export class BeliefStore {
     b.lastPos.copy(other.lastPos);
     b.lastTick = other.lastTick;
     b.confidence = incoming;
-    b.source = src.tag;
+    b.source = s.tag;
     b.hops = Math.min(HEARSAY.maxHops, ((other.hops || 0) + 1));   // one more mouth removed
     if (other.hostile) b.hostile = true;
     b.suspicion = Math.max(b.suspicion, other.suspicion * 0.6);
@@ -194,7 +226,7 @@ export class BeliefStore {
   //    pure talk), bounded by how garbled the tale already is (hops).
   // `adopt` = we took this belief whole (fresh/less-certain); else we only let talk
   // nudge a belief we already hold. Clamped + gated; never throws (the freeze lesson).
-  _garble(b, other, adopt) {
+  _garble(b: BeliefState, other: BeliefState, adopt: boolean) {
     try {
       const s = other.standing || 0;
       if (Math.abs(s) >= HEARSAY.chargeThresh) {
@@ -214,7 +246,7 @@ export class BeliefStore {
   }
 
   // Deception: forcibly write a (possibly false) belief into this store.
-  plant(subjectId, { faction, pos, tick, hostile, suspicion, confidence }) {
+  plant(subjectId: EntityId, { faction, pos, tick, hostile, suspicion, confidence }: PlantOpts): BeliefState {
     const b = this._ensure(subjectId);
     if (faction !== undefined) b.lastFaction = faction;
     if (pos) b.lastPos.copy(pos);
@@ -227,10 +259,10 @@ export class BeliefStore {
     return b;
   }
 
-  erase(subjectId) { this.map.delete(subjectId); }
+  erase(subjectId: EntityId) { this.map.delete(subjectId); }
 
   // Per-second decay of certainty and suspicion.
-  decay(dt) {
+  decay(dt: number) {
     for (const b of this.map.values()) {
       b.confidence = Math.max(0, b.confidence - SIM.confidenceDecay * dt);
       b.suspicion = Math.max(0, b.suspicion - SIM.suspicionDecay * dt);
@@ -254,7 +286,13 @@ export class BeliefStore {
 //   `belief`   — the BeliefState about the quarry (already updated to last sighting).
 //   `intent`   — 'flee'|'raid'|'hunt'|null, computed by the caller from context.
 //   `map`      — the shared MentalMap (ctx.map); `now` — current sim-time (TTL stamp).
-export function inferDestination(observer, belief, intent, map, now) {
+export function inferDestination(
+  observer: { townId?: number | null } | null | undefined,
+  belief: BeliefState | null | undefined,
+  intent: string | null,
+  map: MentalMap | null | undefined,
+  now: number,
+) {
   try {
     if (!belief || !map) return;
     const last = belief.lastPos;
@@ -262,7 +300,7 @@ export function inferDestination(observer, belief, intent, map, now) {
     const moving = Math.hypot(hx, hz) > 1e-3;
     const places = map.known(observer && observer.townId, last, MAP.knownPlaces);
 
-    let best = null, score = -Infinity;
+    let best: Place | null = null, score = -Infinity;
     for (const place of places) {
       let s = 0;
       if (moving) s += headingMatch(hx, hz, last, place, map) * MAP.wHeading;
@@ -297,7 +335,7 @@ export function inferDestination(observer, belief, intent, map, now) {
 // last position to a candidate place, clamped to [0,1] (a place BEHIND the heading scores
 // 0). The doc's headingMatch(b.lastHeading, map.dirTo(b.lastPos, place)). Static math.
 const _dir = new THREE.Vector3();
-function headingMatch(hx, hz, fromPos, place, map) {
+function headingMatch(hx: number, hz: number, fromPos: THREE.Vector3, place: Place, map: MentalMap) {
   map.dirTo(fromPos, place, _dir);
   const dot = hx * _dir.x + hz * _dir.z;
   return dot > 0 ? (dot > 1 ? 1 : dot) : 0;

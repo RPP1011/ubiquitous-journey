@@ -15,6 +15,7 @@
 // acts on that — the canonical "mistake a scarecrow for a person" case.
 
 import * as THREE from 'three';
+import type { Percept, PerceptKind } from '../../types/sim.js';
 
 export const PERCEPT_KIND = {
   PERSON:    'person',     // a living agent (the normal case — Agent.percept-shaped)
@@ -27,12 +28,12 @@ export const PERCEPT_KIND = {
   // DISCOVERS the loss by sight (the homecoming) rather than being told telepathically.
   BUILDING:  'building',
   // future: CORPSE, STATUE, ILLUSION, MIMIC … all just "appear as a person" to perception
-};
+} as const;
 
 // What an observer can perceive a thing AS — the appearance vocabulary a belief records.
 // (Today an appearance is just a faction + the implicit "it's a person"; this is the hook
 //  for richer mistaken-identity later, e.g. believing a friend is a foe.)
-export function appearanceOf(thing) {
+export function appearanceOf(thing: { disguiseFaction?: string | null; faction?: string | null }) {
   // a disguise overrides true faction (intrigue); a prop projects its dressed faction.
   return thing.disguiseFaction || thing.faction || 'unknown';
 }
@@ -43,8 +44,20 @@ export function appearanceOf(thing) {
 // updates, progression, memory, epithets) skips it via its existing `!agent` guards. That
 // absence is the whole test: an agent can hunt and strike it believing it a person, and not
 // one system that assumes a real mind behind the body will fire or fault.
-export class Scarecrow {
-  constructor({ id, x, z, appearsAs = 'bandit', hp = 40 }) {
+export class Scarecrow implements Percept {
+  id: number | string;
+  kind: PerceptKind;
+  faction: string;
+  disguiseFaction: string | null;
+  alive: boolean;
+  hp: number;
+  combatant: boolean;
+  controlled: boolean;
+  agent: null;
+  pos: THREE.Vector3;
+  root: { position: THREE.Vector3 };
+
+  constructor({ id, x, z, appearsAs = 'bandit', hp = 40 }: { id: number | string; x: number; z: number; appearsAs?: string; hp?: number }) {
     this.id = id;
     this.kind = PERCEPT_KIND.SCARECROW;   // TRUE nature — unreadable by agents
     this.faction = appearsAs;             // the faction it's DRESSED as (what it appears to be)
@@ -63,8 +76,8 @@ export class Scarecrow {
 
   // --- the hittable BODY surface (read by resolveCombat as a target) ---
   isHitActive() { return false; }                 // a scarecrow never swings
-  torsoCenter(out) { return out.copy(this.pos).setY(1.0); }
-  takeHit(_dmg) {                                  // absorb the blow; "die" (topple) at 0 hp
+  torsoCenter(out: THREE.Vector3) { return out.copy(this.pos).setY(1.0); }
+  takeHit(_dmg: number): 'blocked' | 'hit' | 'dead' {  // absorb the blow; "die" (topple) at 0 hp
     this.hp -= (_dmg || 0);
     if (this.hp <= 0 && this.alive) { this.alive = false; return 'dead'; }
     return this.alive ? 'hit' : 'blocked';

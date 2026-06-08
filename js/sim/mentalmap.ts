@@ -17,13 +17,28 @@
 import * as THREE from 'three';
 import { LANDMARKS } from '../arena.js';
 import { TOWNS, MAP } from './simconfig.js';
+import type {
+  Place as IPlace, MentalMap as IMentalMap, World, Town, Vec2Like,
+} from '../../types/sim.js';
 
 const _tmp = new THREE.Vector3();
 
+// MAP.affordances is a closed config object; look up an affordance list by an arbitrary
+// kind string (an unknown kind → []). One typed view of the config map.
+const affordancesFor = (kind: string): string[] =>
+  ((MAP.affordances as Record<string, string[]>) && (MAP.affordances as Record<string, string[]>)[kind]) || [];
+
 // A PLACE — an immutable snapshot of one static location. `pos` is a CLONED vector
 // (never a live mesh/_wp reference — those must not leak into the shared map).
-export class Place {
-  constructor(id, kind, pos, affords /* string[] */, townId = null) {
+export class Place implements IPlace {
+  id: string;
+  kind: string;
+  pos: THREE.Vector3;
+  name: string;
+  townId: number | null;
+  _affordSet: Set<string>;
+
+  constructor(id: string, kind: string, pos: { x?: number; z?: number; clone?: () => THREE.Vector3 }, affords: string[] /* string[] */, townId: number | null = null) {
     this.id = id;
     this.kind = kind;
     this.pos = pos.clone ? pos.clone() : new THREE.Vector3(pos.x || 0, 0, pos.z || 0);
@@ -34,10 +49,14 @@ export class Place {
   }
   // OR-semantics, matching the spec's affords('exit','conceal'): does this place
   // afford ANY of the queried tags?
-  affords(...tags) { for (const t of tags) if (this._affordSet.has(t)) return true; return false; }
+  affords(...tags: string[]) { for (const t of tags) if (this._affordSet.has(t)) return true; return false; }
 }
 
-export class MentalMap {
+export class MentalMap implements IMentalMap {
+  places: IPlace[];
+  _byTown: Map<number, IPlace[]>;
+  _world: IPlace[];
+
   constructor() {
     this.places = [];
     this._byTown = new Map();             // townId -> Place[] (town-scoped gates/centre/POIs)
@@ -46,7 +65,7 @@ export class MentalMap {
 
   // Build ONCE from a snapshot of static geography. PLAIN ARGS (never `sim`): world is
   // a World (its .pois), towns is the spawned town list (or undefined for bare sub-sims).
-  static build(world, towns) {
+  static build(world: World | null | undefined, towns?: Town[] | null): MentalMap {
     const m = new MentalMap();
     try { m._addLandmarks(); } catch { /* keep going */ }
     try { m._addTowns(towns); } catch { /* keep going */ }
@@ -54,7 +73,7 @@ export class MentalMap {
     return m;
   }
 
-  add(place) {
+  add(place: IPlace | null | undefined) {
     if (!place) return;
     this.places.push(place);
     if (place.townId == null) { this._world.push(place); return; }
@@ -68,14 +87,14 @@ export class MentalMap {
   _addLandmarks() {
     if (!LANDMARKS) return;
     for (const L of LANDMARKS) {
-      const affords = (MAP.affordances && MAP.affordances[L.kind]) || [];
+      const affords = affordancesFor(L.kind);
       this.add(new Place(`L:${L.name}`, L.kind, new THREE.Vector3(L.x, 0, L.z), affords, null));
     }
   }
 
   // town GATES (computed from TOWNS.wall, mirroring walls.js GATES math) + town CENTRES.
   // Guarded: no spawned towns, or no wall config, simply adds nothing.
-  _addTowns(towns) {
+  _addTowns(towns: Town[] | null | undefined) {
     if (!towns || !towns.length) return;
     const wall = (TOWNS && TOWNS.wall) || {};
     const R = wall.radius || 0;
@@ -99,7 +118,7 @@ export class MentalMap {
   // resource POIs — snapshot at build time (positions vary per rebuild; the array is
   // live, so we clone each pos). Assign a townId by nearest town centre. We admit the
   // market plus a few nearest resource POIs per town; `known()` slices to the cap anyway.
-  _addPOIs(world, towns) {
+  _addPOIs(world: World | null | undefined, towns: Town[] | null | undefined) {
     const pois = world && world.pois;
     if (!pois || !pois.length) return;
     const centres = (towns && towns.length)
@@ -109,7 +128,7 @@ export class MentalMap {
     for (const poi of pois) {
       if (!poi || !poi.pos) continue;
       const kind = poi.kind;
-      const affords = (MAP.affordances && MAP.affordances[kind]) || [];
+      const affords = affordancesFor(kind);
       // nearest town centre owns this POI (null when no spawned towns -> world-wide).
       let townId = null;
       if (centres) {
@@ -127,7 +146,7 @@ export class MentalMap {
   // first. World-wide landmarks are ALWAYS included; a town's gates/centre/POIs are
   // added when townId is known. Robust to townId == null/undefined (the harness/Stage
   // case): returns landmarks only — never `Map.get(undefined)`. Never throws.
-  known(townId, near, cap) {
+  known(townId: number | null | undefined, near: Vec2Like | null, cap?: number): IPlace[] {
     try {
       const out = this._world.slice();              // landmarks: known to all
       if (townId != null) {
@@ -146,10 +165,10 @@ export class MentalMap {
   // DORMANT forward-hook for Phase 2's nearKnown(): the nearest known place that
   // affords any of `affords` within `range` of `fromPos`. Consumed by nothing in
   // Phase 1 (exists so it cannot be mistaken for a leak vector). Never throws.
-  nearest(affords, fromPos, townId, range = Infinity) {
+  nearest(affords: string | string[], fromPos: Vec2Like, townId: number | null | undefined, range = Infinity): IPlace | null {
     try {
       const tags = Array.isArray(affords) ? affords : [affords];
-      let best = null, bd = range * range;
+      let best: IPlace | null = null, bd = range * range;
       for (const p of this.known(townId, fromPos, this.places.length)) {
         if (!p.affords(...tags)) continue;
         const d = _d2(p.pos, fromPos);
@@ -161,7 +180,7 @@ export class MentalMap {
 
   // Unit direction from `fromPos` toward a destination place `dest`, written into `out`
   // (static math; a null dest yields the zero vector). `dest`, not `to` (scan-clean).
-  dirTo(fromPos, dest, out) {
+  dirTo(fromPos: Vec2Like | null | undefined, dest: IPlace | null, out?: THREE.Vector3): THREE.Vector3 {
     const o = out || new THREE.Vector3();
     try {
       if (!fromPos || !dest) return o.set(0, 0, 0);
@@ -174,7 +193,7 @@ export class MentalMap {
 
   // Raw Euclidean cost from `fromPos` to destination place `dest` (memoized terrain
   // cost is a Phase-2 upgrade). A null dest costs Infinity. Never throws.
-  cost(fromPos, dest) {
+  cost(fromPos: Vec2Like | null | undefined, dest: IPlace | null): number {
     try {
       if (!fromPos || !dest) return Infinity;
       return Math.hypot(dest.pos.x - fromPos.x, dest.pos.z - fromPos.z);
@@ -183,7 +202,7 @@ export class MentalMap {
 }
 
 // squared ground-plane distance between a Place pos and a query point (both static / belief).
-function _d2(p, q) {
+function _d2(p: Vec2Like, q: Vec2Like) {
   const dx = p.x - q.x, dz = p.z - q.z;
   return dx * dx + dz * dz;
 }

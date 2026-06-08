@@ -25,9 +25,21 @@
 
 import * as THREE from 'three';
 import { SURVEYOR, TOWNS } from './simconfig.js';
+import type { FullCtx } from '../../types/sim.js';
+
+// `Simulation` lives in another cluster (still .js) — it crosses this file as `any`
+// deliberately (opaque to this port). A town is a sim.towns entry, typed loosely here.
+type Sim = any;             // Simulation is out-of-cluster
+interface Town { id: number; center: THREE.Vector3; radius?: number; }
+interface Cursor { lane: number; ring: number; }
 
 export class Surveyor {
-  constructor(sim) {
+  sim: Sim;
+  _acc: number;
+  stats: { plots: number; taverns: number };
+  _cursors: Map<number, Cursor>;
+
+  constructor(sim: Sim) {
     this.sim = sim;
     this._acc = 0;
     this.stats = { plots: 0, taverns: 0 };
@@ -41,7 +53,7 @@ export class Surveyor {
   // PURE-MATH plot allocation. `town` is a sim.towns entry { id, center:Vector3,
   // radius }. Returns { pos:Vector3 (y=0), yaw } facing the core lane, or null if
   // no free slot fits inside the home band (caller treats null as "no room, later").
-  allocatePlot(town, footprint) {
+  allocatePlot(town: Town | null | undefined, footprint: { w: number; d: number }): { pos: THREE.Vector3; yaw: number } | null {
     if (!town || !town.center) return null;
     const center = town.center;
     const lanes = Math.max(1, SURVEYOR.lanes | 0);
@@ -86,7 +98,7 @@ export class Surveyor {
 
   // reject a candidate that sits too close (x/z, squared) to any existing build
   // plot/building OR any world POI. Ground truth — this is the execution layer.
-  _collides(x, z, clear2) {
+  _collides(x: number, z: number, clear2: number): boolean {
     const bs = this.sim.buildSites;
     if (bs && bs.plots) {
       const plots = bs.plots();
@@ -108,7 +120,7 @@ export class Surveyor {
     return false;
   }
 
-  _cursorFor(townId) {
+  _cursorFor(townId: number): Cursor {
     let c = this._cursors.get(townId);
     if (!c) { c = { lane: 0, ring: 0 }; this._cursors.set(townId, c); }
     return c;
@@ -117,7 +129,7 @@ export class Surveyor {
   // commission ONE public tavern for a town once it's grown and has none. The town
   // "fund" is townsfolk labour + wood (handled by BuildSites), NOT gold — so no
   // money is minted or burned. Private; called from tick per town.
-  _maybeCommissionTavern(town, ctx) {
+  _maybeCommissionTavern(town: Town, ctx: FullCtx) {
     if (!SURVEYOR.tavernEnabled) return;
     const bs = this.sim.buildSites;
     if (!bs || !bs.commissionPublic) return;
@@ -144,7 +156,7 @@ export class Surveyor {
   // fixed-tick: survey each town for a needed public tavern. Self-throttled and
   // fully guarded — never throws or stalls the loop (freeze lesson). Inert until a
   // town is actually spawned (bare controlled sub-sims get nothing, like Defenses).
-  tick(ctx, dt) {
+  tick(ctx: FullCtx, dt: number) {
     try {
       if (!SURVEYOR.enabled || !this.sim._spawned) return;
       this._acc += dt;

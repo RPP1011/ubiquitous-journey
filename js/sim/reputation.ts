@@ -11,9 +11,11 @@
 // over time (decay) so reputation is a living, fading thing — matching the
 // belief layer's confidence/suspicion decay model.
 
+import * as THREE from 'three';
 import { SIM, FACTIONS, factionHostile } from './simconfig.js';
+import type { Reputation as IReputation, Agent, EntityId } from '../../types/sim.js';
 
-const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
+const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
 
 // Deed table: each deed moves the *personal* standing of every witness and adds
 // a smaller *faction*-wide nudge (rollup). Signs: positive = likes you more.
@@ -33,10 +35,17 @@ export const REP = {
   factionDecayPerSec: 1 / 900, // faction rollups fade toward neutral more slowly
 };
 
-export class Reputation {
+interface Deed { personal: number; faction: number; label: string; }
+// typed lookup of an arbitrary deed key (REP.deeds is closed; key may not match → undefined).
+const deedOf = (key: string): Deed | undefined => (REP.deeds as Record<string, Deed>)[key];
+
+export class Reputation implements IReputation {
+  playerId: EntityId | null;
+  faction: Record<string, number>;
+
   // playerId is needed so we only ever touch the player's slot in each NPC's
   // belief store (NPC↔NPC opinions are the sim's business, not ours).
-  constructor(playerId = null) {
+  constructor(playerId: EntityId | null = null) {
     this.playerId = playerId;
     // coarse per-faction opinion of the player (-1..1). Outsider is the player's
     // own faction so it starts (and stays) friendly to itself.
@@ -44,30 +53,30 @@ export class Reputation {
     for (const f in FACTIONS) this.faction[f] = f === 'outsider' ? 1 : 0;
   }
 
-  setPlayer(id) { this.playerId = id; }
+  setPlayer(id: EntityId) { this.playerId = id; }
 
   // --- reads ----------------------------------------------------------------
 
   // What this NPC thinks of the player, in -1..1. Falls back to the NPC's
   // faction bias when it holds no personal belief about the player yet.
-  standing(npcAgent, playerId = this.playerId) {
+  standing(npcAgent: Agent | null, playerId: EntityId | null = this.playerId) {
     if (!npcAgent || playerId == null) return 0;
     const b = npcAgent.beliefs.get(playerId);
     if (b) return clamp(b.standing, -1, 1);
     return this.factionStanding(npcAgent.faction);
   }
 
-  factionStanding(faction) { return this.faction[faction] ?? 0; }
+  factionStanding(faction: string) { return this.faction[faction] ?? 0; }
 
   // Will this NPC treat the player as an enemy on reputation grounds alone?
   // (isHostile in simulation.js already checks standing < hostileThreshold; this
   // is the same predicate exposed for UI / dialogue gating.)
-  isHostileTo(npcAgent, playerId = this.playerId) {
+  isHostileTo(npcAgent: Agent | null, playerId: EntityId | null = this.playerId) {
     return this.standing(npcAgent, playerId) < REP.hostileThreshold;
   }
 
   // A short human-readable label for "what they think of you" (inspector/dialogue).
-  describe(npcAgent, playerId = this.playerId) {
+  describe(npcAgent: Agent | null, playerId: EntityId | null = this.playerId) {
     const s = this.standing(npcAgent, playerId);
     if (s <= REP.hostileThreshold) return 'hostile';
     if (s < -0.25) return 'wary';
@@ -80,7 +89,7 @@ export class Reputation {
   // --- writes ---------------------------------------------------------------
 
   // Coarse faction-wide nudge toward the player.
-  bumpFaction(faction, delta) {
+  bumpFaction(faction: string | null, delta: number) {
     if (faction == null) return;
     if (this.faction[faction] == null) this.faction[faction] = 0;
     this.faction[faction] = clamp(this.faction[faction] + delta, -1, 1);
@@ -89,8 +98,8 @@ export class Reputation {
   // Apply a single deed to one NPC witness: move its personal standing toward
   // the player and record the deed on its BeliefState (so the inspector / gossip
   // can surface *why* it feels that way). Returns the witness's new standing.
-  applyDeedTo(witness, deedKey, now = 0, playerId = this.playerId) {
-    const deed = REP.deeds[deedKey];
+  applyDeedTo(witness: Agent, deedKey: string, now = 0, playerId: EntityId | null = this.playerId) {
+    const deed = deedOf(deedKey);
     if (!deed || !witness || playerId == null || witness.id === playerId) return 0;
     // _ensure isn't public; observe()/get() are. The player has surely been
     // perceived if witnessed a deed, but be defensive and create-on-demand.
@@ -116,10 +125,10 @@ export class Reputation {
   // differs. Returns the number of witnesses affected.
   //
   // agents: full agent list; pos: THREE.Vector3 of where it happened.
-  witnessDeed(agents, deedKey, pos, now = 0, subjectId = null, playerId = this.playerId) {
-    const deed = REP.deeds[deedKey];
+  witnessDeed(agents: Agent[], deedKey: string, pos: THREE.Vector3 | null, now = 0, subjectId: EntityId | null = null, playerId: EntityId | null = this.playerId) {
+    const deed = deedOf(deedKey);
     if (!deed || playerId == null) return 0;
-    const factionsHit = new Set();
+    const factionsHit = new Set<string>();
     let n = 0;
     for (const w of agents) {
       if (!w || !w.alive || w.controlled || w.id === playerId) continue;
@@ -140,7 +149,7 @@ export class Reputation {
   // `selling` = the NPC is selling TO the player (favoured player pays less);
   // when the NPC is buying FROM the player a favoured player is paid more, so we
   // flip the sign. standing in -1..1 maps linearly to ±priceFavorMax.
-  favoredPrice(base, standing, selling = true) {
+  favoredPrice(base: number, standing: number, selling = true) {
     const favor = clamp(standing, -1, 1) * REP.priceFavorMax;
     const factor = selling ? (1 - favor) : (1 + favor);
     return +(base * factor).toFixed(2);
@@ -150,7 +159,7 @@ export class Reputation {
 
   // Personal standings drift back toward each NPC's faction bias; faction
   // rollups fade toward neutral. Call once per frame (dt seconds) from the sim.
-  decay(dt, agents = null, playerId = this.playerId) {
+  decay(dt: number, agents: Agent[] | null = null, playerId: EntityId | null = this.playerId) {
     // faction rollups -> 0 (outsider stays pinned friendly to itself)
     for (const f in this.faction) {
       if (f === 'outsider') continue;

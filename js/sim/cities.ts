@@ -26,9 +26,21 @@
 import { CityGrid } from '../world/cityGrid.js';
 import { CITY } from './simconfig.js';
 import { BEAT } from './chronicle.js';
+import type { FullCtx } from '../../types/sim.js';
+
+// `Simulation` lives in another cluster (still .js) and `CityGrid` is an untyped
+// world/* module — both cross this file as `any` deliberately (opaque to this port).
+type Sim = any;             // Simulation is out-of-cluster (still .js)
+type Grid = any;            // CityGrid (untyped world/* module)
 
 export class Cities {
-  constructor(sim) {
+  sim: Sim;
+  _grids: Map<number, Grid>;
+  _acc: number;
+  _foundSince: Map<string, number>;
+  stats: { grids: number; founded: number };
+
+  constructor(sim: Sim) {
     this.sim = sim;
     this._grids = new Map();        // townId -> CityGrid
     this._acc = 0;                  // emergent-founding self-throttle accumulator
@@ -55,11 +67,11 @@ export class Cities {
   // LOOKUP the construction system uses. Returns the town's CityGrid or null;
   // lazy-seeds defensively if a town appeared after init (an emergent founding, or a
   // commission racing a fresh spawn) so a stale townId never returns null mid-run.
-  gridFor(townId) {
+  gridFor(townId: number): Grid | null {
     try {
       let g = this._grids.get(townId);
       if (g) return g;
-      const town = (this.sim.towns || []).find((t) => t && t.id === townId);
+      const town = (this.sim.towns || []).find((t: { id: number }) => t && t.id === townId);
       if (town) { g = new CityGrid(town.center, {}); this._grids.set(townId, g); this.stats.grids++; return g; }
       return null;
     } catch { return null; }
@@ -69,14 +81,14 @@ export class Cities {
   // town. Returns the CityGrid.claimPlot result — { centerPos:{x,z}, yaw, tiles,
   // baseLevel, topLevel, tilesW, tilesD } — or null (city full / no such town).
   // Guarded so a bad townId can never throw inside the build commission.
-  claimPlot(townId, w, d, levels = 1) {
+  claimPlot(townId: number, w: number, d: number, levels = 1) {
     try { const g = this.gridFor(townId); return g ? g.claimPlot(w, d, levels) : null; }
     catch { return null; }
   }
 
   // RELEASE a footprint back to the grid (a build was abandoned / a building ruined),
   // so the plot frees up for the town to rebuild on. Guarded no-op on bad args.
-  release(townId, tiles) {
+  release(townId: number, tiles: unknown) {
     try { const g = this.gridFor(townId); if (g && tiles) g.release(tiles); }
     catch { /* */ }
   }
@@ -86,7 +98,7 @@ export class Cities {
   // existing city centre founds a new one — but it is hard-capped by CITY.found.
   // maxCities so it can never run away. Ships DISABLED (CITY.found.enabled default
   // false) — drop it the moment it risks the green build; the rest of Cities stands.
-  tick(ctx, dt) {
+  tick(ctx: FullCtx, dt: number) {
     try {
       if (!CITY.enabled || !this.sim._spawned) return;
       this._acc += dt;
@@ -103,7 +115,7 @@ export class Cities {
   // densest cell whose centroid sits FAR from every existing town, and — if that
   // cluster has PERSISTED long enough — found a new town there. All numbers come from
   // CITY.found (tuning lives in config). Fully guarded.
-  _maybeFound(ctx) {
+  _maybeFound(ctx: FullCtx) {
     const F = CITY.found || {};
     const minDist = F.minDist || 120;
     const minCluster = F.minCluster || 8;
@@ -112,7 +124,7 @@ export class Cities {
     const cell = Math.max(8, minDist * 0.5);   // coarse cell ~half the keep-out radius
 
     // bucket living, autonomous townsfolk by coarse cell; track each cell's centroid.
-    const cells = new Map();
+    const cells = new Map<string, { n: number; sx: number; sz: number }>();
     for (const a of this.sim.agents) {
       if (!a || !a.alive || !a.autonomous || a.faction !== 'townsfolk' || !a.pos) continue;
       const cx = Math.floor(a.pos.x / cell), cz = Math.floor(a.pos.z / cell);
@@ -123,7 +135,7 @@ export class Cities {
     }
 
     // the densest cell that clears the cluster floor AND sits far from every town.
-    let best = null, bestN = 0, bestKey = null;
+    let best: { x: number; z: number } | null = null, bestN = 0, bestKey: string | null = null;
     for (const [k, c] of cells) {
       if (c.n < minCluster || c.n <= bestN) continue;
       const x = c.sx / c.n, z = c.sz / c.n;
@@ -140,9 +152,9 @@ export class Cities {
     // PERSISTENCE: a cluster must hold for persist seconds before it founds a town —
     // a momentary crowd (a passing caravan, a battle) must not spawn a city. Prune the
     // stale watch-keys so the map can't grow unbounded.
-    if (!best) { this._foundSince.clear(); return; }
+    if (!best || bestKey == null) { this._foundSince.clear(); return; }
     for (const k of [...this._foundSince.keys()]) if (k !== bestKey) this._foundSince.delete(k);
-    let since = this._foundSince.get(bestKey);
+    const since = this._foundSince.get(bestKey);
     if (since == null) { this._foundSince.set(bestKey, t); return; }
     if ((t - since) < persist) return;                                // not persistent yet
     this._foundSince.delete(bestKey);
@@ -153,7 +165,7 @@ export class Cities {
   // FOUND a new town at a centre: push a town record onto sim.towns (so all the
   // town-anchored subsystems see it), seed its grid, and chronicle the moment. No
   // gold is minted — a founding is purely a new anchor + an empty grid. Guarded.
-  _found(center, ctx) {
+  _found(center: { x: number; z: number }, ctx: FullCtx) {
     try {
       const towns = this.sim.towns || (this.sim.towns = []);
       const id = towns.length;
@@ -175,13 +187,13 @@ export class Cities {
   }
 
   // pick a not-yet-used name from the town name pool, falling back to an ordinal.
-  _foundName(id) {
+  _foundName(id: number): string {
     try {
       const names = (this.sim.towns && this.sim.towns.length && (this.sim._townNames || null)) || null;
       void names;
       // The configured pool lives on the spawn side; here we just avoid collisions
       // with names already in use, else synthesise a stable ordinal name.
-      const used = new Set((this.sim.towns || []).map((t) => t && t.name));
+      const used = new Set((this.sim.towns || []).map((t: { name?: string }) => t && t.name));
       const pool = (this.sim.townNamePool || []);
       for (const n of pool) if (!used.has(n)) return n;
       return `Settlement ${id + 1}`;
