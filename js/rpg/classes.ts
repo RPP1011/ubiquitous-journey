@@ -7,10 +7,13 @@
 
 import { sigmoid, RPG } from './rpgconfig.js';
 import { comboKey } from './tags.js';
+import type {
+  ClassTemplate, ClassGrant, BehaviorProfile, Tag,
+} from '../../types/sim.js';
 
 // key is the stable identity (used as the Map key + CLASS_MILESTONES key);
 // name is the displayed [Bracketed] flavor name.
-export const CLASS_TEMPLATES = [
+export const CLASS_TEMPLATES: ClassTemplate[] = [
   { key: 'warrior',    name: '[Warrior]',
     requirements: [['MELEE', 6]],
     score_tags:   [['MELEE', 1.0], ['KILL', 0.8], ['DEFENSE', 0.4], ['RISK', 0.3]] },
@@ -68,10 +71,12 @@ export const CLASS_TEMPLATES = [
 ];
 
 // Fast lookup by key (used by Progression + milestone fallback).
-export const CLASS_BY_KEY = new Map(CLASS_TEMPLATES.map((t) => [t.key, t]));
+export const CLASS_BY_KEY: Map<string, ClassTemplate> = new Map(
+  CLASS_TEMPLATES.map((t) => [t.key, t]),
+);
 
 // Does the profile satisfy every requirement of a template?
-export function meetsRequirements(profile, template) {
+export function meetsRequirements(profile: BehaviorProfile, template: ClassTemplate): boolean {
   for (const [tag, thresh] of template.requirements) {
     if ((profile[tag] || 0) < thresh) return false;
   }
@@ -80,7 +85,7 @@ export function meetsRequirements(profile, template) {
 
 // weighted dot(profile, score_tags) -> sigmoid. This IS the class-match score
 // (0..1); reused for both grant-gating and XP routing (see xp.js).
-export function classMatchScore(profile, template) {
+export function classMatchScore(profile: BehaviorProfile, template: ClassTemplate): number {
   let dot = 0;
   for (const [tag, w] of template.score_tags) dot += (profile[tag] || 0) * w;
   // center the logistic so a modest-but-clear profile lands above the gate
@@ -89,9 +94,9 @@ export function classMatchScore(profile, template) {
 
 // Sum of all behavior weight a profile carries (the cheap "have they done
 // enough of anything yet?" gate before we bother matching).
-export function behaviorSum(profile) {
+export function behaviorSum(profile: BehaviorProfile): number {
   let s = 0;
-  for (const k in profile) s += profile[k];
+  for (const k in profile) s += profile[k as Tag] || 0;
   return s;
 }
 
@@ -99,9 +104,12 @@ export function behaviorSum(profile) {
 // the templates that newly qualify, each with its match score, sorted best
 // first. Pure — the caller (Progression) decides how many to actually grant
 // (respecting maxClasses) and how to handle the procedural fallback.
-export function matchClasses(profile, heldKeys = new Set()) {
+export function matchClasses(
+  profile: BehaviorProfile,
+  heldKeys: Set<string> = new Set(),
+): ClassGrant[] {
   if (behaviorSum(profile) <= RPG.behaviorSumGate) return [];
-  const grants = [];
+  const grants: ClassGrant[] = [];
   for (const t of CLASS_TEMPLATES) {
     if (heldKeys.has(t.key)) continue;
     if (!meetsRequirements(profile, t)) continue;
@@ -115,7 +123,7 @@ export function matchClasses(profile, heldKeys = new Set()) {
 // Procedural class generator: when behavior is strong but no template matches,
 // mint an [Adjective Base] class from the profile's two dominant tags so the
 // agent still gets a flavorful identity (spec's procedural fallback).
-const PROC_ADJ = {
+const PROC_ADJ: Record<string, string> = {
   MELEE: 'Iron', DEFENSE: 'Warded', KILL: 'Bloody', RISK: 'Reckless', BERSERK: 'Raging',
   DUEL: 'Poised', SMITHING: 'Forging', CRAFTING: 'Deft', TOOLMAKING: 'Tinkering',
   FARMING: 'Verdant', MINING: 'Deepdelving', WOODCUT: 'Timber', FORAGE: 'Wandering',
@@ -124,7 +132,7 @@ const PROC_ADJ = {
   ENDURANCE: 'Tireless', EXPLORE: 'Roaming', HEAL: 'Mending', WANDER: 'Drifting',
   HUNGER: 'Gaunt', FLEE: 'Fleet', STEALTH: 'Shadowed',
 };
-const PROC_BASE = {
+const PROC_BASE: Record<string, string> = {
   MELEE: 'Fighter', DEFENSE: 'Guardian', KILL: 'Slayer', RISK: 'Daredevil', BERSERK: 'Berserker',
   DUEL: 'Bladedancer', SMITHING: 'Smith', CRAFTING: 'Artisan', TOOLMAKING: 'Toolwright',
   FARMING: 'Tiller', MINING: 'Delver', WOODCUT: 'Logger', FORAGE: 'Gatherer',
@@ -134,8 +142,14 @@ const PROC_BASE = {
   HUNGER: 'Scavenger', FLEE: 'Runner', STEALTH: 'Prowler',
 };
 
-export function proceduralName(profile) {
-  const ranked = Object.keys(profile).sort((a, b) => profile[b] - profile[a]);
+function rankTags(profile: BehaviorProfile): string[] {
+  return Object.keys(profile).sort(
+    (a, b) => (profile[b as Tag] || 0) - (profile[a as Tag] || 0),
+  );
+}
+
+export function proceduralName(profile: BehaviorProfile): string {
+  const ranked = rankTags(profile);
   const top = ranked[0];
   const second = ranked[1] || top;
   const adj = PROC_ADJ[second] || PROC_ADJ[top] || 'Wandering';
@@ -145,7 +159,6 @@ export function proceduralName(profile) {
 
 // A stable key for a procedural class so it isn't re-minted every interval and
 // can be looked up like a template key.
-export function proceduralKey(profile) {
-  const ranked = Object.keys(profile).sort((a, b) => profile[b] - profile[a]);
-  return 'proc:' + comboKey(ranked.slice(0, 2));
+export function proceduralKey(profile: BehaviorProfile): string {
+  return 'proc:' + comboKey(rankTags(profile).slice(0, 2));
 }

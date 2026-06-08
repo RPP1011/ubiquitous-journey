@@ -18,6 +18,16 @@ import {
 import { significance, classMatchScore, xpFromEvent, xpForLevel } from './xp.js';
 import { bus, makeEvent } from './events.js';
 import { recordDeed, recordClassXp } from './xpstats.js';
+import type {
+  Agent, ActionEvent, BehaviorProfile, Tag, AbilitySpec, CatalogModule,
+  ClassInstance, ClassTemplate, Significance,
+} from '../../types/sim.js';
+
+// generate.js generates an ability spec themed by a class + tier index.
+type GenModule = { generateAbility: (cls: GenClassDesc, tier: number) => AbilitySpec | null };
+type GenClassDesc = { classKey: string; name: string; tags: Tag[] };
+// ir.validate is the spec trust-boundary whitelist (defensive re-check).
+type ValidateFn = (spec: unknown) => boolean;
 
 // --- optional abilities catalog (lazy, fault-tolerant) ----------------------
 // We try to import the catalog once; if it isn't there yet (or throws), we just
@@ -26,9 +36,9 @@ import { recordDeed, recordClassXp } from './xpstats.js';
 // crosses a tier and the catalog names NO ability for it (every procedural class,
 // and template classes past their authored milestones), we MINT one from the
 // class's dominant tags. Both imports degrade to "no abilities" if absent.
-let _catalog = null;          // { ABILITY_CATALOG, CLASS_MILESTONES } or null
-let _gen = null;              // { generateAbility } or null
-let _validate = null;         // ir.validate (defensive re-check before grant)
+let _catalog: CatalogModule | null = null;   // { ABILITY_CATALOG, CLASS_MILESTONES } or null
+let _gen: GenModule | null = null;           // { generateAbility } or null
+let _validate: ValidateFn | null = null;     // ir.validate (defensive re-check before grant)
 let _catalogTried = false;
 function ensureCatalog() {
   if (_catalogTried) return;
@@ -55,7 +65,21 @@ function ensureCatalog() {
 const TIER_LEVELS = [...RPG.tierLevels].sort((a, b) => a - b);
 
 export class Progression {
-  constructor(agent) {
+  agent: Agent;
+  behavior_profile: BehaviorProfile;
+  classes: Map<string, ClassInstance>;
+  abilities: Map<string, AbilitySpec>;
+  cooldowns: Map<string, number>;
+  _milestonesFired: Set<string>;
+  _comboSeen: Set<number>;
+  _deedLast: Map<string, number>;
+  _lastMatch: number;
+  _lastTick: number;
+  totalLevel: number;
+  narrativeBeats: number;
+  narrativeXp: number;
+
+  constructor(agent: Agent) {
     this.agent = agent;
 
     // weighted behavior tallies: tag -> accumulated weight (decays slowly)
@@ -87,7 +111,7 @@ export class Progression {
   // ---------------------------------------------------------------------------
   // EVENT INTAKE: accumulate behavior + award XP. Called by the bus router in
   // simulation.js for events whose actorId is this agent.
-  onEvent(ev, now) {
+  onEvent(ev: ActionEvent, now: number): void {
     if (!ev || !ev.tags) return;
 
     // 1) accumulate weighted behavior (magnitude-scaled), clamped per tag
@@ -98,14 +122,14 @@ export class Progression {
     }
 
     // 2) compute the significance multiplier (novelty/risk/grind)
-    const sig = significance(ev, this, now);
+    const sig: Significance = significance(ev, this, now);
 
     // 3) route XP to the best-matching held classes (up to routeTopK). If the
     //    agent has no classes yet, XP is simply deferred until matching grants
     //    one — the behavior profile already recorded the deed.
     let totalGain = 0;
     if (this.classes.size) {
-      const scored = [];
+      const scored: Array<{ cls: ClassInstance; score: number }> = [];
       for (const cls of this.classes.values()) {
         const tmpl = CLASS_BY_KEY.get(cls.key);
         // procedural classes have no template; score them off behavior sum so
@@ -132,7 +156,7 @@ export class Progression {
 
   // add XP to a class, resolving level-ups against the canonical curve. Each
   // level-up re-checks ability milestones and emits a LEVEL ActionEvent.
-  _awardXp(cls, amount, now) {
+  _awardXp(cls: ClassInstance, amount: number, now: number): void {
     cls.xp += amount;
     let leveled = false;
     // loop in case a big award crosses several levels at once
@@ -149,12 +173,12 @@ export class Progression {
     if (leveled) {
       bus.emit(makeEvent({
         actorId: this.agent.id, verb: 'level', tags: [],
-        magnitude: cls.level, t: now,
+        magnitude: cls.level, targetId: undefined, t: now,
       }));
     }
   }
 
-  _sumLevels() {
+  _sumLevels(): number {
     let s = 0;
     for (const c of this.classes.values()) s += c.level;
     return Math.min(RPG.totalLevelCap, s);
@@ -163,12 +187,12 @@ export class Progression {
   // public: award flat XP (e.g. a quest/event reward) to the agent's primary
   // class. If the agent has no class yet, mint a generic [Adventurer] so the
   // reward isn't lost.
-  addXP(amount, now) {
+  addXP(amount: number, now?: number): void {
     if (!(amount > 0)) return;
     const t = typeof now === 'number' ? now : this._lastTick;   // callers may pass a meta object
     let cls = this.primaryClass();
-    if (!cls) { this._grantClass('adventurer', '[Adventurer]', t); cls = this.classes.get('adventurer'); }
-    this._awardXp(cls, amount, t);
+    if (!cls) { this._grantClass('adventurer', '[Adventurer]', t); cls = this.classes.get('adventurer') || null; }
+    if (cls) this._awardXp(cls, amount, t);
   }
 
   // public: award NARRATIVE-BEAT xp — the GRIND-IMMUNE channel (PHASE 1). The
@@ -183,7 +207,7 @@ export class Progression {
   //   salience  — 0..1 notability (reuse the same value the memory episode used)
   //   now       — sim time
   //   mult      — optional per-beat multiplier (e.g. goal-kind bonus)
-  addNarrativeXP(salience, now, mult = 1) {
+  addNarrativeXP(salience: number, now?: number, mult = 1): void {
     const s = Math.max(0, Math.min(1, salience || 0));
     if (s <= 0) return;
     const t = typeof now === 'number' ? now : this._lastTick;
@@ -207,7 +231,8 @@ export class Progression {
     // CLIMB (the spread signal: storied lives outlevel quiet ones) instead of
     // smearing the budget thin. Falls back to the primary (top by level) if the
     // profile scores nothing. The whole `pool` is granted once — no minting.
-    let best = null, bestScore = -1;
+    let best: ClassInstance | null = null;
+    let bestScore = -1;
     for (const cls of this.classes.values()) {
       const tmpl = CLASS_BY_KEY.get(cls.key);
       const score = tmpl ? classMatchScore(this.behavior_profile, tmpl) : 0.3;
@@ -223,7 +248,7 @@ export class Progression {
   // ---------------------------------------------------------------------------
   // PERIODIC: profile decay + class matching. Called every 6Hz tick from the
   // sim loop; the heavy matcher only runs on matchIntervalSec.
-  tick(now) {
+  tick(now: number): void {
     const dt = this._lastTick ? now - this._lastTick : 0;
     this._lastTick = now;
 
@@ -231,9 +256,9 @@ export class Progression {
     if (dt > 0 && RPG.profileDecayPerSec > 0) {
       const keep = Math.max(0, 1 - RPG.profileDecayPerSec * dt);
       for (const tag in this.behavior_profile) {
-        const v = this.behavior_profile[tag] * keep;
-        if (v < 0.01) delete this.behavior_profile[tag];
-        else this.behavior_profile[tag] = v;
+        const v = (this.behavior_profile[tag as Tag] || 0) * keep;
+        if (v < 0.01) delete this.behavior_profile[tag as Tag];
+        else this.behavior_profile[tag as Tag] = v;
       }
     }
 
@@ -243,7 +268,7 @@ export class Progression {
   }
 
   // grant newly-qualifying classes (respecting the cap + consolidation rules).
-  _runMatcher(now) {
+  _runMatcher(now: number): void {
     if (this.classes.size >= RPG.maxClasses) return;
     // total level 80+ consolidates onto the highest class: stop minting new ones
     if (this.totalLevel >= RPG.consolidateLevel) return;
@@ -267,15 +292,15 @@ export class Progression {
     }
   }
 
-  _grantClass(key, name, now) {
+  _grantClass(key: string, name: string, now: number): void {
     if (this.classes.has(key)) return;
-    const cls = { key, name, level: 1, xp: 0 };
+    const cls: ClassInstance = { key, name, level: 1, xp: 0 };
     this.classes.set(key, cls);
     this.totalLevel = this._sumLevels();
     this._checkMilestones(cls, now);   // tier-1 ability at grant
     bus.emit(makeEvent({
       actorId: this.agent.id, verb: 'class_gained', tags: [],
-      magnitude: 1, t: now,
+      magnitude: 1, targetId: undefined, t: now,
     }));
   }
 
@@ -289,7 +314,7 @@ export class Progression {
   // Everything stays guarded/fault-tolerant: a missing catalog/generator/ir, a
   // null spec, or a spec that fails validate() simply skips the grant — the
   // fixed-tick loop must NEVER throw here (the freeze lesson).
-  _checkMilestones(cls, now) {
+  _checkMilestones(cls: ClassInstance, now: number): void {
     // both ability subsystems load lazily/async; until at least one is present we
     // can't resolve any spec — leave the milestone UNFIRED so it retries on the
     // next level-up once the modules have loaded (don't burn it on a cold import).
@@ -309,7 +334,7 @@ export class Progression {
   // Resolve the spec for a class@level: catalog override first, else generated.
   // `tierIndex` is the 1-based position in TIER_LEVELS (what the generator scales
   // off). Returns a validated spec or null.
-  _milestoneSpec(cls, lvl, tierIndex) {
+  _milestoneSpec(cls: ClassInstance, lvl: number, tierIndex: number): AbilitySpec | null {
     // 1) hand-authored catalog override (template classes only).
     if (_catalog) {
       const map = _catalog.CLASS_MILESTONES[cls.key];
@@ -321,7 +346,7 @@ export class Progression {
     }
     // 2) procedurally generate one themed by the class's dominant tags.
     if (!_gen) return null;
-    let spec = null;
+    let spec: AbilitySpec | null = null;
     try {
       spec = _gen.generateAbility(
         { classKey: cls.key, name: cls.name, tags: this._classTags(cls) },
@@ -339,7 +364,7 @@ export class Progression {
   // authored score_tags (its canonical identity); a PROCEDURAL class uses the
   // agent's dominant behavior-profile tags (what it actually DID). Empty is fine
   // — the generator defaults to a combat archetype.
-  _classTags(cls) {
+  _classTags(cls: ClassInstance): Tag[] {
     const tmpl = CLASS_BY_KEY.get(cls.key);
     if (tmpl && tmpl.score_tags && tmpl.score_tags.length) {
       return tmpl.score_tags.map((st) => st[0]);
@@ -348,39 +373,41 @@ export class Progression {
   }
 
   // Top-N behavior-profile tags by accumulated weight (descending).
-  _dominantTags(n) {
+  _dominantTags(n: number): Tag[] {
     const bp = this.behavior_profile;
-    return Object.keys(bp).sort((a, b) => bp[b] - bp[a]).slice(0, n);
+    return (Object.keys(bp) as Tag[])
+      .sort((a, b) => (bp[b] || 0) - (bp[a] || 0))
+      .slice(0, n);
   }
 
   // Mirror a spec onto Progression + the Agent and announce the grant.
-  _grantAbility(spec, lvl, now) {
+  _grantAbility(spec: AbilitySpec, lvl: number, now: number): void {
     this.abilities.set(spec.id, spec);
     this.cooldowns.set(spec.id, 0);
     this.agent.grantAbility?.(spec);       // mirror onto the Agent (UI + cast path)
     bus.emit(makeEvent({
       actorId: this.agent.id, verb: 'ability_gained', tags: [],
-      magnitude: lvl, t: now,
+      magnitude: lvl, targetId: undefined, t: now,
     }));
   }
 
   // ---------------------------------------------------------------------------
   // QUERIES
   // top-N classes by level (ties broken by xp), for the inspector / UI.
-  topClasses(n = 3) {
+  topClasses(n = 3): ClassInstance[] {
     return [...this.classes.values()]
       .sort((a, b) => (b.level - a.level) || (b.xp - a.xp))
       .slice(0, n);
   }
 
   // the single highest class (the "consolidation" target), or null.
-  primaryClass() {
+  primaryClass(): ClassInstance | null {
     return this.topClasses(1)[0] || null;
   }
 
   // is an ability off cooldown at time `now`? (used by the interpreter, which
   // also owns setting cooldowns — kept here for symmetry/UI.)
-  isReady(abilityId, now) {
+  isReady(abilityId: string, now: number): boolean {
     return (this.cooldowns.get(abilityId) || 0) <= now;
   }
 }

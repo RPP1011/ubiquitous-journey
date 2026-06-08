@@ -8,7 +8,7 @@ export type Tag =
   // combat
   | 'MELEE' | 'DEFENSE' | 'KILL' | 'RISK' | 'BERSERK' | 'DUEL'
   // craft
-  | 'SMITHING' | 'CRAFTING' | 'TOOLMAKING'
+  | 'SMITHING' | 'CRAFTING' | 'TOOLMAKING' | 'BUILD'
   // gather
   | 'FARMING' | 'MINING' | 'WOODCUT' | 'FORAGE'
   // trade
