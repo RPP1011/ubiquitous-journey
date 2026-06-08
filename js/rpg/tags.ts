@@ -5,9 +5,11 @@
 // keep the vocabulary canonical and stable (the hash is used for cheap
 // novelty/combo keys, so renaming a tag changes its identity on purpose).
 
+import type { Tag } from '../../types/sim.js';
+
 // FNV-1a, 32-bit. Deterministic, dependency-free, good spread for short keys.
 // Returns an unsigned 32-bit int.
-export function fnv1a(str) {
+export function fnv1a(str: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < str.length; i++) {
     h ^= str.charCodeAt(i);
@@ -19,7 +21,7 @@ export function fnv1a(str) {
 
 // Hash an unordered set of tags into a single stable key (for novel-combo
 // detection): sort so {A,B} and {B,A} collide, join, then FNV.
-export function comboKey(tags) {
+export function comboKey(tags: readonly string[]): number {
   return fnv1a([...tags].sort().join('|'));
 }
 
@@ -37,16 +39,20 @@ export const TAG_GROUPS = {
 // Flat lookup. TAGS.MELEE === 'MELEE', etc. Frozen so a typo throws in strict
 // callers rather than silently inventing a tag.
 export const TAGS = Object.freeze(
-  Object.values(TAG_GROUPS).flat().reduce((o, t) => { o[t] = t; return o; }, {}),
+  Object.values(TAG_GROUPS).flat().reduce<Record<string, Tag>>(
+    (o, t) => { o[t] = t as Tag; return o; }, {},
+  ),
 );
 
 // All tag names as a plain array (stable order = group order).
 export const TAG_LIST = Object.values(TAG_GROUPS).flat();
 
 // Is t a known tag? Cheap guard for event producers / validators.
-export function isTag(t) { return Object.prototype.hasOwnProperty.call(TAGS, t); }
+export function isTag(t: unknown): t is Tag {
+  return typeof t === 'string' && Object.prototype.hasOwnProperty.call(TAGS, t);
+}
 
 // Filter an arbitrary tag list down to the known vocabulary (drops typos).
-export function sanitizeTags(tags) {
+export function sanitizeTags(tags: readonly string[] | null | undefined): Tag[] {
   return (tags || []).filter(isTag);
 }

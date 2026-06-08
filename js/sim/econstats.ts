@@ -13,32 +13,57 @@
 // plus a bounded ring of the most-recent trades for a live feed.
 
 import { BASE_PRICE, COMMODITIES } from './simconfig.js';
+import type { Commodity, Trade, EntityId } from '../../types/sim.js';
 
 const CLEAR_RING = 24;     // recent clearing prices kept per commodity (for the avg)
 const FEED_RING = 14;      // recent trades kept globally for the feed
 
+// per-commodity running aggregate record (bounded).
+interface CommodityRecord {
+  commodity: string;
+  n: number;             // trade count
+  volume: number;        // cumulative gold turned over (price summed)
+  lastPrice: number;     // most recent clearing price
+  clears: number[];      // ring of recent clearing prices (bounded CLEAR_RING)
+  beliefSum: number;     // running sum of per-trade mean belief (seller+buyer)/2
+  beliefSumSq: number;   // running sum of squares (for dispersion across trades)
+  beliefN: number;       // count of belief samples (== n, kept explicit/guarded)
+  lastBeliefMean: number;// last trade's mean belief
+  lastBeliefSpread: number; // last trade's |seller-buyer| belief gap
+}
+
+// one entry in the recent-trades live feed.
+interface FeedEntry {
+  t: number;
+  commodity: string;
+  price: number;
+  sellerId?: EntityId;
+  buyerId?: EntityId;
+  beliefMean: number;
+}
+
 // per-commodity aggregate record
-function blank(c) {
+function blank(c: string): CommodityRecord {
   return {
     commodity: c,
-    n: 0,                  // trade count
-    volume: 0,             // cumulative gold turned over (price summed)
-    lastPrice: 0,          // most recent clearing price
-    clears: [],            // ring of recent clearing prices (bounded CLEAR_RING)
-    beliefSum: 0,          // running sum of per-trade mean belief (seller+buyer)/2
-    beliefSumSq: 0,        // running sum of squares (for dispersion across trades)
-    beliefN: 0,            // count of belief samples (== n, kept explicit/guarded)
-    lastBeliefMean: 0,     // last trade's mean belief
-    lastBeliefSpread: 0,   // last trade's |seller-buyer| belief gap
+    n: 0,
+    volume: 0,
+    lastPrice: 0,
+    clears: [],
+    beliefSum: 0,
+    beliefSumSq: 0,
+    beliefN: 0,
+    lastBeliefMean: 0,
+    lastBeliefSpread: 0,
   };
 }
 
-const _byCommodity = new Map();
-const _feed = [];          // bounded ring of recent { t, commodity, price, ... }
+const _byCommodity = new Map<string, CommodityRecord>();
+const _feed: FeedEntry[] = [];  // bounded ring of recent { t, commodity, price, ... }
 let _totalTrades = 0;
 let _totalVolume = 0;
 
-function _rec(c) {
+function _rec(c: string): CommodityRecord {
   let r = _byCommodity.get(c);
   if (!r) { r = blank(c); _byCommodity.set(c, r); }
   return r;
@@ -54,14 +79,14 @@ export function resetEconStats() {
 // Record one cleared trade. Guarded: bad/missing fields degrade to neutral
 // values, never throw. `commodity` + `price` are the load-bearing fields; the
 // beliefs are optional (default to the clearing price if absent).
-export function recordTrade(trade) {
+export function recordTrade(trade: Trade | null | undefined): void {
   try {
     if (!trade) return;
     const c = trade.commodity;
     if (!c) return;
     const price = +trade.price || 0;
-    const sBel = Number.isFinite(trade.sellerBelief) ? trade.sellerBelief : price;
-    const bBel = Number.isFinite(trade.buyerBelief) ? trade.buyerBelief : price;
+    const sBel = typeof trade.sellerBelief === 'number' && Number.isFinite(trade.sellerBelief) ? trade.sellerBelief : price;
+    const bBel = typeof trade.buyerBelief === 'number' && Number.isFinite(trade.buyerBelief) ? trade.buyerBelief : price;
     const beliefMean = (sBel + bBel) / 2;
     const spread = Math.abs(sBel - bBel);
 
@@ -92,10 +117,10 @@ export function recordTrade(trade) {
 // Derived view for one commodity: clearing (recent avg + last) vs base, volume,
 // believed mean ± spread (dispersion across recent trades), belief-vs-clearing
 // gap (impact) and a believed-scarcity ratio. Returns null until it has data.
-export function commodityStats(c) {
+export function commodityStats(c: string) {
   const r = _byCommodity.get(c);
   if (!r || r.n === 0) return null;
-  const base = BASE_PRICE[c] || 0;
+  const base = BASE_PRICE[c as keyof typeof BASE_PRICE] || 0;
   const clearAvg = r.clears.length
     ? r.clears.reduce((s, p) => s + p, 0) / r.clears.length : r.lastPrice;
   const beliefMean = r.beliefN ? r.beliefSum / r.beliefN : r.lastBeliefMean;

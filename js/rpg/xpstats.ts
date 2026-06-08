@@ -3,13 +3,15 @@
 // every award; reset per world. Read by the Class Codex UI. Pure aggregation —
 // it never influences behaviour, so it's safe on the fixed tick.
 
-const _verb = new Map();   // verb -> { xp, n }  (n = tagged deeds of this verb)
-const _class = new Map();  // classKey -> xp
+interface VerbTally { xp: number; n: number; }
+
+const _verb = new Map<string, VerbTally>();   // verb -> { xp, n }  (n = tagged deeds of this verb)
+const _class = new Map<string, number>();     // classKey -> xp
 let _total = 0;            // total XP routed this world
 
 // one tagged deed: count it under its verb and add whatever XP it routed (0 if
 // the actor has no class yet — so you can see high-frequency, low-yield actions).
-export function recordDeed(verb, gain) {
+export function recordDeed(verb: string, gain: number): void {
   const g = gain > 0 ? gain : 0;
   _total += g;
   const v = _verb.get(verb) || { xp: 0, n: 0 };
@@ -17,7 +19,7 @@ export function recordDeed(verb, gain) {
   _verb.set(verb, v);
 }
 
-export function recordClassXp(classKey, gain) {
+export function recordClassXp(classKey: string, gain: number): void {
   if (gain > 0) _class.set(classKey, (_class.get(classKey) || 0) + gain);
 }
 

@@ -7,11 +7,28 @@
 //   classMatchScore               — re-exported from classes.js (the sigmoid
 //     weighted-dot) so callers have one XP entrypoint.
 
-import { RPG, sigmoid } from './rpgconfig.js';
+import { RPG } from './rpgconfig.js';
 import { classMatchScore } from './classes.js';
 import { comboKey } from './tags.js';
+import type { ActionEvent } from '../../types/sim.js';
 
 export { classMatchScore };
+
+// The slice of Progression that significance() reads: two per-agent ledgers the
+// caller maintains (key → seen / key → lastTime). Kept local so this stays a pure
+// function over just the maps it touches (the fields aren't on the shared type).
+interface SigProgress {
+  _comboSeen: Set<number>;       // novelty set (Progression._comboSeen); we only .has() it
+  _deedLast: Map<string, number>;
+}
+
+// What significance() reports back so the caller can update its ledgers (no hidden writes).
+interface SigResult {
+  mult: number;
+  comboKey: number | null;
+  deedKey: string | null;
+  novel: boolean;
+}
 
 // xp_needed(level, totalLevel) = xpNeedBase * exp(xpNeedExp*level) * (1 + (totalLevel/100)^2)
 // Cost to go FROM `level` to level+1. totalLevel is the agent's summed levels
@@ -19,7 +36,7 @@ export { classMatchScore };
 // The curve is deliberately gentle (base/exp flattened in Phase 1) so a storied
 // agent's grind-immune NARRATIVE beats convert to real levels (15-30) while a
 // quiet labourer's tiny, grind-decayed routine income still plateaus low.
-export function xpForLevel(level, totalLevel = 0) {
+export function xpForLevel(level: number, totalLevel = 0): number {
   const t = totalLevel / 100;
   return RPG.xpNeedBase * Math.exp(RPG.xpNeedExp * level) * (1 + t * t);
 }
@@ -32,7 +49,7 @@ export function xpForLevel(level, totalLevel = 0) {
 // `prog` must expose two Maps the caller maintains: _comboSeen (key->true) and
 // _deedLast (key->lastTime). We READ them here and report what to update via
 // the returned record so this stays pure-ish (no hidden writes).
-export function significance(ev, prog, now) {
+export function significance(ev: ActionEvent, prog: SigProgress, now: number): SigResult {
   if (!RPG.significanceOn) {
     return { mult: 1, comboKey: null, deedKey: null, novel: false };
   }
@@ -71,6 +88,6 @@ export function significance(ev, prog, now) {
 
 // Convenience: full XP awarded by an event toward a class, before routing.
 //   xp = classMatchScore * xpScoreScalar * significanceMult
-export function xpFromEvent(score, sigMult) {
+export function xpFromEvent(score: number, sigMult: number): number {
   return score * RPG.xpScoreScalar * sigMult;
 }

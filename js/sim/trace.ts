@@ -18,6 +18,7 @@
 // HEADLESS-SAFE: a plain ring of plain objects. No DOM, no Three. Tests read it directly.
 
 import { TRACE } from './simconfig.js';
+import type { Stage, Reason, Verdict, TraceEntry, TraceNoteOpts, Trace as ITrace } from '../../types/sim.js';
 
 // STAGE — the pipeline position that emitted the entry (which reasoning layer).
 export const STAGE = {
@@ -28,7 +29,7 @@ export const STAGE = {
   PLAN: 'plan',
   DECIDE: 'decide',
   ACT: 'act',
-};
+} as const satisfies Record<string, Stage>;
 
 // REASON — a small STABLE enum (not a free string) so tests match on it and the
 // formatter can localise it (mirrors beliefs.js's provenanceLabel/provenanceTag).
@@ -52,7 +53,7 @@ export const REASON = {
   BEHAVIOUR_RUNNERUP: 'behaviour_runnerup', // a=behaviour, b=utility — the loser ("why not X?")
   INTERRUPTED: 'interrupted',           // flee/threat overrode the active plan (a=overriding)
   RESUMED: 'resumed',                   // the stacked goal resumed after the interrupt cleared
-};
+} as const satisfies Record<string, Reason>;
 
 // VERDICT — the outcome of the reasoning step (or null when not applicable).
 export const VERDICT = {
@@ -63,28 +64,33 @@ export const VERDICT = {
   BLOCKED: 'blocked',
   REPLANNED: 'replanned',
   REVISED: 'revised',
-};
+} as const satisfies Record<string, Verdict>;
 
 // One reasoning event. Tiny, allocation-light, no strings built on the tick.
 //   { t, stage, code, verdict, subjectId, a, b }
 
-export class Trace {
+export class Trace implements ITrace {
+  depth: number;
+  buf: TraceEntry[];     // a plain ring; grows to `depth` then overwrites oldest
+  head: number;          // next write index
+  len: number;           // entries currently held (<= depth)
+
   constructor(depth = (TRACE && TRACE.depth) || 24) {
     this.depth = Math.max(1, depth | 0);
-    this.buf = [];     // a plain ring; grows to `depth` then overwrites oldest
-    this.head = 0;     // next write index
-    this.len = 0;      // entries currently held (<= depth)
+    this.buf = [];
+    this.head = 0;
+    this.len = 0;
   }
 
   // O(1) append; overwrites the oldest past the cap. NEVER throws (the freeze lesson).
   // A null subject/operand is fine. With TRACE.enabled off it is a guarded early-return
   // (byte-stable, zero allocation) so the soak baseline is unchanged either way.
-  note(stage, code, opts) {
+  note(stage: Stage | null, code: Reason, opts?: TraceNoteOpts): void {
     try {
       if (!TRACE || !TRACE.enabled) return;
       if (!code) return;
       const o = opts || EMPTY;
-      const e = {
+      const e: TraceEntry = {
         t: o.t != null ? o.t : 0,
         stage: stage || null,
         code,
@@ -100,8 +106,8 @@ export class Trace {
   }
 
   // Newest-first view, for the UI/tests. Bounded by `n` (default: all held). O(min(n,len)).
-  recent(n = this.len) {
-    const out = [];
+  recent(n = this.len): TraceEntry[] {
+    const out: TraceEntry[] = [];
     const count = Math.min(n | 0 || this.len, this.len);
     // walk backwards from the most recently written slot
     for (let i = 0; i < count; i++) {
@@ -114,7 +120,7 @@ export class Trace {
 
   // newest entry's tick stamp — the UI's cache signature (rebuild only on a new entry).
   // null when empty.
-  newestT() {
+  newestT(): number | null {
     if (!this.len) return null;
     const idx = (this.head - 1 + this.depth) % this.depth;
     const e = this.buf[idx];
@@ -122,11 +128,11 @@ export class Trace {
   }
 }
 
-const EMPTY = {};
+const EMPTY: TraceNoteOpts = {};
 
 // Render an entry to text ON READ (never on the tick). Cosmetic only — tests match on
 // `code`, never on this string. Guarded; always returns a string.
-export function traceLabel(e) {
+export function traceLabel(e: TraceEntry | null | undefined): string {
   if (!e || !e.code) return '';
   const subj = e.subjectId != null ? `#${e.subjectId}` : '';
   const A = e.a != null ? String(e.a) : '';

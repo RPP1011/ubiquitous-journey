@@ -40,8 +40,8 @@ export const GOODS = {
 
 // Producible goods, partitioned for the chooser. RAW: gather anywhere with no
 // inputs. CRAFTED: gated on holding the recipe inputs.
-export const RAW_OUTPUTS     = Object.keys(GOODS).filter((g) => GOODS[g].raw);
-export const CRAFTED_OUTPUTS = Object.keys(GOODS).filter((g) => !GOODS[g].raw);
+export const RAW_OUTPUTS     = (Object.keys(GOODS) as (keyof typeof GOODS)[]).filter((g) => GOODS[g].raw);
+export const CRAFTED_OUTPUTS = (Object.keys(GOODS) as (keyof typeof GOODS)[]).filter((g) => !GOODS[g].raw);
 
 // --- recipe knowledge (own-state craft gating; Phase-4 prerequisite) ---------
 // A crafted good is producible only by an agent that KNOWS its recipe (own-state
@@ -379,11 +379,12 @@ export const FACTION_RELATIONS = {
 // FACTION_RELATIONS in BOTH directions so the table only needs one entry per feud.
 // Same faction is never self-hostile. Guarded: an unknown faction is simply at
 // peace (never throws), so a new/typo'd faction can't freeze the fixed tick.
-export function factionHostile(a, b) {
+export function factionHostile(a: string | null | undefined, b: string | null | undefined): boolean {
   if (a === b || !a || !b) return false;
-  const ra = FACTION_RELATIONS[a];
+  const rels: Record<string, string[]> = FACTION_RELATIONS;
+  const ra = rels[a];
   if (ra && ra.indexOf(b) !== -1) return true;
-  const rb = FACTION_RELATIONS[b];
+  const rb = rels[b];
   if (rb && rb.indexOf(a) !== -1) return true;
   return false;
 }

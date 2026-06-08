@@ -25,18 +25,65 @@
 //     peaks / unions / series; stable end-state (classes, LTM, groups) is read once.
 
 import { SIM, SOURCE } from './simconfig.js';
+import type { Agent, EntityId, BeliefState, Episode } from '../../types/sim.js';
+
+// This module is READ-ONLY telemetry that reaches into ~20 distinct subsystems'
+// internal counter bags (director/intrigue/lineage/watch/faith/… `.stats`) which
+// the shared type layer deliberately does NOT model. `SimView` is a focused local
+// structural view of exactly what the probe reads; the deep, per-subsystem stat
+// bags are `unknown`-keyed records (read via the guarded `sum`/`read` helpers).
+type StatBag = Record<string, number> | undefined;
+interface SubsysWithStats { stats?: Record<string, number>; }
+// The Agent as the probe reads it: the typed Agent plus the additive own-state
+// telemetry counters (set by interpreter/decide/planner each cognition tick) and a
+// couple of fields the probe samples that are not on the shared headless Agent type.
+type TeleAgent = Agent & {
+  bandLeaderId?: EntityId | null;
+  _schemaFireCount?: number;
+  _decideCalls?: number;
+  _decideCands?: number;
+  _planReplans?: number;
+  _planDepth?: number;
+};
+interface SimView {
+  agents: TeleAgent[];
+  director?: SubsysWithStats;
+  intrigue?: SubsysWithStats & { stats?: Record<string, number> };
+  watch?: SubsysWithStats;
+  faith?: SubsysWithStats;
+  expeditions?: SubsysWithStats;
+  reporter?: SubsysWithStats;
+  bounties?: SubsysWithStats;
+  arbitrage?: SubsysWithStats;
+  patrician?: SubsysWithStats;
+  lineage?: { births?: number; apprenticeships?: number };
+  quests?: { completed?: number; offers?: unknown[] };
+  chronicle?: { recent(n: number): { kind: string }[] };
+  _depTrades?: number;
+  _depEconRows?: () => { commodity: string; clearAvg: number }[];
+}
+
+// The RPG/econ ledger accessors the runner injects into report() (so the probe
+// stays decoupled from those singletons). All optional + guarded at the call site.
+interface VerbStat { verb: string; xp?: number; n?: number; }
+interface Telemetry {
+  allCommodityStats?: () => unknown[];
+  tradedCommodityCount?: () => number;
+  xpByVerb?: () => VerbStat[];
+  goldConserved?: boolean;
+}
 
 // --- tiny stats helpers -----------------------------------------------------
-const clamp01 = (x) => Math.max(0, Math.min(1, x || 0));
-const mean = (xs) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : 0);
-const stdev = (xs) => {
+const clamp01 = (x: number) => Math.max(0, Math.min(1, x || 0));
+const mean = (xs: number[]) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : 0);
+const stdev = (xs: number[]) => {
   if (xs.length < 2) return 0;
   const m = mean(xs);
   return Math.sqrt(mean(xs.map((x) => (x - m) * (x - m))));
 };
 // Normalised Shannon entropy (0..1) of a count map — 0 = one behaviour dominates,
 // 1 = perfectly even spread across the observed behaviours.
-const normEntropy = (counts) => {
+const normEntropy = (counts: Map<unknown, number>) => {
   const vals = [...counts.values()].filter((v) => v > 0);
   const total = vals.reduce((s, v) => s + v, 0);
   if (total <= 0 || vals.length <= 1) return 0;
@@ -44,15 +91,16 @@ const normEntropy = (counts) => {
   for (const v of vals) { const p = v / total; h -= p * Math.log(p); }
   return clamp01(h / Math.log(vals.length));
 };
-const pct = (n, d) => (d > 0 ? n / d : 0);
-const pairKey = (a, b) => (a < b ? a + '+' + b : b + '+' + a);
+const pct = (n: number, d: number) => (d > 0 ? n / d : 0);
+const pairKey = (a: string, b: string) => (a < b ? a + '+' + b : b + '+' + a);
 
 // --- subsystem signals ------------------------------------------------------
 // One row per readable subsystem counter. `get(sim)` returns a monotone-ish
 // activity scalar (summed counters) — we read DELTAS between samples to know which
 // subsystems FIRED in a window (for coverage + co-activation), and the first
 // non-zero crossing for the emergence timeline. All getters are guarded by read().
-const SIGNALS = [
+interface Signal { key: string; label: string; get: (s: SimView) => number; }
+const SIGNALS: Signal[] = [
   { key: 'director',  label: 'Director (raids/sparks)', get: (s) => sum(s.director?.stats, ['raids', 'opportunities', 'crises', 'sparks', 'tropes', 'reliefs']) },
   { key: 'combat',    label: 'Combat (kills)',          get: (s) => s.agents.reduce((t, a) => t + (a.life ? a.life.kills : 0), 0) },
   { key: 'economy',   label: 'Market (trades)',         get: (s) => (s._depTrades || 0) },
@@ -69,14 +117,50 @@ const SIGNALS = [
   { key: 'groups',    label: 'Social groups',           get: (s) => s.agents.filter((a) => a.bandLeaderId != null).length },
   { key: 'chronicle', label: 'Chronicle (beats)',       get: (s) => (s.chronicle ? s.chronicle.recent(9999).length : 0) },
 ];
-function sum(obj, keys) { if (!obj) return 0; let t = 0; for (const k of keys) t += obj[k] || 0; return t; }
-function read(sig, sim) { try { return sig.get(sim) || 0; } catch { return 0; } }
+function sum(obj: StatBag, keys: string[]): number { if (!obj) return 0; let t = 0; for (const k of keys) t += obj[k] || 0; return t; }
+function read(sig: Signal, sim: SimView): number { try { return sig.get(sim) || 0; } catch { return 0; } }
 
 // ----------------------------------------------------------------------------
 // The probe: construct with the sim, call sample(now) on a cadence during the run,
 // then report(telemetry) once at the end. All accumulation is bounded.
+interface FirstFire { t: number; key: string; label: string; }
+
 export class DepthProbe {
-  constructor(sim) {
+  sim: SimView;
+  samples: number;
+  // behaviour
+  goalCounts: Map<string, number>;
+  agentGoalKinds: Map<EntityId, Set<string>>;
+  agentAmbitions: Map<EntityId, Set<string>>;
+  ambitionKinds: Map<string, number>;
+  agentsWithStackedGoal: Set<EntityId>;
+  goalFroms: Set<string>;
+  // ToM peaks
+  maxHops: number;
+  peakRumorBorn: number;
+  gossipShareSeries: number[];
+  peakGossipShare: number;
+  // economy price series
+  priceSeries: Map<string, number[]>;
+  // subsystem activity
+  sigLast: Map<string, number>;
+  sigFired: Set<string>;
+  firstFire: FirstFire[];
+  coPairs: Map<string, number>;
+  // reasoning-fire telemetry
+  schemaFires: number;
+  schemaFireSamples: number;
+  schemaFireAgents: Set<EntityId>;
+  // reasoning-cost telemetry
+  decideCalls: number;
+  decideCands: number;
+  planReplans: number;
+  planDepthMax: number;
+  reasonCostSamples: number;
+  // optional deed-tag firehose (noteTags)
+  _tagsSeen?: Set<string>;
+
+  constructor(sim: SimView) {
     this.sim = sim;
     this.samples = 0;
     // behaviour
@@ -120,7 +204,7 @@ export class DepthProbe {
   }
 
   // Call each sampling window. `now` is sim time (seconds). Cheap + guarded.
-  sample(now) {
+  sample(now: number): void {
     this.samples++;
     const sim = this.sim;
 
@@ -145,7 +229,10 @@ export class DepthProbe {
         }
         if (Array.isArray(a.goals) && a.goals.length) {
           this.agentsWithStackedGoal.add(a.id);
-          for (const g of a.goals) if (g && g.from) this.goalFroms.add(g.from);
+          for (const g of a.goals) {
+            const from = (g as { from?: string } | null)?.from;
+            if (from) this.goalFroms.add(from);
+          }
         }
         // reasoning-fire telemetry (additive context): how many schemas fired for this agent
         // on the most recent cognition tick. Own-state read; degrades to 0 if absent.
@@ -195,10 +282,10 @@ export class DepthProbe {
 
     // -- subsystem activity: deltas -> coverage, co-activation, timeline ------
     try {
-      const firedNow = [];
+      const firedNow: string[] = [];
       for (const sig of SIGNALS) {
         const v = read(sig, sim);
-        const last = this.sigLast.has(sig.key) ? this.sigLast.get(sig.key) : v;
+        const last = this.sigLast.has(sig.key) ? (this.sigLast.get(sig.key) as number) : v;
         if (v > last) {
           firedNow.push(sig.key);
           if (!this.sigFired.has(sig.key)) {
@@ -219,10 +306,11 @@ export class DepthProbe {
 
   // Build the scored report. `telemetry` supplies the RPG/econ ledger accessors so
   // this module stays decoupled from those singletons (the runner passes them in).
-  report(telemetry = {}) {
+  report(telemetry: Telemetry = {}) {
     const sim = this.sim;
     const npcs = sim.agents.filter((a) => !a.controlled);
     const alive = npcs.filter((a) => a.alive);
+    void alive;   // computed for parity with the original; not scored
 
     // ===== NPC BEHAVIOUR DEPTH ============================================
     // distinctGoals/goalEntropy are keyed on goal.kind (sampled directly above). After
@@ -259,16 +347,16 @@ export class DepthProbe {
 
     // memory consolidation
     const withLtm = npcs.filter((a) => a.memory && a.memory.ltm && a.memory.ltm.size > 0).length;
-    const memKinds = new Set();
+    const memKinds = new Set<string>();
     for (const a of npcs) {
       try { for (const e of a.memory.salient(8)) if (e && e.kind) memKinds.add(e.kind); } catch { /**/ }
     }
     const ltmShare = pct(withLtm, npcs.length);
 
     // emergent identity (classes)
-    const classKeys = new Set();
-    const procKeys = new Set();
-    const levels = [];
+    const classKeys = new Set<string>();
+    const procKeys = new Set<string>();
+    const levels: number[] = [];
     let classed = 0, multiClass = 0;
     for (const a of npcs) {
       const p = a.progression; if (!p || !p.classes) continue;
@@ -301,7 +389,7 @@ export class DepthProbe {
     // economy: commodities + price discovery (volatility of clearing price / base)
     const econRows = (telemetry.allCommodityStats && telemetry.allCommodityStats()) || [];
     const tradedGoods = (telemetry.tradedCommodityCount && telemetry.tradedCommodityCount()) || econRows.length;
-    const volatilities = [];
+    const volatilities: number[] = [];
     for (const [, series] of this.priceSeries) {
       if (series.length >= 3) { const m = mean(series); if (m > 0) volatilities.push(stdev(series) / m); }
     }
@@ -376,30 +464,34 @@ export class DepthProbe {
 
   // optional: feed the deed firehose so tag variety is measured. The runner can
   // subscribe the RPG bus and push tags here; falls back to xp-verb count if not.
-  noteTags(tags) {
+  noteTags(tags: unknown): void {
     if (!this._tagsSeen) this._tagsSeen = new Set();
     if (Array.isArray(tags)) for (const t of tags) this._tagsSeen.add(t);
   }
 }
 
-function scorecard(rows) {
+type ScoreRow = [label: string, value: string, raw: number];
+function scorecard(rows: ScoreRow[]) {
   const metrics = rows.map(([label, value, raw]) => ({ label, value, score: clamp01(raw) }));
   const score = metrics.length ? mean(metrics.map((m) => m.score)) : 0;
   return { score, metrics };
 }
-function topPairs(map, n) {
+function topPairs(map: Map<string, number>, n: number) {
   return [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, v]) => ({ pair: k, n: v }));
 }
 
 // ----------------------------------------------------------------------------
 // Pretty-printer — renders a report() result as a terminal scorecard. Pure string
 // builder so a browser panel can reuse the same report() object differently.
-const bar = (s) => { const n = Math.round(clamp01(s) * 20); return '█'.repeat(n) + '·'.repeat(20 - n); };
-const grade = (s) => (s >= 0.8 ? 'A' : s >= 0.65 ? 'B' : s >= 0.5 ? 'C' : s >= 0.35 ? 'D' : 'F');
+const bar = (s: number) => { const n = Math.round(clamp01(s) * 20); return '█'.repeat(n) + '·'.repeat(20 - n); };
+const grade = (s: number) => (s >= 0.8 ? 'A' : s >= 0.65 ? 'B' : s >= 0.5 ? 'C' : s >= 0.35 ? 'D' : 'F');
 
-export function formatReport(rep) {
-  const L = [];
-  const axis = (title, ax) => {
+type DepthReport = ReturnType<DepthProbe['report']>;
+type Axis = DepthReport['axes']['behaviour'];
+
+export function formatReport(rep: DepthReport): string {
+  const L: string[] = [];
+  const axis = (title: string, ax: Axis) => {
     L.push(`\n  ${title}  —  ${(ax.score * 100).toFixed(0)}/100  [${grade(ax.score)}]`);
     for (const m of ax.metrics)
       L.push(`    ${bar(m.score)} ${(m.score * 100).toFixed(0).padStart(3)}  ${m.label.padEnd(26)} ${m.value}`);

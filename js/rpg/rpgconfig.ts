@@ -66,7 +66,7 @@ export const RPG = {
 };
 
 // Sigmoid used by the class matcher + significance shaping. Stable for large |x|.
-export function sigmoid(x) {
+export function sigmoid(x: number): number {
   if (x >= 0) { const z = Math.exp(-x); return 1 / (1 + z); }
   const z = Math.exp(x); return z / (1 + z);
 }
