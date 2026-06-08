@@ -1,0 +1,96 @@
+// The goal / GOAP layer: motivation derives goals (js/sim/motivation.js), the planner
+// plans toward them over BELIEFS (js/sim/planner.js). Goals read beliefs only.
+
+import type { Vector3 } from 'three';
+import type { EntityId, Vec2Like } from './core.js';
+
+/** The goal kinds the motivation/decide/act/schema layers emit. */
+export type GoalKind =
+  | 'work' | 'wander' | 'eat' | 'rest' | 'socialize' | 'market' | 'comfort'
+  | 'build' | 'sightsee' | 'flee' | 'fight' | 'follow' | 'plan' | 'spy'
+  | 'bounty' | 'arbitrage' | 'expedition' | 'caravan' | 'reporter' | 'avenge'
+  | 'grieve' | 'repay' | 'seek_fortune' | 'delve' | 'defeat' | 'avoid'
+  | 'hide' | 'shadow' | 'goto' | 'approach' | 'idle'
+  | (string & {});   // open: derived/variant kinds may appear
+
+/** One world-state predicate atom the planner satisfies (js/sim/planner.js Atom). */
+export interface Atom {
+  pred: 'at' | 'have' | 'gold_ge' | 'received' | 'dead' | 'in_reach';
+  place?: string;
+  good?: string;
+  n?: number;
+  amt?: number;
+  subjectId?: EntityId;
+  value?: number;
+  kind?: string;
+}
+
+/** The concrete parameters a primitive chose when its effect unified with a subgoal. */
+export interface PlanBind {
+  place?: string;
+  good?: string;
+  n?: number;
+  site?: string;
+  price?: number;
+  inputs?: Record<string, number> | null;
+  item?: string;
+  to?: EntityId;
+  amt?: number;
+  target?: EntityId;
+  corpse?: EntityId;
+  fromStock?: boolean;
+  best?: string;
+  [k: string]: unknown;
+}
+
+/** One primitive step of a plan ({ prim, bind, exec }). */
+export interface PlanStep {
+  prim: string;                 // 'goto'|'gather'|'produce'|'buy'|'sell'|'give'|'pay'|…
+  bind: PlanBind;
+  exec?: (...args: unknown[]) => unknown;
+}
+
+/** A cached plan on a goal: an ordered primitive list + total cost. */
+export interface Plan {
+  steps: PlanStep[];
+  cost: number;
+}
+
+/** A motivation goal. `kind` is the discriminator; variant-specific fields are loose (the
+ *  field set overlaps messily across kinds — survey flagged target: Vector3 | number). */
+export interface Goal {
+  kind: GoalKind;
+  subjectId?: EntityId;
+  targetId?: EntityId;
+  target?: Vector3 | EntityId;
+  toPos?: Vec2Like | null;
+  around?: Vec2Like | null;
+  place?: string;
+  affords?: string[];
+  srcKind?: string;
+  atoms?: Atom[];
+  plan?: Plan | null;
+  step?: number;
+  bornAt?: number;
+  expiresAt?: number;
+  predicate?: (agent: unknown, ctx: unknown) => boolean;
+  _unreachable?: boolean;
+  [k: string]: unknown;
+}
+
+/** A persistent drive (js/sim/motivation.js): one per Agent, no-op for the player. */
+export interface Ambition {
+  kind: string;                 // 'wealth'|'mastery'|'renown'|'wander'|'belong'|…
+  label: string;
+  base: Record<string, number>; // snapshot baseline for cumulative progress
+  progress: number;             // 0..1
+  t0: number;
+  revenge: boolean;
+}
+
+/** The compact ambition view surfaced to UI/biography (motivation.ambitionSnapshot). */
+export interface AmbitionSnapshot {
+  label: string;
+  progress: number;
+  revenge: boolean;
+}

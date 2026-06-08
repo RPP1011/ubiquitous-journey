@@ -1,160 +1,77 @@
-// Shared simulation types (Stage 1 of the TypeScript port).
+// Shared simulation types — THE BARREL (TypeScript port shared type layer).
 //
-// PURE TYPES — no runtime code. Emits an empty `dist/types/sim.js` (harmless). The
-// core slice imports these with `import type` (mandatory under `verbatimModuleSyntax`).
+// PURE TYPES — no runtime code. The per-domain modules under types/ own the real
+// definitions; this file re-exports them so consumers importing from '.../types/sim.js'
+// get the whole vocabulary from one specifier. Every name the Stage-1 stub exported is
+// preserved (Agent, CognitionCtx, FullCtx, BeliefStore, BeliefState, Goal, World,
+// MentalMap, Place, ResolverFacade, BuildSiteFacade, PosSnapshot, AgentRef) plus the rest.
 //
-// The high-value win lives here: `CognitionCtx` vs `FullCtx` make THE EPISTEMIC SPLIT
-// (docs/architecture/02-epistemic-split) a COMPILE-TIME guarantee — `CognitionCtx`
-// structurally lacks `agents` / `agentsById` / `player` / `buildSites`, so a roster read
-// from cognition (decide/act/perception-consumers) is a typecheck error, not just a scan
-// failure. The split is already real in the data: `Simulation._cognitionCtx()` returns the
-// restricted shape, `_ctx()` the full one — this only puts a type on what already exists.
+// THE EPISTEMIC SPLIT is a compile-time guarantee here: `CognitionCtx` structurally lacks
+// `agents`/`agentsById`/`player`/`buildSites` (see ./ctx.js), so a roster read from
+// cognition is a typecheck error, not just a scan failure.
 
-import type { Vector3 } from 'three';
+export type { EntityId, Vec2Like, PosSnapshot, AgentRef } from './core.js';
 
-// ───────────────────────────── snapshots / refs ─────────────────────────────
+export type {
+  BeliefState, BeliefStore, AnimacyTally, PlantOpts,
+} from './beliefs.js';
 
-/** A positional snapshot handed back by the execution resolver — NOT a live agent. */
-export interface PosSnapshot { x: number; y: number; z: number; alive?: boolean; }
+export type {
+  Place, MentalMap, World, Poi, Town,
+} from './world.js';
 
-/** A minimal vision-gated reference (id + pos) — never the live roster object. */
-export interface AgentRef { id: number | string; pos: PosSnapshot; }
+export type {
+  PerceptKind, Percept, Perceivable,
+} from './percept.js';
 
-// ───────────────────────────── belief layer ─────────────────────────────
+export type {
+  EpisodeKind, Episode, Ring, Memory,
+} from './memory.js';
 
-/** One observer→subject belief row (the spec's per-(observer,subject) cell). Loose by
- *  design in Stage 1 — the audit endorsed keeping the multi-concern bag as-is for now. */
-export interface BeliefState {
-  id?: number | string;
-  faction?: string;
-  hostile?: boolean;
-  lastPos?: Vector3 | PosSnapshot | null;
-  confidence?: number;
-  [k: string]: unknown;
-}
+export type {
+  GoalKind, Goal, PlanStep, PlanBind, Plan, Atom, Ambition, AmbitionSnapshot,
+} from './goals.js';
 
-/** The N² per-observer belief table (js/sim/beliefs.js BeliefStore). Loose in Stage 1. */
-export interface BeliefStore {
-  get(subjectId: number | string): BeliefState | undefined;
-  set?(subjectId: number | string, b: BeliefState): void;
-  decay?(dt: number): void;
-  [k: string]: unknown;
-}
+export type {
+  Personality, Needs, Mood, Life, HostileRef, Agent,
+} from './agent.js';
 
-// ───────────────────────────── goals / geography ─────────────────────────────
+export type {
+  SiteHandle, BuildSiteFacade, ResolverFacade, CognitionCtx, FullCtx,
+} from './ctx.js';
 
-/** A motivation goal. `kind` stays a loose string in Stage 1 (discriminated union deferred). */
-export interface Goal { kind: string; [k: string]: unknown; }
+export type {
+  Tag, Verb, ActionEvent, ActionEventSpec, EventBus, BehaviorProfile,
+} from './events.js';
 
-/** A static map place (POI/landmark) — pure geography, no dynamic agent state. */
-export interface Place { id?: string; pos?: Vector3 | PosSnapshot; kind?: string; [k: string]: unknown; }
+export type {
+  EffectOp, AreaKind, DeliveryKind, TargetKind, Trigger,
+  AbilityArea, AbilityDelivery, AbilityEffect, EffectOpts,
+  AbilityHeader, AbilitySpec, CatalogModule, CastCtx, EffectFn, AbilityStatus,
+} from './abilities.js';
 
-/** The shared static places registry (js/sim/mentalmap.js). Loose in Stage 1. */
-export interface MentalMap { [k: string]: unknown; }
+export type {
+  ClassTemplate, ClassInstance, ClassGrant, Significance,
+  Progression, VerbXp, ClassXp,
+} from './rpg.js';
 
-/** The static world (POIs/biomes). Loose in Stage 1. */
-export interface World { [k: string]: unknown; }
+export type {
+  Comparator, Subject, SubjectRef, PredNode, InferNode, RespNode,
+  AuthoredSchema, NormalizedSchema, ReasonEnv, GoalDescriptor,
+} from './reasoning.js';
 
-// ───────────────────────────── the agent ─────────────────────────────
+export type {
+  Stage, Reason, Verdict, TraceNoteOpts, TraceEntry, Trace,
+} from './trace.js';
 
-/** The Agent interface (js/sim/agent.js). Economy-bearing fields are OPTIONAL so any
- *  access without a guard is a typecheck error under strictNullChecks — the freeze lesson
- *  (monsters/player have `profession: null`, no inventory/economy) becomes *checkable*. */
-export interface Agent {
-  // mandatory core (present on every agent incl. monsters/player)
-  id: number | string;
-  name: string;
-  faction: string;
-  pos: Vector3;
-  alive: boolean;
-  beliefs: BeliefStore;
-  personality: Record<string, number>;
-  goals: Goal[];
-  goal?: Goal | null;
+export type {
+  Fighter, FighterState, FighterDir, CombatEvent, MakeFighter,
+} from './combat.js';
 
-  // ECONOMY — absent on professionless agents → OPTIONAL → guard required (freeze lesson)
-  profession?: string | null;
-  inventory?: Record<string, number>;
-  priceBeliefs?: Record<string, number>;
-  gold?: number;
-  recipes?: Set<string>;
-  mastery?: Record<string, number>;
+export type {
+  Commodity, Trade, Reputation,
+} from './economy.js';
 
-  // progression / aux / subsystem flags — all optional
-  progression?: unknown;
-  memory?: unknown;
-  trace?: unknown;
-  ambition?: unknown;
-  abilities?: unknown;
-  townsperson?: boolean;
-  inParty?: boolean;
-  reporter?: boolean;
-  spy?: boolean;
-  controlled?: boolean;
-
-  // methods (delegate to still-.js submodules in Stage 1)
-  decide(ctx: CognitionCtx): void;
-  act(dt: number, ctx: CognitionCtx): void;
-  considerHostile?(b: BeliefState): boolean;
-  applyBuy?(good: string, price: number): void;
-  applySell?(good: string, price: number): void;
-  surplus?(good: string): number;
-
-  // remaining fields are open in Stage 1 (precise interfaces deferred to later stages)
-  [k: string]: unknown;
-}
-
-// ───────────────────────────── the resolver facade ─────────────────────────────
-
-export interface BuildSiteFacade {
-  resolve(agent: Agent, ctx: CognitionCtx): unknown | null;
-}
-
-/** The narrow EXECUTION facade handed to cognition (Simulation._cogResolver). Its methods
- *  return vision-gated `Agent | null` / `AgentRef | null`, but it exposes NO `Map`/`Agent[]`
- *  roster — there is no member to scan. The exact method set is reconciled against
- *  `_cogResolver()` when simulation.ts is ported (later step). Loose where the audit allowed. */
-export interface ResolverFacade {
-  perceive?(observer: Agent, subjectId: number | string): Agent | null;
-  cast?(spec: unknown, caster: Agent): boolean;
-  castTarget?(observer: Agent, subjectId: number | string): Agent | null;
-  nearestVisibleOfFaction?(observer: Agent, faction: string): AgentRef | null;
-  enemyNearLeader?(observer: Agent, leader: Agent): AgentRef | null;
-  seenPos?(observer: Agent, subjectId: number | string): PosSnapshot | null;
-  isLiveAgent?(subjectId: number | string): boolean;
-  marketClear?(a: Agent, good: string, buying: boolean): boolean;
-  deliverTo?(from: Agent, toId: number | string, payload: { item?: string; n?: number; gold?: number }): boolean;
-  buildSite?: BuildSiteFacade;
-  [k: string]: unknown;
-}
-
-// ───────────────────────────── the two contexts (THE SPLIT) ─────────────────────────────
-
-/** EXECUTION-side context (Simulation._ctx). Only execution sees the live roster. */
-export interface FullCtx {
-  agents: Agent[];
-  agentsById: Map<number | string, Agent>;
-  player: Agent | null;
-  perceivables: unknown;
-  world: World;
-  map: MentalMap;
-  time: number;
-  playerId: number | string | null;
-  buildSites: unknown;
-  cities: unknown;
-  resolver: ResolverFacade;
-}
-
-/** RESTRICTED COGNITION context (Simulation._cognitionCtx). Handed to decide()/act().
- *  STRUCTURALLY LACKS agents / agentsById / player / buildSites — reading any from cognition
- *  is a COMPILE ERROR. Mirrors `_cognitionCtx()`'s return literal exactly. The one sanctioned
- *  cross-agent handle is `partyLeader` (steer-fill, EPISTEMIC-OK); `playerId` is a primitive. */
-export interface CognitionCtx {
-  world: World;
-  map: MentalMap;
-  time: number;
-  cities: unknown;
-  playerId: number | string | null;
-  partyLeader: Agent | null;
-  resolver: ResolverFacade;
-}
+export type {
+  BeatKind, Beat, StoryBrief, Article, Bounty,
+} from './news.js';
