@@ -30,6 +30,7 @@ import { constructionTest } from './suites/construction.mjs';
 import { homecomingTest } from './suites/homecoming.mjs';
 import { cityTest } from './suites/city.mjs';
 import { soak } from './suites/soak.mjs';
+import { scalingTest } from './suites/scaling.mjs';
 import { runScenarios } from './scenarios.mjs';
 
 const { ok, failures } = makeOk();
@@ -72,6 +73,10 @@ await homecomingTest(ok, helpers);
 // Phase-1 tile-city: CityGrid invariants + buildingParts raid/collapse/shelter (sync).
 cityTest(ok, helpers);
 await soak(ok, helpers);
+// Phase-3 (Scale) gate: the reasoning-cost-per-agent-per-tick metric stays SUB-LINEAR
+// as N grows (LOD amortizes the distant/idle tail). Fast in-suite sweep; the full
+// LOD-off vs LOD-on proof at larger N lives in the standalone `test/scaling.mjs`.
+await scalingTest(ok, helpers);
 
 console.log(`\n${failures.count ? `${failures.count} CHECK(S) FAILED` : 'ALL CHECKS PASSED'}`);
 process.exit(failures.count ? 1 : 0);

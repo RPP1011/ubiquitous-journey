@@ -179,6 +179,22 @@ export class Agent {
     // roamed, time spent socialising). Cheap counters incremented on the hot
     // path; read by motivation.js to measure ambition progress.
     this.life = { kills: 0, monsterKills: 0, dist: 0, social: 0 };
+    // REASONING-COST counters (Phase 3 — measurement only; read truth-side in depthMetrics,
+    // never inside cognition). Per-tick rates (_decideCalls/_decideCands/_planReplans/
+    // _schemaFireCount) are zeroed by the scheduler at the start of each fixed tick and
+    // overwritten by reason/decide for the agents that run; a skipped (amortized) agent
+    // therefore reads 0 — the metric MEASURES the LOD win. _planDepth is a last-write-wins
+    // gauge (read as a max), not a rate. All degrade to 0 if absent (the freeze lesson).
+    this._decideCalls = 0;     // =1 each tick decide() runs
+    this._decideCands = 0;     // # utility candidates scored this tick
+    this._planReplans = 0;     // # plan (re)plans this tick
+    this._planDepth = 0;       // length of the freshest plan (gauge)
+    // LOD scheduling state (Phase 3 — written by the Simulation scheduler/cognition; read
+    // truth-side in _isRelevant). _lodTick is the per-agent stride counter; _lastGoalChangeAt
+    // + _prevGoalKind back the recent-state-change hysteresis signal.
+    this._lodTick = 0;
+    this._lastGoalChangeAt = 0;
+    this._prevGoalKind = this.goal && this.goal.kind;
     this.ambition = null;
     assignAmbition(this, 0);          // a persistent drive (no-op for the player)
 
@@ -404,6 +420,10 @@ export class Agent {
         const fresh = planGoal(this, goal, ctx);
         if (!fresh) { goal._unreachable = true; return null; }   // pruneGoals drops it
         goal.plan = fresh; goal.step = 0; goal._unreachable = false;
+        // REASONING-COST (Phase 3, measurement only): tally this replan + the fresh plan's
+        // depth. Own-scalar writes; read truth-side in depthMetrics. Degrade-safe.
+        this._planReplans = (this._planReplans || 0) + 1;
+        this._planDepth = (fresh.steps && fresh.steps.length) || 0;
       }
       return goal.plan.steps[goal.step] || null;
     } catch { return null; }

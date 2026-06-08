@@ -885,6 +885,33 @@ export const SCHEMA = {
   //   flee .9 · intercept .85 · hide .95 · suspect .5 · brawl .7 · inert .6
 };
 
+// LEVEL-OF-DETAIL (Phase 3 — Scale): amortized cognition. The SLOW deliberative
+// passes (reason() + decide(), with plan() riding along) run EVERY tick for RELEVANT
+// agents and only every `stride`th tick for the distant/idle tail — hung on the
+// existing fixed-tick accumulator. perceive/decay/gossip/market/society stay every
+// tick (cheap + correctness-bearing: no blind window, no half-finished trade), and
+// act(dt)/movement stay EVERY FRAME (bodies keep moving smoothly while cognition is
+// thinned). The relevance gate lives ENTIRELY in Simulation (truth-side); no cognition
+// file gains a relevance/roster read. Tuned so the dense working town stays MOSTLY
+// full-fidelity (only true frontier/idle agents thinned) — the WIN is the cost metric
+// + the mechanism, not aggressive thinning. All knobs here (tuning-in-config).
+export const LOD = {
+  enabled: true,                 // master gate
+  stride: 6,                     // low-relevance agents reason/decide every 6th tick (6Hz->1Hz)
+  fullFidelityBelow: 40,         // N <= 40 => everyone full-fidelity (scenarios <=15 + the
+                                 //   2-5-agent sub-sims in soak/scenarios stay byte-identical)
+  playerRadius: 28,              // within this of the player => relevant (player present)
+  townCentreRadius: 45,          // within this of own townAnchor => relevant (headless fallback).
+                                 //   Town sites scatter to ~town.radius*0.7 (~49m); 45 keeps the
+                                 //   dense working town ~82% full-fidelity, thinning only the
+                                 //   distant/idle frontier tail (lairing monsters, far wanderers).
+  hostileConf: 0.35,             // threat-belief confidence => relevant; aligned with
+                                 //   SIM.actOnBeliefMin (the threshold decide actually acts on),
+                                 //   so the gate promotes EXACTLY when decide would react.
+  recentWindow: 3.0,             // seconds; a recent goal-kind change keeps an agent full-fidelity
+                                 //   (hysteresis against relevant<->irrelevant thrash at the edge).
+};
+
 // Information provenance: how an agent learned something sets its confidence.
 export const SOURCE = {
   WITNESSED: { tag: 'witnessed', conf: 1.0 },

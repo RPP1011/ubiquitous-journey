@@ -106,6 +106,17 @@ export class DepthProbe {
     this.schemaFires = 0;                 // Σ schemas fired across all samples
     this.schemaFireSamples = 0;           // agent-samples observed (for the per-agent-tick mean)
     this.schemaFireAgents = new Set();    // distinct agents that ever fired a schema
+    // REASONING-COST telemetry (Phase 3 — also STRICTLY ADDITIVE, non-scored context). Counts
+    // the per-tick DELIBERATIVE work — schema predicate evals (above), decide() invocations +
+    // utility candidates scored, plan replans + plan depth — normalised per LIVING agent-sample
+    // so "tractable" is MEASURED (the doc's per-agent-per-tick cost budget). Read from each
+    // agent's own-state counters (set by interpreter/decide/planner); degrades to 0 if absent.
+    // Feeds NO scored metric and NO floor — reported as a context block only, like schemaFires.
+    this.decideCalls = 0;                 // Σ ticks decide() ran across all samples
+    this.decideCands = 0;                 // Σ utility candidates scored
+    this.planReplans = 0;                 // Σ plan (re)plans
+    this.planDepthMax = 0;                // deepest plan observed (gauge)
+    this.reasonCostSamples = 0;           // living non-controlled agent-samples (the denominator)
   }
 
   // Call each sampling window. `now` is sim time (seconds). Cheap + guarded.
@@ -142,6 +153,13 @@ export class DepthProbe {
         this.schemaFireSamples++;
         this.schemaFires += fires;
         if (fires > 0) this.schemaFireAgents.add(a.id);
+        // reasoning-COST telemetry (additive context): per-tick deliberative work for this
+        // agent on its most recent cognition tick. Own-state reads; degrade to 0 if absent.
+        this.reasonCostSamples++;
+        this.decideCalls += (a._decideCalls || 0);
+        this.decideCands += (a._decideCands || 0);
+        this.planReplans += (a._planReplans || 0);
+        if ((a._planDepth || 0) > this.planDepthMax) this.planDepthMax = a._planDepth || 0;
         // ToM peaks
         if (a.beliefs && typeof a.beliefs.all === 'function') {
           let rumor = 0;
@@ -331,6 +349,20 @@ export class DepthProbe {
       perAgentTick: pct(this.schemaFires, this.schemaFireSamples),
       totalFires: this.schemaFires,
       agents: this.schemaFireAgents.size,
+      // REASONING COST PER AGENT-TICK (Phase 3, additive context — NOT scored, NOT a floor).
+      // Normalised by living non-controlled agent-samples so it is FLAT-PER-AGENT by
+      // construction (bounded beliefs/schemas/candidates) — the metric LOD must keep flat or
+      // lower as N grows. `total` sums the cheap O(1) work units (schema evals + candidates
+      // scored + replans) per agent-tick; a thinned agent contributes 0 on its skipped ticks.
+      cost: {
+        schemaEvalsPerAgentTick: pct(this.schemaFires, this.reasonCostSamples),
+        decideCallsPerAgentTick: pct(this.decideCalls, this.reasonCostSamples),
+        candsPerAgentTick: pct(this.decideCands, this.reasonCostSamples),
+        replansPerAgentTick: pct(this.planReplans, this.reasonCostSamples),
+        planDepthMax: this.planDepthMax,
+        total: pct(this.schemaFires + this.decideCands + this.planReplans, this.reasonCostSamples),
+        samples: this.reasonCostSamples,
+      },
     };
     return {
       overall,
@@ -388,6 +420,13 @@ export function formatReport(rep) {
     L.push('\n  REASONING LAYER (InteractionSchemas — context, not scored):');
     L.push(`    ${rep.reasoning.totalFires} schema firings · ${rep.reasoning.perAgentTick.toFixed(3)}/agent-tick · ` +
       `${rep.reasoning.agents} agents reasoned`);
+    const c = rep.reasoning.cost;
+    if (c) {
+      L.push('\n  REASONING COST PER AGENT (Phase 3 — context, not scored):');
+      L.push(`    ${c.schemaEvalsPerAgentTick.toFixed(3)}/at schema-evals · ${c.decideCallsPerAgentTick.toFixed(3)}/at decide · ` +
+        `${c.candsPerAgentTick.toFixed(3)}/at cands · ${c.replansPerAgentTick.toFixed(3)}/at replans · ` +
+        `maxPlanDepth ${c.planDepthMax} · TOTAL ${c.total.toFixed(3)}/agent-tick`);
+    }
   }
   L.push('╚══════════════════════════════════════════════════════════════════');
   return L.join('\n');

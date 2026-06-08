@@ -64,8 +64,34 @@
 >   percept/schema suites are green, and the depth index held (84/100, 21 distinct goal-kinds,
 >   entropy H=0.68). Config in `STEER` (`simconfig.js`; only `fleeAway` is new — speeds/arrival/
 >   stand-off gaps reuse the existing `SIM`/`SOCIAL`/`ECON` constants).
-> - **Phases 3–5 (designed)** — LOD/amortization, the covert/domestic substrate, breadth. Marked
->   *(designed)* below until landed.
+> - **Phase 3 (✓ landed)** — **Scale: a measured cost metric + amortized (LOD) cognition.**
+>   Delivered by the `scale` workflow. Two pieces: (1) a **reasoning-cost-per-agent-per-tick
+>   metric** (`depthMetrics.js` `report().reasoning.cost`, surfaced in `test/depth.mjs` and the
+>   standalone `test/scaling.mjs`): per-tick deliberative work — schema predicate evals
+>   (`_schemaFireCount`), `decide()` invocations + utility candidates scored (`_decideCands`),
+>   plan replans (`_planReplans`) + max plan depth — summed per **living** agent-sample so
+>   "tractable" is MEASURED, not asserted. (2) **LOD / amortized cognition** (`LOD` in
+>   `simconfig.js`, scheduling in `Simulation.update`): agents are tiered by **relevance**
+>   (`Simulation._isRelevant`, truth-side — in combat/fleeing, locked pursuit, active role/party,
+>   carried goal-stack, an act-on threat belief, a recent goal-kind change, near the player, or
+>   near own town centre — the last two give a **headless fallback** with no player); RELEVANT
+>   agents run the slow passes (`reason()` + `decide()`, with `plan()` riding along) EVERY fixed
+>   tick, the distant/idle tail only every `LOD.stride`-th tick — hung on the existing fixed-tick
+>   accumulator ([01](01-sim-spine.md)). `perceive`/`decay`/`gossip`/market/society stay every
+>   tick (no blind window on a threat — perception un-thinned + relevance re-checked every tick =>
+>   a newly-perceived threat **promotes the agent the same tick**, before the flee band, so a
+>   thinned agent never misses an urgent reaction), and `act(dt)`/movement stay **every frame**
+>   (bodies move smoothly while cognition is amortized). The relevance gate reads ONLY own-state +
+>   truth from Simulation orchestration — no cognition file gains a roster/relevance read, so the
+>   epistemic scan stays clean. Small worlds (N ≤ `LOD.fullFidelityBelow`) run everyone
+>   full-fidelity, so the scenario/soak sub-sims are byte-identical. **Gate met** — per-agent cost
+>   is sub-linear/flat as N grows (standalone proof at N≈50/100/200: as N doubles 100→200,
+>   per-agent cost grows only ×1.13 LOD-off / ×1.11 LOD-on — essentially flat once the
+>   fixed-radius town saturates; LOD-on never raises cost and LOWERS it at every N), soak + the
+>   whole scenario suite + epistemic scan green, depth floors held (90/100, 20 distinct
+>   goal-kinds, H=0.72).
+> - **Phases 4–5 (designed)** — the covert/domestic substrate, breadth. Marked *(designed)*
+>   below until landed.
 >
 > Read [02 — the epistemic split](02-epistemic-split.md) first. This doc takes that
 > invariant to its conclusion: agents reason **and execute** purely on their world-model,
@@ -670,17 +696,28 @@ thousands of O(1) evals/sec — trivial — **provided** these hold:
   the enforcement guarantees it (no roster scans are expressible).
 - **Lazy + cached inference** — compute intent/destination *when a decision needs it*, cache
   on the belief with a TTL, invalidate on contradicting perception. Never re-infer every tick.
-- **LOD / amortization** — tier cognition by relevance: agents near the player reason fully
-  each tick; distant/idle agents run a thinned schema set or a slower cadence (hang it on the
-  existing fixed-tick accumulator, [01](01-sim-spine.md)).
+- **LOD / amortization** *(✓ landed, Phase 3)* — cognition is tiered by relevance:
+  `Simulation._isRelevant` (truth-side, own-state + truth, never a cognition file) marks agents in
+  combat/fleeing, locked pursuit, an active role/party, carrying a goal-stack, holding an act-on
+  threat belief, recently re-deliberated, near the player, or near their own town centre as
+  RELEVANT — those run `reason()` + `decide()` (and `plan()`) EVERY fixed tick; the distant/idle
+  tail runs them only every `LOD.stride`-th tick, hung on the existing fixed-tick accumulator
+  ([01](01-sim-spine.md)). `perceive`/`decay`/`gossip` stay un-thinned (relevance re-checked each
+  tick => a freshly-perceived threat promotes the agent immediately — no missed urgent reaction);
+  `act(dt)`/movement stay every frame. Config: `LOD` in `simconfig.js` (`stride`, `fullFidelityBelow`,
+  `playerRadius`, `townCentreRadius`, `hostileConf`, `recentWindow`).
 - **Shared static facts** — geography / gate / destination candidates precomputed once,
   read-only. Destination *inference* is a cheap lookup, not a per-agent search.
-- **Profiled** — extend the depth harness ([08](08-testing.md), `depthMetrics`) with a
-  **reasoning-cost-per-agent-per-tick** metric so "tractable" is *measured*. *(A first cut landed
-  in Phase 2a: the depth report prints `N schema firings · X/agent-tick · M agents reasoned` as
-  additive, non-scored context from the interpreter's `_schemaFireCount`. The full per-tick cost
-  budget/ceiling is Phase 3.)* Adding breadth is free of compute risk: 50 interactions is 50 data
-  rows over one interpreter; cost scales with *firings*, not catalogue size.
+- **Profiled** *(✓ landed, Phase 3)* — the depth harness ([08](08-testing.md), `depthMetrics`)
+  carries a **reasoning-cost-per-agent-per-tick** metric (`report().reasoning.cost`): per-tick
+  schema evals + `decide()` calls + utility candidates scored + plan replans + max plan depth,
+  normalised per **living** agent-sample (a thinned agent contributes 0 on a skipped tick, so the
+  metric MEASURES the LOD win). Surfaced in `test/depth.mjs` (context block) and asserted
+  sub-linear-in-N by `test/scaling.mjs` (full, N≈50/100/200, LOD-off vs LOD-on) + the fast
+  in-suite `test/suites/scaling.mjs` (folded into the headless gate). Measured: at N≈200 the
+  metric is ≈4.5/agent-tick, essentially flat from N≈100 (×1.11) and lower under LOD than without.
+  Adding breadth is free of compute risk: 50 interactions is 50 data rows over one interpreter;
+  cost scales with *firings*, not catalogue size.
 - **Bounded derived state** — the per-`(subject, place)` sighting tallies behind association
   beliefs (Phase 4, Ex. 5) are the first state that grows O(beliefs × places). It stays ≤8×8,
   but it is the first spot where the bound needs an **explicit eviction rule** (mirror the
@@ -700,7 +737,7 @@ against the soak + the depth/perf harness), so the build-up stays orchestrated a
 | **1 — World-model** *(✓ landed)* | mental-map/places registry (`mentalmap.js`) + affordance-weighted destination-intent inference (TTL-cached, invalidation on re-sight) + the Scarecrow percept wired in | **met** — soak green (incl. epistemic scan, 0 leaks); scarecrow tolerance + pursuit-intercept suite passes; depth 84/100 |
 | **2a — Interaction framework** *(✓ landed)* | the `InteractionSchema` IR + interpreter + shared vocabulary + the 6 flagship schemas (all six drive behaviour); the **animacy tally** feeding schema #6; **places-as-percepts** — buildings/own-home as percepts with belief entries (the Scarecrow substrate generalised; affordances gained `shelter`/`rest`), retiring **both** [known debts](#known-debts--leaks-the-gate-cannot-catch) | **met** — soak green (incl. epistemic scan, 0 leaks); the **homecoming test** passes (stale home-intact belief → walk home → discover by sight / decay → reroute, no telepathy); depth floors hold (≈86/100, 19–20 distinct goal-kinds — up from 18 as the schema dispositions became active) |
 | **2b — Steering substrate** *(✓ landed)* | the ~12-entry `goal.kind` locomotion enum collapsed → one `steer()` potential-field executor (`js/sim/agent/steer.js`) + a `STEER_FILLS` table of pure `(a,ctx)→field` steer-fills; the named behaviours moved up into data; world-interaction verbs stay explicit (fired on arrival/contact); `fleeFrom`/`followLeader` retired (→ `fillFlee`/`fillFollow`); the Phase-2a dispositions hide/shadow/avoid folded in (goals built inline by `vocab.js`, locomotion by `fillHide`/`fillShadow`/`fillAvoid`) | **met** — fewer code paths, behaviour preserved: soak + scenario + homecoming + percept + schema suites green (incl. epistemic scan, 0 leaks; `steer:` repertoire gate — every baseline goal.kind still emerges), depth held (84/100, 21 distinct goal-kinds, entropy H=0.68) |
-| **3 — Scale** | LOD / amortized cognition + the reasoning-cost metric | per-agent reasoning cost flat as N grows |
+| **3 — Scale** *(✓ landed)* | the **reasoning-cost-per-agent-per-tick metric** (`depthMetrics` `reasoning.cost`, in `test/depth.mjs` + `test/scaling.mjs`) + **LOD / amortized cognition** (`LOD` config; relevance-tiered `reason()`/`decide()` cadence on the fixed-tick accumulator; `perceive`/`act`/movement un-thinned so no urgent reaction is missed) | **met** — per-agent cost SUB-LINEAR/flat as N grows (N≈100→200: ×1.13 off / ×1.11 on; LOD-on never raises it, lowers it at every N); soak + scenarios + epistemic scan green; depth floors held (90/100, 20 goal-kinds, H=0.72) |
 | **4 — Covert & domestic substrate** | **epistemic atoms** in the planner (`know_assoc`/`know(recipe)` pre/eff; `shadow`/`ask`/`teach`/`quiz` actions that acquire or distribute beliefs), **subject↔place association beliefs** (consolidated from sightings, explicit eviction), the **perception-modelling standoff** (second-order ToM v1, shared by the urchin's stalk and the teacher's curriculum model). Two **economy commits land first**, each baseline-identical via seeding + conservation-preserved: **stored wealth** (purse vs stash — burglable vs lootable) and **recipe-gating** (`knows(recipe_X)` own-state gating production chains). Then the adversarial flagship (**urchin**, Ex. 5) and the cooperative flagship (**teacher**, Ex. 6) over the same substrate; **witness-gated property deeds** (combatEvents' witness logic generalised to crime) | **urchin**: case → infer-stash → burgle end-to-end headless; counter-relocation stales the belief → empty cache; gold conserved. **teacher A/B cohort gate**: a taught cohort beats a same-seed control on trade margin / wilds mortality / time-to-class, gold conserved (tuition is a transfer); **kill the teacher → the next cohort measurably degrades** (knowledge loss is real). If taught ≈ control, the feature fails by its own test |
 | **5 — Breadth + capstone** | grow the interaction catalogue (data only) across the [situation library](#the-situation-library-the-design-bar-for-the-catalogue); **place-occupancy (aggregate-strength) beliefs**, group-level `outmatchedBy`, **captive state + the `free` verb** | depth + perf measured each addition; **the camp-rescue capstone** (Ex. 7, `test/suites/camp-rescue.mjs`): 4 beat 30+ **via the scouted window**, the knowledge-blind **control loses** (refused by its own planner or wiped), and a **scout absent at departure never detects the window** (no telepathic raid-sensing) — the proof the catalogue *composes* into operations |
 

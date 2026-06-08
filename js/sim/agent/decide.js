@@ -18,6 +18,10 @@ const clamp01 = (x) => Math.max(0, Math.min(1, x));
 export function decide(a, ctx) {
   a._rpgNow = ctx.time;   // stamp sim time for this tick's emitted deeds
   if (!a.alive || a.controlled) return;
+  // REASONING-COST (Phase 3, measurement only): this tick ran decide(). Own-scalar write,
+  // read truth-side in depthMetrics — never inside cognition. A tick decide() is SKIPPED
+  // (amortized by LOD) leaves the scheduler-zeroed 0, which is the measured win.
+  a._decideCalls = 1;
 
   // SCHEMA GOAL DWELL-LOCK (anti-thrash): a high-priority schema response (flee/fight set
   // directly by reason()) stamps a short min-dwell lock so a one-tick belief flicker (the
@@ -183,7 +187,14 @@ export function decide(a, ctx) {
   const inv = a.inventory;
 
   const cand = [];
-  const push = (kind, score, extra) => { if (score > 0) cand.push({ kind, score, ...extra }); };
+  // REASONING-COST (Phase 3): count utility candidates actually scored this tick (only the
+  // ones that survive the score>0 gate, off the hot string path). Committed to a._decideCands
+  // just before the goal commit below. The early-return role branches (reporter/duel/avenger/
+  // spy/bounty/arbitrage/expedition/caravan/party) return before this, keeping the
+  // scheduler-zeroed 0 — correct (they ran O(beliefs) work, captured by _schemaFireCount,
+  // but no utility scoring).
+  let _nCand = 0;
+  const push = (kind, score, extra) => { if (score > 0) { _nCand++; cand.push({ kind, score, ...extra }); } };
 
   // survival first: act on a BELIEVED-hostile nearby (beliefs, not truth). A
   // Schmitt band kills the old flee<->work pacing limit-cycle: a threat is in
@@ -347,7 +358,12 @@ export function decide(a, ctx) {
     const bestEff = best.kind === a.goal.kind ? best.score * 1.18 : best.score;
     if (eff > bestEff) best = c;
   }
+  a._decideCands = _nCand;   // REASONING-COST: candidates scored this tick (read truth-side)
   a.goal = best || { kind: a.canWork ? 'work' : 'wander' };
+  // REASONING-COST hysteresis (Phase 3): stamp the time the committed goal.kind last CHANGED,
+  // so the LOD relevance gate can keep a just-re-deliberated agent at full fidelity for a short
+  // window (anti-thrash at the stride edge). Own-scalar writes; read truth-side in _isRelevant.
+  if (a.goal && a.goal.kind !== a._prevGoalKind) { a._lastGoalChangeAt = ctx.time; a._prevGoalKind = a.goal.kind; }
   // TRACE (write-only, never read back): the everyday utility-arbitration winner + its score —
   // the headline "why this behaviour and not another" beat. (The override locks above —
   // duel/avenger/butcher's-shadow/schema flee — commit before this scorer and return; the

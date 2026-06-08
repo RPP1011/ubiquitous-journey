@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { Fighter } from '../fighter.js';
 import { Agent } from './agent.js';
-import { ROSTER, SIM, NAMES, MONSTER, MOTIVE, CAMPS, TOWNS, SCARECROW, BUILD, factionHostile } from './simconfig.js';
+import { ROSTER, SIM, NAMES, MONSTER, MOTIVE, CAMPS, TOWNS, SCARECROW, BUILD, LOD, factionHostile } from './simconfig.js';
 import { assignHouse, founderHouse } from './houses.js';
 import { ARENA_RADIUS, BIOME, findBiomeSpot, regionAt, REGIONS, terrainHeight } from '../arena.js';
 import { resetXpStats } from '../rpg/xpstats.js';
@@ -213,7 +213,7 @@ export class Simulation {
     return synthName();
   }
 
-  spawn() {
+  spawn(opts = {}) {
     // OPEN WORLD: several dense town cores (see TOWNS). Each townsperson belongs to
     // ONE town and lives/works/defends within its home band — so the world is big
     // (wilderness + roads between towns) WITHOUT thinning any town's social drama.
@@ -235,6 +235,14 @@ export class Simulation {
     const SITES = ['field', 'forest', 'mine', 'meadow', 'market'];
     let cohort = 0;
     for (const row of ROSTER) cohort += row.n;
+    // TEST-ONLY count override (guarded): the scaling test (test/scaling.mjs) passes
+    // opts.townsfolkPerTown to build sims at several N and prove per-agent reasoning
+    // cost stays flat as N grows. When opts is empty this is BYTE-IDENTICAL to the
+    // default cohort — soak/depth/scenarios call sim.spawn() with no args and are
+    // untouched. The towns/anchors/sites are unchanged; only the per-town headcount.
+    if (Number.isFinite(opts.townsfolkPerTown) && opts.townsfolkPerTown > 0) {
+      cohort = opts.townsfolkPerTown | 0;
+    }
     // a FULL cohort per town — the open-world point is more dense cores, NOT one
     // town spread thin (spreading the same people thins the drama — measured).
     let gi = 0;
@@ -494,6 +502,42 @@ export class Simulation {
   // is narrow by design, not merely asserted-safe).
   _ctx() { return { agents: this.agents, perceivables: this._perceivables(), agentsById: this.agentsById, world: this.world, map: this._mentalMap(), time: this.time, player: this.player, playerId: this.player ? this.player.id : null, buildSites: this.buildSites, cities: this.cities, resolver: this._cogResolver() }; }
 
+  // LOD RELEVANCE (Phase 3 — Scale): is this agent worth full-fidelity cognition THIS tick?
+  // Truth-side (lives in Simulation orchestration — reads own-state + truth, NEVER widens the
+  // cognition ctx and is never called from a cognition file, so the epistemic split holds).
+  // Short-circuits on the first true; the whole body is try/catch -> the safe default is
+  // FULL-FIDELITY (never starve cognition on an error). Relevant if ANY of:
+  //   1. in combat / fleeing (active survival goal)
+  //   2. a locked pursuit (duel / avenger)
+  //   3. an active special role (party / reporter / bounty / arbitrage / expedition / spy)
+  //   4. carrying a derived multi-step goal stack
+  //   5. a THREAT belief it would act on — uses considerHostile (the SAME predicate decide
+  //      acts on), NOT raw b.hostile, so a freshly-perceived monster/raider (hostile=false but
+  //      factionHostile===true, conf=1.0) promotes the agent the same tick it is perceived
+  //      (perceive runs un-thinned + relevance re-checked every tick => promotion is immediate,
+  //      at vision range, before the flee band)
+  //   6. a recent goal-kind change (hysteresis vs. stride-edge thrash)
+  //   7. near the player (player present)
+  //   8. near its OWN town centre (headless fallback; monsters/raiders have no townAnchor and
+  //      fall through here — caught by signal 1 when hunting, correctly thinned when idle+distant)
+  _isRelevant(a, ctx) {
+    try {
+      const g = a.goal;
+      if (g && (g.kind === 'fight' || g.kind === 'flee')) return true;             // 1
+      if (a._duelWith != null || a.avengerOf != null) return true;                 // 2
+      if (a.inParty || a.reporter || a.bounty || a.arbitrage || a.expedition || a.spy) return true; // 3
+      if (Array.isArray(a.goals) && a.goals.length > 0) return true;               // 4
+      const conf = (LOD.hostileConf != null) ? LOD.hostileConf : SIM.actOnBeliefMin; // 5
+      for (const b of a.beliefs.all())
+        if (a.considerHostile(b) && b.confidence >= conf) return true;
+      if ((ctx.time - (a._lastGoalChangeAt || 0)) < LOD.recentWindow) return true; // 6
+      const pp = this.player && this.player.root && this.player.root.position;     // 7
+      if (pp && a.pos.distanceTo(pp) < LOD.playerRadius) return true;
+      if (a.townAnchor && a.pos.distanceTo(a.townAnchor) < LOD.townCentreRadius) return true; // 8
+      return false;
+    } catch { return true; }   // safe default: full fidelity
+  }
+
   // RESTRICTED COGNITION ctx: handed to a.decide(ctx) and a.act(dt, ctx). It carries NO
   // live-roster handle (no `agents`, no `agentsById`, no `player` object) — so truth is
   // STRUCTURALLY UNREACHABLE from cognition: a roster scan / lookup simply has nothing to
@@ -736,8 +780,27 @@ export class Simulation {
     let guard = 4;
     while (this._acc >= step && guard-- > 0) {
       this._acc -= step;
+      // LOD SCHEDULING (Phase 3 — Scale): reset the per-tick reasoning-cost counters for
+      // EVERY living agent (so a thinned agent reads 0 on its skipped tick — the metric
+      // MEASURES the win), then decide who is DUE for the SLOW deliberative passes this
+      // tick. Relevant agents are always due (and reset their stride phase); the distant/
+      // idle tail is due only every LOD.stride-th tick. Small worlds (N<=fullFidelityBelow)
+      // run everyone full-fidelity. Gate is truth-side (Simulation orchestration).
+      const lodOn = LOD.enabled && this.agents.length > LOD.fullFidelityBelow;
+      for (const a of this.agents) {
+        if (!a.alive) continue;
+        a._decideCalls = 0; a._decideCands = 0; a._planReplans = 0; a._schemaFireCount = 0;
+        a._lodDue = true;
+        if (lodOn) {
+          a._lodTick = (a._lodTick + 1) | 0;
+          if (this._isRelevant(a, ctx)) { a._lodTick = 0; }           // relevant => always due
+          else { a._lodDue = (a._lodTick % LOD.stride) === 0; }       // thinned => every Kth tick
+        }
+      }
       // Theory-of-Mind passes: perceive -> decay -> gossip -> decide (decisions
-      // read beliefs, never ground truth).
+      // read beliefs, never ground truth). perceive/decay/gossip run EVERY tick
+      // (un-thinned): no blind window on a threat, beliefs fade on schedule, and
+      // gossip/group-formation stays cheap + correct regardless of decide cadence.
       for (const a of this.agents) a.perceive(ctx);
       for (const a of this.agents) a.beliefs.decay(step);
       for (const a of this.agents) a.gossipBeliefs(ctx);
@@ -745,8 +808,10 @@ export class Simulation {
       // catalogue per agent over the RESTRICTED cognition ctx (beliefs + own state +
       // static map, never the roster), writing cached beliefs + adopting goals BEFORE
       // decide arbitrates them the same tick. Empty catalogue ⇒ early return ⇒ no-op.
-      for (const a of this.agents) reason(a, cog, SCHEMA_CATALOGUE);
-      for (const a of this.agents) a.decide(cog);   // cognition: beliefs + resolver only
+      // AMORTIZED: only DUE agents reason/decide this tick (plan() rides along inside
+      // decide's needPlan branch). act(dt)/movement stay every frame (below the loop).
+      for (const a of this.agents) { if (a._lodDue) reason(a, cog, SCHEMA_CATALOGUE); }
+      for (const a of this.agents) { if (a._lodDue) a.decide(cog); }   // cognition: beliefs + resolver only
       this._runMarket();
       // RPG: behavior-profile decay + class matching on the same fixed-rate tick.
       for (const a of this.agents) a.progression.tick(this.time);
