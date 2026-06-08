@@ -33,7 +33,7 @@ const RS = REASON as Record<string, Reason>;
 // a {subjectId}-place form, the 'sated' subgoal, and corpseId/item/value fields),
 // so these widen the shared shapes rather than reinventing them. A `place` is a
 // POI-kind string OR a {subjectId} target descriptor resolved via belief.
-type PlannerPlace = string | { subjectId: EntityId };
+type PlannerPlace = string | { subjectId?: EntityId };
 // One subgoal atom the solver chases (the public Atom widened with the extra preds).
 interface SubAtom {
   pred: string;

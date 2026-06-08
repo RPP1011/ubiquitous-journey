@@ -9,8 +9,12 @@
 import { ARENA_RADIUS, terrainHeight, barrierAt } from '../../arena.js';
 import { SIM, CITY } from '../simconfig.js';
 import { collideWalls, gateWaypoint } from '../walls.js';
+import type { Agent } from '../../../types/sim.js';
 
-export function goTo(a, target, dt, run = false) {
+/** A minimal {x,z} (+optional y) destination — a belief lastPos, a POI, an own point. */
+interface XZ { x: number; z: number; y?: number }
+
+export function goTo(a: Agent, target: XZ, dt: number, run = false): boolean {
   const dx = target.x - a.pos.x, dz = target.z - a.pos.z;
   const d = Math.hypot(dx, dz);
   a.fighter.setFacing(Math.atan2(-dx, -dz));
@@ -31,7 +35,7 @@ export function goTo(a, target, dt, run = false) {
 // BEFORE terrain slow. Used by goTo (straight-at-target), fleeFrom's synthetic
 // away-point, and steer()'s resolved force heading — all share one stepper so the
 // feel can never drift. NEVER throws (the freeze lesson). x/z only; y via groundY.
-export function _stepAlong(a, hx, hz, effTarget, dt, sp) {
+export function _stepAlong(a: Agent, hx: number, hz: number, effTarget: XZ | null, dt: number, sp: number): void {
   // town walls: if a wall ring lies between us and the target, steer THROUGH the
   // nearest gate first (a waypoint just past the doorway). A chord to the gate
   // stays inside the ring, so the body funnels head-on through the opening instead
@@ -93,7 +97,10 @@ export function _stepAlong(a, hx, hz, effTarget, dt, sp) {
   // soak. Enabling it later requires threading a grid ref (a.sim) through at spawn.
   if (CITY.collide && a.townId != null) {
     try {
-      const grid = a.sim && a.sim.cities && a.sim.cities.gridFor(a.townId);
+      // a.sim.cities is the dynamic city registry — opaque to the type layer (like
+      // FullCtx.cities). Narrowed locally; this whole branch is dead while CITY.collide off.
+      const sim = a.sim as { cities?: { gridFor(id: number): { isSolidAt(x: number, z: number): boolean } | null } } | undefined;
+      const grid = sim && sim.cities && sim.cities.gridFor(a.townId);
       if (grid && grid.isSolidAt(a.pos.x, a.pos.z)) { a.pos.x = px; a.pos.z = pz; }
     } catch { /* never throw on movement */ }
   }
@@ -105,7 +112,7 @@ export function _stepAlong(a, hx, hz, effTarget, dt, sp) {
 // flat plane. Overworld only (dungeon dwellers / party-followers keep their
 // own y via roam/teleport, so we skip when a roam centre or party y is owned).
 // Browser-visual + headless-harmless (height is a pure function). Guarded.
-export function groundY(a) {
+export function groundY(a: Agent): void {
   // browser-visual ONLY: the sim reasons purely in x/z, so terrain y is cosmetic.
   // Leaving y=0 headless keeps every distance check (gossip/combat/groups, which
   // use 3D distanceTo) identical to before — no behavioural drift on the tick.

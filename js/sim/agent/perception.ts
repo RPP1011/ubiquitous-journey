@@ -11,10 +11,37 @@ import { inferDestination } from '../beliefs.js';
 import { SIM, SOURCE, BAND, COMMODITIES, ECON, MAP, factionHostile } from '../simconfig.js';
 import { PERCEPT_KIND } from '../percept.js';
 import { STAGE, REASON } from '../trace.js';
+import type { Agent, FullCtx, Perceivable } from '../../../types/sim.js';
+import type { Vector3 } from 'three';
+import type { EntityId, Stage, Reason } from '../../../types/sim.js';
+
+// trace.js infers STAGE/REASON members as plain `string`; their values ARE the literal
+// Stage/Reason codes, so retype them for Trace.note's typed params.
+const STAGE_T = STAGE as Record<string, Stage>;
+const REASON_T = REASON as Record<string, Reason>;
+
+// The perceivable SURFACE perception reads (truth-in side of the bridge). A union of the
+// agent + percept fields it touches; the building-percept extras (kind/ownerId/buildKind/
+// benefitKind) are optional because a person/agent carries none. Reading these is the
+// sanctioned allowlisted appearance-read — never the subject's mind.
+interface PerceivedThing {
+  id: EntityId;
+  pos: Vector3;
+  alive: boolean;
+  faction: string;
+  disguiseFaction?: string | null;
+  controlled?: boolean;
+  notoriety?: number;
+  kind?: string;
+  ownerId?: EntityId;
+  buildKind?: string;
+  benefitKind?: string;
+}
+const asThing = (o: Perceivable): PerceivedThing => o as unknown as PerceivedThing;
 
 // perceive: sight of nearby agents writes high-confidence beliefs (the player
 // is just another subject, so NPCs naturally form beliefs about you).
-export function perceive(a, ctx) {
+export function perceive(a: Agent, ctx: FullCtx): void {
   if (!a.alive || a.controlled) return;
   // terrain shapes sight: high ground sees FARTHER, and a quarry hiding in
   // deep wood / a low vale is HARDER to spot. Effective range = base vision ×
@@ -26,8 +53,9 @@ export function perceive(a, ctx) {
   // same perceivable surface (.pos/.alive/.disguiseFaction||.faction/.id) so an observer
   // files a person-belief about it — the "mistake a scarecrow for a person" case. It has NO
   // .agent/.beliefs, but perception only WRITES to a.beliefs, so a mindless subject is fine.
-  for (const o of (ctx.perceivables || ctx.agents)) {
-    if (o === a) continue;
+  for (const raw of (ctx.perceivables || ctx.agents)) {
+    if (raw === a) continue;
+    const o = asThing(raw);
     // A BUILDING percept's `alive` encodes its SHELTER state, NOT whether it EXISTS — a
     // torched-but-standing home reads alive=false yet must still be PERCEIVABLE so its owner can
     // DISCOVER the ruin by sight (the homecoming). A gutted building is removed via despawnPercept,
@@ -69,7 +97,7 @@ export function perceive(a, ctx) {
       Math.abs(prior.lastTick - (ctx.time - tickDt)) < tickDt * 0.5 &&
       prior.lastPos.distanceToSquared(o.pos) > (SIM.moveEvidenceEps || 0.04));
     const b = a.beliefs.observe(o.id, seenFaction, o.pos, ctx.time, false);
-    if (movedAlive) b.recordAnimacy('moved', ctx.time);
+    if (movedAlive) b.recordAnimacy('moved');   // (runtime ignores a 2nd `now` arg)
     // believed PLAYER FAME: seeing the player (a controlled agent) records its true
     // notoriety into my belief, so the fear gate (decide.js) reads a believed scalar
     // rather than a live player handle. An NPC who never saw the player holds no belief
@@ -92,7 +120,7 @@ export function perceive(a, ctx) {
 // if a previously-intact home-belief flips to sheltered=false I file a `home_lost` episode WHEN
 // LEARNED (not when it burned). Guarded; never throws. `o.ownerId === a.id` compares my own id
 // to a percept surface field (allowlisted, like reading o.faction).
-function perceiveBuilding(a, o, ctx) {
+function perceiveBuilding(a: Agent, o: PerceivedThing, ctx: FullCtx): void {
   try {
     const bb = a.beliefs.observe(o.id, 'unknown', o.pos, ctx.time, false);
     // classify the place (home if it's mine, else tavern if dressed as one, else a building).
@@ -116,7 +144,7 @@ function perceiveBuilding(a, o, ctx) {
 // stale belief with no destination yet, infer where the quarry is making for (so a pursuer
 // can intercept). Re-acquisition by sight (observe) clears destPos. Belief-only + static
 // geography; never reads truth. Guarded; never throws.
-function inferLostQuarries(a, ctx) {
+function inferLostQuarries(a: Agent, ctx: FullCtx): void {
   try {
     const now = ctx.time, ttl = MAP.destTTL;
     for (const b of a.beliefs.all()) {
@@ -141,7 +169,7 @@ function inferLostQuarries(a, ctx) {
       // lost quarry — the destination-intent pursuit's "I think it's making for X" beat.
       // We log only on a fresh commit (it had none, now it does). Own-state; guarded.
       if (!hadDest && b.destPos) {
-        a.trace.note(STAGE.INFER, REASON.DEST_INFERRED, {
+        a.trace.note(STAGE_T.INFER, REASON_T.DEST_INFERRED, {
           t: now, subjectId: b.subjectId, a: b.destId || 'frontier', b: b.intent || null,
         });
       }
@@ -150,7 +178,7 @@ function inferLostQuarries(a, ctx) {
 }
 
 // gossip: adopt a nearby ally's more-certain beliefs (carries standing too).
-export function gossipBeliefs(a, ctx) {
+export function gossipBeliefs(a: Agent, ctx: FullCtx): void {
   if (!a.alive || a.controlled) return;
   for (const o of ctx.agents) {
     if (o === a || !o.alive || o.controlled) continue;

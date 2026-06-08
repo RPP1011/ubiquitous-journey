@@ -32,7 +32,7 @@ export interface ResolverFacade {
   cast(spec: AbilitySpec, caster: Agent): boolean;
   castTarget(observer: Agent, subjectId: EntityId): Agent | null;
   nearestVisibleOfFaction(observer: Agent, faction: string): AgentRef | null;
-  enemyNearLeader(observer: Agent, leader: Agent): AgentRef | null;
+  enemyNearLeader(observer: Agent, leader: Agent | null): AgentRef | null;
   seenPos(observer: Agent, subjectId: EntityId): PosSnapshot | null;
   isLiveAgent(subjectId: EntityId): boolean;
   marketClear(a: Agent, good: string, buying: boolean): boolean;

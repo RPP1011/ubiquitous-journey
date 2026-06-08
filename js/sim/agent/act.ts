@@ -20,25 +20,33 @@ import { goTo, groundY } from './movement.js';
 import { steer, STEER_FILLS } from './steer.js';
 import { masteryMul } from './occupation.js';
 import { collideWalls } from '../walls.js';
+import type {
+  Agent, CognitionCtx, PlanStep, PlanBind, AbilitySpec, FighterDir, ActionEventSpec, ActionEvent,
+} from '../../../types/sim.js';
+
+// events.js infers makeEvent's `tags=[]` default as never[]; retype to its real spec.
+const mkEvent = makeEvent as (spec: ActionEventSpec) => ActionEvent;
+// simconfig GOODS inferred without an index signature (allowJs).
+const GOODS_T = GOODS as Record<string, { inputs: Record<string, number> | null; site: string; raw: boolean; tags: string[] } | undefined>;
 
 // Map a producer's commodity output -> the behavior tags the deed earns. There
 // is no per-commodity tag in the RPG vocabulary, so produced goods map to the
 // gather/craft identity that makes them (sourced from GOODS). A chosen
 // occupation thus steers which class the agent builds.
-const OUTPUT_TAGS = Object.fromEntries(
-  Object.keys(GOODS).map((g) => [g, GOODS[g].tags])
+const OUTPUT_TAGS: Record<string, string[]> = Object.fromEntries(
+  Object.keys(GOODS).map((g) => [g, GOODS_T[g]!.tags])
 );
 
-const clamp01 = (x) => Math.max(0, Math.min(1, x));
-const DIRS = [DIR.UP, DIR.DOWN, DIR.LEFT, DIR.RIGHT];
-const randDir = () => DIRS[(Math.random() * 4) | 0];
+const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
+const DIRS: FighterDir[] = [DIR.UP, DIR.DOWN, DIR.LEFT, DIR.RIGHT];
+const randDir = (): FighterDir => DIRS[(Math.random() * 4) | 0];
 
 // resolveLeaderRef + the follow locomotion moved to steer.js (fillFollow) in Phase 2b:
 // follow is now a steer-fill (formation-slot attractor + snapTo teleport), dispatched
 // through steer() like every other locomotion behaviour.
 
 // --- act ---------------------------------------------------------------------
-export function act(a, dt, ctx) {
+export function act(a: Agent, dt: number, ctx: CognitionCtx): void {
   if (!a.alive || a.controlled) return;
   a.priceGossip(ctx, dt);
   // drink a remedy when badly hurt — keeps a recurring demand for potions
@@ -55,7 +63,8 @@ export function act(a, dt, ctx) {
   // verbs — the doc's hard caution). The genuinely-special executors (plan/fight/spy/
   // build, the multi-tick state machines, and the not-yet-migrated locomotion kinds)
   // stay dispatched, not table-filled, and fall through to the shared epilogue below.
-  const k = a.goal.kind;
+  const goal = a.goal!;
+  const k = goal.kind;
   if (k === 'plan') execPlanStep(a, dt, ctx);
   else if (k === 'fight') combatStep(a, dt, ctx);
   else if (k === 'spy') spyStep(a, dt, ctx);
@@ -83,7 +92,7 @@ export function act(a, dt, ctx) {
     } else if (k === 'comfort' && arrived) {
       // restore comfort; a tavern also tops up social (and feeds belonging warmth).
       a.needs.comfort = clamp01((a.needs.comfort ?? 1) + COMFORT.restoreRate * dt);
-      if (a.goal.srcKind === 'tavern') {
+      if (goal.srcKind === 'tavern') {
         a.needs.social = clamp01(a.needs.social + COMFORT.tavernSocialRate * dt);
         a.life.social += COMFORT.tavernSocialRate * dt;   // tavern colocation feeds belonging
       }
@@ -97,7 +106,7 @@ export function act(a, dt, ctx) {
       // bond to ANY non-null `rel` on arrival (including arriving at the market fallback
       // with a below-knownConf rel), so the condition deliberately does NOT re-gate on
       // confidence — only the standing/hostility cap, as before.
-      const rel = (a.goal.withId != null) ? a.beliefs.get(a.goal.withId) : null;
+      const rel = (goal.withId != null) ? a.beliefs.get(goal.withId) : null;
       if (rel && !rel.hostile && rel.standing >= 0)
         rel.standing = Math.min(BAND.affinityCap, rel.standing + SOCIAL.bondBonus * dt);
     } else if (k === 'sightsee' && arrived) {
@@ -133,7 +142,7 @@ export function act(a, dt, ctx) {
 // 'exfil'; here we just drive the body. On reaching the camp it resets to 'scout'
 // for another run. Fully guarded — a spy with no camp anchor simply edges toward
 // the core (still infiltrating), never throwing on the tick.
-function spyStep(a, dt, ctx) {
+function spyStep(a: Agent, dt: number, _ctx: CognitionCtx): void {
   const S = a.spy;
   if (!S) { goTo(a, new THREE.Vector3(0, a.pos.y, 0), dt); return; }
   if (S.phase === 'exfil') {
@@ -150,7 +159,7 @@ function spyStep(a, dt, ctx) {
     const jx = (Math.random() - 0.5) * 6, jz = (Math.random() - 0.5) * 6;
     S.scoutTarget = new THREE.Vector3(jx, a.pos.y, jz);
   }
-  goTo(a, S.scoutTarget, dt, true);
+  goTo(a, S.scoutTarget!, dt, true);
 }
 
 // --- controlled execution (the single avatar the player drives) -------------
@@ -158,16 +167,17 @@ function spyStep(a, dt, ctx) {
 // from mouse orders and calls this each frame. We reuse the very same movement
 // and combat primitives the NPC AI uses, so the body behaves consistently and
 // there's no second combat path to keep in sync.
-export function actControlled(a, dt, ctx) {
+export function actControlled(a: Agent, dt: number, ctx: CognitionCtx): void {
   if (!a.alive) return;
-  switch (a.goal.kind) {
+  const goal = a.goal!;
+  switch (goal.kind) {
     case 'fight': combatStep(a, dt, ctx); break;
     case 'goto': {
       // a controlled GOTO is a single-attractor steer to the ordered target; arrival
       // (or a missing target) drops back to idle. steer() faces/arrives/clamps exactly
-      // as the old goTo did (same shared stepper).
-      const t = a.goal.target;
-      const field = t ? { attractors: [{ pos: t }], run: a.goal.run } : null;
+      // as the old goTo did (same shared stepper). A goto target is a POSITION (Vector3).
+      const t = goal.target as { x: number; z: number } | undefined;
+      const field = t ? { attractors: [{ pos: t, weight: 1 }], run: goal.run } : null;
       if (!field || steer(a, field, dt)) a.goal = { kind: 'idle' };
       break;
     }
@@ -176,10 +186,10 @@ export function actControlled(a, dt, ctx) {
       // resolver, which returns a position snapshot, not the live object). Lost from
       // sight -> idle. Reads no roster handle. steer() handles the walk + arrival halt;
       // arrival sets the `arrived` flag (talkRange-gated below, not steer's arriveDist).
-      const sp = ctx.resolver ? ctx.resolver.seenPos(a, a.goal.targetId) : null;
+      const sp = (ctx.resolver && goal.targetId != null) ? ctx.resolver.seenPos(a, goal.targetId) : null;
       if (!sp) { a.goal = { kind: 'idle' }; break; }
-      if (a.pos.distanceTo(sp) <= SIM.talkRange) { a.fighter.setMoving(0); a.goal.arrived = true; }
-      else steer(a, { attractors: [{ pos: sp }] }, dt);
+      if (a.pos.distanceTo(sp as unknown as THREE.Vector3) <= SIM.talkRange) { a.fighter.setMoving(0); goal.arrived = true; }
+      else steer(a, { attractors: [{ pos: sp, weight: 1 }] }, dt);
       break;
     }
     default: a.fighter.setMoving(0); break;   // idle / post-kill 'wander'
@@ -191,10 +201,10 @@ export function actControlled(a, dt, ctx) {
 // crafted good (inputs present) converts inputs->output on a timer; a raw good
 // accrues over time, tool-boosted + tool-wearing. Guarded: a missing/invalid
 // trade is a no-op (never throws on the tick — the freeze lesson).
-export function produce(a, dt) {
+export function produce(a: Agent, dt: number): void {
   const output = a._trade;
-  const g = output && GOODS[output];
-  if (!g) { a.fighter.setMoving(0); return; }
+  const g = output ? GOODS_T[output] : null;
+  if (!g || !output) { a.fighter.setMoving(0); return; }
   const inv = a.inventory;
   a.fighter.setMoving(0);
   // INCREASING RETURNS TO MASTERY: a seasoned maker is far more productive at its craft —
@@ -214,16 +224,17 @@ export function produce(a, dt) {
       a.fighter.setMoving(0); return;
     }
     // crafted good: convert inputs -> output on the smithing timer
-    const has = Object.keys(g.inputs).every((c) => (inv[c] || 0) >= g.inputs[c]);
+    const inputs = g.inputs;
+    const has = Object.keys(inputs).every((c) => (inv[c] || 0) >= inputs[c]);
     if (has) {
       a._smithTimer += dt;
       if (a._smithTimer >= ECON.smithSecsPerTool / skillMul) {
         a._smithTimer = 0;
-        for (const c in g.inputs) inv[c] -= g.inputs[c];
+        for (const c in inputs) inv[c] -= inputs[c];
         if ((inv[output] || 0) < ECON.maxStack) inv[output] = (inv[output] || 0) + 1;
         a.mastery[output] = (a.mastery[output] || 0) + 1;   // practice deepens mastery
         // a crafted good is a discrete crafting deed
-        bus.emit(makeEvent({
+        bus.emit(mkEvent({
           actorId: a.id, verb: 'forge', tags: OUTPUT_TAGS[output] || ['CRAFTING'],
           magnitude: 1, t: a._rpgNow,
         }));
@@ -241,7 +252,7 @@ export function produce(a, dt) {
   while (a._produceAccum >= 1) {
     a._produceAccum -= 1;
     a.mastery[output] = (a.mastery[output] || 0) + 1;   // practice deepens mastery
-    bus.emit(makeEvent({
+    bus.emit(mkEvent({
       actorId: a.id, verb: 'produce',
       tags: OUTPUT_TAGS[output] || ['ENDURANCE'],
       magnitude: 1, t: a._rpgNow,
@@ -260,7 +271,7 @@ export function produce(a, dt) {
 // so the soak is byte-identical). Phase 4 raises the rate and emits an 'invention' Chronicle
 // beat here. Fully guarded — never throws on the tick (the freeze lesson). The rate<=0
 // early-return runs BEFORE any Math.random() draw, so day-one doesn't perturb the RNG stream.
-function maybeRediscover(a, output, dt) {
+function maybeRediscover(a: Agent, output: string, dt: number): void {
   try {
     const rate = (RECIPES && RECIPES.rediscoverPerSec) || 0;
     if (rate <= 0 || !a.recipes) return;
@@ -276,7 +287,7 @@ function maybeRediscover(a, output, dt) {
 // wood actually contributed. Drains labour (energy + tool wear) and emits a build
 // deed that grows a Mason/Carpenter identity. Completion is detected + finalized
 // in BuildSites.tick. Fully guarded — never throws on the tick (the freeze lesson).
-export function buildStep(a, dt, ctx) {
+export function buildStep(a: Agent, dt: number, ctx: CognitionCtx): void {
   try {
     if (!a.canWork) { a.fighter.setMoving(0); return; }     // monsters/player never build
     // DEBT #2 RETIRED (Phase 2a): build state is reached ONLY through the EXECUTION facade
@@ -313,7 +324,7 @@ export function buildStep(a, dt, ctx) {
         a._produceAccum = (a._produceAccum || 0) + gained;
         while (a._produceAccum >= 1) {
           a._produceAccum -= 1;
-          bus.emit(makeEvent({ actorId: a.id, verb: 'produce', tags: ['ENDURANCE'], magnitude: 1, t: a._rpgNow }));
+          bus.emit(mkEvent({ actorId: a.id, verb: 'produce', tags: ['ENDURANCE'], magnitude: 1, t: a._rpgNow }));
         }
         return;                                                 // keep felling until stocked
       }
@@ -324,7 +335,9 @@ export function buildStep(a, dt, ctx) {
     if (!goTo(a, sitePos, dt)) return;
 
     // ON THE PLOT — WOOD RESERVATION (closed money loop: a commodity transfer via the facade).
-    rb.feedWood(a, site, site.woodNeeded);                     // contribute all carried wood
+    // site is an OPAQUE SiteHandle; woodNeeded is the one surface field the caller passes back.
+    const woodNeeded = (site as { woodNeeded?: number }).woodNeeded;
+    rb.feedWood(a, site, woodNeeded as number);                // contribute all carried wood
 
     // PROGRESS ACCRUAL — capped by the wood actually contributed (the facade clamps it), so
     // the owner must keep feeding wood (gathered/bought) to finish.
@@ -340,7 +353,7 @@ export function buildStep(a, dt, ctx) {
       a._buildAccum = (a._buildAccum || 0) + adv;
       while (a._buildAccum >= 0.2) {
         a._buildAccum -= 0.2;
-        bus.emit(makeEvent({
+        bus.emit(mkEvent({
           actorId: a.id, verb: 'build',
           tags: ['BUILD', 'CRAFTING', 'ENDURANCE'], magnitude: 1, t: a._rpgNow,
         }));
@@ -352,8 +365,9 @@ export function buildStep(a, dt, ctx) {
 
 // close on a believed-hostile target and trade directional blows (reuses the
 // Fighter swing state machine, telegraphed like the old enemy AI).
-export function combatStep(a, dt, ctx) {
+export function combatStep(a: Agent, dt: number, ctx: CognitionCtx): void {
   const f = a.fighter;
+  const targetId = a.goal!.targetId;
   a._attackCd -= dt;
   a._castCd -= dt;
   // ACTIVE PERCEPTION of the engaged target: while I can SEE it, my belief about where it
@@ -366,8 +380,9 @@ export function combatStep(a, dt, ctx) {
   // This goes through the RESOLVER's vision-gated perception (truth in → belief out, the
   // sanctioned bridge): cognition never holds the roster, so it can't read an arbitrary
   // entity — it can only ask "if I can see my target, refresh my belief of it".
+  if (targetId == null) { a.goal = { kind: 'wander' }; return; }
   const seenThisTick = ctx.resolver && ctx.resolver.perceive
-    ? !!ctx.resolver.perceive(a, a.goal.targetId)   // re-acquired by sight -> belief refreshed
+    ? !!ctx.resolver.perceive(a, targetId)   // re-acquired by sight -> belief refreshed
     : false;
   // BELIEF-GATED: act on where I BELIEVE the threat is, never its true position. The fight
   // target is a belief subject; I close on, face and swing at that believed spot, and
@@ -375,7 +390,7 @@ export function combatStep(a, dt, ctx) {
   // actually struck. A belief faded below the act threshold means I've lost track → break
   // off. No true-object deref here, so the "target" may be a foe that moved, a corpse, or a
   // SCARECROW — and nothing in this path assumes otherwise.
-  const b = a.beliefs.get(a.goal.targetId);
+  const b = a.beliefs.get(targetId);
   if (!b || b.confidence < SIM.actOnBeliefMin) { a.goal = { kind: 'wander' }; return; }
   // DESTINATION-INTENT PURSUIT (Theory of Mind, not dead-reckoning): when the belief is
   // FRESH (just sighted, high confidence) I close on the last SIGHTING (lastPos). When it
@@ -402,7 +417,7 @@ export function combatStep(a, dt, ctx) {
     // live agent — the resolver returns it ONLY when vision-confirmed (a belief about a
     // scarecrow returns null and simply can't be cast at; the melee swing below still
     // lands geometrically on whatever body is actually there).
-    const realTarget = ctx.resolver ? ctx.resolver.castTarget(a, a.goal.targetId) : null;
+    const realTarget = ctx.resolver ? ctx.resolver.castTarget(a, targetId) : null;
     if (realTarget) tryCastAbility(a, realTarget, dist, ctx);
   }
   if (dist > reach) {
@@ -437,7 +452,7 @@ export function combatStep(a, dt, ctx) {
 // existing swing routes the damage via combat.js). Everything is guarded so the
 // fixed tick can NEVER throw on an ability-less / ctx-less / dead-target agent
 // (the freeze lesson). Returns true if a spec was cast or armed.
-export function tryCastAbility(a, target, dist, ctx) {
+export function tryCastAbility(a: Agent, target: Agent, dist: number, ctx: CognitionCtx): boolean {
   try {
     // `target` is a RESOLVER-confirmed live body (vision-gated, supplied by combatStep via
     // ctx.resolver.castTarget) — casting a spec is geometric EXECUTION on a real agent.
@@ -468,8 +483,8 @@ export function tryCastAbility(a, target, dist, ctx) {
 // knockback). At range we prefer NON-melee reach (projectile/area/instant ranged)
 // that can actually hit; adjacent we prefer melee. Ties break on damage. Ready =
 // off the interpreter cooldown. Returns a validated catalog/generated spec or null.
-export function bestOffensiveAbility(a, dist, now) {
-  let best = null, bestScore = -Infinity;
+export function bestOffensiveAbility(a: Agent, dist: number, now: number): AbilitySpec | null {
+  let best: AbilitySpec | null = null, bestScore = -Infinity;
   for (const spec of a.abilities.values()) {
     if (!spec || !spec.header) continue;
     const tgt = spec.header.target;
@@ -478,9 +493,11 @@ export function bestOffensiveAbility(a, dist, now) {
     if (dmg <= 0) continue;                                // no hostile effect
     if (onCooldown(a, spec, now)) continue;             // still recharging
     const melee = isMelee(spec);
-    // can this spec actually reach the target from here?
+    // can this spec actually reach the target from here? area dims are union-shaped
+    // (r on circle/cone, len on line) — read both loosely, defaulting to 0.
+    const area = spec.header.area as { r?: number; len?: number };
     const reach = melee ? Math.max(spec.header.range, 2.2)
-      : Math.max(spec.header.range, spec.header.area.r || 0, spec.header.area.len || 0);
+      : Math.max(spec.header.range, area.r || 0, area.len || 0);
     if (dist > reach + 0.001) continue;                    // out of range -> skip
     // prefer the delivery suited to the gap: ranged when target is beyond melee,
     // melee when adjacent. Otherwise score on raw offensive power.
@@ -495,7 +512,7 @@ export function bestOffensiveAbility(a, dist, now) {
 
 // A spec's offensive weight: its damage amount, plus a small credit for control
 // effects (stun/slow/knockback) so a pure-control spec still counts as an attack.
-export function offensivePower(spec) {
+export function offensivePower(spec: AbilitySpec): number {
   let p = 0;
   for (const e of spec.effects || []) {
     if (e.op === 'damage') p += Math.max(0, e.amount || 0);
@@ -510,9 +527,11 @@ export function offensivePower(spec) {
 // (which only MOVE value — the closed money loop stays intact). When the step
 // effect holds, advance the step pointer; when the goal predicate is true, pop
 // it and record a closure memory. Guarded; never throws on the tick.
-export function execPlanStep(a, dt, ctx) {
+export function execPlanStep(a: Agent, dt: number, ctx: CognitionCtx): void {
   const goal = a.goals[a.goals.length - 1];
-  const step = a.goal.step;
+  // a.goal is the committed 'plan' goal: its `step` is the injected PlanStep candidate
+  // (decide pushes { step: planStep }), distinct from the stack goal's numeric pointer.
+  const step = a.goal!.step as PlanStep | undefined;
   if (!goal || !step) { a.fighter.setMoving(0); return; }
   try {
     execPrimitive(a, step, dt, ctx);
@@ -520,7 +539,8 @@ export function execPlanStep(a, dt, ctx) {
     if (stepEffectHolds(a, ctx, step) && goal.plan) {
       if (goal.step === undefined) goal.step = 0;
       // only advance if we're still on the same step (planStep is the cached one)
-      if (goal.plan.steps[goal.step] === step) goal.step++;
+      const ptr = (typeof goal.step === 'number') ? goal.step : 0;
+      if (goal.plan.steps[ptr] === step) goal.step = ptr + 1;
     }
     // goal complete? pop + closure memory (memory <-> goals feedback) + the
     // narrative-beat xp for fulfilling a lived arc (PHASE 1; same award as the
@@ -536,7 +556,7 @@ export function execPlanStep(a, dt, ctx) {
   } catch { a.fighter.setMoving(0); }
 }
 
-export function execPrimitive(a, step, dt, ctx) {
+export function execPrimitive(a: Agent, step: PlanStep, dt: number, ctx: CognitionCtx): void {
   const b = step.bind || {};
   switch (step.exec ? step.exec.verb : step.prim) {
     case 'goto': {
@@ -551,8 +571,8 @@ export function execPrimitive(a, step, dt, ctx) {
       // fully belief-gated — closes on lastPos / inferred destination, re-acquires by
       // sight, casts on a vision-confirmed body). No belief / faded -> march to the last
       // believed spot. No roster read; the quarry may be a moved foe, a corpse, a scarecrow.
-      const bel = a.beliefs.get(b.target);
-      if (bel && bel.confidence >= SIM.actOnBeliefMin) { a.goal.targetId = b.target; combatStep(a, dt, ctx); }
+      const bel = b.target != null ? a.beliefs.get(b.target) : null;
+      if (bel && bel.confidence >= SIM.actOnBeliefMin) { a.goal!.targetId = b.target; combatStep(a, dt, ctx); }
       else {
         // no/faded belief: march (walk) to the last believed spot via a single-attractor
         // steer. combatStep itself stays special (not migrated). Null target -> idle.
@@ -563,10 +583,11 @@ export function execPrimitive(a, step, dt, ctx) {
     }
     case 'produce': produce(a, dt); break;
     case 'consume': {
-      if ((a.inventory[b.item] || 0) >= 1 && a.needs.hunger < 1) {
+      const item = b.item;
+      if (item && (a.inventory[item] || 0) >= 1 && a.needs.hunger < 1) {
         const amt = ECON.eatRate * dt;
         a.needs.hunger = clamp01(a.needs.hunger + amt);
-        a.inventory[b.item] = Math.max(0, a.inventory[b.item] - amt);
+        a.inventory[item] = Math.max(0, a.inventory[item] - amt);
       }
       a.fighter.setMoving(0);
       break;
@@ -574,6 +595,7 @@ export function execPrimitive(a, step, dt, ctx) {
     case 'gather': {
       // gather a raw good at its node: move to the node, then accrue a unit.
       const good = b.good;
+      if (!good || !b.site) { a.fighter.setMoving(0); break; }
       if ((a.inventory[good] || 0) >= (b.n || 1)) { a.fighter.setMoving(0); break; }
       const node = ctx.world && ctx.world.nearest(b.site, a.pos);
       if (node && goTo(a, node.pos, dt)) {
@@ -592,38 +614,40 @@ export function execPrimitive(a, step, dt, ctx) {
 // there — the conserved clearing is performed by the EXECUTION resolver (marketClear),
 // which finds the counterparty actually at the market POI and moves gold + goods between
 // two real agents (never minting). The agent never reads cp.gold/pos/priceBeliefs.
-export function marketStep(a, step, dt, ctx) {
+export function marketStep(a: Agent, step: PlanStep, dt: number, ctx: CognitionCtx): void {
   const b = step.bind || {};
   const m = ctx.world && ctx.world.nearest(POI_KIND.MARKET, a.pos);
   if (!m || !goTo(a, m.pos, dt)) return;          // still travelling
   a.fighter.setMoving(0);
-  if (!ctx.resolver) return;
+  if (!ctx.resolver || !b.good) return;
   ctx.resolver.marketClear(a, b.good, step.prim === 'buy');   // success/fail; replan next decide
 }
 
 // give item×n to a benefactor: walk to its BELIEVED position, then have the resolver MOVE
 // the goods (conserved; fires the receiver's own succour/standing hook) and stamp _repaid
 // so goalRepay's predicate fires. The giver never touches to.inventory/needs/beliefs.
-export function giveStep(a, b, dt, ctx) {
-  const n = b.n || 1, item = b.item;
+export function giveStep(a: Agent, b: PlanBind, dt: number, ctx: CognitionCtx): void {
+  const n = b.n || 1, item = b.item, to = b.to;
+  if (item == null || to == null) { a.fighter.setMoving(0); return; }
   if ((a.inventory[item] || 0) < n) { a.fighter.setMoving(0); return; }   // lost the goods -> replan
   // attempt the conserved transfer FIRST — the resolver co-location-gates it, so a deliver
   // lands the moment we're at reach (and is a clean no-op otherwise). On success, stamp
   // _repaid so goalRepay's predicate fires.
-  if (ctx.resolver && ctx.resolver.deliverTo(a, b.to, { item, n })) { a._repaid[b.to] = true; a.fighter.setMoving(0); return; }
+  if (ctx.resolver && ctx.resolver.deliverTo(a, to, { item, n })) { a._repaid[to] = true; a.fighter.setMoving(0); return; }
   // not yet at reach: walk toward where I BELIEVE the receiver is (belief lastPos). No
   // belief -> I don't know where to go (idle; decide re-routes).
-  const tp = stepTargetPos(a, ctx, { subjectId: b.to });
+  const tp = stepTargetPos(a, ctx, { subjectId: to });
   if (tp) goTo(a, tp, dt); else a.fighter.setMoving(0);
 }
 
 // pay amt coin to a benefactor: walk to its BELIEVED position, then have the resolver MOVE
 // the gold (conserved; fires the receiver's own succour/standing hook inside the sim).
 // The payer never touches to.gold/needs/beliefs.
-export function payStep(a, b, dt, ctx) {
-  const amt = b.amt || 1;
+export function payStep(a: Agent, b: PlanBind, dt: number, ctx: CognitionCtx): void {
+  const amt = b.amt || 1, to = b.to;
+  if (to == null) { a.fighter.setMoving(0); return; }
   if ((a.gold || 0) < amt) { a.fighter.setMoving(0); return; }   // lost the coin -> replan
-  if (ctx.resolver && ctx.resolver.deliverTo(a, b.to, { gold: amt })) { a._repaid[b.to] = true; a.fighter.setMoving(0); return; }
-  const tp = stepTargetPos(a, ctx, { subjectId: b.to });
+  if (ctx.resolver && ctx.resolver.deliverTo(a, to, { gold: amt })) { a._repaid[to] = true; a.fighter.setMoving(0); return; }
+  const tp = stepTargetPos(a, ctx, { subjectId: to });
   if (tp) goTo(a, tp, dt); else a.fighter.setMoving(0);
 }

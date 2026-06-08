@@ -12,10 +12,21 @@ import { updateAmbition, ambitionFavor, ambitionWantsFight, deriveGoals, pruneGo
 import { chooseOccupation, laborValue } from './occupation.js';
 import { qualifyHome, isUnhoused } from '../construction.js';
 import { STAGE, REASON } from '../trace.js';
+import type { Agent, CognitionCtx, Goal, EntityId, Stage, Reason } from '../../../types/sim.js';
+import type { Vector3 } from 'three';
 
-const clamp01 = (x) => Math.max(0, Math.min(1, x));
+// trace.js infers STAGE/REASON members as plain `string`; retype for Trace.note.
+const STAGE_T = STAGE as Record<string, Stage>;
+const REASON_T = REASON as Record<string, Reason>;
+// simconfig.js GROUP_TYPES inferred without an index signature (allowJs).
+const GROUP_TYPES_T = GROUP_TYPES as Record<string, { cohesion?: string; combatant?: boolean } | undefined>;
 
-export function decide(a, ctx) {
+/** A scored utility candidate (decide's deliberation), spread into the chosen goal. */
+interface Candidate { kind: string; score: number; [k: string]: unknown }
+
+const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
+
+export function decide(a: Agent, ctx: CognitionCtx): void {
   a._rpgNow = ctx.time;   // stamp sim time for this tick's emitted deeds
   if (!a.alive || a.controlled) return;
   // REASONING-COST (Phase 3, measurement only): this tick ran decide(). Own-scalar write,
@@ -74,7 +85,7 @@ export function decide(a, ctx) {
     // never laid eyes on the player feels nothing.
     const pb = ctx.playerId != null ? a.beliefs.get(ctx.playerId) : null;
     if (pb && pb.confidence >= SIM.actOnBeliefMin && (pb.notoriety || 0) >= (LEGEND.villainAt || 0.66) &&
-        a.pos.distanceTo(pb.lastPos) < (LEGEND.fearRange || 9)) { a.goal = { kind: 'flee', fromId: ctx.playerId }; return; }
+        a.pos.distanceTo(pb.lastPos) < (LEGEND.fearRange || 9)) { a.goal = { kind: 'flee', fromId: ctx.playerId! }; return; }
   }
 
   // BOUNTY-HUNTER: a townsperson who answered a Gazette bounty hunts its quarry —
@@ -98,7 +109,7 @@ export function decide(a, ctx) {
     // FACTION bounty: the execution layer scans for the nearest VISIBLE foe of the bounty's
     // faction (vision-gated; returns a belief-style snapshot, never the live object). With
     // one in sight I fight it; else I march toward the notice's named threat zone.
-    const ref = ctx.resolver ? ctx.resolver.nearestVisibleOfFaction(a, b.faction) : null;
+    const ref = (ctx.resolver && b.faction) ? ctx.resolver.nearestVisibleOfFaction(a, b.faction) : null;
     if (ref) a.goal = { kind: 'fight', targetId: ref.id };
     else a.goal = { kind: 'bounty', toward: b.toward };
     return;
@@ -186,7 +197,7 @@ export function decide(a, ctx) {
   const P = a.personality;
   const inv = a.inventory;
 
-  const cand = [];
+  const cand: Candidate[] = [];
   // REASONING-COST (Phase 3): count utility candidates actually scored this tick (only the
   // ones that survive the score>0 gate, off the hot string path). Committed to a._decideCands
   // just before the goal commit below. The early-return role branches (reporter/duel/avenger/
@@ -194,7 +205,9 @@ export function decide(a, ctx) {
   // scheduler-zeroed 0 — correct (they ran O(beliefs) work, captured by _schemaFireCount,
   // but no utility scoring).
   let _nCand = 0;
-  const push = (kind, score, extra) => { if (score > 0) { _nCand++; cand.push({ kind, score, ...extra }); } };
+  const push = (kind: string, score: number, extra?: Record<string, unknown>): void => {
+    if (score > 0) { _nCand++; cand.push({ kind, score, ...extra }); }
+  };
 
   // survival first: act on a BELIEVED-hostile nearby (beliefs, not truth). A
   // Schmitt band kills the old flee<->work pacing limit-cycle: a threat is in
@@ -207,7 +220,7 @@ export function decide(a, ctx) {
   let inDanger = false;
   if (enemy) {
     const dist = a.pos.distanceTo(enemy.pos);
-    const committed = a.goal.kind === 'flee' || a.goal.kind === 'fight';
+    const committed = a.goal!.kind === 'flee' || a.goal!.kind === 'fight';
     inDanger = dist <= SIM.dangerRange || (committed && dist <= SIM.safeRange);
     // renown-seekers and the vengeful stand and fight even if they're civilians;
     // hunters/monsters pursue at any range (fight isn't danger-gated).
@@ -348,32 +361,34 @@ export function decide(a, ctx) {
   if (planStep) push('plan', WEIGHT.plan, { step: planStep });
 
   // loose social groups (guild/circle) pull their members together to socialise
-  if (a.groupType && !a.inParty && GROUP_TYPES[a.groupType] &&
-      GROUP_TYPES[a.groupType].cohesion === 'loose')
+  const gt = a.groupType ? GROUP_TYPES_T[a.groupType] : null;
+  if (gt && !a.inParty && gt.cohesion === 'loose')
     for (const c of cand) if (c.kind === 'socialize') c.score *= 1.6;
 
-  let best = cand[0];
+  const prevKind = a.goal ? a.goal.kind : undefined;
+  let best: Candidate | undefined = cand[0];
   for (const c of cand) {
-    const eff = c.kind === a.goal.kind ? c.score * 1.18 : c.score;
-    const bestEff = best.kind === a.goal.kind ? best.score * 1.18 : best.score;
+    const eff = c.kind === prevKind ? c.score * 1.18 : c.score;
+    const bestEff = best && best.kind === prevKind ? best.score * 1.18 : (best ? best.score : -Infinity);
     if (eff > bestEff) best = c;
   }
   a._decideCands = _nCand;   // REASONING-COST: candidates scored this tick (read truth-side)
-  a.goal = best || { kind: a.canWork ? 'work' : 'wander' };
+  const winner: Goal = best ? (best as unknown as Goal) : { kind: a.canWork ? 'work' : 'wander' };
+  a.goal = winner;
   // REASONING-COST hysteresis (Phase 3): stamp the time the committed goal.kind last CHANGED,
   // so the LOD relevance gate can keep a just-re-deliberated agent at full fidelity for a short
   // window (anti-thrash at the stride edge). Own-scalar writes; read truth-side in _isRelevant.
-  if (a.goal && a.goal.kind !== a._prevGoalKind) { a._lastGoalChangeAt = ctx.time; a._prevGoalKind = a.goal.kind; }
+  if (winner.kind !== a._prevGoalKind) { a._lastGoalChangeAt = ctx.time; a._prevGoalKind = winner.kind; }
   // TRACE (write-only, never read back): the everyday utility-arbitration winner + its score —
   // the headline "why this behaviour and not another" beat. (The override locks above —
   // duel/avenger/butcher's-shadow/schema flee — commit before this scorer and return; the
   // schema-driven ones are already covered by SCHEMA_FIRED.) Own scores only; note() guarded.
-  a.trace.note(STAGE.DECIDE, REASON.BEHAVIOUR_WON, { t: ctx.time, a: a.goal.kind, b: best ? +best.score.toFixed(2) : null });
+  a.trace.note(STAGE_T.DECIDE, REASON_T.BEHAVIOUR_WON, { t: ctx.time, a: winner.kind, b: best ? +best.score.toFixed(2) : null });
 
   // emergent occupation: when we settle on WORK, decide WHAT to make this stint
   // (belief-priced, proximity- and ambition-weighted, opportunity-gated). Stored
   // on a._trade and produced by act()/_produce. Belief-only inputs; guarded.
-  if (a.goal.kind === 'work') chooseOccupation(a, ctx);
+  if (winner.kind === 'work') chooseOccupation(a, ctx);
 }
 
 // Pick the friend this agent would most like to spend time with — the dearest
@@ -383,8 +398,8 @@ export function decide(a, ctx) {
 // I THINK they are, and may find an empty spot if they've moved (then I re-choose).
 // Returns a subjectId, or null when I know no friend yet (caller falls back to the
 // market, the town's gathering place). Never throws — guarded for the freeze lesson.
-function pickSocialTarget(a) {
-  let best = null, bestScore = -Infinity;
+function pickSocialTarget(a: Agent): EntityId | null {
+  let best: EntityId | null = null, bestScore = -Infinity;
   for (const b of a.beliefs.all()) {
     if (b.hostile || b.standing < SOCIAL.friendStanding || b.confidence < SOCIAL.knownConf) continue;
     const d = a.pos.distanceTo(b.lastPos);
@@ -403,7 +418,7 @@ function pickSocialTarget(a) {
 // homecoming so it never loops toward a vanished home forever. The fallback is a STATIC
 // shelter/rest Place from the shared mental map (a tavern/rest site) — never a live read.
 // Returns { pos, kind } or null. Guarded; never throws.
-function nearestComfortSource(a, ctx) {
+function nearestComfortSource(a: Agent, ctx: CognitionCtx): { pos: Vector3; kind: string } | null {
   try {
     const hb = a.homeBeliefId != null ? a.beliefs.get(a.homeBeliefId) : null;
     if (hb && hb.sheltered !== false && hb.lastPos && hb.confidence >= SIM.actOnBeliefMin)
@@ -415,7 +430,7 @@ function nearestComfortSource(a, ctx) {
 
 // companion decision: defend the leader. Engage a believed-hostile within
 // vision of me OR of the leader; otherwise keep formation (goal 'follow').
-export function decideParty(a, ctx) {
+export function decideParty(a: Agent, ctx: CognitionCtx): void {
   // The leader handle: for the PLAYER-led party, a documented controlled-leader exception
   // supplies ctx.partyLeader (the execution layer reads it). For an NPC band, resolve the
   // leader off MY belief about it (confidence-gated lastPos) — no roster.
@@ -425,9 +440,11 @@ export function decideParty(a, ctx) {
   // a banded agent whose leader is gone (dead/disbanded) has no one to follow —
   // it reverts to wandering rather than assuming the player or chasing a null.
   if (!leaderLive) { a.goal = { kind: 'wander' }; return; }
-  const gt = a.groupType ? GROUP_TYPES[a.groupType] : null;
-  const combatant = gt ? gt.combatant : true;   // player party + warbands fight; hearths flee
-  let enemy = a._nearestHostile(ctx);
+  const pgt = a.groupType ? GROUP_TYPES_T[a.groupType] : null;
+  const combatant = pgt ? pgt.combatant : true;   // player party + warbands fight; hearths flee
+  // enemy is a belief-style REF (id + pos) — either my nearest believed-hostile or the
+  // leader's-fight scan result; never a live roster object.
+  let enemy: { id: EntityId; pos: { x: number; z: number } } | null = a._nearestHostile(ctx);
   // a fighting band also picks up an enemy the leader is tangling with, even beyond my own
   // sight, so the group converges on the leader's fight. The execution layer performs this
   // vision-gated scan around the leader and returns a belief-style ref (never the object).

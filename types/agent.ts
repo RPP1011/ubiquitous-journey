@@ -17,7 +17,7 @@ import type { Memory } from './memory.js';
 import type { Trace } from './trace.js';
 import type { Progression } from './rpg.js';
 import type { AbilitySpec } from './abilities.js';
-import type { Goal, Ambition } from './goals.js';
+import type { Goal, Ambition, PlanStep } from './goals.js';
 import type { Fighter } from './combat.js';
 import type { Bounty } from './news.js';
 import type { CognitionCtx, FullCtx } from './ctx.js';
@@ -49,6 +49,34 @@ export interface Life {
   dist: number;
   social: number;
   [k: string]: number;
+}
+
+/** Spy infiltration state (intrigue.js): cover phase + scout/exfil waypoints. */
+export interface SpyState {
+  phase: string;                // 'scout' | 'exfil'
+  anchor?: Vector3 | null;      // camp anchor to exfiltrate to
+  scoutTarget?: Vector3 | null; // current scout waypoint
+  [k: string]: unknown;
+}
+
+/** Arbitrage hauler state (arbitrage.js): the dear-market destination to sell at. */
+export interface ArbitrageState {
+  destPos?: Vector3 | null;
+  [k: string]: unknown;
+}
+
+/** A roaming-party / caravan / expedition objective handle (own-state target point). */
+export interface TargetState {
+  target?: Vector3 | null;
+  [k: string]: unknown;
+}
+
+/** Dungeon roam state: a fixed patrol centre + radius. */
+export interface RoamState {
+  x: number;
+  z: number;
+  r: number;
+  [k: string]: unknown;
 }
 
 /** A belief-reference handle returned by _nearestHostile — NOT the real object. */
@@ -98,24 +126,25 @@ export interface Agent {
   homeAnchor?: Vector3;
   leashR?: number;
   speedMul?: number;
-  roam?: unknown;
+  roam?: RoamState;
   campAnchor?: Vector3;
+  campPatrolR?: number;
   townId?: number;
   townAnchor?: Vector3;
   townRadius?: number;
   inParty?: boolean;
   partySlot?: number;
   reporter?: boolean;
-  spy?: boolean;
+  spy?: SpyState | null;
   disguiseFaction?: string | null;
   bounty?: Bounty | null;
-  arbitrage?: unknown;
-  expedition?: unknown;
-  caravanRun?: unknown;
+  arbitrage?: ArbitrageState | null;
+  expedition?: TargetState | null;
+  caravanRun?: TargetState | null;
   _duelWith?: EntityId | null;
   avengerOf?: EntityId | null;
   guardianOf?: EntityId | null;
-  sightTarget?: EntityId | null;
+  sightTarget?: Vector3 | null;       // a target landmark position (steer/sightsee), not an id
   relics?: unknown[];
   homeBeliefId?: EntityId | null;
   _buildSiteId?: EntityId | null;
@@ -123,11 +152,52 @@ export interface Agent {
   _slain?: Set<EntityId>;
   _underground?: boolean;
   _barrierSide?: number;
+  sim?: unknown;                      // back-ref to the owning Simulation (opaque; city grid only)
   strikeLog?: Map<EntityId, { count: number; first: number }> | null;
   canWork?: boolean;
   epithet?: string | null;
   nemesis?: boolean;
   house?: string;
+
+  // ───── RUNTIME/internal state (always set by the Agent constructor) ─────
+  bandLeaderId: EntityId | null;
+  groupType: string | null;
+  _trade: string | null;              // the good currently being made (null until first pick)
+  _rpgNow: number;                    // sim time stamped each decide() (event timestamp)
+  _produceAccum: number;              // fractional production awaiting a whole-unit deed emit
+  _smithTimer: number;
+  toolWear: number;
+  _releaseTimer: number;
+  _attackCd: number;
+  _castCd: number;
+  _tradeFlash: number;
+  _comfortLowSince: number | null;
+  _buildAccum: number;
+  wanderTarget: Vector3 | null;
+  _repaid: Record<EntityId, boolean>;
+  // REASONING-COST counters (Phase 3 — measurement only; read truth-side, never in cognition)
+  _decideCalls: number;
+  _decideCands: number;
+  _planReplans: number;
+  _planDepth: number;
+  // LOD scheduling state (Phase 3 — written by the scheduler/cognition; read truth-side)
+  _lodTick: number;
+  _lastGoalChangeAt: number;
+  _prevGoalKind: string | null | undefined;
+
+  // ───── OPTIONAL transient role/visual state ─────
+  reporterTarget?: Vector3 | null;    // the gazetteer's current subject position
+  scoutTarget?: Vector3 | null;       // spy scout waypoint
+  notoriety?: number;                 // player fame (controlled agents only)
+  proxy?: unknown;                    // browser-visual decor (THREE meshes/sprites)
+  ring?: unknown;
+  ringMat?: unknown;
+  label?: unknown;
+  _lblCanvas?: unknown;
+  _lblCtx?: unknown;
+  _lblTex?: unknown;
+  _lblSig?: string;
+  home?: unknown;                     // legacy truth-side home handle (retired in Phase 2a)
 
   // ───── methods ─────
   // abilities (safe no-ops when the agent knows nothing)
@@ -163,6 +233,14 @@ export interface Agent {
 
   // goal stack
   pushGoal(goal: Goal, ctx: CognitionCtx | FullCtx | null): Goal | null;
+
+  // ───── internal cognition/execution helpers (free-fn delegates over the instance) ─────
+  priceGossip(ctx: CognitionCtx, dt: number): void;
+  _nearestHostile(ctx: CognitionCtx | null): HostileRef | null;
+  _leader(ctx: CognitionCtx): Agent | null;        // EPISTEMIC-OK: controlled party leader only
+  _decideParty(ctx: CognitionCtx): void;
+  _currentPlanStep(ctx: CognitionCtx): PlanStep | null;
+  _updateLabel(): void;
 
   // the long tail of un-typed drama/news/society flags (deliberate — one thin state class).
   [k: string]: unknown;

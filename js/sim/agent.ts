@@ -23,24 +23,53 @@ import * as movement from './agent/movement.js';
 import * as action from './agent/act.js';
 import * as decision from './agent/decide.js';
 import * as occupation from './agent/occupation.js';
+import type {
+  Agent as AgentShape, BeliefState, HostileRef, Goal, PlanStep, AbilitySpec,
+  CognitionCtx, FullCtx, Fighter, EntityId,
+} from '../../types/sim.js';
 
-const clamp01 = (x) => Math.max(0, Math.min(1, x));
-const rand = (a, b) => a + Math.random() * (b - a);
+const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
+const rand = (a: number, b: number): number => a + Math.random() * (b - a);
+
+// Re-typed config views (simconfig.js inferred without index signatures under allowJs).
+const BASE_PRICE_T = BASE_PRICE as Record<string, number>;
+const STARTER_KIT = ECON.starterKit as Record<string, number>;
+const PROFESSIONS_T = PROFESSIONS as Record<string, { output: string; inputs?: Record<string, number> | null }>;
 
 // Resolve which crafted recipes a fresh CURRENT PRODUCER is seeded with. Day-1:
 // RECIPES.seedKnown:'all' ⇒ every gated recipe, so every working townsperson keeps
 // crafting exactly as before (baseline-identical). Phase 4 narrows this per-lineage.
-const seedRecipesFor = (out /* a producer's own output, or null */) => {
-  const set = new Set();
-  const gated = (RECIPES && RECIPES.gated) || [];
+const seedRecipesFor = (out: string | null /* a producer's own output, or null */): Set<string> => {
+  const set = new Set<string>();
+  const gated: string[] = (RECIPES && RECIPES.gated) || [];
   if (RECIPES && RECIPES.seedKnown === 'all') for (const g of gated) set.add(g);
   // always include the agent's OWN crafted output even if seedKnown narrows later.
   if (out && gated.includes(out)) set.add(out);
   return set;
 };
 
+// The spawn config the Simulation/roster hands the constructor (loose by design).
+interface AgentCfg {
+  id: string;
+  name: string;
+  profession: string | null;
+  controlled?: boolean;
+  personality: Record<string, number>;
+  faction?: string;
+  combatant?: boolean;
+  threat?: number;
+  townsperson?: boolean;
+  [k: string]: unknown;
+}
+
+// DECLARATION MERGE: the class below merges with this interface (same name), so every
+// field assigned in the constructor gets its type from the shared layer WITHOUT a per-
+// field declaration — and a class instance IS structurally the shared `Agent`. The
+// index tail (`[k:string]: unknown`) on AgentShape also carries the long drama/news tail.
+export interface Agent extends AgentShape {}
+
 export class Agent {
-  constructor(fighter, cfg) {
+  constructor(fighter: Fighter, cfg: AgentCfg) {
     this.fighter = fighter;
     fighter.agent = this;
     this.id = cfg.id;
@@ -94,7 +123,7 @@ export class Agent {
     // for current producers; Phase 4 adds/removes via teach/apprentice/shadow.
     this.recipes = new Set();
     this.priceBeliefs = {};
-    for (const c of COMMODITIES) this.priceBeliefs[c] = +(BASE_PRICE[c] * rand(0.8, 1.2)).toFixed(2);
+    for (const c of COMMODITIES) this.priceBeliefs[c] = +(BASE_PRICE_T[c] * rand(0.8, 1.2)).toFixed(2);
 
     // EMERGENT occupation: townsfolk are NOT born into a trade. A generic
     // townsperson (faction townsfolk, not controlled, not a monster) gets a
@@ -108,12 +137,12 @@ export class Agent {
     this.townsperson = !!cfg.townsperson;
     this._trade = null;
     if (this.townsperson && this.autonomous && !this.combatant) {
-      for (const c in ECON.starterKit) this.inventory[c] = ECON.starterKit[c];
+      for (const c in STARTER_KIT) this.inventory[c] = STARTER_KIT[c];
       this.recipes = seedRecipesFor(null);   // a working townsperson can craft any gated good today
     } else if (this.profession) {
       // legacy path: an explicitly-professioned agent (test fixtures) keeps the
       // old kit so scenario tests that pass a profession still behave.
-      const prof = PROFESSIONS[this.profession];
+      const prof = PROFESSIONS_T[this.profession];
       this.inventory[prof.output] = ECON.startStock;
       this.inventory.food = Math.max(this.inventory.food, 2);
       this.inventory.tool = 1;
@@ -212,44 +241,44 @@ export class Agent {
     this._buildDecor();
   }
 
-  get pos() { return this.fighter.root.position; }
-  get alive() { return this.fighter.alive; }
+  get pos(): import('three').Vector3 { return this.fighter.root.position; }
+  get alive(): boolean { return this.fighter.alive; }
   // is this agent driven by the SIM (its own AI), vs a human at the controls? This
   // is the ONE legitimate player/NPC distinction in system code: an autonomous agent
   // runs the decide/act/perceive stack; a controlled one is moved by input. Systems
   // address agents by this semantic property, never by "is the player".
-  get autonomous() { return !this.controlled; }
+  get autonomous(): boolean { return !this.controlled; }
 
   // --- abilities (safe no-ops when the agent knows nothing) -----------------
-  grantAbility(specObj) { if (specObj && specObj.id) this.abilities.set(specObj.id, specObj); }
-  knowsAbility(id) { return this.abilities.has(id); }
-  abilityList() { return [...this.abilities.values()]; }   // stable order for key binding
+  grantAbility(specObj: AbilitySpec): void { if (specObj && specObj.id) this.abilities.set(specObj.id, specObj); }
+  knowsAbility(id: string): boolean { return this.abilities.has(id); }
+  abilityList(): AbilitySpec[] { return [...this.abilities.values()]; }   // stable order for key binding
 
   // The agent's BELIEF about its own home (a BeliefState with placeKind:'home' + a believed
   // `sheltered`), or null if it has never perceived/learned of a home. Cognition reads ONLY
   // this belief — never a truth-side Building handle — so it acts on what it KNOWS: a stale
   // "intact" belief survives until perception (or, later, gossip) revises it. Guarded.
-  homeBelief() {
+  homeBelief(): BeliefState | null {
     return this.homeBeliefId != null ? this.beliefs.get(this.homeBeliefId) : null;
   }
 
   // Total liquid wealth I own (carried purse + banked stash) — for conservation
   // summers and UI only. Cognition never reads this (it acts on the purse it can
   // spend). Own-state; guarded (stash is always 0+ on every agent from the ctor).
-  totalWealth() { return (this.gold || 0) + (this.stash || 0); }
+  totalWealth(): number { return (this.gold || 0) + (this.stash || 0); }
 
   // A townsperson's colour now emerges from WHAT IT DOES, not a birthright trade:
   // its currently-chosen good's colour, else the dominant deed-tag's good colour,
   // else its faction colour. So a town reads as a spread of trades again even
   // though nobody is born into one. Guarded — never throws.
-  profColor() { return decor.profColor(this); }
+  profColor(): number { return decor.profColor(this); }
 
   // Pick a colour from the agent's strongest production-related behaviour tag:
   // find the good whose tags it has accumulated the most of. Read-only; null if
   // it has no producing history yet.
-  _dominantGoodColor() { return decor.dominantGoodColor(this); }
+  _dominantGoodColor(): number | null { return decor.dominantGoodColor(this); }
 
-  drainNeeds(dt) {
+  drainNeeds(dt: number): void {
     this.needs.hunger = clamp01(this.needs.hunger - SIM.hungerDrain * dt);
     this.needs.energy = clamp01(this.needs.energy - SIM.energyDrain * dt);
     this.needs.social = clamp01(this.needs.social - SIM.socialDrain * dt);
@@ -288,15 +317,15 @@ export class Agent {
   // SCHEMA.strikeLogCap so the table can't grow unbounded. Read only by schema #6's
   // selfEngaged() — nothing on the combat/cast path reads it, so eviction never changes
   // combat output. Guarded; never throws on the tick.
-  _logStrike(targetId, now) {
+  _logStrike(targetId: EntityId | null, now: number): void {
     try {
       if (targetId == null) return;
       if (!this.strikeLog) this.strikeLog = new Map();
-      let rec = this.strikeLog.get(targetId);
+      const rec = this.strikeLog.get(targetId);
       if (rec) { rec.count += 1; return; }
       const cap = (SCHEMA && SCHEMA.strikeLogCap) || 8;
       if (this.strikeLog.size >= cap) {
-        let stalestId = null, stalest = Infinity;
+        let stalestId: EntityId | null = null, stalest = Infinity;
         for (const [id, r] of this.strikeLog) { if (r.first < stalest) { stalest = r.first; stalestId = id; } }
         if (stalestId != null) this.strikeLog.delete(stalestId);
       }
@@ -311,7 +340,7 @@ export class Agent {
   // corpse, a statue), so I stop treating its bandit costume as a reason to fight. Own-
   // belief read only (the `inert` flag is written by the reasoning interpreter over my
   // beliefs); the epistemic split holds.
-  considerHostile(b) {
+  considerHostile(b: BeliefState | null): boolean {
     if (!b || b.inert) return false;
     return b.hostile || factionHostile(this.faction, b.lastFaction);
   }
@@ -323,8 +352,8 @@ export class Agent {
   // hunt a foe that has moved, fallen, or is really a scarecrow; reality is resolved only
   // by perception (in) and geometric combat (out), and a wrong belief simply misses.
   // `ctx` kept for signature symmetry (callers pass it); intentionally unused now.
-  _nearestHostile(_ctx) {
-    let best = null, bd = Infinity;
+  _nearestHostile(_ctx: CognitionCtx | null): HostileRef | null {
+    let best: BeliefState | null = null, bd = Infinity;
     for (const b of this.beliefs.all()) {
       if (b.confidence < SIM.actOnBeliefMin || !this.considerHostile(b)) continue;
       const d = this.pos.distanceTo(b.lastPos);
@@ -336,54 +365,54 @@ export class Agent {
   // --- Theory-of-Mind passes (run by Simulation each 6Hz tick) ---------------
   // perceive: sight of nearby agents writes high-confidence beliefs (the player
   // is just another subject, so NPCs naturally form beliefs about you).
-  perceive(ctx) { return perception.perceive(this, ctx); }
+  perceive(ctx: FullCtx): void { return perception.perceive(this, ctx); }
 
   // gossip: adopt a nearby ally's more-certain beliefs (carries standing too).
-  gossipBeliefs(ctx) { return perception.gossipBeliefs(this, ctx); }
+  gossipBeliefs(ctx: FullCtx): void { return perception.gossipBeliefs(this, ctx); }
 
   // --- price beliefs (the economic ToM) -------------------------------------
-  learnPrice(c, price, w) { return trade.learnPrice(this, c, price, w); }
+  learnPrice(c: string, price: number, w: number): void { return trade.learnPrice(this, c, price, w); }
 
   // drift toward a chatting neighbour's prices — how rumoured prices spread
-  priceGossip(ctx, dt) { return trade.priceGossip(this, ctx, dt); }
+  priceGossip(ctx: CognitionCtx, dt: number): void { return trade.priceGossip(this, ctx, dt); }
 
   // --- trade interface (used by the market in simulation.js) ----------------
-  keepOf(c) { return trade.keepOf(this, c); }
-  surplus(c) { return trade.surplus(this, c); }
-  hasSurplus(c) { return trade.hasSurplus(this, c); }
+  keepOf(c: string): number { return trade.keepOf(this, c); }
+  surplus(c: string): number { return trade.surplus(this, c); }
+  hasSurplus(c: string): boolean { return trade.hasSurplus(this, c); }
 
   // The recipe inputs of the good this agent is currently making (or null).
-  _tradeInputs() { return trade.tradeInputs(this); }
+  _tradeInputs(): Record<string, number> | null { return trade.tradeInputs(this); }
 
   // units this agent wants to buy / can sell of c (for the standing-order book).
   // Off profession now: everyone buys food (always) + a tool/potion if they hold
   // none + the inputs for whatever good they are CURRENTLY making.
-  wantQty(c) { return trade.wantQty(this, c); }
-  sellQty(c) { return trade.sellQty(this, c); }
-  askPrice(c) { return trade.askPrice(this, c); }
-  bidPrice(c) { return trade.bidPrice(this, c); }   // can't bid more than you hold
+  wantQty(c: string): number { return trade.wantQty(this, c); }
+  sellQty(c: string): number { return trade.sellQty(this, c); }
+  askPrice(c: string): number { return trade.askPrice(this, c); }
+  bidPrice(c: string): number { return trade.bidPrice(this, c); }   // can't bid more than you hold
 
-  applyBuy(c, price) { return trade.applyBuy(this, c, price); }
-  applySell(c, price) { return trade.applySell(this, c, price); }
+  applyBuy(c: string, price: number): void { return trade.applyBuy(this, c, price); }
+  applySell(c: string, price: number): void { return trade.applySell(this, c, price); }
 
   // --- decision -------------------------------------------------------------
-  decide(ctx) { return decision.decide(this, ctx); }
+  decide(ctx: CognitionCtx): void { return decision.decide(this, ctx); }
 
   // --- emergent occupation chooser -----------------------------------------
   // Pick the good this agent will produce/gather this work stint.
-  chooseOccupation(ctx) { return occupation.chooseOccupation(this, ctx); }
+  chooseOccupation(ctx: CognitionCtx): void { return occupation.chooseOccupation(this, ctx); }
 
   // The good whose tags the agent's strongest class is built from (for the
   // mastery ambition's "reinforce my identity" bias). Read-only.
-  _strongestClassGood() { return occupation.strongestClassGood(this); }
+  _strongestClassGood(): string | null { return occupation.strongestClassGood(this); }
 
   // --- goal stack + plan caching -------------------------------------------
   // Push a goal (dedup by kind+subject/place, LIFO, depth-bounded). Returns the
   // pushed/existing goal. Never throws.
-  pushGoal(goal, ctx) {
+  pushGoal(goal: Goal, ctx: CognitionCtx | FullCtx | null): Goal | null {
     if (!goal || !goal.kind) return null;
     if (!Array.isArray(this.goals)) this.goals = [];
-    const key = (g) => `${g.kind}|${g.subjectId ?? ''}|${g.place ?? ''}`;
+    const key = (g: Goal): string => `${g.kind}|${g.subjectId ?? ''}|${g.place ?? ''}`;
     const k = key(goal);
     const existing = this.goals.find((g) => key(g) === k);
     if (existing) return existing;                  // dedup
@@ -398,7 +427,7 @@ export class Agent {
   // Return the primitive the TOP goal currently wants executed (or null). Plans
   // lazily, caches the plan on the goal, replans when the next step lost its
   // preconditions or the cache is stale. Belief-grounded; guarded; never throws.
-  _currentPlanStep(ctx) {
+  _currentPlanStep(ctx: CognitionCtx): PlanStep | null {
     if (!Array.isArray(this.goals) || !this.goals.length) return null;
     const goal = this.goals[this.goals.length - 1];   // top of stack
     if (!goal) return null;
@@ -411,21 +440,24 @@ export class Agent {
       // mark them unreachable, never inject a plan step; just let them sit.
       if (Array.isArray(goal.atoms) && goal.atoms.length === 0) return null;
 
+      // a stack goal's `step` is the numeric pointer (PlanStep variant is only the
+      // injected 'plan' candidate goal — never a goal on this.goals stack).
+      let ptr = (typeof goal.step === 'number') ? goal.step : 0;
       // (re)plan if no cache, the step pointer ran off the end, or the next
       // step's preconditions no longer hold (market emptied, gold spent, moved).
       const needPlan = !goal.plan || !goal.plan.steps ||
-        goal.step >= goal.plan.steps.length ||
-        !stepPrecondsHold(this, ctx, goal.plan.steps[goal.step]);
+        ptr >= goal.plan.steps.length ||
+        !stepPrecondsHold(this, ctx, goal.plan.steps[ptr]);
       if (needPlan) {
         const fresh = planGoal(this, goal, ctx);
         if (!fresh) { goal._unreachable = true; return null; }   // pruneGoals drops it
-        goal.plan = fresh; goal.step = 0; goal._unreachable = false;
+        goal.plan = fresh; goal.step = 0; ptr = 0; goal._unreachable = false;
         // REASONING-COST (Phase 3, measurement only): tally this replan + the fresh plan's
         // depth. Own-scalar writes; read truth-side in depthMetrics. Degrade-safe.
         this._planReplans = (this._planReplans || 0) + 1;
         this._planDepth = (fresh.steps && fresh.steps.length) || 0;
       }
-      return goal.plan.steps[goal.step] || null;
+      return goal.plan!.steps[ptr] || null;
     } catch { return null; }
   }
 
@@ -439,81 +471,82 @@ export class Agent {
   // documented ctx.partyLeader exception (a known game mechanic). For an NPC band the
   // leader is resolved off belief (decideParty / followLeader read belief.lastPos), so
   // this returns null for them and the belief path takes over. Null-safe.
-  _leader(ctx) {
+  _leader(ctx: CognitionCtx): Agent | null {
     const pl = ctx && ctx.partyLeader;            // EPISTEMIC-OK: controlled party leader (known mechanic)
-    if (pl && this.bandLeaderId === pl.id) return pl;
+    // partyLeader is the shared Agent shape; at runtime it is a full Agent instance.
+    if (pl && this.bandLeaderId === pl.id) return pl as Agent;
     return null;
   }
 
-  _decideParty(ctx) { return decision.decideParty(this, ctx); }
+  _decideParty(ctx: CognitionCtx): void { return decision.decideParty(this, ctx); }
 
   // --- act ------------------------------------------------------------------
-  act(dt, ctx) { return action.act(this, dt, ctx); }
+  act(dt: number, ctx: CognitionCtx): void { return action.act(this, dt, ctx); }
 
   // --- controlled execution (the single avatar the player drives) -----------
   // The controlled agent does NOT run decide()/act(); the Commander sets .goal
   // from mouse orders and calls this each frame. We reuse the very same movement
   // and combat primitives the NPC AI uses, so the body behaves consistently and
   // there's no second combat path to keep in sync.
-  actControlled(dt, ctx) { return action.actControlled(this, dt, ctx); }
+  actControlled(dt: number, ctx: CognitionCtx): void { return action.actControlled(this, dt, ctx); }
 
   // Make the agent's CHOSEN good (this._trade). Generalized off profession: a
   // crafted good (inputs present) converts inputs->output on a timer; a raw good
   // accrues over time, tool-boosted + tool-wearing. Guarded: a missing/invalid
   // trade is a no-op (never throws on the tick — the freeze lesson).
-  _produce(dt) { return action.produce(this, dt); }
+  _produce(dt: number): void { return action.produce(this, dt); }
 
-  _goTo(target, dt, run = false) { return movement.goTo(this, target, dt, run); }
+  _goTo(target: { x: number; z: number; y?: number }, dt: number, run = false): boolean { return movement.goTo(this, target, dt, run); }
 
   // settle the body onto the terrain surface so agents walk the hills, not a
   // flat plane. Overworld only (dungeon dwellers / party-followers keep their
   // own y via roam/teleport, so we skip when a roam centre or party y is owned).
   // Browser-visual + headless-harmless (height is a pure function). Guarded.
-  _groundY() { return movement.groundY(this); }
+  _groundY(): void { return movement.groundY(this); }
 
   // The named place this agent is at/near (or null) — for biography/dialogue
   // flavour ("near Highcairn"). Read-only, guarded, never throws on the tick.
-  nearbyLandmark(maxR = 28) {
+  nearbyLandmark(maxR = 28): { name: string; x: number; z: number; kind: string } | null {
     try { return nearestLandmark(this.pos.x, this.pos.z, maxR); } catch { return null; }
   }
 
   // close on a believed-hostile target and trade directional blows (reuses the
   // Fighter swing state machine, telegraphed like the old enemy AI).
-  _combatStep(dt, ctx) { return action.combatStep(this, dt, ctx); }
+  _combatStep(dt: number, ctx: CognitionCtx): void { return action.combatStep(this, dt, ctx); }
 
   // --- NPC ability casting --------------------------------------------------
   // Try to bring an OFFENSIVE ability to bear on `target`, at `dist` meters.
-  _tryCastAbility(target, dist, ctx) { return action.tryCastAbility(this, target, dist, ctx); }
+  _tryCastAbility(target: Agent, dist: number, ctx: CognitionCtx): boolean { return action.tryCastAbility(this, target, dist, ctx); }
 
   // Pick the best READY offensive spec for the current engagement.
-  _bestOffensiveAbility(dist, now) { return action.bestOffensiveAbility(this, dist, now); }
+  _bestOffensiveAbility(dist: number, now: number): AbilitySpec | null { return action.bestOffensiveAbility(this, dist, now); }
 
   // A spec's offensive weight: damage plus a small credit for control effects.
-  _offensivePower(spec) { return action.offensivePower(spec); }
+  _offensivePower(spec: AbilitySpec): number { return action.offensivePower(spec); }
 
   // --- plan-step execution (Phase 2) ---------------------------------------
   // Run the current primitive of the top goal.
-  _execPlanStep(dt, ctx) { return action.execPlanStep(this, dt, ctx); }
+  _execPlanStep(dt: number, ctx: CognitionCtx): void { return action.execPlanStep(this, dt, ctx); }
 
-  _execPrimitive(step, dt, ctx) { return action.execPrimitive(this, step, dt, ctx); }
+  _execPrimitive(step: PlanStep, dt: number, ctx: CognitionCtx): void { return action.execPrimitive(this, step, dt, ctx); }
 
   // walk to the market, then trade ONE unit of the bind good against the nearest
   // willing townsperson there (conservation-safe).
-  _marketStep(step, dt, ctx) { return action.marketStep(this, step, dt, ctx); }
+  _marketStep(step: PlanStep, dt: number, ctx: CognitionCtx): void { return action.marketStep(this, step, dt, ctx); }
 
   // give item×n to a benefactor: walk over then MOVE the goods (no minting).
-  _giveStep(b, dt, ctx) { return action.giveStep(this, b, dt, ctx); }
+  _giveStep(b: PlanStep['bind'], dt: number, ctx: CognitionCtx): void { return action.giveStep(this, b, dt, ctx); }
 
   // pay amt coin to a benefactor: walk over, then MOVE gold (no minting).
-  _payStep(b, dt, ctx) { return action.payStep(this, b, dt, ctx); }
+  _payStep(b: PlanStep['bind'], dt: number, ctx: CognitionCtx): void { return action.payStep(this, b, dt, ctx); }
 
   // _fleeFrom / _followLeader retired (Phase 2b): flee and follow are now steer-fills
   // (fillFlee / fillFollow in agent/steer.js), motored by the single steer() executor.
 
   // --- decoration -----------------------------------------------------------
-  _buildDecor() { return decor.buildDecor(this); }
+  _buildDecor(): void { return decor.buildDecor(this); }
 
-  _updateLabel() { return decor.updateLabel(this); }
+  _updateLabel(): void { return decor.updateLabel(this); }
 
-  setLabelVisible(v) { return decor.setLabelVisible(this, v); }
+  setLabelVisible(v: boolean): void { return decor.setLabelVisible(this, v); }
 }

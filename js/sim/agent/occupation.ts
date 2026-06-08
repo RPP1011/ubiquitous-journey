@@ -8,8 +8,18 @@
 
 import { ARENA_RADIUS } from '../../arena.js';
 import { GOODS, RAW_OUTPUTS, BASE_PRICE, ECON, RECIPES } from '../simconfig.js';
+import type { Agent, BehaviorProfile, CognitionCtx } from '../../../types/sim.js';
 
-const clamp01 = (x) => Math.max(0, Math.min(1, x));
+// One commodity definition (simconfig GOODS entry). Re-typed locally because simconfig.js
+// is inferred without an index signature (allowJs); these objects ARE string-keyed at runtime.
+interface GoodDef { site: string; raw: boolean; inputs: Record<string, number> | null; color: number; tags: string[] }
+const GOODS_T = GOODS as Record<string, GoodDef>;
+const BASE_PRICE_T = BASE_PRICE as Record<string, number>;
+// behavior_profile is keyed by the Tag union; production tags arrive as plain strings.
+const bpW = (bp: BehaviorProfile | undefined, t: string): number =>
+  (bp ? (bp as Record<string, number>)[t] : undefined) || 0;
+
+const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
 
 // Which ambition each good's tags best serve — used to bias the occupation
 // chooser so an agent picks work that advances a class useful to its goal:
@@ -18,7 +28,7 @@ const clamp01 = (x) => Math.max(0, Math.min(1, x));
 //             sell), mastery -> reinforce current strongest class, wanderlust ->
 //             forage/raw, belonging -> social. Concretely we map each good to a
 //             coarse drive so chooseOccupation can favour on-ambition work.
-const GOOD_DRIVE = {
+const GOOD_DRIVE: Record<string, string> = {
   food: 'wealth', wood: 'wealth', ore: 'wealth',
   herb: 'wanderlust', tool: 'mastery', potion: 'mastery',
 };
@@ -28,11 +38,11 @@ const GOOD_DRIVE = {
 // goods have no inputs, so margin = price. This is what stops the town chasing the
 // dearest STICKER price (tool=14) while its inputs (wood+ore) cost nearly as much —
 // a high-priced good whose inputs are dear is poor work. Belief-only; pure.
-export function tradeMargin(a, good) {
-  const g = GOODS[good]; if (!g) return 0;
-  const gross = a.priceBeliefs[good] || BASE_PRICE[good] || 1;
+export function tradeMargin(a: Agent, good: string): number {
+  const g = GOODS_T[good]; if (!g) return 0;
+  const gross = a.priceBeliefs[good] || BASE_PRICE_T[good] || 1;
   let cost = 0;
-  if (g.inputs) for (const c in g.inputs) cost += (a.priceBeliefs[c] || BASE_PRICE[c] || 1) * g.inputs[c];
+  if (g.inputs) for (const c in g.inputs) cost += (a.priceBeliefs[c] || BASE_PRICE_T[c] || 1) * g.inputs[c];
   return gross - cost;
 }
 
@@ -45,14 +55,14 @@ export function tradeMargin(a, good) {
 // the union of every good's craft tags — the PRODUCTION subspace of the behaviour
 // profile. Skill is measured within this subspace so the universal TRADE/HAGGLE tags
 // (every agent buys/sells) can't swamp the vocation signal.
-const PROD_TAGS = (() => { const s = new Set(); for (const g in GOODS) for (const t of GOODS[g].tags) s.add(t); return s; })();
+const PROD_TAGS = ((): Set<string> => { const s = new Set<string>(); for (const g in GOODS_T) for (const t of GOODS_T[g].tags) s.add(t); return s; })();
 
 // MASTERY multiplier — the steep, persistent productivity/competitiveness edge a unit
 // has at `good` from how much of it it has ever made (agent.mastery, slow-decaying).
 // Steeply increasing (sqrt curve) and capped: a seasoned specialist runs several-fold a
 // novice, so it out-produces and undercuts newcomers — making the field nearly closed to
 // low-mastery competitors. 1.0 for a novice. Used in produce() AND chooseOccupation. Pure.
-export function masteryMul(a, good) {
+export function masteryMul(a: Agent, good: string): number {
   const m = (a.mastery && a.mastery[good]) || 0;
   if (m <= 0) return 1;
   // UNCAPPED: the edge tracks the permanent skill spread without ceiling, so a grandmaster
@@ -62,15 +72,15 @@ export function masteryMul(a, good) {
   return 1 + ECON.masteryGain * Math.sqrt(m);
 }
 
-export function tradeSkillShare(a, good) {
+export function tradeSkillShare(a: Agent, good: string): number {
   const bp = a.progression && a.progression.behavior_profile;
-  if (!GOODS[good] || !bp) return 0;
+  if (!GOODS_T[good] || !bp) return 0;
   // share of the agent's PRODUCTION activity that is this good — stable comparative
   // advantage, normalised within the craft subspace only (not the whole profile, which
   // trading dominates). A dedicated woodcutter's production is ~all WOODCUT → ~1 here.
   let mine = 0, tot = 0;
-  for (const t of GOODS[good].tags) mine += bp[t] || 0;
-  for (const t of PROD_TAGS) tot += bp[t] || 0;
+  for (const t of GOODS_T[good].tags) mine += bpW(bp, t);
+  for (const t of PROD_TAGS) tot += bpW(bp, t);
   return tot > 0 ? Math.min(1, mine / tot) : 0;
 }
 
@@ -84,12 +94,12 @@ export function tradeSkillShare(a, good) {
 // work — hold. So the price collapse demoralises exactly the uncompetitive, not the skilled:
 // the labour market self-sorts. Raw goods are always producible, so it never hits literal
 // zero. Belief/own-state only; guarded — defaults to "worth working" on any error.
-export function laborValue(a) {
+export function laborValue(a: Agent): number {
   try {
     let best = 0;
-    for (const good in GOODS) {
-      const g = GOODS[good];
-      if (!g.raw && g.inputs && !Object.keys(g.inputs).every((c) => (a.inventory[c] || 0) >= g.inputs[c])) continue;
+    for (const good in GOODS_T) {
+      const g = GOODS_T[good];
+      if (!g.raw && g.inputs && !Object.keys(g.inputs).every((c) => (a.inventory[c] || 0) >= g.inputs![c])) continue;
       const m = tradeMargin(a, good) * masteryMul(a, good);   // PERSONAL return = margin × my output
       if (m > best) best = m;
     }
@@ -102,23 +112,23 @@ export function laborValue(a) {
 // affinity × a self-saturation damp, gated by OPPORTUNITY: raw goods (food/wood/
 // ore/herb) anyone can gather; crafted goods (tool/potion) only if the agent holds
 // the inputs. Hysteresis keeps it from thrashing. Reads BELIEFS only; never throws.
-export function chooseOccupation(a, ctx) {
+export function chooseOccupation(a: Agent, ctx: CognitionCtx): void {
   try {
     if (!a.canWork) return;
     const amb = a.ambition ? a.ambition.kind : null;
     // mastery reinforces the agent's current strongest class's good (if any),
     // so a forming identity self-reinforces.
     const masterGood = (amb === 'mastery') ? strongestClassGood(a) : null;
-    let best = null, bestScore = -Infinity;
-    for (const good in GOODS) {
-      const g = GOODS[good];
+    let best: string | null = null, bestScore = -Infinity;
+    for (const good in GOODS_T) {
+      const g = GOODS_T[good];
       // RECIPE GATE: a crafted good I don't KNOW the recipe for is unproducible — skip it
       // (own-state read; master-gated; guarded so a recipe-less/professionless agent never
       // throws). Raw goods (no inputs) are never gated. Inert on day one (every producer is
       // seeded with every recipe), bites only when Phase 4 leaves a newcomer un-taught.
       if (RECIPES.enabled && g.inputs && !(a.recipes && a.recipes.has(good))) continue;
       // opportunity gate: crafted goods need their inputs in hand
-      if (!g.raw && g.inputs && !Object.keys(g.inputs).every((c) => (a.inventory[c] || 0) >= g.inputs[c]))
+      if (!g.raw && g.inputs && !Object.keys(g.inputs).every((c) => (a.inventory[c] || 0) >= g.inputs![c]))
         continue;
       // reward: NET margin of the good (sale price minus believed input costs) —
       // the effective value of the labour, floored to a tiny positive so a break-even
@@ -139,7 +149,7 @@ export function chooseOccupation(a, ctx) {
       // surplus (held beyond what it keeps) it can't move. A personal, belief-clean
       // glut signal, so a smith with a pile of unsellable tools diversifies instead
       // of forging more of what nobody buys (the herd-into-tools breaker).
-      const glut = Math.max(0, (a.inventory[good] || 0) - (ECON.keep[good] || 0));
+      const glut = Math.max(0, (a.inventory[good] || 0) - ((ECON.keep as Record<string, number>)[good] || 0));
       const sat = 1 / (1 + ECON.saturationWeight * glut);
       // MASTERY LOYALTY: a GENTLE fraction of the (steep) productivity edge feeds the choice
       // — enough to keep a master loyal to its craft (its mastered field is more lucrative
@@ -163,14 +173,14 @@ export function chooseOccupation(a, ctx) {
 // The good whose tags the agent's strongest class is built from (for the
 // mastery ambition's "reinforce my identity" bias). Null if it has no class
 // tied to a producible good. Read-only.
-export function strongestClassGood(a) {
+export function strongestClassGood(a: Agent): string | null {
   const prog = a.progression;
   if (!prog || !prog.behavior_profile) return null;
   const bp = prog.behavior_profile;
-  let bestGood = null, bestW = 0;
-  for (const good in GOODS) {
+  let bestGood: string | null = null, bestW = 0;
+  for (const good in GOODS_T) {
     let w = 0;
-    for (const t of GOODS[good].tags) w += bp[t] || 0;
+    for (const t of GOODS_T[good].tags) w += bpW(bp, t);
     if (w > bestW) { bestW = w; bestGood = good; }
   }
   return bestW > 0 ? bestGood : null;

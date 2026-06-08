@@ -78,8 +78,11 @@ export interface CatalogModule {
   CLASS_MILESTONES: Record<string, Record<number, string>>;   // classKey -> level -> abilityId
 }
 
-/** The ctx an effect/cast resolves against — the FULL bridge ctx (geometric execution). */
-export type CastCtx = FullCtx;
+/** The ctx an effect/cast resolves against. The cast path reads ONLY `agents` (target
+ *  resolution over the true roster) and `time` — both guarded (`ctx?.agents || []`). Typed
+ *  as that minimal structural surface so the normal resolver path (FullCtx) AND the
+ *  resolver-less melee/player fallback in act() (CognitionCtx, no roster) both satisfy it. */
+export type CastCtx = { agents?: Agent[]; time?: number };
 
 /** One EFFECTS-map op implementation (js/rpg/abilities/effects.js). Returns whether it landed. */
 export type EffectFn = (effect: AbilityEffect, caster: Agent, target: Agent, ctx: CastCtx | null) => boolean;

@@ -44,11 +44,11 @@ export interface PlanBind {
 }
 
 /** One primitive step of a plan ({ prim, bind, exec }). `exec` is executor METADATA
- *  (the verb the act() executor fires on arrival) — not a callable. */
+ *  (the verb the act() executor fires on arrival) — NOT a callable. */
 export interface PlanStep {
   prim: string;                 // 'goto'|'gather'|'produce'|'buy'|'sell'|'give'|'pay'|…
   bind: PlanBind;
-  exec?: { verb: string };
+  exec?: { verb: string; [k: string]: unknown };
 }
 
 /** A cached plan on a goal: an ordered primitive list + total cost. */
@@ -66,12 +66,18 @@ export interface Goal {
   target?: Vector3 | EntityId;
   toPos?: Vec2Like | null;
   around?: Vec2Like | null;
+  toward?: Vec2Like | null;     // a Gazette/bounty march destination (own-state point)
+  fromId?: EntityId;            // flee: the believed-threat subject to run from
+  withId?: EntityId;            // socialize: the believed-friend to seek
+  phase?: string;               // spy goal phase mirror
+  arrived?: boolean;            // controlled approach: reached talk range
+  run?: boolean;                // controlled goto: run vs walk
   place?: string;
   affords?: string[];
   srcKind?: string;
   atoms?: Atom[];
   plan?: Plan | null;
-  step?: number;
+  step?: number | PlanStep;     // numeric stack pointer OR the injected plan-candidate step
   bornAt?: number;
   expiresAt?: number;
   predicate?: (agent: unknown, ctx: unknown) => boolean;

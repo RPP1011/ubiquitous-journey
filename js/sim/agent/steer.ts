@@ -33,17 +33,34 @@ import { ARENA_RADIUS, LANDMARKS } from '../../arena.js';
 import { SIM, STEER, SOCIAL, ECON, GOODS, PARTY } from '../simconfig.js';
 import { POI_KIND } from '../world.js';
 import { _stepAlong, groundY } from './movement.js';
+import type { Agent, CognitionCtx } from '../../../types/sim.js';
+
+/** A {x,z} (+optional y) point: a belief lastPos, a static POI/Place, or an own point. */
+interface XZ { x: number; z: number; y?: number }
+/** One potential-field force (an attractor pull / repulsor push). A stale pos is guarded;
+ *  weight is optional (steer defaults it to STEER.wAttract / STEER.wThreat). */
+export interface Force { pos: XZ | null | undefined; weight?: number }
+/** The locomotion force-field a steer-fill returns; steer() resolves it to a step. */
+interface Field {
+  attractors?: Force[];
+  repulsors?: Force[];
+  speed?: number;
+  run?: boolean;
+  snapTo?: { x: number; z: number; y?: number };
+}
+
+const GOODS_T = GOODS as Record<string, { site: string } | undefined>;
 
 const ZERO = new THREE.Vector3(0, 0, 0);   // world-centre fallback when an agent has no town
 
 // A single-attractor field at `pos` — the common shape (most fills are one static
 // place / believed spot). `weight` defaults to STEER.wAttract.
-const attractField = (pos, run = false) =>
+const attractField = (pos: XZ, run = false): Field =>
   ({ attractors: [{ pos, weight: STEER.wAttract }], run });
 
 const _away = new THREE.Vector3();   // scratch for the pure-repulsor synthetic target
 
-const valid = (p) => !!p && Number.isFinite(p.x) && Number.isFinite(p.z);
+const valid = (p: XZ | null | undefined): p is XZ => !!p && Number.isFinite(p.x) && Number.isFinite(p.z);
 
 // steer(a, field, dt) -> boolean (arrived at the primary attractor, halted).
 //   field = { attractors:[{pos,weight}], repulsors:[{pos,weight}], speed, run, snapTo? }
@@ -59,12 +76,12 @@ const valid = (p) => !!p && Number.isFinite(p.x) && Number.isFinite(p.z);
 //   PRIMARY attractor (the highest-weighted attractor). Returns false while moving and
 //   for a pure-repulsor field (which never arrives). Empty/all-stale -> idle, returns
 //   false. NEVER throws (the freeze lesson) — every deref is guarded, not exception-based.
-export function steer(a, field, dt) {
+export function steer(a: Agent, field: Field | null, dt: number): boolean {
   if (!field) { a.fighter.setMoving(0); return false; }
   // Stage 0 — snapTo teleport (follow only): set x/z (+ owned y), halt, "arrived".
   if (field.snapTo && valid(field.snapTo)) {
     a.pos.x = field.snapTo.x; a.pos.z = field.snapTo.z;
-    if (Number.isFinite(field.snapTo.y)) a.pos.y = field.snapTo.y;
+    if (Number.isFinite(field.snapTo.y)) a.pos.y = field.snapTo.y!;
     a.fighter.setMoving(0);
     return true;
   }
@@ -73,7 +90,7 @@ export function steer(a, field, dt) {
 
   // Stage A — resolve the field to (heading hx/hz, primary attractor).
   let hx = 0, hz = 0;
-  let primary = null, primaryW = -Infinity;
+  let primary: XZ | null = null, primaryW = -Infinity;
   const attractors = field.attractors || null;
   const repulsors = field.repulsors || null;
   if (attractors) {
@@ -141,7 +158,7 @@ export function steer(a, field, dt) {
 // MARKET — haul the load to market and stand the stall; the localized double-auction
 // (runMarket) clears for whoever is within marketRange. Static POI attractor, walk;
 // the on-arrival HOLD is implicit (steer halts at arriveDist, no verb fires).
-function fillMarket(a, ctx) {
+function fillMarket(a: Agent, ctx: CognitionCtx): Field | null {
   const m = ctx.world.nearest(POI_KIND.MARKET, a.pos);
   return m ? attractField(m.pos, false) : null;   // null -> caller idles (was setMoving(0))
 }
@@ -151,7 +168,7 @@ function fillMarket(a, ctx) {
 // branch did NOTHING when no REST POI existed — leaving the body coasting at its prior
 // speed forever; here a null field idles it. Unreachable in practice: every world has
 // REST POIs, so the only difference is in the never-hit no-POI case.)
-function fillRest(a, ctx) {
+function fillRest(a: Agent, ctx: CognitionCtx): Field | null {
   const r = ctx.world.nearest(POI_KIND.REST, a.pos);
   return r ? attractField(r.pos, false) : null;
 }
@@ -159,14 +176,14 @@ function fillRest(a, ctx) {
 // BOUNTY — a bounty-hunter marches (RUN) toward the quarry / threat-zone the Gazette
 // named; the 'fight' goal takes over once a target is in sight. Own-state target
 // (a.goal.toward, a static Gazette pos), run. No verb.
-function fillBounty(a, _ctx) {
-  return a.goal.toward ? attractField(a.goal.toward, true) : null;
+function fillBounty(a: Agent, _ctx: CognitionCtx): Field | null {
+  return a.goal!.toward ? attractField(a.goal!.toward, true) : null;
 }
 
 // ARBITRAGE — haul the load to the dear town's market (RUN); once within trading range
 // HOLD (return null -> idle) so the localized auction sells the goods there. Own-state
 // dest (a.arbitrage.destPos). Preserves the ECON.marketRange-2 hold threshold.
-function fillArbitrage(a, _ctx) {
+function fillArbitrage(a: Agent, _ctx: CognitionCtx): Field | null {
   const ar = a.arbitrage;
   if (!ar || !ar.destPos) return null;
   if (a.pos.distanceTo(ar.destPos) > (ECON.marketRange || 18) - 2) return attractField(ar.destPos, true);
@@ -175,7 +192,7 @@ function fillArbitrage(a, _ctx) {
 
 // EXPEDITION — march (RUN) toward the company's current objective (the wilds, or home
 // on return). Own-state target (a.expedition.target). No verb.
-function fillExpedition(a, _ctx) {
+function fillExpedition(a: Agent, _ctx: CognitionCtx): Field | null {
   const tgt = a.expedition && a.expedition.target;
   return tgt ? attractField(tgt, true) : null;
 }
@@ -183,7 +200,7 @@ function fillExpedition(a, _ctx) {
 // CARAVAN — plod the trade road at WALKING pace toward the current waypoint (out, then
 // home). A laden caravan is SLOW — exactly what lets the ambush catch it. Own-state
 // target (a.caravanRun.target), walk. No verb.
-function fillCaravan(a, _ctx) {
+function fillCaravan(a: Agent, _ctx: CognitionCtx): Field | null {
   const ct = a.caravanRun && a.caravanRun.target;
   return ct ? attractField(ct, false) : null;
 }
@@ -192,7 +209,7 @@ function fillCaravan(a, _ctx) {
 // ambles (WALK) around its home town waiting for a story to break. Own-state target
 // (a.reporterTarget) OR an own-state wander point in the town band — the two-path the
 // old branch had, kept inside the fill. No verb.
-function fillReporter(a, _ctx) {
+function fillReporter(a: Agent, _ctx: CognitionCtx): Field | null {
   const t = a.reporterTarget;
   if (t) return attractField(t, true);
   if (!a.wanderTarget || a.pos.distanceTo(a.wanderTarget) < 1.0) {
@@ -208,7 +225,7 @@ function fillReporter(a, _ctx) {
 // landmarks (regional, not always the closest) and walk there. The on-arrival novelty/
 // comfort/social restore + the sightTarget reset are the explicit verb in act.js. Picks
 // a fresh landmark each outing; guarded (no landmarks -> idle). Own-state target.
-function fillSightsee(a, _ctx) {
+function fillSightsee(a: Agent, _ctx: CognitionCtx): Field | null {
   if (!a.sightTarget) {
     if (!LANDMARKS || !LANDMARKS.length) return null;   // -> caller idles (was setMoving(0))
     const near = LANDMARKS.slice()
@@ -223,7 +240,7 @@ function fillSightsee(a, _ctx) {
 // WANDER (the default) — pick a roam target and amble to it, regenerating when within
 // 1m of the current one. Four EXACT radial cases (own-state anchors only, no live read):
 // dungeon roam-room / camp patrol / monster frontier-prowl / townsfolk home-band. Walk.
-function fillWander(a, _ctx) {
+function fillWander(a: Agent, _ctx: CognitionCtx): Field | null {
   if (!a.wanderTarget || a.pos.distanceTo(a.wanderTarget) < 1.0) {
     if (a.roam) {
       // dungeon dwellers pace within their room (set at spawn): a small patrol radius
@@ -258,10 +275,10 @@ function fillWander(a, _ctx) {
 // guard branches that the OLD `work` branch had (no work-capable body, or no valid
 // trade) are performed HERE and return null -> idle (the agent stands, exactly as the
 // old `break` did). Static POI attractor, walk. Own-state (_trade) + static map only.
-function fillWork(a, ctx) {
+function fillWork(a: Agent, ctx: CognitionCtx): Field | null {
   if (!a.canWork) return null;                  // monsters/player have no workplace -> idle
   if (!a._trade) a.chooseOccupation(ctx);       // lazily pick a trade (own-state, no roster)
-  const g = a._trade && GOODS[a._trade];
+  const g = a._trade ? GOODS_T[a._trade] : null;
   if (!g) return null;                          // no valid trade -> idle (was `break`)
   const site = ctx.world.nearest(g.site, a.pos);
   return site ? attractField(site.pos, false) : null;
@@ -271,8 +288,8 @@ function fillWork(a, ctx) {
 // that decide already picked) and restore comfort on arrival (the verb in act.js, which
 // also tops up social at a tavern). BELIEF-BACKED: the destination is my own home-belief
 // or a static Place — no live read. Guarded: a missing destination idles (decide re-routes).
-function fillComfort(a, _ctx) {
-  return a.goal.toPos ? attractField(a.goal.toPos, false) : null;
+function fillComfort(a: Agent, _ctx: CognitionCtx): Field | null {
+  return a.goal!.toPos ? attractField(a.goal!.toPos, false) : null;
 }
 
 // SOCIALIZE — walk to a believed FRIEND and stand with them; with no friend known well
@@ -280,8 +297,8 @@ function fillComfort(a, _ctx) {
 // company. The friend force is the belief lastPos (only when confidence clears knownConf —
 // a moved/dead friend leaves an empty spot and the need just doesn't fill); the market is a
 // static POI. The on-arrival social restore + bond is the explicit verb in act.js. Walk.
-function fillSocialize(a, ctx) {
-  const rel = (a.goal.withId != null) ? a.beliefs.get(a.goal.withId) : null;
+function fillSocialize(a: Agent, ctx: CognitionCtx): Field | null {
+  const rel = (a.goal!.withId != null) ? a.beliefs.get(a.goal!.withId) : null;
   if (rel && rel.confidence > SOCIAL.knownConf) return attractField(rel.lastPos, false);
   const m = ctx.world.nearest(POI_KIND.MARKET, a.pos);
   return m ? attractField(m.pos, false) : null;
@@ -296,9 +313,9 @@ function fillSocialize(a, ctx) {
 // arrives. A faded/absent belief leaves NO valid repulsor pos -> the away=pos radial
 // fallback drifts me outward from origin (the old fleeFrom(null) quirk G4/C4 depend on,
 // reproduced in steer's pure-repulsor branch). Run either way.
-function fillFlee(a, _ctx) {
-  if (a.goal.toPos) return attractField(a.goal.toPos, true);
-  const fb = a.beliefs.get(a.goal.fromId);
+function fillFlee(a: Agent, _ctx: CognitionCtx): Field | null {
+  if (a.goal!.toPos) return attractField(a.goal!.toPos, true);
+  const fb = a.goal!.fromId != null ? a.beliefs.get(a.goal!.fromId) : null;
   // belief.lastPos may be undefined (no belief) — steer's repulsor guard handles it,
   // falling back to the radial-from-origin drift exactly as fleeFrom(null) did.
   return { repulsors: [{ pos: fb ? fb.lastPos : undefined, weight: STEER.wThreat }], run: true };
@@ -308,25 +325,25 @@ function fillFlee(a, _ctx) {
 // the safe place (`toPos`) the schema picked as a single attractor; with none, steer
 // directly AWAY from the believed brawl centre (`around`) as a single pure repulsor.
 // Both are static/belief points — no live read. Run.
-function fillAvoid(a, _ctx) {
-  if (a.goal.toPos) return attractField(a.goal.toPos, true);
-  if (a.goal.around) return { repulsors: [{ pos: a.goal.around, weight: STEER.wThreat }], run: true };
+function fillAvoid(a: Agent, _ctx: CognitionCtx): Field | null {
+  if (a.goal!.toPos) return attractField(a.goal!.toPos, true);
+  if (a.goal!.around) return { repulsors: [{ pos: a.goal!.around, weight: STEER.wThreat }], run: true };
   return null;   // no refuge, no zone centre -> idle (was setMoving(0))
 }
 
 // HIDE — go to ground at a concealing place (`toPos`, a static map point the go-to-ground
 // schema set), then stand still (the stand-still verb fires on arrival in act.js). No
 // threat ref deref. Guarded: no place -> idle. Run.
-function fillHide(a, _ctx) {
-  return a.goal.toPos ? attractField(a.goal.toPos, true) : null;
+function fillHide(a: Agent, _ctx: CognitionCtx): Field | null {
+  return a.goal!.toPos ? attractField(a.goal!.toPos, true) : null;
 }
 
 // SHADOW — trail a SUSPECTED mask at a stand-off distance: close to within a tail gap of
 // where I BELIEVE it is (belief lastPos — no live read), then HOLD. Only steer while the
 // gap exceeds the stand-off (SOCIAL.shadowGap); within the gap, or with a faded/absent
 // belief, return null so the caller halts (the suspect moved out of my knowledge). Walk.
-function fillShadow(a, _ctx) {
-  const sb = (a.goal.subjectId != null) ? a.beliefs.get(a.goal.subjectId) : null;
+function fillShadow(a: Agent, _ctx: CognitionCtx): Field | null {
+  const sb = (a.goal!.subjectId != null) ? a.beliefs.get(a.goal!.subjectId) : null;
   if (!sb || sb.confidence < SIM.actOnBeliefMin) return null;   // lost track -> idle
   if (a.pos.distanceTo(sb.lastPos) <= (SOCIAL.shadowGap || 6)) return null;  // within gap: HOLD
   return attractField(sb.lastPos, false);
@@ -336,7 +353,10 @@ function fillShadow(a, _ctx) {
 // player-led party reads its real leader handle (the documented ctx.partyLeader
 // exception). An NPC band follows where it BELIEVES its leader is (belief lastPos),
 // confidence-gated — no roster read. Returns null when the leader is unknown/gone.
-function resolveLeaderRef(a, ctx) {
+/** The minimal leader handle fillFollow needs: a position + a liveness flag. */
+interface LeaderRef { pos: XZ; alive: boolean }
+
+function resolveLeaderRef(a: Agent, ctx: CognitionCtx): LeaderRef | null {
   const pl = a._leader(ctx);                       // EPISTEMIC-OK: controlled party leader (known mechanic)
   if (pl) return pl;
   if (a.bandLeaderId == null) return null;
@@ -353,7 +373,7 @@ function resolveLeaderRef(a, ctx) {
 // groundY own y (it early-returns for a party member, so the follower keeps its own/
 // teleported y exactly as the old followLeader's non-snap goTo did). Leader unknown/
 // dead -> null (idle). steer's Stage-0 honours snapTo. Belief-/carve-out-gated only.
-function fillFollow(a, ctx) {
+function fillFollow(a: Agent, ctx: CognitionCtx): Field | null {
   const leader = resolveLeaderRef(a, ctx);
   if (!leader || !leader.alive) return null;        // EPISTEMIC-OK: controlled party leader (known mechanic)
   const n = Math.max(1, PARTY.maxSize);
@@ -365,7 +385,9 @@ function fillFollow(a, ctx) {
   return { attractors: [{ pos: { x: tx, z: tz }, weight: STEER.wAttract }], run: gap > PARTY.catchUpDist };
 }
 
-export const STEER_FILLS = {
+/** goal.kind -> steer-fill. Indexed by an arbitrary kind in act.js (unknown -> wander). */
+export type SteerFill = (a: Agent, ctx: CognitionCtx) => Field | null;
+export const STEER_FILLS: Record<string, SteerFill> = {
   market: fillMarket,
   rest: fillRest,
   bounty: fillBounty,
