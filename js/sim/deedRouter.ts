@@ -6,6 +6,13 @@
 import { bus } from '../rpg/events.js';
 import { RPG } from '../rpg/rpgconfig.js';
 import { MONSTER } from './simconfig.js';
+import type { Agent, ActionEvent, Episode } from '../../types/sim.js';
+
+// installDeedRouter/recordDeed take the live Simulation instance (EXECUTION/intake: the
+// router delivers each bus deed to the actor's Progression + episodic memory). simulation.js
+// is a LATER cluster, so the instance is typed loosely here.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Sim = any; /* Simulation — ported in a later cluster */
 
 // RPG event router: every ActionEvent on the bus is delivered to the actor's
 // Progression. Progression's own self-emitted level/class/ability events
@@ -14,8 +21,8 @@ import { MONSTER } from './simconfig.js';
 // inside onEvent are safe (no recursion blow-up) and listener errors are
 // swallowed by the bus.
 // Returns the unsubscribe handle (stored as sim._busOff by the caller).
-export function installDeedRouter(sim) {
-  return bus.on((ev) => {
+export function installDeedRouter(sim: Sim): () => void {
+  return bus.on((ev: ActionEvent) => {
     const a = sim.agentsById.get(ev.actorId);
     if (!a) return;
     if (a.progression) a.progression.onEvent(ev, ev.t || sim.time);
@@ -26,9 +33,9 @@ export function installDeedRouter(sim) {
 // Turn a salient bus deed into an autobiographical episode (most deeds are too
 // mundane to remember; record only the spikes). Combat-victim/​witness episodes
 // are recorded directly in onCombatEvents where the perspective is the target.
-export function recordDeed(sim, a, ev) {
+export function recordDeed(sim: Sim, a: Agent, ev: ActionEvent): void {
   const t = ev.t || sim.time;
-  let ep = null;
+  let ep: Episode | null = null;
   switch (ev.verb) {
     case 'kill': {
       const T = ev.targetId != null ? sim.agentsById.get(ev.targetId) : null;
@@ -58,7 +65,7 @@ export function recordDeed(sim, a, ev) {
     // emit fires right after the class is inserted, so the newest one is it.
     case 'class_gained': {
       const cls = [...a.progression.classes.values()].pop();
-      ep = { t, kind: 'milestone', label: cls ? cls.name : null, valence: 1, salience: 0.7 };
+      ep = { t, kind: 'milestone', label: cls ? cls.name : undefined, valence: 1, salience: 0.7 };
       break;
     }
     case 'recruited':    ep = { t, kind: 'bond', valence: 1, salience: 0.5 }; break;

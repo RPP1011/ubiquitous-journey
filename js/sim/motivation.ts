@@ -14,29 +14,41 @@ import { MOTIVE, SIM } from './simconfig.js';
 import { RPG } from '../rpg/rpgconfig.js';
 import { goalAvenge, goalSeekFortune, goalRepay, goalGrieve, goalDelve } from './planner.js';
 import { STAGE, REASON } from './trace.js';
+import type { Agent, CognitionCtx, Goal, Personality, AmbitionSnapshot, EntityId, Stage, Reason } from '../../types/sim.js';
+
+// STAGE/REASON are runtime constants in the (still-JS) trace.js, so allowJs widens their
+// members to `string`; Trace.note wants the narrow Stage/Reason literal unions. These
+// re-narrow at the boundary (the values ARE valid literals) — one cast, not per-call.
+const ST = STAGE as Record<string, Stage>;
+const RS = REASON as Record<string, Reason>;
+
+// The revenge branch is a documented-INERT legacy path (revenge re-homed to the goal
+// stack), but `amb.subjectId` is still read in it — a field the shared Ambition type
+// (live ambitions never set revenge) lacks. Widen locally for that dead read only.
+type RevengeAmbition = { subjectId?: EntityId } & NonNullable<Agent['ambition']>;
 
 // TRACE (write-only, never read back): a goal genuinely landed on the stack. pushGoal
 // DEDUPS — it returns the EXISTING goal on a repeat — so we log only a FRESH push (the
 // returned object IS the one we built). Own-state; guarded; never throws on the tick.
-function traceDerived(a, ctx, built, pushed) {
+function traceDerived(a: Agent, ctx: CognitionCtx | null, built: Goal | null, pushed: Goal | null): void {
   // pushGoal DEDUPS — on a repeat it returns the EXISTING goal, not `built` — so a
   // mismatch means "already on the stack, not a fresh derive". note() is internally
   // guarded (never throws); an Agent always carries `.trace`.
   if (!built || pushed !== built) return;
-  a.trace.note(STAGE.GOAL, REASON.GOAL_DERIVED, {
+  a.trace.note(ST.GOAL, RS.GOAL_DERIVED, {
     t: ctx ? ctx.time : 0, subjectId: built.subjectId ?? null, a: built.kind || null,
   });
 }
 
-const clamp01 = (x) => Math.max(0, Math.min(1, x));
-const lvl = (a) => (a.progression ? a.progression.totalLevel || 0 : 0);
+const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
+const lvl = (a: Agent) => (a.progression ? a.progression.totalLevel || 0 : 0);
 
 // BELIEF-BASED liveness: do I still hold a confident-enough belief that `subjectId`
 // exists? A subject I've lost all track of (belief gone / faded below the act threshold)
 // reads as "believed gone". This replaces every omniscient `o.alive` read in the goal
 // layer — the epistemic split: I act on what I BELIEVE, and the combat bridge's `_slain`
 // signal handles the case where I truly killed someone out of my own sight.
-function beliefAlive(a, subjectId) {
+function beliefAlive(a: Agent | null, subjectId: EntityId): boolean {
   if (!a || !a.beliefs) return false;
   const b = a.beliefs.get(subjectId);
   return !!(b && b.confidence >= SIM.actOnBeliefMin);
@@ -46,7 +58,15 @@ function beliefAlive(a, subjectId) {
 // kinds (1 = neutral). `weight(P)` is the assignment propensity from personality.
 // `progress(a)` returns 0..1 toward fulfilment; cumulative kinds read a baseline
 // snapshot captured at assignment in `a.ambition.base`.
-export const AMBITIONS = {
+/** One archetypal ambition's definition (data-only; favors + weight + progress). */
+interface AmbitionDef {
+  label: string;
+  favors: Record<string, number>;
+  weight: (P: Personality) => number;
+  progress: (a: Agent) => number;
+}
+
+export const AMBITIONS: Record<string, AmbitionDef> = {
   wealth: {
     label: 'amass wealth', favors: { work: 1.7, socialize: 0.7 },
     weight: (P) => 0.25 + P.ambition,
@@ -60,17 +80,17 @@ export const AMBITIONS = {
   renown: {
     label: 'win renown', favors: { fight: 1.9, flee: 0.5, wander: 1.2 },
     weight: (P) => 0.1 + P.risk_tolerance,
-    progress: (a) => clamp01((a.life.monsterKills - a.ambition.base.mkills) / MOTIVE.renownKills),
+    progress: (a) => clamp01((a.life.monsterKills - (a.ambition ? a.ambition.base.mkills : 0)) / MOTIVE.renownKills),
   },
   wanderlust: {
     label: 'see the world', favors: { wander: 2.6, work: 0.7 },
     weight: (P) => 0.15 + P.curiosity,
-    progress: (a) => clamp01((a.life.dist - a.ambition.base.dist) / MOTIVE.wanderDist),
+    progress: (a) => clamp01((a.life.dist - (a.ambition ? a.ambition.base.dist : 0)) / MOTIVE.wanderDist),
   },
   belonging: {
     label: 'belong', favors: { socialize: 2.0, wander: 0.9 },
     weight: (P) => 0.15 + P.social_drive,
-    progress: (a) => clamp01((a.life.social - a.ambition.base.social) / MOTIVE.socialAmount),
+    progress: (a) => clamp01((a.life.social - (a.ambition ? a.ambition.base.social : 0)) / MOTIVE.socialAmount),
   },
 };
 
@@ -79,18 +99,18 @@ export const AMBITIONS = {
 // never set true any more, so the favors map + the `amb.revenge` branches below are
 // inert — kept only so the slow-ambition layer reads cleanly if revenge ever
 // returns as an ambition. Aggression now flows through hasAggressiveGoal.
-const REVENGE_FAVORS = { fight: 2.2, flee: 0.4, work: 0.6, wander: 0.7 };
+const REVENGE_FAVORS: Record<string, number> = { fight: 2.2, flee: 0.4, work: 0.6, wander: 0.7 };
 
 const MONSTER_POOL = ['renown', 'wanderlust'];          // ambitions that mean something for a monster
 const TOWN_POOL = ['wealth', 'mastery', 'renown', 'wanderlust', 'belonging'];
 
-function snapshot(a) {
+function snapshot(a: Agent): Record<string, number> {
   return { mkills: a.life.monsterKills, dist: a.life.dist, social: a.life.social, gold: a.gold, level: lvl(a) };
 }
 
 // Pick an ambition kind weighted by personality from the agent's eligible pool.
 // `avoid` lets a just-completed ambition not immediately repeat.
-export function assignAmbition(a, now = 0, avoid = null) {
+export function assignAmbition(a: Agent, now = 0, avoid: string | null = null): void {
   if (!a || a.controlled || !a.life) return;
   const pool = (a.faction === 'monster' ? MONSTER_POOL : TOWN_POOL).filter((k) => k !== avoid);
   const P = a.personality || {};
@@ -109,7 +129,7 @@ export function assignAmbition(a, now = 0, avoid = null) {
 // aggressive goal on the stack" so the vengeful still stand and fight.
 
 // Per-tick: advance progress, resolve revenge, and complete + reroll when met.
-export function updateAmbition(a, ctx) {
+export function updateAmbition(a: Agent, ctx: CognitionCtx): void {
   const amb = a.ambition;
   if (!amb) { assignAmbition(a, ctx.time); return; }
   const now = ctx.time;
@@ -117,7 +137,8 @@ export function updateAmbition(a, ctx) {
     // BELIEF/BRIDGE-BASED "believed dead": the wrongdoer is satisfied-dead when a combat
     // bridge stamped it on my `_slain` set (a sanctioned onCombatEvents write) OR I hold
     // no confident belief about it any more (I've lost all track of it). No roster read.
-    const done = (a._slain && a._slain.has(amb.subjectId)) || !beliefAlive(a, amb.subjectId);
+    const subjectId = (amb as RevengeAmbition).subjectId as EntityId;   // inert legacy read
+    const done = (a._slain && a._slain.has(subjectId)) || !beliefAlive(a, subjectId);
     const stale = now - amb.t0 > MOTIVE.revengeTimeout;          // or the grudge simply cools
     amb.progress = done ? 1 : clamp01((now - amb.t0) / MOTIVE.revengeTimeout) * 0.4;
     if (done || stale) assignAmbition(a, now);
@@ -132,7 +153,7 @@ export function updateAmbition(a, ctx) {
 }
 
 // Multiplier an ambition applies to a candidate action's score in decide().
-export function ambitionFavor(a, kind) {
+export function ambitionFavor(a: Agent, kind: string): number {
   const amb = a.ambition; if (!amb) return 1;
   const favors = amb.revenge ? REVENGE_FAVORS : (AMBITIONS[amb.kind] && AMBITIONS[amb.kind].favors);
   const f = favors && favors[kind];
@@ -145,10 +166,10 @@ export function ambitionFavor(a, kind) {
 // — i.e. an `avenge` intention on the stack: revenge is re-homed to the goal
 // layer, so we read the stack instead of a revenge ambition.)
 const AGGRESSIVE_GOALS = new Set(['avenge', 'defeat']);
-export function hasAggressiveGoal(a) {
+export function hasAggressiveGoal(a: Agent | null): boolean {
   return !!(a && Array.isArray(a.goals) && a.goals.some((g) => g && AGGRESSIVE_GOALS.has(g.kind)));
 }
-export function ambitionWantsFight(a) {
+export function ambitionWantsFight(a: Agent): boolean {
   const amb = a.ambition;
   return hasAggressiveGoal(a) || (!!amb && amb.kind === 'renown');
 }
@@ -167,7 +188,7 @@ export function ambitionWantsFight(a) {
 // | succoured (benefactor)        | repay(withId)         ← Phase B
 // | witnessed_death (liked subj)  | grieve(withId) (+avenge(byId) if known)  Phase B
 // | relic    (place)              | delve(place)          ← Phase B
-export function deriveGoals(a, ctx) {
+export function deriveGoals(a: Agent, ctx: CognitionCtx | null): void {
   if (!a || a.controlled || !a.memory || typeof a.pushGoal !== 'function') return;
   if (a.faction === 'monster') return;              // monsters carry no grudge-goals
   let salient;
@@ -212,7 +233,7 @@ export function deriveGoals(a, ctx) {
         traceDerived(a, ctx, grief, a.pushGoal(grief, ctx));
         const haveCulprit = ep.byId != null && ep.byId !== a.id && !(a._slain && a._slain.has(ep.byId));
         if (haveCulprit) {
-          const av = goalAvenge(ep.byId);
+          const av = goalAvenge(ep.byId as EntityId);
           av.priority = 0.85; av.from = 'witnessed_death';
           av.expiresAt = now + (MOTIVE.avengeExpiry || 120);
           traceDerived(a, ctx, av, a.pushGoal(av, ctx));
@@ -238,7 +259,7 @@ export function deriveGoals(a, ctx) {
 //   salience — the closure episode's salience (avenge records 'triumph' @0.5,
 //              others 'closure' @0.5; reuse that so the memory model is the
 //              single notability signal).
-export function awardGoalClosureXP(a, goal, now, salience = 0.5) {
+export function awardGoalClosureXP(a: Agent, goal: Goal, now: number, salience = 0.5): void {
   if (!a || !goal || !a.progression || typeof a.progression.addNarrativeXP !== 'function') return;
   // GUARD against re-firing: a goal derived from a still-salient memory can be
   // re-pushed the instant it's popped and (if its predicate is already true) pop
@@ -252,17 +273,18 @@ export function awardGoalClosureXP(a, goal, now, salience = 0.5) {
   const minAge = RPG.narrativeGoalMinAgeSec || 0;
   if (now - born < minAge) { goal._xpAwarded = true; return; }   // burn the flag, no reward
   goal._xpAwarded = true;
-  const bonus = (RPG.narrativeGoalBonus && RPG.narrativeGoalBonus[goal.kind]) ?? 1;
+  const goalBonus = RPG.narrativeGoalBonus as Record<string, number> | undefined;
+  const bonus = (goalBonus && goalBonus[goal.kind as string]) ?? 1;
   try { a.progression.addNarrativeXP(salience, now, bonus); } catch { /* never throw on the tick */ }
 }
 
 // drop goals whose subject/place is gone, whose predicate is satisfied, or which
 // timed out. Kept here (sibling of updateAmbition) so all goal-stack policy lives
 // in motivation.js. Returns nothing; mutates a.goals in place. Bounded + guarded.
-export function pruneGoals(a, ctx) {
+export function pruneGoals(a: Agent, ctx: CognitionCtx | null): void {
   if (!a || !Array.isArray(a.goals) || !a.goals.length) return;
   const now = ctx ? ctx.time : 0;
-  a.goals = a.goals.filter((g) => {
+  a.goals = a.goals.filter((g: Goal) => {
     if (!g) return false;
     if (g.expiresAt != null && now >= g.expiresAt) return false;
     if (typeof g.predicate === 'function') {
@@ -284,7 +306,7 @@ export function pruneGoals(a, ctx) {
           awardGoalClosureXP(a, g, now, 0.5);   // narrative-beat xp for the closure
           // TRACE (write-only): the goal's predicate became satisfied — it pops. Own-state.
           // note() is internally guarded (never throws); a.trace always exists on an Agent.
-          a.trace.note(STAGE.GOAL, REASON.GOAL_POPPED, {
+          a.trace.note(ST.GOAL, RS.GOAL_POPPED, {
             t: now, subjectId: g.subjectId ?? null, a: g.kind || null,
           });
           return false;
@@ -297,7 +319,7 @@ export function pruneGoals(a, ctx) {
 }
 
 // Compact descriptor for the relations/inspector UI.
-export function ambitionText(a) {
+export function ambitionText(a: Agent): AmbitionSnapshot | null {
   const amb = a.ambition; if (!amb) return null;
   return { label: amb.label, progress: amb.progress || 0, revenge: !!amb.revenge };
 }

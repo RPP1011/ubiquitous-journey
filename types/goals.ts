@@ -43,11 +43,12 @@ export interface PlanBind {
   [k: string]: unknown;
 }
 
-/** One primitive step of a plan ({ prim, bind, exec }). */
+/** One primitive step of a plan ({ prim, bind, exec }). `exec` is executor METADATA
+ *  (the verb the act() executor fires on arrival) — not a callable. */
 export interface PlanStep {
   prim: string;                 // 'goto'|'gather'|'produce'|'buy'|'sell'|'give'|'pay'|…
   bind: PlanBind;
-  exec?: (...args: unknown[]) => unknown;
+  exec?: { verb: string };
 }
 
 /** A cached plan on a goal: an ordered primitive list + total cost. */

@@ -37,6 +37,20 @@ import { terrainHeight } from '../arena.js';
 import { BEAT } from './chronicle.js';
 import { PERCEPT_KIND } from './percept.js';
 import { Place } from './mentalmap.js';
+import type { Agent, CognitionCtx } from '../../types/sim.js';
+
+// EXECUTION layer: construction reads ground truth (positions, market, the CityGrid) and
+// mutates the world; it takes the live Simulation instance, typed loosely (simulation.js is a
+// LATER cluster). The internal BuildSite/Building records are module-private dynamic record
+// shapes (no shared type — they live only here), so they are typed as `any` with intent.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Sim = any; /* Simulation — ported in a later cluster */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type BuildSite = any;   // a dynamic in-progress site record (owner/kind/plot/struct/progress/…)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Building = any;    // a dynamic finished-building percept record (id 'B:n'/kind/benefit/…)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Ctx = any;         // the build-tick context (only ctx.time is read); callers vary, kept loose
 
 // the affordance table (data-driven), so a registered tavern Place advertises shelter/rest.
 const MAP_AFF = (MAP && MAP.affordances) || {};
@@ -56,7 +70,7 @@ export const BUILD_KIND = { HOME: 'home', TAVERN: 'tavern' };
 // (it DISCOVERED the ruin by sight), is unhoused. This is the cognition-visible housing state
 // the comfort/build demand reads; the world's truth-side building bookkeeping is separate.
 // Pure + guarded (own-state only); never throws on a fixture missing fields.
-export function isUnhoused(a) {
+export function isUnhoused(a: Agent): boolean {
   try {
     const b = (a && a.homeBeliefId != null && a.beliefs) ? a.beliefs.get(a.homeBeliefId) : null;
     return !b || b.sheltered === false;
@@ -68,7 +82,7 @@ export function isUnhoused(a) {
 // chronically low comfort + a surplus-gold wealth gate, no home yet, not already
 // building. Reads ONLY the agent's own state (epistemic split intact) and never
 // throws on a professionless / fixture agent missing fields.
-export function qualifyHome(agent, ctx) {
+export function qualifyHome(agent: Agent, ctx: Ctx): boolean {
   try {
     if (!agent || !BUILD.enabled) return false;
     if (!agent.canWork || agent.faction !== 'townsfolk') return false;
@@ -76,7 +90,7 @@ export function qualifyHome(agent, ctx) {
     if (!agent.needs || typeof agent.needs.comfort !== 'number') return false;
     if (agent._comfortLowSince == null) return false;            // never been chronically low
     const t = (ctx && ctx.time) || 0;
-    if ((t - agent._comfortLowSince) < BUILD.qualifyComfortStreak) return false;   // not chronic yet
+    if ((t - (agent._comfortLowSince as number)) < BUILD.qualifyComfortStreak) return false;   // not chronic yet
     if ((agent.gold || 0) < BUILD.wealthGate) return false;      // wealth gate (surplus, NOT spent)
     return true;
   } catch { return false; }
@@ -89,7 +103,7 @@ export function qualifyHome(agent, ctx) {
 // about to start: the home-building demand-pressure pre-empts a conscription that
 // would otherwise grab the builder during the qualify streak and never let go.
 // Pure + guarded (reads only the agent's own state); never throws on a fixture.
-export function isHomeBuilder(agent) {
+export function isHomeBuilder(agent: Agent): boolean {
   try {
     if (!agent || !BUILD.enabled) return false;
     if (!agent.canWork || agent.faction !== 'townsfolk' || !isUnhoused(agent)) return false;
@@ -101,11 +115,11 @@ export function isHomeBuilder(agent) {
 }
 
 // Wood a home costs (exported so decide/tests can read it without reaching into config).
-export function homeWoodCost() { return BUILD.woodNeeded; }
+export function homeWoodCost(): number { return BUILD.woodNeeded; }
 
 // a tiny seeded PRNG (mulberry32) so per-building param derivation + mesh geometry
 // are reproducible from building.seed.
-function mulberry32(seed) {
+function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return function () {
     a |= 0; a = (a + 0x6D2B79F5) | 0;
@@ -118,10 +132,20 @@ function mulberry32(seed) {
 // the lazily-imported mesh generator (browser-only). null until the first browser
 // finalize resolves the dynamic import — mirrors Progression's fault-tolerant
 // lazy ability-catalog import: the logical building never waits on it.
-let _gen = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _gen: ((rng: () => number, opts: any) => any) | null = null;
 
 export class BuildSites {
-  constructor(sim) {
+  sim: Sim;
+  _sites: BuildSite[];
+  _buildings: Building[];
+  _nextId: number;
+  _acc: number;
+  _pending: Building[];
+  _displaced: Array<{ ownerId: unknown; town: unknown; plotPos: THREE.Vector3; at: number }>;
+  stats: { commissioned: number; completed: number; homes: number; taverns: number };
+
+  constructor(sim: Sim) {
     this.sim = sim;
     this._sites = [];        // active BuildSites (in progress)
     this._buildings = [];    // finished Buildings (POIs with live benefit)
@@ -143,7 +167,7 @@ export class BuildSites {
   // Bias geometry params from kind+wealth+a seeded rng. These only STEER the
   // parametric generator (footprint/storeys/palette); the generator assembles the
   // unique geometry. seed is stamped per commission so no two builds are identical.
-  _paramsFor(kind, wealth, seed) {
+  _paramsFor(kind: string, wealth: number, seed: number) {
     const r = mulberry32(seed);
     const F = CITY.foot || {};
     if (kind === BUILD_KIND.TAVERN) {
@@ -182,8 +206,8 @@ export class BuildSites {
 
   // nearest FINISHED building of `kind` (BUILD_KIND.*) by x/z squared distance,
   // or null. Mirrors World.nearest so act.js can call it the same way.
-  nearest(kind, pos) {
-    let best = null, bd = Infinity;
+  nearest(kind: string, pos: THREE.Vector3): Building | null {
+    let best: Building | null = null, bd = Infinity;
     for (const b of this._buildings) {
       if (b.buildKind !== kind) continue;    // build-type (home/tavern); b.kind is now the PERCEPT kind
       if (b.sheltered === false) continue;   // a razed/burnt building confers no benefit
@@ -196,25 +220,25 @@ export class BuildSites {
 
   // Phase-1 walk-through: every finished building is accessible. The name leaves
   // room for Phase-2 occupancy/capacity.
-  nearestAccessible(kind, pos) { return this.nearest(kind, pos); }
+  nearestAccessible(kind: string, pos: THREE.Vector3): Building | null { return this.nearest(kind, pos); }
 
   // true if a tavern exists OR is under construction in this town (so the Surveyor
   // never double-commissions one).
-  hasTavern(townId) {
+  hasTavern(townId: unknown): boolean {
     for (const s of this._sites) if (s.kind === BUILD_KIND.TAVERN && s.town === townId) return true;
     for (const b of this._buildings) if (b.buildKind === BUILD_KIND.TAVERN && b.town === townId) return true;
     return false;
   }
 
   // an active BuildSite by id (act.js resolves agent._buildSiteId each tick).
-  siteById(id) {
+  siteById(id: unknown): BuildSite | null {
     if (id == null) return null;
     for (const s of this._sites) if (s.id === id && !s.done) return s;
     return null;
   }
 
   // count of active PRIVATE home sites in a town (paces the town vs the cap).
-  _activeHomesIn(townId) {
+  _activeHomesIn(townId: unknown): number {
     let n = 0;
     for (const s of this._sites) if (s.kind === BUILD_KIND.HOME && s.town === townId) n++;
     return n;
@@ -224,7 +248,7 @@ export class BuildSites {
   // A townsperson chooses to build (from act.js). Re-checks qualifyHome (so a
   // stale decide candidate is a safe no-op), asks the Surveyor for a plot, and
   // creates the BuildSite. Returns the site, or null (no room / at cap / unqualified).
-  commission(agent, ctx) {
+  commission(agent: Agent, ctx: Ctx): BuildSite | null {
     try {
       if (!qualifyHome(agent, ctx)) return null;
       const town = this._townOf(agent.townId);
@@ -251,7 +275,7 @@ export class BuildSites {
   // The Surveyor commissions a PUBLIC work (the town tavern). Owner-less; townsfolk
   // build it via their build goal + the small ambient town-labour accrual in tick.
   // No gold changes hands — the town "fund" is wood + labour only.
-  commissionPublic(town, kind, _plotIgnored, ctx) {
+  commissionPublic(town: { id: unknown }, kind: string, _plotIgnored: unknown, ctx: Ctx): BuildSite | null {
     try {
       if (!town) return null;
       const seed = (Math.random() * 1e9) | 0;
@@ -273,7 +297,12 @@ export class BuildSites {
   }
 
   // assemble a BuildSite record from a plot + derived params.
-  _makeSite({ kind, ownerId, town, plot, params, woodNeeded, benefit, ctx }) {
+  // The plot (CityGrid claim) + params (derived geometry) are dynamic internal records, so
+  // this arg bag is typed loosely (BuildSite is `any` — these records have no shared type).
+  _makeSite({ kind, ownerId, town, plot, params, woodNeeded, benefit, ctx }: {
+    kind: string; ownerId: unknown; town: unknown; plot: BuildSite; params: BuildSite;
+    woodNeeded: number; benefit: { comfort?: number; social?: number }; ctx: Ctx;
+  }): BuildSite {
     const t = (ctx && ctx.time) || 0;
     // the claimed plot is a CityGrid claim: centerPos {x,z} (not a Vector3), yaw, tiles,
     // baseLevel/topLevel. Keep the tile claim so we can build the parts shell + release.
@@ -311,7 +340,7 @@ export class BuildSites {
     };
   }
 
-  _townOf(townId) {
+  _townOf(townId: unknown): BuildSite {   // a dynamic town record (no shared type)
     const towns = this.sim.towns || [];
     for (const tw of towns) if (tw.id === townId) return tw;
     return towns[0] || null;
@@ -322,7 +351,7 @@ export class BuildSites {
   // stands on the plot. Here we only (a) seed a small ambient town-labour accrual
   // for the public tavern so it completes without a hiring market, (b) abandon
   // stalled sites, and (c) finalize completed ones. Fully guarded — never throws.
-  tick(ctx, dt) {
+  tick(ctx: Ctx, dt: number): void {
     try {
       if (!BUILD.enabled || !this.sim._spawned) return;
       this._acc += dt;
@@ -369,7 +398,7 @@ export class BuildSites {
   // stops conferring its benefit (a home frees its owner, a public hub drops off
   // nearest()), files a razing beat, and a gutted one is ruined (tiles released). All
   // accesses guarded on b.struct / grid / ground-truth so it never throws on the tick.
-  _raidPass(ctx, dt) {
+  _raidPass(ctx: Ctx, dt: number): void {
     if (!this._buildings.length) return;
     const raiders = (this.sim.director && this.sim.director._raiders) || [];
     const R = CITY.raid || {};
@@ -429,7 +458,7 @@ export class BuildSites {
   // loop is untouched): population both supplies the wood (a renewable commodity) and
   // raises the frame. Wood is fed in first (so woodHave keeps pace), then progress
   // accrues capped by it. No owner has to haul materials to a public work.
-  _townLabour(site, ctx, dt) {
+  _townLabour(site: BuildSite, ctx: Ctx, dt: number): void {
     let pop = 0;
     for (const a of this.sim.agents) {
       if (a.alive && !a.controlled && a.faction === 'townsfolk' && a.townId === site.town) pop++;
@@ -450,8 +479,8 @@ export class BuildSites {
   // Promote a finished site to a Building: benefit goes live, the home is recorded
   // on its owner, a chronicle beat is filed, and (browser-only) the procedural mesh
   // is attached. All field accesses guarded.
-  _finalize(site, ctx) {
-    const building = {
+  _finalize(site: BuildSite, ctx: Ctx): void {
+    const building: Building = {
       // NAMESPACED percept id (Phase 2a fix): a building's belief-keying id MUST be disjoint
       // from agent ids, which are bare integers from Simulation._nextId (1..N). Buildings and
       // agents share ONE per-observer BeliefStore keyed by raw id, so a bare integer here would
@@ -550,7 +579,7 @@ export class BuildSites {
   // Lazily import the parametric generator on first browser finalize (so the mesh
   // module never enters the headless graph), then attach this building's geometry.
   // If the import hasn't resolved yet, queue the building and flush when it does.
-  _attachMesh(building) {
+  _attachMesh(building: Building): void {
     try {
       if (_gen) { this._build1(building); return; }
       this._pending.push(building);
@@ -561,14 +590,14 @@ export class BuildSites {
     } catch { /* visuals are best-effort */ }
   }
 
-  _flushPending() {
+  _flushPending(): void {
     if (!_gen) return;
     const q = this._pending; this._pending = [];
     for (const b of q) this._build1(b);
   }
 
   // generate + place one building's mesh (browser only; deterministic per seed).
-  _build1(building) {
+  _build1(building: Building): void {
     try {
       if (!_gen) { this._pending.push(building); return; }
       const rng = mulberry32(building.seed);
@@ -591,7 +620,7 @@ export class BuildSites {
   }
 
   // ---- teardown -------------------------------------------------------------
-  _abandon(site, i) {
+  _abandon(site: BuildSite, i: number): void {
     try {
       if (site.ownerId != null) {
         const owner = this.sim.agentsById.get(site.ownerId);
@@ -612,7 +641,7 @@ export class BuildSites {
   // act-on threshold and the comfort path stops trusting it — see decide.nearestComfortSource).
   // The TRUTH-SIDE displacement record (filed on shelter loss in _raidPass) drives the town
   // rebuild backstop. Closed-money-loop safe — releasing tiles destroys wood parts, not gold.
-  _ruin(b) {
+  _ruin(b: Building): void {
     try {
       const i = this._buildings.indexOf(b);
       if (i >= 0) this._buildings.splice(i, 1);
@@ -628,7 +657,7 @@ export class BuildSites {
   // TRUTH-SIDE displacement record (the demand backstop): note that a home owner has been
   // displaced. Deduped per owner. Reads ground truth only (no cognition write). The grace
   // drain in tick() decides if the town must rebuild on the owner's behalf.
-  _recordDisplaced(b) {
+  _recordDisplaced(b: Building): void {
     try {
       if (!b || b.ownerId == null) return;
       if (this._displaced.some((d) => d.ownerId === b.ownerId)) return;
@@ -642,7 +671,7 @@ export class BuildSites {
   // behalf (town-funded labour, like the tavern — mints no gold) and clears the record. This
   // keeps housing stock from permanently decaying when an owner never returns to discover his
   // ruin, WITHOUT the world writing the owner's cognition. Reads ground truth only. Guarded.
-  _drainDisplaced(ctx) {
+  _drainDisplaced(ctx: Ctx): void {
     if (!this._displaced.length) return;
     const grace = BUILD.rebuildGraceTicks || 120;
     for (let i = this._displaced.length - 1; i >= 0; i--) {
@@ -665,7 +694,7 @@ export class BuildSites {
   // Town-funded rebuild of a displaced owner's home: a HOME site with the owner's id but no
   // personal labour required — it rises via the same ambient town-labour path the tavern uses
   // (_townLabour). Mints no gold (wood+labour abstraction). Returns the site or null.
-  _townFundedHome(town, owner, ctx) {
+  _townFundedHome(town: BuildSite, owner: Agent | null, ctx: Ctx): BuildSite | null {
     try {
       if (!this.sim.cities) return null;
       const seed = (Math.random() * 1e9) | 0;
@@ -685,7 +714,7 @@ export class BuildSites {
   }
 
   // a town's display name (reuse _townOf) for chronicle beats. Guarded.
-  _townName(townId) {
+  _townName(townId: unknown): string {
     try { const tw = this._townOf(townId); return (tw && tw.name) || 'the town'; }
     catch { return 'the town'; }
   }

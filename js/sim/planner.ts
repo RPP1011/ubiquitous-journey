@@ -20,6 +20,71 @@
 import { PROFESSIONS, COMMODITIES, ECON, SIM } from './simconfig.js';
 import { POI_KIND } from './world.js';
 import { STAGE, REASON } from './trace.js';
+import type { Agent, CognitionCtx, Goal, Plan, PlanStep, EntityId, Atom as AtomT, Stage, Reason } from '../../types/sim.js';
+
+// STAGE/REASON are runtime constants in the (still-JS) trace.js — allowJs widens their
+// members to `string`, but Trace.note wants the narrow Stage/Reason literal unions. These
+// re-narrow at the boundary (the values ARE valid literals) — one cast, not per-call.
+const ST = STAGE as Record<string, Stage>;
+const RS = REASON as Record<string, Reason>;
+
+// ── Internal planner shapes (module-local) ──────────────────────────────────
+// The planner runs on a SUPERSET of the public Atom/PlanBind vocabulary (it adds
+// a {subjectId}-place form, the 'sated' subgoal, and corpseId/item/value fields),
+// so these widen the shared shapes rather than reinventing them. A `place` is a
+// POI-kind string OR a {subjectId} target descriptor resolved via belief.
+type PlannerPlace = string | { subjectId: EntityId };
+// One subgoal atom the solver chases (the public Atom widened with the extra preds).
+interface SubAtom {
+  pred: string;
+  place?: PlannerPlace;
+  good?: string;
+  n?: number;
+  amt?: number;
+  subjectId?: EntityId;
+  value?: number;
+  kind?: string;
+  item?: string;
+  corpseId?: EntityId;
+}
+// The concrete params a primitive's effectMatches chose (one loose bind per primitive).
+interface Bind {
+  name?: string;
+  place?: PlannerPlace;
+  good?: string;
+  n?: number;
+  site?: string | null;
+  inputs?: Record<string, number> | null;
+  price?: number;
+  item?: string;
+  to?: EntityId;
+  amt?: number;
+  target?: EntityId;
+  corpse?: EntityId;
+  fromStock?: boolean;
+}
+// The simulated believed-state the solver threads forward (inventory/gold/at/received).
+interface SimState {
+  inv: Record<string, number>;
+  gold: number;
+  at: PlannerPlace | null;
+  received: Record<string, boolean>;
+}
+// One authored primitive (effectMatches/precondition/cost + executor metadata).
+interface Primitive {
+  name: string;
+  effectMatches(sg: SubAtom, bind: Bind | null, agent: Agent): Bind | null;
+  precondition(agent: Agent, ctx: CognitionCtx, bind: Bind): SubAtom[];
+  cost(agent: Agent, ctx: CognitionCtx, bind: Bind): number;
+  exec: { verb: string };
+}
+// A solved sub-result: an ordered primitive list + its accumulated cost.
+interface Solved { steps: PlanStep[]; cost: number; }
+
+// PROFESSIONS (from the still-JS simconfig) keyed by dynamic profession name. One typed
+// view so the planner can index it by an arbitrary string without per-access casts.
+interface ProfDef { output: string; site: string; inputs?: Record<string, number> | null; }
+const PROFS = PROFESSIONS as Record<string, ProfDef>;
 
 // --- bounds (config-able) ---------------------------------------------------
 export const PLAN = {
@@ -46,9 +111,9 @@ const GIFTABLE = ['food', 'potion', 'herb', 'wood', 'ore', 'tool'];
 // The site POI kind a given commodity is GATHERED / PRODUCED at (its profession
 // site). Raw goods (food/wood/ore/herb) map to a resource node; tool/potion are
 // crafted (need a profession), handled by the produce primitive.
-function siteKindForGood(good) {
-  for (const k in PROFESSIONS) {
-    if (PROFESSIONS[k].output === good) return PROFESSIONS[k].site;
+function siteKindForGood(good: string): string | null {
+  for (const k in PROFS) {
+    if (PROFS[k].output === good) return PROFS[k].site;
   }
   return null;
 }
@@ -76,7 +141,7 @@ const RAW_GOODS = new Set(['food', 'wood', 'ore', 'herb']);
 //     a vendetta against a vanished foe should lapse. We test belief ABSENCE, never low
 //     confidence, so an out-of-sight quarry is never mistaken for dead.
 // Reads only the agent's OWN state (_slain + own BeliefStore). Never the roster.
-function believedDead(agent, subjectId) {
+function believedDead(agent: Agent | null, subjectId: EntityId): boolean {
   if (!agent) return true;
   if (agent._slain && agent._slain.has(subjectId)) return true;
   return !(agent.beliefs && agent.beliefs.get(subjectId));
@@ -84,7 +149,7 @@ function believedDead(agent, subjectId) {
 
 // Believed position of a "place". A place is either a POI kind (string POI_KIND)
 // or a target descriptor { subjectId } resolved via the agent's belief.lastPos.
-function believedPos(agent, ctx, place) {
+function believedPos(agent: Agent, ctx: CognitionCtx, place: PlannerPlace | null | undefined): import('three').Vector3 | null {
   if (!place) return null;
   if (typeof place === 'object' && place.subjectId != null) {
     // BELIEF-ONLY: navigate toward where I BELIEVE the subject is (its last sighting),
@@ -94,14 +159,14 @@ function believedPos(agent, ctx, place) {
     if (b && b.confidence > 0) return b.lastPos;
     return null;
   }
-  // a POI kind string
-  const poi = ctx.world && ctx.world.nearest(place, agent.pos);
+  // a POI kind string (the {subjectId} form returned above)
+  const poi = ctx.world && ctx.world.nearest(place as string, agent.pos);
   return poi ? poi.pos : null;
 }
 
 // Believed travel cost from the agent to a place (metres -> cost), plus a route
 // risk surcharge for believed-hostiles sitting near the destination.
-function travelCost(agent, ctx, place) {
+function travelCost(agent: Agent, ctx: CognitionCtx, place: PlannerPlace | null | undefined): number {
   const tp = believedPos(agent, ctx, place);
   if (!tp) return Infinity;            // unknown / unreachable place
   const d = Math.hypot(tp.x - agent.pos.x, tp.z - agent.pos.z);
@@ -120,16 +185,16 @@ function travelCost(agent, ctx, place) {
 }
 
 // Believed price of a good (already per-agent + gossip-shifted).
-function believedPrice(agent, good) {
+function believedPrice(agent: Agent, good: string): number | null {
   const p = agent.priceBeliefs ? agent.priceBeliefs[good] : null;
   return (typeof p === 'number' && p > 0) ? p : null;
 }
 
 // How many units of `good` the agent can spare as a gift without dipping below
 // its personal keep reserve (ECON.keep).
-function giveableStock(agent, good) {
+function giveableStock(agent: Agent, good: string): number {
   const have = (agent.inventory && agent.inventory[good]) || 0;
-  const keep = (ECON.keep && ECON.keep[good]) || 0;
+  const keep = ((ECON.keep as Record<string, number> | undefined)?.[good]) || 0;
   return Math.max(0, Math.floor(have - keep));
 }
 
@@ -138,15 +203,15 @@ function giveableStock(agent, good) {
 // satisfy. `holds(agent, ctx)` tests it against believed state.
 // ---------------------------------------------------------------------------
 export const Atom = {
-  at: (place) => ({ pred: 'at', place }),
-  have: (good, n = 1) => ({ pred: 'have', good, n }),
-  goldGe: (amt) => ({ pred: 'gold_ge', amt }),
-  received: (subjectId, value, kind = 'any') => ({ pred: 'received', subjectId, value, kind }),
-  dead: (subjectId) => ({ pred: 'dead', subjectId }),
-  inReach: (subjectId) => ({ pred: 'in_reach', subjectId }),
+  at: (place: PlannerPlace): SubAtom => ({ pred: 'at', place }),
+  have: (good: string, n = 1): SubAtom => ({ pred: 'have', good, n }),
+  goldGe: (amt: number): SubAtom => ({ pred: 'gold_ge', amt }),
+  received: (subjectId: EntityId, value: number, kind = 'any'): SubAtom => ({ pred: 'received', subjectId, value, kind }),
+  dead: (subjectId: EntityId): SubAtom => ({ pred: 'dead', subjectId }),
+  inReach: (subjectId: EntityId): SubAtom => ({ pred: 'in_reach', subjectId }),
 };
 
-function atomHolds(atom, agent, ctx) {
+function atomHolds(atom: SubAtom, agent: Agent, ctx: CognitionCtx): boolean {
   switch (atom.pred) {
     case 'at': {
       const tp = believedPos(agent, ctx, atom.place);
@@ -154,9 +219,9 @@ function atomHolds(atom, agent, ctx) {
       return Math.hypot(tp.x - agent.pos.x, tp.z - agent.pos.z) <= SIM.arriveDist + 0.01;
     }
     case 'have':
-      return ((agent.inventory && agent.inventory[atom.good]) || 0) >= atom.n;
+      return ((atom.good ? agent.inventory?.[atom.good] : 0) || 0) >= (atom.n || 0);
     case 'gold_ge':
-      return (agent.gold || 0) >= atom.amt;
+      return (agent.gold || 0) >= (atom.amt || 0);
     case 'received':
       // satisfied only by an explicit transfer this plan performs; never true a priori
       return false;
@@ -164,11 +229,11 @@ function atomHolds(atom, agent, ctx) {
       // BELIEF/BRIDGE-BASED: the subject is "believed dead" when a combat bridge stamped it
       // on my _slain set (I struck the killing blow, even out of my own sight) OR I hold no
       // confident belief about it any more. No roster/liveness read.
-      return believedDead(agent, atom.subjectId);
+      return believedDead(agent, atom.subjectId as EntityId);
     }
     case 'in_reach': {
       // BELIEF-ONLY reach test: am I at the subject's last-believed position? No live read.
-      const b = agent.beliefs && agent.beliefs.get(atom.subjectId);
+      const b = atom.subjectId != null && agent.beliefs ? agent.beliefs.get(atom.subjectId) : null;
       const tp = (b && b.confidence > 0) ? b.lastPos : null;
       if (!tp) return false;
       return Math.hypot(tp.x - agent.pos.x, tp.z - agent.pos.z) <= 2.2;
@@ -188,7 +253,7 @@ function atomHolds(atom, agent, ctx) {
 // A "bind" is the concrete parameters chosen when the effect unified with a
 // subgoal (e.g. give binds {item, n, to}).
 // ---------------------------------------------------------------------------
-export const PRIMITIVES = [
+export const PRIMITIVES: Primitive[] = [
   // goto(place): effect at(place)
   {
     name: 'goto',
@@ -205,15 +270,15 @@ export const PRIMITIVES = [
   {
     name: 'gather',
     effectMatches(sg) {
-      if (sg.pred !== 'have' || !RAW_GOODS.has(sg.good)) return null;
+      if (sg.pred !== 'have' || !sg.good || !RAW_GOODS.has(sg.good)) return null;
       const site = siteKindForGood(sg.good);
       if (!site) return null;
       return { name: 'gather', good: sg.good, n: sg.n, site };
     },
-    precondition(agent, ctx, bind) { return [Atom.at(bind.site)]; },
+    precondition(agent, ctx, bind) { return [Atom.at(bind.site as string)]; },
     cost(agent, ctx, bind) {
       // a few seconds of gathering per unit (cheaper if you already work this node)
-      const own = agent.profession && PROFESSIONS[agent.profession]?.output === bind.good;
+      const own = agent.profession && PROFS[agent.profession]?.output === bind.good;
       return PLAN.actBase * (own ? 1 : 2) * (bind.n || 1);
     },
     exec: { verb: 'gather' },
@@ -224,12 +289,12 @@ export const PRIMITIVES = [
     name: 'produce',
     effectMatches(sg, _bind, agent) {
       if (sg.pred !== 'have' || !agent.profession) return null;
-      const prof = PROFESSIONS[agent.profession];
+      const prof = PROFS[agent.profession];
       if (!prof || prof.output !== sg.good) return null;
       return { name: 'produce', good: sg.good, n: sg.n, site: prof.site, inputs: prof.inputs || null };
     },
     precondition(agent, ctx, bind) {
-      const pre = [Atom.at(bind.site)];
+      const pre = [Atom.at(bind.site as string)];
       if (bind.inputs) for (const c in bind.inputs) pre.push(Atom.have(c, bind.inputs[c]));
       return pre;
     },
@@ -241,15 +306,15 @@ export const PRIMITIVES = [
   {
     name: 'buy',
     effectMatches(sg, _bind, agent) {
-      if (sg.pred !== 'have') return null;
+      if (sg.pred !== 'have' || !sg.good) return null;
       const price = believedPrice(agent, sg.good);
       if (price == null) return null;
       return { name: 'buy', good: sg.good, n: sg.n, price };
     },
     precondition(agent, ctx, bind) {
-      return [Atom.at(POI_KIND.MARKET), Atom.goldGe(bind.price * (bind.n || 1))];
+      return [Atom.at(POI_KIND.MARKET), Atom.goldGe((bind.price || 0) * (bind.n || 1))];
     },
-    cost(agent, ctx, bind) { return bind.price * (bind.n || 1); },
+    cost(agent, ctx, bind) { return (bind.price || 0) * (bind.n || 1); },
     exec: { verb: 'buy' },
   },
 
@@ -259,7 +324,7 @@ export const PRIMITIVES = [
     effectMatches(sg, _bind, agent) {
       if (sg.pred !== 'gold_ge') return null;
       // choose a good we can plausibly sell toward the gold target: our surplus
-      let best = null, bestPrice = 0;
+      let best: string | null = null, bestPrice = 0;
       for (const c of COMMODITIES) {
         const price = believedPrice(agent, c);
         if (price == null) continue;
@@ -269,7 +334,7 @@ export const PRIMITIVES = [
       return { name: 'sell', good: best, price: bestPrice };
     },
     precondition(agent, ctx, bind) {
-      return [Atom.at(POI_KIND.MARKET), Atom.have(bind.good, 1)];
+      return [Atom.at(POI_KIND.MARKET), Atom.have(bind.good as string, 1)];
     },
     cost(agent, ctx, bind) { return PLAN.actBase; },
     exec: { verb: 'sell' },
@@ -282,7 +347,7 @@ export const PRIMITIVES = [
       if (sg.pred !== 'received') return null;
       if (sg.kind === 'coin') return null;                 // goal demands coin -> use pay
       // pick a giveable good we either hold a surplus of or could acquire
-      let chosen = null;
+      let chosen: string | null = null;
       for (const g of GIFTABLE) {
         if (giveableStock(agent, g) > 0) { chosen = g; break; }
       }
@@ -295,12 +360,12 @@ export const PRIMITIVES = [
       // acquire the good FIRST, then travel to the target: ordering the goto LAST
       // ensures the agent is actually at(to) when the give lands, even when the
       // `have` subgoal itself involves travelling away to a market/node to acquire.
-      return [Atom.have(bind.item, bind.n), Atom.at({ subjectId: bind.to })];
+      return [Atom.have(bind.item as string, bind.n), Atom.at({ subjectId: bind.to as EntityId })];
     },
     cost(agent, ctx, bind) {
       // value handed over is a real cost (we lose the good); from-stock cheaper
-      const price = believedPrice(agent, bind.item) || 1;
-      return price * bind.n * 0.5;
+      const price = believedPrice(agent, bind.item as string) || 1;
+      return price * (bind.n || 0) * 0.5;
     },
     exec: { verb: 'give' },
   },
@@ -317,9 +382,9 @@ export const PRIMITIVES = [
     precondition(agent, ctx, bind) {
       // raise the coin FIRST (may require a market trip), then travel to the
       // target so the agent is at(to) when the pay lands (see give's note).
-      return [Atom.goldGe(bind.amt), Atom.at({ subjectId: bind.to })];
+      return [Atom.goldGe(bind.amt || 0), Atom.at({ subjectId: bind.to as EntityId })];
     },
-    cost(agent, ctx, bind) { return bind.amt; },   // coin handed over is the cost
+    cost(agent, ctx, bind) { return bind.amt || 0; },   // coin handed over is the cost
     exec: { verb: 'pay' },
   },
 
@@ -330,7 +395,7 @@ export const PRIMITIVES = [
       if (sg.pred !== 'sated') return null;
       return { name: 'consume', item: sg.item || 'food' };
     },
-    precondition(agent, ctx, bind) { return [Atom.have(bind.item, 1)]; },
+    precondition(agent, ctx, bind) { return [Atom.have(bind.item as string, 1)]; },
     cost() { return PLAN.actBase; },
     exec: { verb: 'consume' },
   },
@@ -342,10 +407,10 @@ export const PRIMITIVES = [
       if (sg.pred !== 'dead') return null;
       return { name: 'attack', target: sg.subjectId };
     },
-    precondition(agent, ctx, bind) { return [Atom.inReach(bind.target)]; },
+    precondition(agent, ctx, bind) { return [Atom.inReach(bind.target as EntityId)]; },
     cost(agent, ctx, bind) {
       // distance to believed target position + combat risk
-      const tp = believedPos(agent, ctx, { subjectId: bind.target });
+      const tp = believedPos(agent, ctx, { subjectId: bind.target as EntityId });
       const d = tp ? Math.hypot(tp.x - agent.pos.x, tp.z - agent.pos.z) : 40;
       return d * PLAN.travelPerMetre + PLAN.actBase * 3;
     },
@@ -360,17 +425,17 @@ export const PRIMITIVES = [
       if (sg.corpseId == null) return null;       // only when a known corpse exists
       return { name: 'loot', corpse: sg.corpseId };
     },
-    precondition(agent, ctx, bind) { return [Atom.at({ subjectId: bind.corpse })]; },
+    precondition(agent, ctx, bind) { return [Atom.at({ subjectId: bind.corpse as EntityId })]; },
     cost() { return PLAN.actBase; },
     exec: { verb: 'loot' },
   },
 ];
 
-const byName = (n) => PRIMITIVES.find((p) => p.name === n) || null;
+const byName = (n: string): Primitive | null => PRIMITIVES.find((p) => p.name === n) || null;
 
 // in_reach also wants the agent AT the target's believed pos: chain via goto.
 // We special-case it so attack plans become [goto(subject) -> attack].
-function inReachPrecond(bind) { return [Atom.at({ subjectId: bind.target })]; }
+function inReachPrecond(bind: { target: EntityId }): SubAtom[] { return [Atom.at({ subjectId: bind.target })]; }
 
 // ---------------------------------------------------------------------------
 // The backward-chaining solver. Returns the min-cost ordered primitive list
@@ -381,7 +446,7 @@ function inReachPrecond(bind) { return [Atom.at({ subjectId: bind.target })]; }
 // Solve a single open atom into an ordered primitive list (steps) + cost.
 // `inv` is a believed-inventory delta map tracking goods/gold the plan already
 // arranges, so a later precond can be met by an earlier step's effect.
-function solveAtom(agent, ctx, atom, depth, frontier, simState) {
+function solveAtom(agent: Agent, ctx: CognitionCtx, atom: SubAtom, depth: number, frontier: { n: number }, simState: SimState): Solved | null {
   if (depth > PLAN.maxDepth) return null;
   if (frontier.n > PLAN.maxFrontier) return null;
   frontier.n++;
@@ -389,7 +454,7 @@ function solveAtom(agent, ctx, atom, depth, frontier, simState) {
   // already satisfied in the simulated believed state?
   if (atomSatisfied(atom, agent, ctx, simState)) return { steps: [], cost: 0 };
 
-  let best = null;
+  let best: Solved | null = null;
   for (const prim of PRIMITIVES) {
     const bind = prim.effectMatches(atom, null, agent);
     if (!bind) continue;
@@ -402,7 +467,7 @@ function solveAtom(agent, ctx, atom, depth, frontier, simState) {
     // gather this primitive's preconditions
     let pre = prim.precondition(agent, ctx, bind);
     // in_reach decomposes to "at the target's believed position"
-    pre = pre.flatMap((p) => (p.pred === 'in_reach' ? inReachPrecond({ target: p.subjectId }) : [p]));
+    pre = pre.flatMap((p) => (p.pred === 'in_reach' ? inReachPrecond({ target: p.subjectId as EntityId }) : [p]));
 
     const sub = solveAll(agent, ctx, pre, depth + 1, frontier, next);
     if (!sub) continue;
@@ -411,7 +476,10 @@ function solveAtom(agent, ctx, atom, depth, frontier, simState) {
     if (!Number.isFinite(stepCost)) continue;      // unreachable place / unknown price
     const cost = stepCost + sub.cost;
     if (!Number.isFinite(cost)) continue;
-    const steps = [...sub.steps, { prim: prim.name, bind, exec: prim.exec }];
+    // bind carries the planner's wider place form ({subjectId}); the PlanStep boundary
+    // models it as the loose PlanBind that the act() executor reads — cast at the seam.
+    const step: PlanStep = { prim: prim.name, bind: bind as unknown as PlanStep['bind'], exec: prim.exec };
+    const steps: PlanStep[] = [...sub.steps, step];
     if (steps.length > PLAN.maxPlan) continue;
     if (!best || cost < best.cost) best = { steps, cost };
   }
@@ -419,8 +487,8 @@ function solveAtom(agent, ctx, atom, depth, frontier, simState) {
 }
 
 // Solve a list of atoms in order, threading the simulated state forward.
-function solveAll(agent, ctx, atoms, depth, frontier, simState) {
-  let state = simState, steps = [], cost = 0;
+function solveAll(agent: Agent, ctx: CognitionCtx, atoms: SubAtom[], depth: number, frontier: { n: number }, simState: SimState): Solved | null {
+  let state = simState, steps: PlanStep[] = [], cost = 0;
   for (const atom of atoms) {
     const r = solveAtom(agent, ctx, atom, depth, frontier, state);
     if (!r) return null;
@@ -435,57 +503,57 @@ function solveAll(agent, ctx, atoms, depth, frontier, simState) {
 // --- simulated believed-state bookkeeping ----------------------------------
 // We track only what a precondition might read: inventory deltas, gold delta,
 // the agent's planned position (which place it will be "at"), received-flags.
-function initState(agent) {
-  const inv = {};
+function initState(agent: Agent): SimState {
+  const inv: Record<string, number> = {};
   for (const c of COMMODITIES) inv[c] = (agent.inventory && agent.inventory[c]) || 0;
   return { inv, gold: agent.gold || 0, at: null, received: {} };
 }
-function cloneState(s) {
+function cloneState(s: SimState): SimState {
   return { inv: { ...s.inv }, gold: s.gold, at: s.at, received: { ...s.received } };
 }
-function applyEffect(prim, bind, agent, s) {
+function applyEffect(prim: Primitive, bind: Bind, agent: Agent, s: SimState): void {
   switch (prim.name) {
-    case 'goto':    s.at = bind.place; break;
-    case 'gather':  s.inv[bind.good] = (s.inv[bind.good] || 0) + (bind.n || 1); break;
-    case 'produce': s.inv[bind.good] = (s.inv[bind.good] || 0) + (bind.n || 1); break;
-    case 'buy':     s.inv[bind.good] = (s.inv[bind.good] || 0) + (bind.n || 1);
-                    s.gold -= bind.price * (bind.n || 1); break;
-    case 'sell':    s.inv[bind.good] = Math.max(0, (s.inv[bind.good] || 0) - 1);
-                    s.gold += bind.price; break;
-    case 'give':    s.inv[bind.item] = Math.max(0, (s.inv[bind.item] || 0) - bind.n);
-                    s.received[bind.to] = true; break;
-    case 'pay':     s.gold -= bind.amt; s.received[bind.to] = true; break;
-    case 'consume': s.inv[bind.item] = Math.max(0, (s.inv[bind.item] || 0) - 1); break;
+    case 'goto':    s.at = bind.place ?? null; break;
+    case 'gather':  s.inv[bind.good!] = (s.inv[bind.good!] || 0) + (bind.n || 1); break;
+    case 'produce': s.inv[bind.good!] = (s.inv[bind.good!] || 0) + (bind.n || 1); break;
+    case 'buy':     s.inv[bind.good!] = (s.inv[bind.good!] || 0) + (bind.n || 1);
+                    s.gold -= (bind.price || 0) * (bind.n || 1); break;
+    case 'sell':    s.inv[bind.good!] = Math.max(0, (s.inv[bind.good!] || 0) - 1);
+                    s.gold += (bind.price || 0); break;
+    case 'give':    s.inv[bind.item!] = Math.max(0, (s.inv[bind.item!] || 0) - (bind.n || 0));
+                    s.received[String(bind.to)] = true; break;
+    case 'pay':     s.gold -= (bind.amt || 0); s.received[String(bind.to)] = true; break;
+    case 'consume': s.inv[bind.item!] = Math.max(0, (s.inv[bind.item!] || 0) - 1); break;
     case 'loot':    s.gold += 1; break;
     case 'attack':  break;
   }
 }
-function applyStepsForward(agent, s, steps) {
-  let state = cloneState(s);
+function applyStepsForward(agent: Agent, s: SimState, steps: PlanStep[]): SimState {
+  const state = cloneState(s);
   for (const st of steps) {
     const prim = byName(st.prim);
-    if (prim) applyEffect(prim, st.bind, agent, state);
+    if (prim) applyEffect(prim, st.bind as Bind, agent, state);
   }
   return state;
 }
 
 // Is the atom satisfied in the SIMULATED believed state (real state + planned
 // effects)? Falls back to the live believed test when the sim doesn't track it.
-function atomSatisfied(atom, agent, ctx, s) {
+function atomSatisfied(atom: SubAtom, agent: Agent, ctx: CognitionCtx, s: SimState): boolean {
   switch (atom.pred) {
     case 'at':
-      return placesEqual(s.at, atom.place) || atomHolds(atom, agent, ctx);
+      return placesEqual(s.at, atom.place ?? null) || atomHolds(atom, agent, ctx);
     case 'have':
-      return (s.inv[atom.good] || 0) >= atom.n;
+      return ((atom.good ? s.inv[atom.good] : 0) || 0) >= (atom.n || 0);
     case 'gold_ge':
-      return (s.gold || 0) >= atom.amt;
+      return (s.gold || 0) >= (atom.amt || 0);
     case 'received':
-      return !!s.received[atom.subjectId];
+      return !!s.received[String(atom.subjectId)];
     default:
       return atomHolds(atom, agent, ctx);
   }
 }
-function placesEqual(a, b) {
+function placesEqual(a: PlannerPlace | null, b: PlannerPlace | null): boolean {
   if (!a || !b) return false;
   if (typeof a === 'string' || typeof b === 'string') return a === b;
   return a.subjectId != null && a.subjectId === b.subjectId;
@@ -493,12 +561,12 @@ function placesEqual(a, b) {
 
 // Does applying this primitive actually move us toward the atom (avoid no-op
 // loops, e.g. selling to raise gold we already have)?
-function effectAdvances(prim, atom, bind, agent, ctx, s) {
+function effectAdvances(prim: Primitive, atom: SubAtom, bind: Bind, agent: Agent, ctx: CognitionCtx, s: SimState): boolean {
   switch (atom.pred) {
     case 'have':   return true;
     case 'gold_ge': {
       // only useful if we don't already have the gold and the step raises it
-      if ((s.gold || 0) >= atom.amt) return false;
+      if ((s.gold || 0) >= (atom.amt || 0)) return false;
       return prim.name === 'sell' || prim.name === 'loot';
     }
     case 'at':     return prim.name === 'goto';
@@ -514,9 +582,9 @@ function effectAdvances(prim, atom, bind, agent, ctx, s) {
 // plan { steps:[{prim,bind,exec}], cost } or null. Deterministic given state +
 // beliefs (cost-min with first-found tie-break).
 // ---------------------------------------------------------------------------
-export function plan(agent, goal, ctx) {
+export function plan(agent: Agent, goal: Goal, ctx: CognitionCtx): Plan | null {
   if (!agent || !goal || !ctx) return null;
-  const atoms = goal.atoms || (goal.atom ? [goal.atom] : null);
+  const atoms = (goal.atoms || (goal.atom ? [goal.atom] : null)) as SubAtom[] | null;
   if (!atoms || !atoms.length) return null;
   try {
     const frontier = { n: 0 };
@@ -527,8 +595,8 @@ export function plan(agent, goal, ctx) {
     // or abandons). Own data (goal kind + plan length). note() is internally guarded, and
     // agent.trace is always present (ctor) — so it is called directly, never read-guarded
     // (a `.trace` read would trip the write-only scan rule). Bounded — planning is per-goal.
-    if (!r || !r.steps.length) agent.trace.note(STAGE.PLAN, REASON.PLAN_FAILED, { t: ctx.time, a: goal.kind || null });
-    else agent.trace.note(STAGE.PLAN, REASON.PLAN_FOUND, { t: ctx.time, a: r.steps.length, b: goal.kind || null });
+    if (!r || !r.steps.length) agent.trace.note(ST.PLAN, RS.PLAN_FAILED, { t: ctx.time, a: goal.kind || null });
+    else agent.trace.note(ST.PLAN, RS.PLAN_FOUND, { t: ctx.time, a: r.steps.length, b: goal.kind || null });
     if (!r || !r.steps.length) return null;
     return { steps: r.steps, cost: r.cost };
   } catch (_e) {
@@ -544,20 +612,20 @@ export function plan(agent, goal, ctx) {
 // ---------------------------------------------------------------------------
 
 // Resolve a step bind's `place` to a believed world position (POI or subject).
-export function stepTargetPos(agent, ctx, place) {
+export function stepTargetPos(agent: Agent, ctx: CognitionCtx, place: PlannerPlace | null | undefined): import('three').Vector3 | null {
   try { return believedPos(agent, ctx, place); } catch { return null; }
 }
 
 // Are all of this primitive's preconditions satisfied right now (live believed
 // state, NOT the planner's simulated forward state)? Used to detect a step that
 // has lost its footing (market emptied, gold spent, target moved out of reach).
-export function stepPrecondsHold(agent, ctx, step) {
+export function stepPrecondsHold(agent: Agent, ctx: CognitionCtx, step: PlanStep): boolean {
   if (!agent || !step) return false;
   const prim = byName(step.prim);
   if (!prim) return false;
   try {
-    let pre = prim.precondition(agent, ctx, step.bind) || [];
-    pre = pre.flatMap((p) => (p.pred === 'in_reach' ? inReachPrecond({ target: p.subjectId }) : [p]));
+    let pre = prim.precondition(agent, ctx, step.bind as Bind) || [];
+    pre = pre.flatMap((p) => (p.pred === 'in_reach' ? inReachPrecond({ target: p.subjectId as EntityId }) : [p]));
     return pre.every((atom) => atomHolds(atom, agent, ctx));
   } catch { return false; }
 }
@@ -565,22 +633,25 @@ export function stepPrecondsHold(agent, ctx, step) {
 // Has this step's EFFECT landed in live believed state (so we may advance to the
 // next step)? `received` flags are tracked on agent._repaid by the give/pay
 // executor, so we read that here. Belief-grounded; never throws.
-export function stepEffectHolds(agent, ctx, step) {
+export function stepEffectHolds(agent: Agent, ctx: CognitionCtx, step: PlanStep): boolean {
   if (!agent || !step) return false;
+  const bind = step.bind as Bind;
+  // `_repaid` is the give/pay executor's received-flag map (own-state, set by act()).
+  const repaid = agent._repaid as Record<string, boolean> | undefined;
   try {
     switch (step.prim) {
       case 'goto':
-        return atomHolds(Atom.at(step.bind.place), agent, ctx);
+        return atomHolds(Atom.at(bind.place as PlannerPlace), agent, ctx);
       case 'gather': case 'produce': case 'buy':
-        return ((agent.inventory && agent.inventory[step.bind.good]) || 0) >= (step.bind.n || 1);
+        return ((bind.good ? agent.inventory?.[bind.good] : 0) || 0) >= (bind.n || 1);
       case 'sell':
         return true;   // a single sell tick raises gold; loop guard handled by goal predicate
       case 'give': case 'pay':
-        return !!(agent._repaid && agent._repaid[step.bind.to]);
+        return !!(repaid && repaid[String(bind.to)]);
       case 'consume':
         return true;
       case 'attack':
-        return believedDead(agent, step.bind.target);   // believed-dead (belief/_slain), not a roster read
+        return believedDead(agent, bind.target as EntityId);   // believed-dead (belief/_slain), not a roster read
       case 'loot':
         return true;
       default: return false;
@@ -596,24 +667,24 @@ export function stepEffectHolds(agent, ctx, step) {
 // ---------------------------------------------------------------------------
 
 // avenge(subjectId): subject dead.
-export function goalAvenge(subjectId) {
+export function goalAvenge(subjectId: EntityId): Goal {
   return {
     kind: 'avenge', subjectId,
-    atoms: [Atom.dead(subjectId)],
+    atoms: [Atom.dead(subjectId)] as AtomT[],
     // satisfied when the subject is BELIEVED DEAD: a combat bridge marked it slain by me
     // (_slain — the sanctioned out-of-sight death signal) OR I no longer hold a confident
     // belief about it. Never reads the live roster.
-    predicate(agent) { return believedDead(agent, subjectId); },
+    predicate(agent: unknown) { return believedDead(agent as Agent, subjectId); },
   };
 }
 
 // seek_fortune(place, target): hold gold >= target.
-export function goalSeekFortune(place, target) {
+export function goalSeekFortune(place: string, target: number): Goal {
   const amt = Math.max(1, target || 0);
   return {
     kind: 'seek_fortune', place, target: amt,
-    atoms: [Atom.goldGe(amt)],
-    predicate(agent) { return (agent.gold || 0) >= amt; },
+    atoms: [Atom.goldGe(amt)] as AtomT[],
+    predicate(agent: unknown) { return ((agent as Agent).gold || 0) >= amt; },
   };
 }
 
@@ -624,7 +695,7 @@ export function goalSeekFortune(place, target) {
 // When the culprit is known, deriveGoals also pushes a SEPARATE avenge(culprit) goal
 // (which DOES plan). Keeping grief plan-less is what lets it sit on the stack and
 // "decay" out without ever competing with the reactive needs loop.
-export function goalGrieve(subjectId) {
+export function goalGrieve(subjectId: EntityId): Goal {
   return {
     kind: 'grieve', subjectId,
     atoms: [],                        // no actionable plan — grief just runs its course
@@ -636,23 +707,26 @@ export function goalGrieve(subjectId) {
 // mechanic of their own (that is player-only via quests), so for NPCs the goal is
 // aspirational: it biases them toward the place (a goto plan) and pops on the
 // relic flag (if one is ever set) or its timeout. The plan is just [goto(place)].
-export function goalDelve(place) {
+export function goalDelve(place: string): Goal {
   return {
     kind: 'delve', place,
-    atoms: [Atom.at(place)],
-    predicate(agent) { return !!(agent.relics && agent.relics > 0); },
+    atoms: [Atom.at(place)] as AtomT[],
+    predicate(agent: unknown) { const relics = (agent as Agent).relics; return !!(relics && (relics as unknown[]).length > 0); },
   };
 }
 
 // repay(subjectId, value, kind): subject received `value` of `kind` from me.
 // `kind`: 'any' (give OR pay), 'coin' (pay), 'food'/'goods' (give a good).
-export function goalRepay(subjectId, value = 1, kind = 'any') {
+export function goalRepay(subjectId: EntityId, value = 1, kind = 'any'): Goal {
   return {
     kind: 'repay', subjectId, target: value, valueKind: kind,
-    atoms: [Atom.received(subjectId, value, kind)],
+    atoms: [Atom.received(subjectId, value, kind)] as AtomT[],
     // satisfied when an explicit transfer set the flag; the stack stamps
     // goal._satisfied via markReceived() when a give/pay to subjectId executes.
-    predicate(agent) { return !!(agent._repaid && agent._repaid[subjectId]); },
+    predicate(agent: unknown) {
+      const repaid = (agent as Agent)._repaid as Record<string, boolean> | undefined;
+      return !!(repaid && repaid[String(subjectId)]);
+    },
   };
 }
 

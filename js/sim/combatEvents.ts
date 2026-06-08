@@ -7,22 +7,37 @@
 // rolls up witnessed deeds into reputation, and records the victim/witness
 // narrative beats.
 
-import { bus, makeEvent } from '../rpg/events.js';
+import { bus, makeEvent as makeEventRaw } from '../rpg/events.js';
 import { RPG } from '../rpg/rpgconfig.js';
 import { TUNE } from '../constants.js';
 import { SIM, MONSTER, EPITHETS, DIRECTOR, AVENGER, GRATEFUL, LEGEND, factionHostile } from './simconfig.js';
 import { setHouseFeud, areHousesFeuding } from './houses.js';
 import { buildObituary, obituaryWorthy } from './gazette.js';
+import type { Agent, CombatEvent, ActionEvent, ActionEventSpec } from '../../types/sim.js';
+
+// events.js is still JS — its makeEvent infers `tags: never[]` from the `tags = []` default,
+// so re-type it at the seam to the shared spec (the rpg cluster ports events.js later).
+const makeEvent = makeEventRaw as (spec: ActionEventSpec) => ActionEvent;
+
+// onCombatEvents/grantEpithet fold combat outcomes back into beliefs/rep/memory — the
+// EXECUTION side, operating over the live Simulation instance (roster, reputation,
+// chronicle, director, …). simulation.js is a LATER cluster, so the instance is loose.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Sim = any; /* Simulation — ported in a later cluster */
+// A resolved combat event also carries a back-ref `.id` on the prop case and a `.magnitude`
+// read with a `|| 0` guard — neither on the strict CombatEvent shape, so this widens it for
+// the few off-type reads (the freeze-lesson guards stay).
+type CombatEv = CombatEvent & { magnitude?: number; attacker: { agent?: Agent; id?: import('../../types/sim.js').EntityId }; target: { agent?: Agent; id?: import('../../types/sim.js').EntityId } };
 
 // Emergent heroes & villains: a combatant who distinguishes itself earns a NAME that
 // then rides every future chronicle beat (a light Nemesis system). Fired once per
 // agent. Guarded by the caller; pure name/chronicle effect (no gold, no truth).
-export function grantEpithet(sim, a, kind) {
+export function grantEpithet(sim: Sim, a: Agent, kind: string): void {
   if (!EPITHETS || !EPITHETS.enabled || !a || a.epithet) return;
   const pool = kind === 'villain' ? EPITHETS.villainNames
     : kind === 'survivor' ? EPITHETS.survivorEpithets : EPITHETS.heroEpithets;
   if (!pool || !pool.length) return;
-  const epithet = pool[(a.id || 0) % pool.length];   // deterministic, varied by id
+  const epithet = pool[(Number(a.id) || 0) % pool.length];   // deterministic, varied by id
   a.epithet = epithet;
   if (kind === 'villain') {
     a.name = epithet;                                  // a faceless raider BECOMES the dread name
@@ -45,7 +60,7 @@ export function grantEpithet(sim, a, kind) {
   }
 }
 
-export function onCombatEvents(sim, events) {
+export function onCombatEvents(sim: Sim, events: CombatEv[]): void {
   const pid = sim.reputation.playerId;
   for (const ev of events) {
     const A = ev.attacker.agent, T = ev.target.agent;
@@ -58,7 +73,7 @@ export function onCombatEvents(sim, events) {
     // swings). Own-state write; guarded inside _logStrike; never throws.
     if (A && A._logStrike && ev.type !== 'blocked') {
       const tid = ev.target && ev.target.agent ? ev.target.agent.id : (ev.target ? ev.target.id : null);
-      if (tid != null) A._logStrike(tid, sim.time);
+      if (tid != null) (A._logStrike as (id: unknown, t: number) => void)(tid, sim.time);
     }
     // BLOCK ANIMACY (the prop is naturally inert — it never blocks): a real target that
     // blocked my blow is, by my own perception, acting alive. Guarded; a belief about a
@@ -245,7 +260,7 @@ export function onCombatEvents(sim, events) {
     if (T.alive && ev.type === 'hit' && T.memory && T.progression) {
       const maxHp = (TUNE && TUNE.maxHealth) || 100;
       const frac = (T.fighter && typeof T.fighter.health === 'number') ? T.fighter.health / maxHp : 1;
-      if (frac <= RPG.nearDeathHpFrac && (sim.time - (T._lastNearDeath || -1e9)) >= (RPG.nearDeathCooldownSec || 45)) {
+      if (frac <= RPG.nearDeathHpFrac && (sim.time - ((T._lastNearDeath as number) || -1e9)) >= (RPG.nearDeathCooldownSec || 45)) {
         T._lastNearDeath = sim.time;
         try { T.memory.record({ t: sim.time, kind: 'survived', withId: A.id, valence: -1, salience: RPG.nearDeathSalience }); } catch { /* never throw */ }
         try { T.progression.addNarrativeXP(RPG.nearDeathSalience, sim.time); } catch { /* never throw */ }
@@ -260,7 +275,7 @@ export function onCombatEvents(sim, events) {
     if (T.alive && ev.type === 'hit' && T.faction === 'townsfolk' && T.life && T.personality &&
         T.personality.risk_tolerance < (EPITHETS.cowardRisk || 0.4) &&
         (A.faction === MONSTER.faction || A.epithet || A.nemesis || A.warlord) &&
-        (sim.time - (T._lastEscape || -1e9)) >= (EPITHETS.escapeCooldown || 25)) {
+        (sim.time - ((T._lastEscape as number) || -1e9)) >= (EPITHETS.escapeCooldown || 25)) {
       T._lastEscape = sim.time;
       T.life.escapes = (T.life.escapes || 0) + 1;
       try {
@@ -349,7 +364,7 @@ export function onCombatEvents(sim, events) {
     // the player down. Capped so a killing spree can't swarm them; the Director keeps
     // the grudge hot, bounds it with a TTL, narrates it, and files it as a saga.
     if (ev.type === 'dead' && A.controlled && T.faction === 'townsfolk' && AVENGER && AVENGER.enabled) {
-      const liveAvengers = sim.agents.reduce((n, x) => n + (x.alive && x.avengerOf != null ? 1 : 0), 0);
+      const liveAvengers = sim.agents.reduce((n: number, x: Agent) => n + (x.alive && x.avengerOf != null ? 1 : 0), 0);
       if (liveAvengers < (AVENGER.max || 3)) {
         const kinIds = [];
         if (T.mateId != null) kinIds.push(T.mateId);
@@ -394,8 +409,8 @@ export function onCombatEvents(sim, events) {
         if (w.pos.distanceTo(T.pos) <= SIM.visionRange) { witnessed = true; break; }
       }
       if (witnessed) {
-        if (T.faction === 'townsfolk') A.notoriety = Math.min(1, (A.notoriety || 0) + (LEGEND.perMurder || 0.34));
-        else if (T.faction === MONSTER.faction || factionHostile('townsfolk', T.faction) || T.nemesis || T.warlord) A.fame = Math.min(1, (A.fame || 0) + (LEGEND.perHeroic || 0.2));
+        if (T.faction === 'townsfolk') A.notoriety = Math.min(1, ((A.notoriety as number) || 0) + (LEGEND.perMurder || 0.34));
+        else if (T.faction === MONSTER.faction || factionHostile('townsfolk', T.faction) || T.nemesis || T.warlord) A.fame = Math.min(1, ((A.fame as number) || 0) + (LEGEND.perHeroic || 0.2));
       }
     }
 
@@ -405,7 +420,7 @@ export function onCombatEvents(sim, events) {
     // defends the player for a time, then parts with thanks. The Director supervises.
     if (ev.type === 'dead' && A.controlled && GRATEFUL && GRATEFUL.enabled && sim.director && sim.director._enlistGuardian &&
         (T.faction === MONSTER.faction || factionHostile('townsfolk', T.faction) || T.nemesis || T.warlord || T.avengerOf != null)) {
-      const liveGuards = sim.agents.reduce((n, x) => n + (x.alive && x.guardianOf != null ? 1 : 0), 0);
+      const liveGuards = sim.agents.reduce((n: number, x: Agent) => n + (x.alive && x.guardianOf != null ? 1 : 0), 0);
       if (liveGuards < (GRATEFUL.max || 2)) {
         let saved = null, sd = (GRATEFUL.rescueRadius || 6);
         for (const w of sim.agents) {
@@ -438,7 +453,7 @@ export function onCombatEvents(sim, events) {
     // real economic blow from a severed supply line. Now trade is local, supply has
     // to physically arrive — and bandits know it.
     if (ev.type === 'dead' && T.faction === 'townsfolk' && T.caravanRun) {
-      const good = T.caravanRun.good || 'goods';
+      const good = (T.caravanRun as { good?: string }).good || 'goods';
       const mul = (DIRECTOR.caravan && DIRECTOR.caravan.shortageMul) || 1.22;
       let touched = 0;
       for (const w of sim.agents) {
@@ -455,7 +470,8 @@ export function onCombatEvents(sim, events) {
     // lives — the cargo is mauled, not lost. A MILDER price bump than a full waylay,
     // and a road beat. (The escort's leader/trader still completes its run.)
     if (ev.type === 'dead' && T.caravanEscort) {
-      const good = T.caravanEscort.good || 'goods';
+      const escort = T.caravanEscort as { good?: string; role?: string };
+      const good = escort.good || 'goods';
       const mul = (DIRECTOR.caravan && DIRECTOR.caravan.partialShortageMul) || 1.07;
       let touched = 0;
       for (const w of sim.agents) {
@@ -464,7 +480,7 @@ export function onCombatEvents(sim, events) {
         w.priceBeliefs[good] = +(w.priceBeliefs[good] * mul).toFixed(2);
         touched++;
       }
-      const role = T.caravanEscort.role === 'guard' ? 'guard' : 'porter';
+      const role = escort.role === 'guard' ? 'guard' : 'porter';
       T.caravanEscort = null;
       if (sim.chronicle && sim.chronicle.note) sim.chronicle.note('fortune', T.id, `Bandits cut down a ${role} on the road — part of the ${good} caravan is lost, and ${good} grows a little dearer.`);
     }
@@ -495,7 +511,7 @@ export function onCombatEvents(sim, events) {
     // children (a real LINE in sim._houseEverGrew), never a lone childless founder.
     if (ev.type === 'dead' && T.faction === 'townsfolk' && T.house &&
         sim._houseEverGrew && sim._houseEverGrew.has(T.house)) {
-      const survives = sim.agents.some((a) => a.alive && a !== T && a.faction === 'townsfolk' && a.house === T.house);
+      const survives = sim.agents.some((a: Agent) => a.alive && a !== T && a.faction === 'townsfolk' && a.house === T.house);
       if (!survives) {
         sim._houseEverGrew.delete(T.house);   // don't re-announce
         if (sim.chronicle && sim.chronicle.note) {

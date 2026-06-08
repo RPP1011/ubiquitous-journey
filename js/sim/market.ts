@@ -10,6 +10,13 @@
 import { COMMODITIES, ECON, BASE_PRICE } from './simconfig.js';
 import { POI_KIND } from './world.js';
 import { recordTrade } from './econstats.js';
+import type { Agent, Commodity, EntityId } from '../../types/sim.js';
+
+// runMarket/economicSlight/sour take the live Simulation instance (the EXECUTION side:
+// the auction clears over the whole roster + reputation ledger). simulation.js is a LATER
+// cluster, so the instance is typed loosely here.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Sim = any; /* Simulation — ported in a later cluster */
 
 // A deal is fair by the math, but selfish folk feel robbed at the extremes: a
 // SHORTAGE price (well above base) galls the buyer (a gouger!), a GLUT price (well
@@ -17,9 +24,9 @@ import { recordTrade } from './econstats.js';
 // toward the counterparty, scaled by their greed — the ambient negative opinion the
 // economy otherwise never produced. Only between known NPCs (never the player, whose
 // standing is the reputation ledger's job). Guarded; never throws on the tick.
-function economicSlight(seller, buyer, c, price, sim) {
+function economicSlight(seller: Agent, buyer: Agent, c: Commodity, price: number, sim: Sim): void {
   try {
-    const base = BASE_PRICE[c]; if (!base) return;
+    const base = (BASE_PRICE as Record<string, number>)[c]; if (!base) return;
     const m = ECON.slightMargin ?? 0.3, amt = ECON.slightAmount ?? 0.05;
     const pid = sim.reputation && sim.reputation.playerId;
     // sharper deals gall harder: scale by how far past the margin the price ran (cap 3x).
@@ -28,7 +35,7 @@ function economicSlight(seller, buyer, c, price, sim) {
     else if (lo >= m) sour(seller, buyer, amt * Math.min(3, lo / m), sim, pid); // glut: seller resents the lowballing buyer
   } catch { /* never throw */ }
 }
-function sour(who, at, amt, sim, pid) {
+function sour(who: Agent, at: Agent, amt: number, sim: Sim, pid: EntityId | null): void {
   if (!who || !at || who.id === pid || at.id === pid || !who.beliefs) return;  // player standing is the rep ledger's job
   // a deal IS a first-hand meeting — establish the belief if vision never did, so the
   // grudge actually lands (two traders can both be "at market" yet out of each other's sight).
@@ -38,26 +45,26 @@ function sour(who, at, amt, sim, pid) {
   b.standing = Math.max(-1, b.standing - amt * (0.4 + greed));               // the greedier, the harder they take it
 }
 
-export function runMarket(sim) {
+export function runMarket(sim: Sim): void {
   sim.tradesThisTick = 0;
   // LOGISTICS: trade only clears between agents physically AT a market (within
   // ECON.marketRange of a market POI) — goods don't teleport across the map. A
   // remote producer has to HAUL its load in (the `market` goal) to deal here.
   const mr2 = (ECON.marketRange || 18) ** 2;
-  const atMarket = (a) => {
+  const atMarket = (a: Agent): boolean => {
     const m = sim.world && sim.world.nearest ? sim.world.nearest(POI_KIND.MARKET, a.pos) : null;
     return !!m && a.pos.distanceToSquared(m.pos) <= mr2;
   };
-  const traders = sim.agents.filter((a) => a.alive && a.autonomous && a.faction !== 'monster' && atMarket(a));
+  const traders: Agent[] = sim.agents.filter((a: Agent) => a.alive && a.autonomous && a.faction !== 'monster' && atMarket(a));
   if (traders.length < 2) return;
 
-  for (const c of COMMODITIES) {
+  for (const c of COMMODITIES as readonly Commodity[]) {
     const sellers = traders.filter((a) => a.sellQty(c) > 0)
       .map((a) => ({ a, ask: a.askPrice(c) })).sort((x, y) => x.ask - y.ask);
     const buyers = traders.filter((a) => a.wantQty(c) > 0 && a.gold >= 1)
       .map((a) => ({ a, bid: a.bidPrice(c) })).sort((x, y) => y.bid - x.bid);
 
-    const soldThisTick = new Set(), boughtThisTick = new Set();   // who actually cleared (vs merely holding stock)
+    const soldThisTick = new Set<EntityId>(), boughtThisTick = new Set<EntityId>();   // who actually cleared (vs merely holding stock)
     let i = 0, j = 0, budget = ECON.tradesPerCommodityPerTick;
     while (i < sellers.length && j < buyers.length && budget > 0) {
       const s = sellers[i], b = buyers[j];
