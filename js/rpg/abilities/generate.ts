@@ -21,29 +21,48 @@
 
 import { spec, effect, validate, LIMITS } from './ir.js';
 import { fnv1a } from '../tags.js';
+import type { AbilitySpec, AbilityArea, AbilityEffect, AbilityHeader } from '../../../types/sim.js';
+
+// the loose body the archetype builders return — a partial header + the effect list +
+// the cast-flavour tags. spec() wraps it into a full (validated) AbilitySpec.
+interface BuiltBody {
+  header: Partial<AbilityHeader>;
+  effects: AbilityEffect[];
+  grantsTags: string[];
+}
+
+// a small deterministic stream object: .pick(arr) and .frac() (0..1)
+interface Stream {
+  next(): number;
+  frac(): number;
+  pick<T>(arr: readonly T[]): T;
+}
 
 // ---- deterministic seeded picks --------------------------------------------
 // A tiny xorshift-ish stream seeded by an FNV hash of the identity string, so a
 // (classKey,tier) pair yields a stable sequence of choices with no global RNG.
-function seedFor(classKey, tier, salt = 0) {
+function seedFor(classKey: string, tier: number, salt = 0): number {
   return fnv1a(`${classKey || 'proc'}|${tier}|${salt}`);
 }
 // advance a 32-bit state (xorshift32) -> next unsigned 32-bit
-function nextState(s) {
+function nextState(s: number): number {
   s ^= (s << 13); s >>>= 0;
   s ^= (s >>> 17);
   s ^= (s << 5);  s >>>= 0;
   return s >>> 0;
 }
 // a small deterministic stream object: .pick(arr) and .frac() (0..1)
-function stream(seed) {
+function stream(seed: number): Stream {
   let s = seed >>> 0 || 0x9e3779b9;
   return {
     next() { s = nextState(s); return s; },
     frac() { return this.next() / 0x100000000; },
-    pick(arr) { return arr[this.next() % arr.length]; },
+    pick<T>(arr: readonly T[]): T { return arr[this.next() % arr.length]; },
   };
 }
+
+// the three ability archetypes a class's dominant tags pick.
+type Archetype = 'combat' | 'defensive' | 'utility';
 
 // ---- tag -> archetype classification ---------------------------------------
 const COMBAT_TAGS    = new Set(['MELEE', 'KILL', 'RISK', 'BERSERK', 'DUEL']);
@@ -57,8 +76,8 @@ const UTILITY_TAGS   = new Set([
 
 // rank the supplied tags into the three archetypes; returns the winning
 // archetype + the (sorted) tags that voted for it (used for flavour + grantsTags).
-function classifyArchetype(tags) {
-  const list = Array.isArray(tags) ? tags.filter((t) => typeof t === 'string') : [];
+function classifyArchetype(tags: unknown): Archetype {
+  const list = Array.isArray(tags) ? tags.filter((t): t is string => typeof t === 'string') : [];
   let combat = 0, defensive = 0, utility = 0;
   for (const t of list) {
     if (COMBAT_TAGS.has(t)) combat++;
@@ -75,36 +94,36 @@ function classifyArchetype(tags) {
 // tier is the milestone tier index (1..N from RPG.tierLevels); we accept any
 // positive integer. Power grows ~exponentially, cooldown ~linearly. Everything is
 // clamped to LIMITS at the call site so this can never exceed the trust ceiling.
-function tierIndex(tier) {
+function tierIndex(tier: unknown): number {
   const t = Math.floor(Number(tier));
   return isFinite(t) && t >= 1 ? t : 1;
 }
 // exponential-ish power curve, clamped to [lo, hi].
-function scalePow(base, growth, tier, lo, hi) {
+function scalePow(base: number, growth: number, tier: number, lo: number, hi: number): number {
   const v = base * Math.pow(growth, tier - 1);
   return Math.max(lo, Math.min(hi, v));
 }
-function scaleLin(base, perTier, tier, lo, hi) {
+function scaleLin(base: number, perTier: number, tier: number, lo: number, hi: number): number {
   const v = base + perTier * (tier - 1);
   return Math.max(lo, Math.min(hi, v));
 }
-const clampAmt = (x) => Math.max(-LIMITS.amount, Math.min(LIMITS.amount, x));
-const clampDur = (x) => Math.max(0, Math.min(LIMITS.dur, x));
-const clampCd  = (x) => Math.max(0, Math.min(LIMITS.cooldown, x));
-const clampR   = (x) => Math.max(0, Math.min(LIMITS.areaR, x));
-const round1   = (x) => Math.round(x * 10) / 10;
+const clampAmt = (x: number): number => Math.max(-LIMITS.amount, Math.min(LIMITS.amount, x));
+const clampDur = (x: number): number => Math.max(0, Math.min(LIMITS.dur, x));
+const clampCd  = (x: number): number => Math.max(0, Math.min(LIMITS.cooldown, x));
+const clampR   = (x: number): number => Math.max(0, Math.min(LIMITS.areaR, x));
+const round1   = (x: number): number => Math.round(x * 10) / 10;
 
 // ---- display-name helper ----------------------------------------------------
 // Wandering-Inn bracketed [Skill] flavour, themed by archetype + a deterministic
 // adjective so two tiers of the same class read as a progression.
-const ARCH_NOUN = {
+const ARCH_NOUN: Record<Archetype, readonly string[]> = {
   combat:    ['Strike', 'Cleave', 'Onslaught', 'Reaver', 'Rend'],
   defensive: ['Bulwark', 'Ward', 'Resolve', 'Aegis', 'Endurance'],
   utility:   ['Gambit', 'Ploy', 'Insight', 'Whisper', 'Sleight'],
 };
 const TIER_ADJ = ['Lesser', 'Steady', 'Greater', 'Master', 'Grand', 'Peerless'];
 
-export function abilityName(archetype, tier, rng) {
+export function abilityName(archetype: Archetype, tier: number, rng: Stream | null): string {
   const nouns = ARCH_NOUN[archetype] || ARCH_NOUN.combat;
   const noun = rng ? rng.pick(nouns) : nouns[0];
   const adj = TIER_ADJ[Math.min(TIER_ADJ.length - 1, tierIndex(tier) - 1)];
@@ -112,7 +131,7 @@ export function abilityName(archetype, tier, rng) {
 }
 
 // a stable, collision-resistant id from identity (so cooldown ledgers key cleanly).
-function abilityId(classKey, tier, archetype) {
+function abilityId(classKey: string, tier: number, archetype: Archetype): string {
   const h = fnv1a(`${classKey || 'proc'}|${tier}|${archetype}`).toString(36);
   const key = String(classKey || 'proc').replace(/[^a-z0-9]+/gi, '_').toLowerCase();
   return `gen_${key}_t${tierIndex(tier)}_${h}`;
@@ -122,7 +141,7 @@ function abilityId(classKey, tier, archetype) {
 // Each returns { header, effects, grantsTags } pre-clamped; generateAbility wraps
 // them in spec() and validates.
 
-function buildCombat(tier, rng, tags) {
+function buildCombat(tier: number, rng: Stream, tags: string[]): BuiltBody {
   // melee vs projectile: deterministic, but bias toward melee for MELEE-tagged.
   const meleeBias = tags.includes('MELEE') ? 0.7 : 0.4;
   const projectile = rng.frac() > meleeBias;
@@ -153,7 +172,7 @@ function buildCombat(tier, rng, tags) {
 
   // melee swing: short reach, instant; cone at higher tiers (a cleave).
   const cone = tierIndex(tier) >= 3;
-  const area = cone
+  const area: AbilityArea = cone
     ? { kind: 'cone', r: clampR(round1(scaleLin(2.6, 0.3, tier, 0.5, LIMITS.areaR))), deg: 100 }
     : { kind: 'self' };
   const effects = [effect('damage', { amount: clampAmt(dmg), tags: ['MELEE', 'FORCE'] })];
@@ -172,7 +191,7 @@ function buildCombat(tier, rng, tags) {
   };
 }
 
-function buildDefensive(tier, rng, tags) {
+function buildDefensive(tier: number, rng: Stream, tags: string[]): BuiltBody {
   const cd = round1(scaleLin(14, 3, tier, 1, LIMITS.cooldown));
   // heal-leaning for HEAL/ENDURANCE, shield-leaning otherwise
   const healLean = tags.includes('HEAL') || tags.includes('ENDURANCE');
@@ -198,7 +217,7 @@ function buildDefensive(tier, rng, tags) {
   };
 }
 
-function buildUtility(tier, rng, tags) {
+function buildUtility(tier: number, rng: Stream, tags: string[]): BuiltBody {
   const cd = round1(scaleLin(9, 2, tier, 1, LIMITS.cooldown));
   const social = tags.some((t) =>
     ['PERSUADE', 'DECEIVE', 'CHARM', 'GOSSIP', 'LEAD', 'TRADE', 'PROFIT', 'HAGGLE', 'BARTER'].includes(t));
@@ -255,15 +274,21 @@ function buildUtility(tier, rng, tags) {
 // ---- public API -------------------------------------------------------------
 // generateAbility({ classKey, name, tags }, tier) -> a VALID AbilitySpec, or null
 // if (defensively) the build failed validate(). Deterministic per (classKey,tier).
-export function generateAbility(cls, tier) {
+interface ClassDescriptor {
+  classKey?: string;
+  key?: string;
+  tags?: unknown;
+}
+export function generateAbility(cls: ClassDescriptor | null | undefined, tier: unknown): AbilitySpec | null {
   const classKey = cls?.classKey ?? cls?.key ?? 'proc';
-  const tags = Array.isArray(cls?.tags) ? cls.tags : [];
+  const tags: string[] = Array.isArray(cls?.tags)
+    ? cls.tags.filter((t): t is string => typeof t === 'string') : [];
   const t = tierIndex(tier);
 
   const archetype = classifyArchetype(tags);
   const rng = stream(seedFor(classKey, t, 1));
 
-  let body;
+  let body: BuiltBody;
   if (archetype === 'combat') body = buildCombat(t, rng, tags);
   else if (archetype === 'defensive') body = buildDefensive(t, rng, tags);
   else body = buildUtility(t, rng, tags);

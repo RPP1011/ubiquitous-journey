@@ -18,49 +18,59 @@
 
 import { inferDestination } from '../beliefs.js';
 import { SIM, SCHEMA, factionHostile } from '../simconfig.js';
+import type {
+  EntityId, Comparator, SubjectRef, PredNode, InferNode, RespNode,
+  ReasonEnv, GoalDescriptor, Episode,
+} from '../../../types/sim.js';
+
+// the three evaluator signatures the interpreter dispatches against.
+type PredEvalFn = (node: PredNode, env: ReasonEnv) => boolean;
+type InferEvalFn = (node: InferNode, env: ReasonEnv) => void;
+type RespEvalFn = (node: RespNode, env: ReasonEnv) => GoalDescriptor | null;
 
 // ---------------------------------------------------------------------------------------
 // BUILDERS — author-time. Each returns a serializable IR Node { op, args }.
 // ---------------------------------------------------------------------------------------
 
 // predicate combinators
-export const all = (...kids) => ({ op: 'all', args: [kids] });
-export const any = (...kids) => ({ op: 'any', args: [kids] });
-export const not = (x) => ({ op: 'not', args: [x] });
+export const all = (...kids: PredNode[]): PredNode => ({ op: 'all', args: [kids] });
+export const any = (...kids: PredNode[]): PredNode => ({ op: 'any', args: [kids] });
+export const not = (x: PredNode): PredNode => ({ op: 'not', args: [x] });
 
 // leaf predicates
-export const believe = (ref, field, cmp, val) => ({ op: 'believe', args: [ref, field, cmp, val] });
-export const witnessed = (ref, deedTag) => ({ op: 'witnessed', args: [ref, deedTag] });
-export const selfNeed = (need, cmp, val) => ({ op: 'selfNeed', args: [need, cmp, val] });
-export const selfIs = (tag) => ({ op: 'selfIs', args: [tag] });
-export const outmatchedBy = (ref) => ({ op: 'outmatchedBy', args: [ref] });
-export const nearKnown = (affords, range) => ({ op: 'nearKnown', args: [affords, range] });
+export const believe = (ref: SubjectRef, field: string, cmp: Comparator, val: unknown): PredNode =>
+  ({ op: 'believe', args: [ref, field, cmp, val] });
+export const witnessed = (ref: SubjectRef, deedTag: string): PredNode => ({ op: 'witnessed', args: [ref, deedTag] });
+export const selfNeed = (need: string, cmp: Comparator, val: number): PredNode => ({ op: 'selfNeed', args: [need, cmp, val] });
+export const selfIs = (tag: string): PredNode => ({ op: 'selfIs', args: [tag] });
+export const outmatchedBy = (ref: SubjectRef): PredNode => ({ op: 'outmatchedBy', args: [ref] });
+export const nearKnown = (affords: string, range: number): PredNode => ({ op: 'nearKnown', args: [affords, range] });
 // nearSubject(ref, range): is the bound believed subject's BELIEVED position (belief lastPos)
 // within `range` of me? A real proximity gate over my own belief + own pos (no roster scan) —
 // the form schema #5 (flee-the-brawl) needs (nearKnown('me',…) is a degenerate always-true).
-export const nearSubject = (ref, range) => ({ op: 'nearSubject', args: [ref, range] });
-export const perceivedNow = (ref) => ({ op: 'perceivedNow', args: [ref] });
-export const selfEngaged = (ref, strikes) => ({ op: 'selfEngaged', args: [ref, strikes] });
-export const observedAnimacy = (ref) => ({ op: 'observedAnimacy', args: [ref] });
+export const nearSubject = (ref: SubjectRef, range: number): PredNode => ({ op: 'nearSubject', args: [ref, range] });
+export const perceivedNow = (ref: SubjectRef): PredNode => ({ op: 'perceivedNow', args: [ref] });
+export const selfEngaged = (ref: SubjectRef, strikes: number): PredNode => ({ op: 'selfEngaged', args: [ref, strikes] });
+export const observedAnimacy = (ref: SubjectRef): PredNode => ({ op: 'observedAnimacy', args: [ref] });
 
 // inference ops (write a cached higher-order belief field, TTL'd by the interpreter)
-export const setIntent = (kind) => ({ op: 'setIntent', args: [kind] });
-export const inferDest = (strategy) => ({ op: 'inferDestination', args: [strategy] });
-export const raise = (field, amount) => ({ op: 'raise', args: [field, amount] });
+export const setIntent = (kind: string): InferNode => ({ op: 'setIntent', args: [kind] });
+export const inferDest = (strategy: string): InferNode => ({ op: 'inferDestination', args: [strategy] });
+export const raise = (field: string, amount: number): InferNode => ({ op: 'raise', args: [field, amount] });
 // raise `field` by `amount`, then once it crosses `thresh` apply each revision in
 // `sets` (an array of [field, value] pairs) to the belief — e.g. schema #6 accrues
 // inertEvidence and, above threshold, sets BOTH hostile:false AND inert:true (the
 // latter overrides the faction prior in considerHostile, the real disengage trigger).
-export const raiseThenSet = (field, amount, thresh, sets) =>
+export const raiseThenSet = (field: string, amount: number, thresh: number, sets: Array<[string, unknown]>): InferNode =>
   ({ op: 'raiseThenSet', args: [field, amount, thresh, sets] });
 
 // response ops (adopt a goal / disposition the motivation+planner already execute)
-export const goal = (kind, args) => ({ op: 'goal', args: [kind, args || {}] });
-export const intercept = (ref) => ({ op: 'intercept', args: [ref] });
-export const fleeTo = (affords) => ({ op: 'fleeTo', args: [affords] });
-export const shadow = (ref) => ({ op: 'shadow', args: [ref] });
-export const avoid = (ref, affords) => ({ op: 'avoid', args: [ref, affords] });
-export const hide = (affords) => ({ op: 'hide', args: [affords] });
+export const goal = (kind: string, args?: Record<string, unknown>): RespNode => ({ op: 'goal', args: [kind, args || {}] });
+export const intercept = (ref: SubjectRef): RespNode => ({ op: 'intercept', args: [ref] });
+export const fleeTo = (affords: string[]): RespNode => ({ op: 'fleeTo', args: [affords] });
+export const shadow = (ref: SubjectRef): RespNode => ({ op: 'shadow', args: [ref] });
+export const avoid = (ref: SubjectRef, affords: string[]): RespNode => ({ op: 'avoid', args: [ref, affords] });
+export const hide = (affords: string[]): RespNode => ({ op: 'hide', args: [affords] });
 
 // ---------------------------------------------------------------------------------------
 // SUBJECT BINDING — a schema's `subject:'believed'` ranges over the agent's beliefs; the
@@ -68,22 +78,24 @@ export const hide = (affords) => ({ op: 'hide', args: [affords] });
 // is a placeholder for THAT bound subject; the literal 'self' means the agent itself.
 // resolveSubj returns an ID STRING (never an object) — scan-clean by construction.
 // ---------------------------------------------------------------------------------------
-function resolveSubj(ref, env) {
+function resolveSubj(ref: unknown, env: ReasonEnv): EntityId | null {
   if (ref === 'self') return env.agent.id;
   // any '@'-prefixed placeholder resolves to the currently-bound believed subject.
   if (typeof ref === 'string' && ref[0] === '@') return env.subjectId;
-  return ref;   // a literal id (rare)
+  return (ref ?? null) as EntityId | null;   // a literal id (rare)
 }
 
 // numeric comparator dispatch used by believe/selfNeed.
-function cmpVal(a, op, b) {
+function cmpVal(a: unknown, op: unknown, b: unknown): boolean {
+  // relational ops coerce like the original loose JS (`a < b`); equality stays strict.
+  const na = a as number, nb = b as number;
   switch (op) {
     case '==': return a === b;
     case '!=': return a !== b;
-    case '<':  return a < b;
-    case '<=': return a <= b;
-    case '>':  return a > b;
-    case '>=': return a >= b;
+    case '<':  return na < nb;
+    case '<=': return na <= nb;
+    case '>':  return na > nb;
+    case '>=': return na >= nb;
     default:   return false;
   }
 }
@@ -91,18 +103,18 @@ function cmpVal(a, op, b) {
 // ---------------------------------------------------------------------------------------
 // PREDICATE EVALUATORS — boolean, over the agent's own world-model. All guarded.
 // ---------------------------------------------------------------------------------------
-export const PRED_EVAL = {
+export const PRED_EVAL: Record<string, PredEvalFn> = {
   all(node, env) {
-    const kids = node.args[0] || [];
+    const kids = (node.args[0] || []) as PredNode[];
     for (const k of kids) if (!evalPred(k, env)) return false;
     return true;
   },
   any(node, env) {
-    const kids = node.args[0] || [];
+    const kids = (node.args[0] || []) as PredNode[];
     for (const k of kids) if (evalPred(k, env)) return true;
     return false;
   },
-  not(node, env) { return !evalPred(node.args[0], env); },
+  not(node, env) { return !evalPred(node.args[0] as PredNode, env); },
 
   // believe(ref, field, cmp, val): read a field off MY belief about the resolved subject.
   // 'self' as a val resolves to my own faction (for the disguise schema). Guarded: no
@@ -113,9 +125,9 @@ export const PRED_EVAL = {
     if (id == null) return false;
     const b = env.beliefs.get(id);
     if (!b) return false;
-    let want = val;
+    let want: unknown = val;
     if (val === 'self') want = env.agent.faction;          // identifier `agent` — scan-safe
-    const have = b[field];
+    const have = (b as unknown as Record<string, unknown>)[field as string];
     return cmpVal(have, cmp, want);
   },
 
@@ -126,7 +138,7 @@ export const PRED_EVAL = {
     const [ref, deedTag] = node.args;
     const id = resolveSubj(ref, env);
     if (id == null || !env.memory) return false;
-    const kinds = deedTagKinds(deedTag);
+    const kinds = deedTagKinds(deedTag as string);
     try {
       const eps = memEpisodes(env.memory);
       for (const e of eps) {
@@ -143,7 +155,7 @@ export const PRED_EVAL = {
     const [need, cmp, val] = node.args;
     const needs = env.agent.needs;                          // identifier `agent` — scan-safe
     if (!needs) return false;
-    const have = needs[need];
+    const have = needs[need as string];
     if (typeof have !== 'number') return false;
     return cmpVal(have, cmp, val);
   },
@@ -188,7 +200,7 @@ export const PRED_EVAL = {
     if (affords === 'threat') return nearAnyHostile(env, r);
     if (!env.map) return false;
     try {
-      const place = env.map.nearest(affords, env.agent.pos, env.agent.townId, r);
+      const place = env.map.nearest(affords as string | string[], env.agent.pos, env.agent.townId, r);
       return !!place;
     } catch { return false; }
   },
@@ -230,7 +242,7 @@ export const PRED_EVAL = {
     if (id == null) return false;
     const log = env.agent.strikeLog;
     const rec = log && log.get ? log.get(id) : null;
-    return !!rec && (rec.count || 0) >= (strikes || 1);
+    return !!rec && (rec.count || 0) >= ((strikes as number) || 1);
   },
 
   // observedAnimacy(ref): have I observed the subject act ALIVE (move/strike/block/harm me)
@@ -248,7 +260,7 @@ export const PRED_EVAL = {
 };
 
 // dispatch one predicate node; guarded so a bad node is false, never a throw.
-export function evalPred(node, env) {
+export function evalPred(node: PredNode | null | undefined, env: ReasonEnv): boolean {
   try {
     if (!node || typeof node.op !== 'string') return false;
     const fn = PRED_EVAL[node.op];
@@ -259,7 +271,7 @@ export function evalPred(node, env) {
 // ---------------------------------------------------------------------------------------
 // INFERENCE EVALUATORS — write a cached higher-order belief field (TTL owned by interpreter).
 // ---------------------------------------------------------------------------------------
-export const INFER_EVAL = {
+export const INFER_EVAL: Record<string, InferEvalFn> = {
   // setIntent(kind): stamp the resolved subject's belief with an intent. For subject:'self'
   // this is a no-op-ish self-note (the agent's own goal carries the intent); for a believed
   // subject it records 'flee'/'hunt'/… that intercept reads.
@@ -267,7 +279,7 @@ export const INFER_EVAL = {
     const [kind] = node.args;
     const id = env.subjectId != null ? env.subjectId : env.agent.id;
     const b = env.beliefs.get(id);
-    if (b) b.intent = kind;
+    if (b) b.intent = kind as string | null;
   },
 
   // inferDestination(strategy): the ToM core — infer WHERE the believed quarry is making
@@ -278,7 +290,7 @@ export const INFER_EVAL = {
     if (id == null) return;
     const b = env.beliefs.get(id);
     if (!b) return;
-    inferDestination(env.agent, b, strategy || b.intent || 'flee', env.map, env.now);
+    inferDestination(env.agent, b, (strategy as string) || b.intent || 'flee', env.map, env.now);
   },
 
   // raise(field, amount): bump a scalar field on the bound belief (suspicion/inertEvidence…).
@@ -286,7 +298,11 @@ export const INFER_EVAL = {
     const [field, amount] = node.args;
     const id = env.subjectId != null ? env.subjectId : env.agent.id;
     const b = env.beliefs.get(id);
-    if (b) b[field] = (b[field] || 0) + (amount || 0);
+    if (b) {
+      const bag = b as unknown as Record<string, number>;
+      const f = field as string;
+      bag[f] = (bag[f] || 0) + ((amount as number) || 0);
+    }
   },
 
   // raiseThenSet(field, amount, thresh, sets): accrue contradicting evidence on `field`,
@@ -297,14 +313,16 @@ export const INFER_EVAL = {
     const id = env.subjectId != null ? env.subjectId : env.agent.id;
     const b = env.beliefs.get(id);
     if (!b) return;
-    b[field] = (b[field] || 0) + (amount || 0);
-    if (b[field] >= thresh && Array.isArray(sets)) {
-      for (const pair of sets) { if (Array.isArray(pair)) b[pair[0]] = pair[1]; }
+    const bag = b as unknown as Record<string, unknown>;
+    const f = field as string;
+    bag[f] = ((bag[f] as number) || 0) + ((amount as number) || 0);
+    if ((bag[f] as number) >= (thresh as number) && Array.isArray(sets)) {
+      for (const pair of sets) { if (Array.isArray(pair)) bag[pair[0] as string] = pair[1]; }
     }
   },
 };
 
-export function evalInfer(node, env) {
+export function evalInfer(node: InferNode | null | undefined, env: ReasonEnv): void {
   try {
     if (!node || typeof node.op !== 'string') return;
     const fn = INFER_EVAL[node.op];
@@ -317,10 +335,10 @@ export function evalInfer(node, env) {
 // { kind, ... } (or null); the interpreter pushes/sets it. They never mutate the agent
 // directly so the interpreter owns dwell-locks + expiry. Belief/map reads only.
 // ---------------------------------------------------------------------------------------
-export const RESP_EVAL = {
+export const RESP_EVAL: Record<string, RespEvalFn> = {
   goal(node, env) {
     const [kind, extra] = node.args;
-    return { kind, ...(extra || {}), subjectId: env.subjectId };
+    return { kind: kind as string, ...(extra as Record<string, unknown> || {}), subjectId: env.subjectId ?? undefined };
   },
   // intercept(ref): cut the believed quarry off at its inferred destination (a fight goal
   // toward destPos). Reads the belief's destPos/lastPos — no live truth.
@@ -364,7 +382,7 @@ export const RESP_EVAL = {
   },
 };
 
-export function evalRespond(node, env) {
+export function evalRespond(node: RespNode | null | undefined, env: ReasonEnv): GoalDescriptor | null {
   try {
     if (!node || typeof node.op !== 'string') return null;
     const fn = RESP_EVAL[node.op];
@@ -378,16 +396,16 @@ export function evalRespond(node, env) {
 
 // the world-position of the nearest known place affording any of `affords`, as a plain
 // {x,z} (so the goal carries a static-geography point, never a live ref). Null if none.
-function nearKnownPos(env, affords) {
+function nearKnownPos(env: ReasonEnv, affords: unknown): { x: number; z: number } | null {
   if (!env.map) return null;
   try {
-    const place = env.map.nearest(affords, env.agent.pos, env.agent.townId, Infinity);
+    const place = env.map.nearest(affords as string | string[], env.agent.pos, env.agent.townId, Infinity);
     return place && place.pos ? { x: place.pos.x, z: place.pos.z } : null;
   } catch { return null; }
 }
 
 // is any believed-hostile within `r` of me? (belief lastPos read; bounded by my ~8 beliefs).
-function nearAnyHostile(env, r) {
+function nearAnyHostile(env: ReasonEnv, r: number): boolean {
   try {
     const me = env.agent;
     for (const b of env.beliefs.all()) {
@@ -402,7 +420,7 @@ function nearAnyHostile(env, r) {
 }
 
 // map a deed tag (incl. the 'HOSTILE_ACT' alias) to the episodic memory kinds it covers.
-function deedTagKinds(deedTag) {
+function deedTagKinds(deedTag: string): Set<string> {
   if (deedTag === 'HOSTILE_ACT' || deedTag === 'STRUCK') {
     return new Set(['assaulted', 'witnessed_death', 'survived']);
   }
@@ -410,8 +428,8 @@ function deedTagKinds(deedTag) {
 }
 
 // flatten an agent's episodic memory rings into one array (guarded; empty on anomaly).
-function memEpisodes(memory) {
-  const out = [];
+function memEpisodes(memory: ReasonEnv['memory']): Episode[] {
+  const out: Episode[] = [];
   try {
     if (memory.stm && memory.stm.items) out.push(...memory.stm.items());
     if (memory.mtm && memory.mtm.items) out.push(...memory.mtm.items());

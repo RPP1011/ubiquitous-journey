@@ -15,24 +15,33 @@ import * as THREE from 'three';
 import { bus } from '../events.js';
 import { validate, isMelee } from './ir.js';
 import { EFFECTS } from './effects.js';
+import type { AbilitySpec, AbilityEffect, EffectOp, Agent, CastCtx, EntityId } from '../../../types/sim.js';
 
 const _v = new THREE.Vector3();
+
+// the per-agent cooldown ledger we stash on the agent (a private detail, not on the
+// shared Agent surface) — keyed by spec id → ready-at sim-time.
+type CdAgent = Agent & { _abilityCd?: Map<string, number> };
 
 // per-agent cooldown ledger lives on the agent so it survives across casts and
 // is inspectable; Progression also mirrors cooldowns but this is the authority
 // the interpreter actually enforces.
-function cooldowns(agent) { return (agent._abilityCd ||= new Map()); }
+function cooldowns(agent: Agent): Map<string, number> {
+  const a = agent as CdAgent;
+  return (a._abilityCd ||= new Map());
+}
 
-export function onCooldown(agent, spec, now) {
+export function onCooldown(agent: Agent, spec: AbilitySpec, now: number): boolean {
   const until = cooldowns(agent).get(spec.id) || 0;
   return now < until;
 }
 
 // castSpec(spec, caster, ctx) -> bool (did it fire?). ctx = the sim _ctx()
 // { agents, agentsById, world, time }.
-export function castSpec(spec, caster, ctx) {
+export function castSpec(spec: AbilitySpec, caster: Agent, ctx: CastCtx | null): boolean {
   if (!spec || !caster || !caster.alive) return false;
-  if (!validate(spec)) { console.warn('ability rejected by validate()', spec?.id); return false; }
+  const specId = spec.id;
+  if (!validate(spec)) { console.warn('ability rejected by validate()', specId); return false; }
 
   const now = ctx?.time ?? 0;
   if (onCooldown(caster, spec, now)) return false;
@@ -83,11 +92,11 @@ export function castSpec(spec, caster, ctx) {
 
 // trigger gate: on_hit/on_kill are evaluated AFTER a primary hit (runChained);
 // the hp_below triggers are pre-conditions checked here.
-function gateTrigger(e, caster, target, postHit, now) {
+function gateTrigger(e: AbilityEffect, caster: Agent, target: Agent, postHit: boolean, now: number): boolean {
   switch (e.when) {
     case null: case undefined: return !postHit ? true : false;
     case 'on_hit':  return postHit;
-    case 'on_kill': return postHit && target && !target.alive;
+    case 'on_kill': return postHit && !!target && !target.alive;
     case 'target_hp_below':
       return !!target?.fighter && target.fighter.health < hpFrac(target, e.amount);
     case 'caster_hp_below':
@@ -97,13 +106,13 @@ function gateTrigger(e, caster, target, postHit, now) {
 }
 
 // for *_hp_below the effect.amount is read as a fraction-of-max threshold (0..1)
-function hpFrac(agent, frac) {
+function hpFrac(agent: Agent, frac: number): number {
   const max = agent.fighter?.constructor ? 100 : 100; // TUNE.maxHealth is 100
   return max * Math.max(0, Math.min(1, frac || 0.3));
 }
 
 // secondary effects that trigger off the primary hit (on_hit / on_kill).
-function runChained(spec, primary, caster, target, ctx, now) {
+function runChained(spec: AbilitySpec, primary: AbilityEffect, caster: Agent, target: Agent, ctx: CastCtx | null, now: number): void {
   for (const e of spec.effects) {
     if (e === primary) continue;
     if (e.when !== 'on_hit' && e.when !== 'on_kill') continue;
@@ -116,9 +125,9 @@ function runChained(spec, primary, caster, target, ctx, now) {
 
 // ---- target resolution by area + range over the agent list ------------------
 // ops that harm a target — never applied to allies (friendly-fire guard above)
-const HOSTILE_OPS = new Set(['damage', 'stun', 'slow', 'knockback']);
+const HOSTILE_OPS = new Set<EffectOp>(['damage', 'stun', 'slow', 'knockback']);
 
-function resolveTargets(spec, caster, ctx) {
+function resolveTargets(spec: AbilitySpec, caster: Agent, ctx: CastCtx | null): Agent[] {
   const h = spec.header;
   // self-TARGETED abilities scan no foes. NOTE: area.kind === 'self' is NOT the
   // same thing — a single-target ranged/instant attack (target enemy/ally/any,
@@ -128,7 +137,7 @@ function resolveTargets(spec, caster, ctx) {
   if (h.target === 'self') return [];
 
   const agents = ctx?.agents || [];
-  const out = [];
+  const out: Agent[] = [];
   const cf = caster.fighter;
   const yaw = cf ? cf.root.rotation.y : 0;
   const reach = h.area.kind === 'circle' ? h.area.r
@@ -163,7 +172,7 @@ function resolveTargets(spec, caster, ctx) {
 }
 
 // does this caster want to affect agent o, given the spec's target kind?
-function wants(spec, caster, o) {
+function wants(spec: AbilitySpec, caster: Agent, o: Agent): boolean {
   const kind = spec.header.target;
   if (kind === 'any') return true;
   // hostility/ally judged by belief + faction, mirroring simulation.isHostile
@@ -173,7 +182,7 @@ function wants(spec, caster, o) {
   return true;
 }
 
-function isFoe(caster, o) {
+function isFoe(caster: Agent, o: Agent): boolean {
   if (caster.faction && o.faction && caster.faction !== o.faction) {
     if (caster.faction === 'monster' || o.faction === 'monster') return true;
   }
@@ -185,7 +194,7 @@ function isFoe(caster, o) {
 }
 
 // ---- ActionEvent emission ---------------------------------------------------
-function emitCast(spec, caster, now, magnitude) {
+function emitCast(spec: AbilitySpec, caster: Agent, now: number, magnitude: number): void {
   bus.emit({
     actorId: caster.id,
     verb: 'cast',
@@ -197,11 +206,11 @@ function emitCast(spec, caster, now, magnitude) {
   });
 }
 
-function damageOf(spec) {
+function damageOf(spec: AbilitySpec): number {
   for (const e of spec.effects) if (e.op === 'damage') return e.amount;
   return 0;
 }
-function magnitudeOf(spec) {
+function magnitudeOf(spec: AbilitySpec): number {
   let m = 0;
   for (const e of spec.effects) m = Math.max(m, Math.abs(e.amount), e.dur);
   return m;

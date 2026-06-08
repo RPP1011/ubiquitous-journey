@@ -8,8 +8,9 @@
 // trickster, speaker, merchant, blacksmith…) used by the matcher.
 
 import { spec, effect } from './ir.js';
+import type { AbilitySpec } from '../../../types/sim.js';
 
-const A = (o) => spec(o);   // terse alias
+const A = (o: Parameters<typeof spec>[0]): AbilitySpec => spec(o);   // terse alias
 
 // ---- COMBAT ------------------------------------------------------------------
 const power_strike = A({
@@ -114,7 +115,7 @@ export const ABILITY_CATALOG = {
 // CLASS_MILESTONES: classKey -> { level: abilityId }. When Progression levels a
 // class past a milestone level, it grants that ability (looked up in the catalog
 // and copied into agent's known abilities). Keys mirror CLASS_TEMPLATES.
-export const CLASS_MILESTONES = {
+export const CLASS_MILESTONES: Record<string, Record<number, string>> = {
   warrior:    { 1: 'power_strike', 4: 'lunge', 8: 'second_wind' },
   brawler:    { 1: 'cleaving_blow', 5: 'whirlwind' },
   hunter:     { 1: 'frost_bolt' },
@@ -125,7 +126,7 @@ export const CLASS_MILESTONES = {
 };
 
 // helper: the ability id (if any) a class unlocks at exactly `level`.
-export function milestoneAt(classKey, level) {
+export function milestoneAt(classKey: string, level: number): string | null {
   const m = CLASS_MILESTONES[classKey];
   return m ? m[level] || null : null;
 }

@@ -24,14 +24,18 @@ type KnownVerb =
   | 'block' | 'buy' | 'sell' | 'forge' | 'produce' | 'gather' | 'build' | 'narrative';
 export type Verb = KnownVerb | (string & {});
 
-/** A published deed (js/rpg/events.js makeEvent output). */
+/** A published deed (js/rpg/events.js makeEvent output). NOTE: `tags` is the fan-out
+ *  contract — usually sanitized to the Tag vocab by makeEvent, but the cast path
+ *  (abilities/interpreter.emitCast) emits raw FLAVOUR tags ('CAST'/'FORCE'/…) directly, so
+ *  the honest type is `string[]`; consumers (progression/xp) re-sanitize for the profile. */
 export interface ActionEvent {
   actorId: EntityId;
   verb: Verb;
-  tags: Tag[];
+  tags: string[];
   magnitude: number;
   targetId?: EntityId;
   t: number;
+  abilityId?: string;        // cast events attach the source ability id; ignored by the contract
 }
 
 /** The spec accepted by makeEvent/emit (tags un-sanitized, magnitude/t defaulted). */
@@ -52,5 +56,8 @@ export interface EventBus {
   clear(): void;
 }
 
-/** Weighted tag tallies (Progression.behavior_profile). */
-export type BehaviorProfile = Partial<Record<Tag, number>>;
+/** Weighted tag tallies (Progression.behavior_profile, an `Object.create(null)` map).
+ *  Conceptually Tag-weighted, but onEvent writes raw ev.tags un-sanitized, so flavour tags
+ *  ('CAST'/'FORCE'/…) can appear too — hence a string-keyed record. Class templates still
+ *  read it by closed `Tag` keys (requirements/score_tags), which `string` admits. */
+export type BehaviorProfile = Record<string, number>;

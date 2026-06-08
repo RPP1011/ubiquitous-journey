@@ -20,10 +20,11 @@ import {
   goal, intercept, fleeTo, shadow, avoid,
 } from './vocab.js';
 import { SCHEMA } from '../simconfig.js';
+import type { AuthoredSchema, NormalizedSchema } from '../../../types/sim.js';
 
 // The 6 flagship interactions (docs/architecture/09-reasoning-layer.md §"flagship interactions").
 // Each is ~6 lines reusing the SAME primitives — a new behaviour is a row, not a branch.
-export const SCHEMAS = [
+export const SCHEMAS: AuthoredSchema[] = [
   // 1. QUARRY — believe I'm hunted and I'm no fighter → break for an EXIT or COVER.
   //    (No `safety` need exists in this build; the spec's selfNeed('safety',…) clause is
   //    rendered by the believed-hostile + not-combatant test, which is the same condition.)
@@ -116,4 +117,4 @@ export const SCHEMAS = [
 
 // the live set the interpreter runs: drop any row that fails validation (degrades to
 // inert rather than throwing on the tick). Normalized through schema() for defaults.
-export const ACTIVE = SCHEMAS.map(schema).filter(validate);
+export const ACTIVE: NormalizedSchema[] = SCHEMAS.map(schema).filter(validate);

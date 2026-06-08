@@ -18,20 +18,24 @@
 // The op-name vocabularies — the closed set of legal node ops. The interpreter holds the
 // implementations; this file holds only the NAMES, so validate() can reject typos without
 // importing the (belief-reading) evaluators. Keep these in sync with vocab.js.
-export const PRED_OPS = new Set([
+import type {
+  PredNode, AuthoredSchema, NormalizedSchema,
+} from '../../../types/sim.js';
+
+export const PRED_OPS = new Set<string>([
   'all', 'any', 'not',
   'believe', 'witnessed', 'selfNeed', 'selfIs', 'outmatchedBy',
   'nearKnown', 'nearSubject', 'perceivedNow', 'selfEngaged', 'observedAnimacy',
 ]);
-export const INFER_OPS = new Set([
+export const INFER_OPS = new Set<string>([
   'setIntent', 'inferDestination', 'raise', 'raiseThenSet',
 ]);
-export const RESP_OPS = new Set([
+export const RESP_OPS = new Set<string>([
   'goal', 'intercept', 'fleeTo', 'shadow', 'avoid', 'hide',
 ]);
 
 // the subjects a schema reasons about: my own situation, or a believed other.
-export const SUBJECTS = new Set(['self', 'believed']);
+export const SUBJECTS = new Set<string>(['self', 'believed']);
 
 // scheduler defaults + bounds for the bounded/cached/LOD interpreter.
 export const LIMITS = {
@@ -42,7 +46,7 @@ export const LIMITS = {
 
 // schema(o) — normalize an authored row into a complete InteractionSchema, filling the
 // scheduler defaults. Pure; never throws. Returns the row (with defaults applied).
-export function schema(o) {
+export function schema(o: AuthoredSchema | null | undefined): NormalizedSchema | null {
   if (!o || typeof o !== 'object') return null;
   return {
     id: o.id || '(anon)',
@@ -63,7 +67,7 @@ export function schema(o) {
 // and returns false if any node names an op outside the legal vocabularies. A bad row is
 // dropped by the catalogue (ACTIVE = SCHEMAS.filter(validate)) so it never reaches the
 // interpreter. Pure; guarded; never throws.
-export function validate(s) {
+export function validate(s: NormalizedSchema | null): s is NormalizedSchema {
   try {
     if (!s || !SUBJECTS.has(s.subject)) return false;
     if (s.when && !validatePred(s.when)) return false;
@@ -74,7 +78,7 @@ export function validate(s) {
 }
 
 // recursive predicate-tree validation: all/any take a list of child nodes, not takes one.
-function validatePred(node) {
+function validatePred(node: PredNode | null | undefined): boolean {
   if (!node || typeof node.op !== 'string') return false;
   if (!PRED_OPS.has(node.op)) return false;
   if (node.op === 'all' || node.op === 'any') {
@@ -84,7 +88,7 @@ function validatePred(node) {
     return true;
   }
   if (node.op === 'not') {
-    return validatePred(node.args && node.args[0]);
+    return validatePred((node.args && node.args[0]) as PredNode | null | undefined);
   }
   return true;   // a leaf predicate (believe/selfNeed/…): args are scalars, op-name vetted above
 }

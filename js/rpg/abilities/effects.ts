@@ -8,12 +8,29 @@
 import * as THREE from 'three';
 import { DIR } from '../../constants.js';
 import { TUNE } from '../../constants.js';
+import type { Vector3 } from 'three';
+import type { EffectFn, EffectOp, FighterDir, Fighter } from '../../../types/sim.js';
+
+// The transient ability-status bag we stash on a Fighter (not part of the shared Fighter
+// type — a private detail of this module + the interpreter). Accessed via the augmented
+// fighter handle below so reads/writes stay typed without touching the shared layer.
+interface AbilityStatusBag {
+  slowUntil: number;
+  shield: number;
+  dashUntil: number;
+  slowFactor?: number;
+}
+// a Fighter as this module sees it: the shared body + our private status/health-bar hooks.
+type StatusFighter = Fighter & {
+  _abilityStatus?: AbilityStatusBag;
+  _updateHealthBar?: () => void;
+};
 
 const _v = new THREE.Vector3();
 
 // map a world-space direction (from attacker to target) to one of the four
 // combat DIRs, so a spec-driven hit can be blocked just like a normal swing.
-function dirTo(fromPos, toPos) {
+function dirTo(fromPos: Vector3, toPos: Vector3): FighterDir {
   const dx = toPos.x - fromPos.x, dz = toPos.z - fromPos.z;
   if (Math.abs(dx) > Math.abs(dz)) return dx > 0 ? DIR.RIGHT : DIR.LEFT;
   return dz > 0 ? DIR.DOWN : DIR.UP;
@@ -21,11 +38,11 @@ function dirTo(fromPos, toPos) {
 
 // transient status bag carried on the target Fighter (read by no one but us +
 // the interpreter; kept tiny so it stays GC-friendly for ~12 agents at 6Hz).
-function status(f) {
+function status(f: StatusFighter): AbilityStatusBag {
   return (f._abilityStatus ||= { slowUntil: 0, shield: 0, dashUntil: 0 });
 }
 
-export const EFFECTS = {
+export const EFFECTS: Record<EffectOp, EffectFn> = {
   // raw damage routed through the block-aware Fighter.takeHit; returns true on a
   // landed (non-blocked) hit so on_hit/on_kill triggers can chain off it.
   damage(e, caster, target, ctx) {
@@ -42,7 +59,7 @@ export const EFFECTS = {
   },
 
   heal(e, caster, target) {
-    const tf = (target || caster)?.fighter;
+    const tf = (target || caster)?.fighter as StatusFighter | undefined;
     if (!tf || !tf.alive) return false;
     tf.health = Math.min(TUNE.maxHealth, tf.health + e.amount);
     if (tf._updateHealthBar) tf._updateHealthBar();
@@ -132,4 +149,6 @@ export const EFFECTS = {
 
 // expose the status reader so locomotion / other systems can honour slow/shield
 // without importing the whole module surface.
-export function abilityStatus(fighter) { return fighter?._abilityStatus || null; }
+export function abilityStatus(fighter: StatusFighter | null | undefined): AbilityStatusBag | null {
+  return fighter?._abilityStatus || null;
+}

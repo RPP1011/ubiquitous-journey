@@ -15,6 +15,17 @@
 import { SCHEMA } from '../simconfig.js';
 import { evalPred, evalInfer, evalRespond } from './vocab.js';
 import { STAGE, REASON } from '../trace.js';
+import type {
+  Agent, CognitionCtx, NormalizedSchema, ReasonEnv, GoalDescriptor, Stage, Reason,
+} from '../../../types/sim.js';
+
+// the per-tick claim flag the direct-goal responses contend over.
+interface TickState { directClaimed: boolean; }
+// the agent's TTL fire-stamp cache (a private detail not on the shared Agent surface).
+type ReasonAgent = Agent & {
+  _schemaFired?: Record<string, number>;
+  _schemaFireCount?: number;
+};
 
 // Direct-goal responses (set agent.goal AND stamp a min-dwell lock so decide honours them
 // across a one-tick belief flicker). The flagship disposition kinds (hide/shadow/avoid) are
@@ -26,19 +37,20 @@ import { STAGE, REASON } from '../trace.js';
 // stack entirely. They self-terminate: when the situation passes the schema stops firing, the
 // lock expires, and decide picks a normal goal next tick. (Phase 2b: these collapse into the
 // one steer-fill executor — see act.js dispositions + planner.js goal{Hide,Shadow,Avoid}.)
-const DIRECT_GOAL_KINDS = new Set(['flee', 'fight', 'hide', 'shadow', 'avoid']);
+const DIRECT_GOAL_KINDS = new Set<string>(['flee', 'fight', 'hide', 'shadow', 'avoid']);
 
-export function reason(agent, ctx, catalogue) {
+export function reason(agent: Agent, ctx: CognitionCtx | null, catalogue: NormalizedSchema[]): void {
   // master gate (byte-stable proof) + empty-catalogue fast-path: nothing executes.
   if (!SCHEMA || !SCHEMA.enabled) return;
   if (!agent || !agent.alive || agent.controlled) return;
   if (!Array.isArray(catalogue) || catalogue.length === 0) return;
   try {
+    const ag = agent as ReasonAgent;
     const now = ctx ? ctx.time : 0;
     // snapshot my beliefs ONCE — an infer may mutate a belief field, and a believed-
     // subject loop must not trip on concurrent eviction. Bounded (~8 entries).
     const beliefSnapshot = [...agent.beliefs.all()];
-    const envBase = {
+    const envBase: ReasonEnv = {
       agent,
       beliefs: agent.beliefs,
       memory: agent.memory,
@@ -47,12 +59,12 @@ export function reason(agent, ctx, catalogue) {
       now,
       subjectId: null,
     };
-    if (!agent._schemaFired) agent._schemaFired = Object.create(null);
+    if (!ag._schemaFired) ag._schemaFired = Object.create(null);
     let fired = 0;
     // schemas are evaluated in priority order; the FIRST direct-goal response to fire claims
     // a.goal for the tick. This flag stops a later, lower-priority direct goal from clobbering
     // it (applyRespond reads/sets it). Infer-only and disposition state-writes still run.
-    const tickState = { directClaimed: false };
+    const tickState: TickState = { directClaimed: false };
 
     // priority-sorted: a high-priority disposition (flee/hide) is considered before a
     // low one (suspect). Stable enough — catalogue is tiny. Don't mutate the catalogue.
@@ -74,26 +86,28 @@ export function reason(agent, ctx, catalogue) {
         }
       }
     }
-    agent._schemaFireCount = fired;
+    ag._schemaFireCount = fired;
   } catch { /* never throw on the tick */ }
 }
 
 // evaluate one schema against the bound env; returns whether it fired (passed `when`,
 // not TTL-suppressed). Applies infer + respond on a fire.
-function fireOne(s, env, now, tickState) {
+function fireOne(s: NormalizedSchema, env: ReasonEnv, now: number, tickState: TickState): boolean {
+  const ag = env.agent as ReasonAgent;
+  const fired = ag._schemaFired || (ag._schemaFired = Object.create(null));
   // TTL CACHE: skip a schema/subject pair re-fired within its ttl seconds.
   const key = `${s.id}|${env.subjectId ?? '*'}`;
-  const stamp = env.agent._schemaFired[key];
+  const stamp = fired[key];
   if (stamp != null && (now - stamp) < (s.ttl || 0)) return false;
 
   if (s.when && !evalPred(s.when, env)) return false;
 
   // PASSED — record the fire stamp (suppresses re-firing for ttl), then act.
-  env.agent._schemaFired[key] = now;
+  fired[key] = now;
   // TRACE (write-only, never read back): a schema FIRED — the "why I reasoned this" beat.
   // Only actual fires are logged (bounded; a `when`-false on every other schema/tick would
   // flood the ring). `a` = schema id, subject = the believed subject it fired about. Own data.
-  env.agent.trace.note(STAGE.SCHEMA, REASON.SCHEMA_FIRED, { t: now, a: s.id, subjectId: env.subjectId });
+  env.agent.trace.note(STAGE.SCHEMA as Stage, REASON.SCHEMA_FIRED as Reason, { t: now, a: s.id, subjectId: env.subjectId });
   if (s.infer) evalInfer(s.infer, env);
   if (s.respond) applyRespond(s, env, now, tickState);
   return true;
@@ -104,8 +118,8 @@ function fireOne(s, env, now, tickState) {
 // direct goal of the tick claims a.goal; a later, lower-priority one is suppressed (so a
 // hide@.95 isn't clobbered by a shadow@.5 firing afterwards). Anything not a direct kind is
 // pushed onto the goal stack with an expiry (none of the flagship rows take this branch today).
-function applyRespond(s, env, now, tickState) {
-  const g = evalRespond(s.respond, env);
+function applyRespond(s: NormalizedSchema, env: ReasonEnv, now: number, tickState: TickState): void {
+  const g: GoalDescriptor | null = evalRespond(s.respond, env);
   if (!g || !g.kind) return;
   const a = env.agent;
   const ttl = s.ttl || 0;
