@@ -2,3 +2,7 @@
 .DS_Store
 *.swp
 *~
+
+# TypeScript emit (reproducible: `bunx tsc --noEmit && bunx tsc`)
+dist/
+node_modules/

@@ -1,10 +1,12 @@
 // Shared constants & tuning for the directional combat prototype.
 
-export const DIR = { UP: 'UP', DOWN: 'DOWN', LEFT: 'LEFT', RIGHT: 'RIGHT' };
+export type Dir = 'UP' | 'DOWN' | 'LEFT' | 'RIGHT';
+
+export const DIR: Record<Dir, Dir> = { UP: 'UP', DOWN: 'DOWN', LEFT: 'LEFT', RIGHT: 'RIGHT' };
 
 // Which embedded KayKit clip plays for each attack direction.
 // (Verified present in Knight.glb / Barbarian.glb — same shared rig.)
-export const ATTACK_CLIP = {
+export const ATTACK_CLIP: Record<Dir, string> = {
   UP:    '1H_Melee_Attack_Chop',            // overhead
   DOWN:  '1H_Melee_Attack_Stab',            // thrust
   LEFT:  '1H_Melee_Attack_Slice_Horizontal',
@@ -13,7 +15,7 @@ export const ATTACK_CLIP = {
 
 // KayKit only ships right-to-left slices, so the left-to-right swing is the
 // same clip played in reverse — a genuine mirrored swing without bone-swapping.
-export const ATTACK_REVERSE = {
+export const ATTACK_REVERSE: Record<Dir, boolean> = {
   UP: false, DOWN: false, LEFT: false, RIGHT: true,
 };
 

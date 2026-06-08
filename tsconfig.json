@@ -1,8 +1,31 @@
 {
   "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "exactOptionalPropertyTypes": false,
+    "noUncheckedIndexedAccess": false,
+    "allowJs": true,
+    "checkJs": false,
+    "sourceMap": true,
+    "inlineSources": true,
+    "declaration": false,
+    "outDir": "./dist",
+    "rootDir": ".",
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
     "paths": {
       "three": ["./vendor/three.module.js"],
       "three/addons/*": ["./vendor/addons/*"]
     }
-  }
+  },
+  "include": ["js/**/*.ts", "js/**/*.js", "types/**/*.ts"],
+  "exclude": ["dist", "vendor", "node_modules", "test"]
 }

@@ -10,29 +10,58 @@ they **believe**, not what is true: they perceive, gossip (with fading confidenc
 trade on price beliefs, hold grudges, level up emergent classes, and some are spies who disguise
 and plant false rumours. You play one fighter; everyone forms beliefs about you too.
 
-## Run / develop
+## Build / typecheck / serve
 
-No build step, no Node, no package manager. ES modules + glTF require an `http://` origin, so
-serve over HTTP:
+The project is migrating to **TypeScript with `tsc` as a dev-time transpiler** (a staged port;
+the core sim slice is `.ts`, the rest is still `.js` via `allowJs` interop). `tsc` is the **same
+category as the Bun test runner — NOT a runtime dependency**; there is no bundler and no npm
+runtime dep. Three things consume the source — keep all three green:
 
-```bash
-python3 -m http.server 8000   # then open http://localhost:8000
-```
+- **Typecheck (gate):** `bunx tsc --noEmit` — strict, must be clean. This is the type firewall.
+- **Tests (gate, no build):** `bun test/headless.mjs` — Bun runs `.mjs` tests and the `.ts`/`.js`
+  sim sources they import **natively, with no transpile step** (~0.2s: combat unit + 12k-tick soak,
+  epistemic scan, soak invariants, scenarios, scaling/LOD, homecoming, percept, schemas; exit 1 on
+  failure).
+- **Browser:** typecheck-then-emit, then serve:
 
-**Headless tests (fast path).** The simulation core is decoupled from rendering, so it runs with
-no browser via Bun:
+  ```bash
+  bunx tsc --noEmit && bunx tsc      # NEVER bare `bunx tsc` — see below
+  python3 -m http.server 8000        # then open http://localhost:8000
+  ```
 
-```bash
-bun test/headless.mjs          # ~0.2s: combat unit + 12k-tick soak, exit 1 on failure
-```
+  `bunx tsc` emits the whole tree (`.ts` transpiled + `.js` copied via `allowJs`) to `dist/`,
+  mirroring the source layout, with per-file sourcemaps. `index.html` loads `./dist/js/main.js`;
+  the import map + `vendor/` are served as-is (vendor is NEVER emitted). `dist/` is gitignored
+  (reproducible output, not committed).
+
+**Why `--noEmit && tsc`, never bare `tsc`:** under `verbatimModuleSyntax`, a value-import of a
+type (e.g. `import { CognitionCtx }` instead of `import type`) is a TS error that bare `bunx tsc`
+**emits anyway** (exit 0) — shipping a `dist/` that throws `does not provide an export named …` in
+the browser. Only the `--noEmit` pass catches it, so the documented build runs it first and emits
+only if clean (fail-fast).
+
+**Import-specifier convention (load-bearing):** every relative import keeps a `.js` extension even
+when the source is `.ts` — `import { BeliefStore } from './beliefs.js'` resolves to `beliefs.ts`.
+This one rule satisfies Bun (tests), `tsc` (typecheck + verbatim emit), and the browser (loads the
+emitted `.js`) **at once**, so the port needs zero import rewrites. `three` / `three/addons/*` stay
+bare specifiers (resolved by `tsconfig.json` `paths` for tsc/Bun, by the import map for the browser).
+
+**No stale shadows:** after renaming `x.js`→`x.ts`, the old `x.js` MUST be gone (use `git mv`). A
+leftover `x.js` beside `x.ts` makes Bun run the stale `.js` while tsc/browser run the `.ts` — a
+green gate against dead code. The headless runner asserts no such coexistence under `js/**`
+(`test/suites/shadows.mjs`).
+
+**Sourcemaps preserve the crash overlay:** `main.js` stays `.js` (its frame-loop try/catch slices
+`err.stack` into the on-screen overlay — a load-bearing debug affordance). Sourcemaps map the
+deeper `.ts` frames back to source so the overlay still names a real source stage + line.
 
 It drives the sim exactly like the render loop (`sim.update` → `fighter.update` → `resolveCombat` →
 `onCombatEvents`) and asserts the invariants: no freeze over 12k frames, gold conservation, trades
 happen, beliefs form, every NPC has a valid ambition that progresses. `headless.mjs` is a thin runner
 that loads `test/harness.mjs` (`makeOk` tally, `stubScene`, `makeFighter`) and the suites in
-`test/suites/*.mjs` (`epistemic`, `combat`, `abilities`, `planner`, `execution`, `memoryGoals`,
-`percept`, `schemas`, `hearsay`, `obituary`, `construction`, `homecoming`, `city`, `soak`) plus
-`test/scenarios.mjs`. There's no single-suite CLI flag — to run one suite,
+`test/suites/*.mjs` (`epistemic`, `shadows`, `combat`, `abilities`, `planner`, `execution`,
+`memoryGoals`, `percept`, `schemas`, `hearsay`, `obituary`, `construction`, `homecoming`, `city`,
+`soak`) plus `test/scenarios.mjs`. There's no single-suite CLI flag — to run one suite,
 comment out the others in `headless.mjs` or import the suite into a scratch runner. Other runners:
 `test/scenarios.mjs`, `test/history.mjs`, and the `test/bench.mjs` / `test/levelbench.mjs` benchmarks.
 The seam is a logic-only

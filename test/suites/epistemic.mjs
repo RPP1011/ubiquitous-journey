@@ -32,26 +32,41 @@ const ROOT = join(__dirname, '..', '..');           // repo root (test/suites ->
 const REPORT_ONLY = false;
 
 // Cognition / execution files that MUST be clean (no ground-truth roster reads).
+// EXTENSION-AGNOSTIC (TS port): entries are stored WITHOUT extension; the read loop
+// resolves each as `.ts` first then `.js`, so a `.js`→`.ts` rename of a slice file keeps
+// the scan green with no edit here. This belt survives the port and still catches an
+// `as any` / `(ctx as any).agents` roster read that the type system cannot see.
 const SCANNED = [
-  'js/sim/agent/decide.js',
-  'js/sim/agent/act.js',
-  'js/sim/agent/steer.js',    // Phase 2b — the steering substrate (potential-field locomotion + fills)
-  'js/sim/agent/movement.js',
-  'js/sim/agent/occupation.js',
-  'js/sim/agent/trade.js',
-  'js/sim/motivation.js',
-  'js/sim/planner.js',
-  'js/sim/agent.js',          // the decision helpers (with EPISTEMIC-OK carve-outs)
-  'js/sim/mentalmap.js',      // the shared STATIC places registry (static-geography only)
+  'js/sim/agent/decide',
+  'js/sim/agent/act',
+  'js/sim/agent/steer',       // Phase 2b — the steering substrate (potential-field locomotion + fills)
+  'js/sim/agent/movement',
+  'js/sim/agent/occupation',
+  'js/sim/agent/trade',
+  'js/sim/motivation',
+  'js/sim/planner',
+  'js/sim/agent',             // the decision helpers (with EPISTEMIC-OK carve-outs)
+  'js/sim/mentalmap',         // the shared STATIC places registry (static-geography only)
   // Phase 2a — the InteractionSchema reasoning layer: pure IR + the belief/own-state/map
   // evaluators + the bounded interpreter. Cognition: reads ONLY agent.*, the agent's own
   // BeliefStore, episodic memory, and the static mental map — never the roster.
-  'js/sim/schemas/ir.js',
-  'js/sim/schemas/vocab.js',
-  'js/sim/schemas/interpreter.js',
-  'js/sim/schemas/catalogue.js',
-  'js/sim/trace.js',          // the trace substrate itself — clean (own-array only)
+  'js/sim/schemas/ir',
+  'js/sim/schemas/vocab',
+  'js/sim/schemas/interpreter',
+  'js/sim/schemas/catalogue',
+  'js/sim/trace',             // the trace substrate itself — clean (own-array only)
 ];
+
+// Resolve a SCANNED entry (no extension) to its actual source, trying `.ts` then `.js`.
+// Returns { src, path } or null (→ ok(false) with a clear "neither" message).
+function readSource(relNoExt) {
+  for (const ext of ['.ts', '.js']) {
+    try {
+      return { src: readFileSync(join(ROOT, relNoExt + ext), 'utf8'), path: relNoExt + ext };
+    } catch { /* try next extension */ }
+  }
+  return null;
+}
 
 // ALLOWLISTED bridge/resolver/orchestration files — the two sanctioned reality-touch
 // points (perception, combat) + the orchestration that wires them. NOT scanned.
@@ -137,15 +152,15 @@ export function epistemicScan(ok) {
   let violations = 0;
   let scanError = false;
 
-  for (const rel of SCANNED) {
-    let raw;
-    try {
-      raw = readFileSync(join(ROOT, rel), 'utf8');
-    } catch (e) {
-      ok(false, `epistemic: could not read ${rel} (${e && e.message})`);
+  for (const relNoExt of SCANNED) {
+    const resolved = readSource(relNoExt);
+    if (!resolved) {
+      ok(false, `epistemic: could not read ${relNoExt} (neither .ts nor .js found)`);
       scanError = true;
       continue;
     }
+    const raw = resolved.src;
+    const rel = resolved.path;
     const stripped = stripCommentsAndStrings(raw);
     const lines = stripped.split('\n');
     const rawLines = raw.split('\n');
@@ -180,7 +195,10 @@ export function epistemicScan(ok) {
   // (the scalar `playerId:` IS allowed — the regex requires `player` NOT followed by `Id`).
   let structOk = false;
   try {
-    const simSrc = readFileSync(join(ROOT, 'js/sim/simulation.js'), 'utf8');
+    // EXTENSION-AGNOSTIC (TS port): the spine may be simulation.ts or simulation.js.
+    const simResolved = readSource('js/sim/simulation');
+    if (!simResolved) throw new Error('neither js/sim/simulation.ts nor .js found');
+    const simSrc = simResolved.src;
     // capture from `_cognitionCtx() {` up to the `return { ... }` object literal's close.
     const m = simSrc.match(/_cognitionCtx\s*\(\s*\)\s*\{[\s\S]*?return\s*\{([\s\S]*?)\};/);
     if (m) {

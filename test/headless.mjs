@@ -14,6 +14,7 @@
 
 import { makeOk, stubScene, makeFighter } from './harness.mjs';
 import { epistemicScan } from './suites/epistemic.mjs';
+import { shadowGuard } from './suites/shadows.mjs';
 import { combatUnit } from './suites/combat.mjs';
 import { proceduralAbilityTest } from './suites/abilities.mjs';
 import { plannerSelfTest } from './suites/planner.mjs';
@@ -40,6 +41,9 @@ console.log('— headless sim checks —');
 // EPISTEMIC GATE FIRST (fail fast): the static source scan that enforces THE INVARIANT
 // — cognition/execution code never reads ground truth. Folds into the same tally.
 epistemicScan(ok);
+// STALE-SHADOW GATE (TS port): no `<name>.ts` may coexist with `<name>.js` in a dir
+// (a leftover .js would silently shadow the .ts under Bun). Cheap; fail fast.
+shadowGuard(ok);
 combatUnit(ok, helpers);
 proceduralAbilityTest(ok);
 plannerSelfTest(ok, helpers);
