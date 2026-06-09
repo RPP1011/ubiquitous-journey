@@ -416,6 +416,23 @@ export const HOLD = {
   cost: 1,               // planner cost of inserting a wait (cheap, but not free, vs. acting now)
 };
 
+// --- RECRUIT: building a force (docs/architecture/10, Phase 5 — the recruiter capstone) ----
+// A would-be leader builds toward a believed force that outmatches a camp the SAME way it builds
+// toward 80 gold — by accumulation. But a command does not BIND another agent (they decide for
+// themselves), so `recruit`'s effect is not "+1 to my force" — it is a BELIEF: I believe this
+// candidate will follow, held at a COMPLIANCE confidence reflecting how likely they are to (a
+// loyal friend high, a wary stranger low, read off the candidate's standing). Believed force =
+// own strength + Σ each candidate's strength × compliance. The planner adds recruits greedily —
+// cheapest reliable force first — until the believed sum outmatches the camp. The follower side
+// is an ordinary goal (the reputation-gated party-join the sim already has). Day-one OFF.
+export const RECRUIT = {
+  enabled: false,
+  selfStrength: 1,       // a lone leader's own believed strength (the base of the muster)
+  candidateStrength: 1,  // a candidate's believed strength before the compliance discount
+  minStanding: -0.2,     // a candidate must be believed at least this well-disposed to approach
+  minCompliance: 0.15,   // a recruit contributing less believed force than this isn't worth a row
+};
+
 // --- episodic memory (three-tier ring buffers) ------------------------------
 // Salient life-events flow STM -> MTM -> LTM by consolidation; medium fades over
 // minutes, long-term sticks. Feeds the inspector biography and (later) goals.

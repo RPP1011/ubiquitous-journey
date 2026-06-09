@@ -5,8 +5,9 @@
 
 import { World } from '../../js/sim/world.js';
 import { Agent } from '../../js/sim/agent.js';
-import { plan, goalRepay, goalSeekFortune, goalAvenge, goalSteal, goalSate, goalLearn, ACQUIRE, Atom, stepEffectHolds } from '../../js/sim/planner.js';
-import { URCHIN, QUANTITY, KNOW, ROB, HOLD } from '../../js/sim/simconfig.js';
+import { plan, goalRepay, goalSeekFortune, goalAvenge, goalSteal, goalSate, goalLearn, goalMuster,
+  ACQUIRE, Atom, stepEffectHolds, recordBelieves, believesConf, complianceOf } from '../../js/sim/planner.js';
+import { URCHIN, QUANTITY, KNOW, ROB, HOLD, RECRUIT } from '../../js/sim/simconfig.js';
 
 export function plannerSelfTest(ok, { makeFighter, stubScene }) {
   const P = () => ({ risk_tolerance: 0.5, social_drive: 0.5, ambition: 0.5, altruism: 0.5, curiosity: 0.5 });
@@ -317,6 +318,55 @@ export function plannerSelfTest(ok, { makeFighter, stubScene }) {
       ok(holdStep && stepEffectHolds(waiter, ctx, holdStep) === true,
         'planner H4: the hold advances the moment the condition becomes believed-true');
     } finally { HOLD.enabled = prevHold; }
+  }
+
+  // RECRUIT — building a force (docs/architecture/10, Phase 5, the recruiter capstone). Forced ON
+  // (day-one OFF), restored after. Proves: a believed-force threshold COMPOSES recruits the way a
+  // gold target composes sales (greedy, most reliable first); an out-of-reach camp SATISFICES; and
+  // both sides are modelled — compliance is a PREDICTION of an independent choice, and the leader's
+  // model of "this candidate will follow" is a one-level Believes it records about them.
+  {
+    const prevRecruit = RECRUIT.enabled;
+    RECRUIT.enabled = true;
+    try {
+      const leader = debtor('Leader', () => {});
+      const c1 = mk('C1'); c1.pos.set(6, 0, 6);
+      const c2 = mk('C2'); c2.pos.set(7, 0, 7);
+      const c3 = mk('C3'); c3.pos.set(8, 0, 8);
+      for (const [c, st] of [[c1, 0.9], [c2, 0.6], [c3, 0.3]]) {
+        const b = leader.beliefs.observe(c.id, c.faction, c.pos, ctx.time, false);
+        b.standing = st;   // believed disposition → compliance prediction
+      }
+      const recruits = (pl) => pl ? pl.steps.filter((s) => s.prim === 'recruit') : [];
+
+      // COMPOSITION — muster a force to outmatch a believed camp of strength 3 by recruiting.
+      const pMuster = plan(leader, goalMuster(3), ctx);
+      ok(pMuster && !pMuster.partial && recruits(pMuster).length >= 2,
+        `planner M1: muster composes several recruits toward a force target (${recruits(pMuster).length} recruits)`);
+
+      // GREEDY — cheapest RELIABLE force first: the highest-standing candidate is recruited first
+      // (a careful leader prefers a few certain followers to many doubtful ones).
+      const firstR = recruits(pMuster)[0];
+      ok(firstR && firstR.bind.target === c1.id,
+        `planner M2: the most reliable candidate is recruited first (#${firstR ? firstR.bind.target : '?'})`);
+
+      // SATISFICE — a camp too strong for the believed candidates can't be out-mustered, so it
+      // returns the best partial it CAN raise (and a positive shortfall), like the gold path.
+      const pBig = plan(leader, goalMuster(20), ctx);
+      ok(pBig && pBig.partial === true && pBig.shortfall > 0,
+        `planner M3: an out-of-reach camp satisfices (shortfall ${pBig ? pBig.shortfall.toFixed(2) : '?'})`);
+
+      // COMPLIANCE is a prediction: a loyal friend reads high, a wary stranger low.
+      ok(complianceOf(0.9) > complianceOf(-0.1) && complianceOf(0.9) <= 1,
+        `planner M4: compliance rises with standing (friend ${complianceOf(0.9).toFixed(2)} > stranger ${complianceOf(-0.1).toFixed(2)})`);
+
+      // BELIEVES, one level — the leader records its model of an independent decision ("they will
+      // follow") about the candidate, and reads it back. A flat conf store, capped at one level.
+      recordBelieves(leader, c1.id, 'will_follow', 0.8);
+      ok(Math.abs(believesConf(leader, c1.id, 'will_follow') - 0.8) < 1e-9 &&
+         believesConf(leader, c2.id, 'will_follow') === 0,
+        'planner M5: a one-level Believes(candidate, will_follow) records + reads back');
+    } finally { RECRUIT.enabled = prevRecruit; }
   }
 
   // never throws on the tick path even for a junk goal

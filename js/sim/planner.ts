@@ -18,7 +18,7 @@
 // this module standalone — it is NOT wired into decide() yet.
 
 import * as THREE from 'three';
-import { PROFESSIONS, COMMODITIES, ECON, SIM, URCHIN, QUANTITY, KNOW, ROB, HOLD } from './simconfig.js';
+import { PROFESSIONS, COMMODITIES, ECON, SIM, URCHIN, QUANTITY, KNOW, ROB, HOLD, RECRUIT } from './simconfig.js';
 import { POI_KIND } from './world.js';
 import { STAGE, REASON } from './trace.js';
 import type { Agent, CognitionCtx, Goal, Plan, PlanStep, EntityId, Atom as AtomT, KnowTopic, Stage, Reason } from '../../types/sim.js';
@@ -82,6 +82,7 @@ interface SimState {
   need: Record<string, number>;          // believed need-levels the plan raises (graded-needs composition)
   known: Record<string, boolean>;        // topic-keys an earlier observe/ask/study step learned (Phase 2)
   held: Record<string, boolean>;         // hold_until conds an earlier hold step waited out (Phase 4)
+  force: number;                         // believed force the plan has mustered so far (Phase 5 recruit)
 }
 // One authored primitive (effectMatches/precondition/cost + executor metadata).
 interface Primitive {
@@ -251,6 +252,9 @@ export const Atom = {
   // window opens), abandoning at `deadline`. `place` is the safe/hidden spot to wait at.
   holdUntil: (cond: SubAtom, place?: PlannerPlace, deadline?: number): SubAtom =>
     ({ pred: 'hold_until', cond, place, deadline }),
+  // FORCE (Phase 5): muster a believed force of AT LEAST `amt` — own strength plus each
+  // recruit's strength weighted by how likely they are believed to follow. A threshold like gold.
+  forceGe: (amt: number): SubAtom => ({ pred: 'force_ge', amt }),
 };
 
 // A stable key for a hold condition, so the simulated `held` map can index it (Phase 4).
@@ -294,12 +298,40 @@ function topicConfidence(agent: Agent, t: KnowTopic | null | undefined): number 
     case 'recipe':
       // own-state craft knowledge: today binary (known or not); present ⇒ fully confident.
       return (t.good && agent.recipes && agent.recipes.has(t.good)) ? 1 : 0;
-    case 'strength':
-      // a believed force at a place — no home yet (lands with the strength topic, Phase 5).
-      return 0;
+    case 'strength': {
+      // a believed force at a place (the camp's numbers) — own-state, accrued from scouting.
+      const e = t.place && agent._strengthBelief ? agent._strengthBelief.get(t.place) : null;
+      return e ? (e.conf || 0) : 0;
+    }
+    case 'secret': {
+      // a fact a subject would pay to keep hidden — own-state, accrued from watching long enough.
+      const e = t.subjectId != null && agent._secretBelief ? agent._secretBelief.get(t.subjectId) : null;
+      return e ? (e.conf || 0) : 0;
+    }
     default:
       return 0;
   }
+}
+
+// COMPLIANCE — my PREDICTION of an independent decision: how likely a believed candidate is to
+// follow if I recruit them, read off the cue I can see (their standing toward me). A loyal friend
+// reads high, a wary stranger low. It is a prediction calibrated against a real choice (the
+// follower's own goal-weighing), not a dice-roll — which is exactly why it can be wrong (Phase 5).
+function complianceOf(standing: number): number {
+  return Math.max(0, Math.min(1, 0.5 + 0.5 * (standing || 0)));
+}
+
+// BELIEVES (one level, Phase 5): record/read MY model of what another believes — `I believe
+// subject believes <topicKey>`, at a confidence. Own-state (lazily created). Capped at one level
+// (no "I believe you believe I believe…"), which is all deception/command ever need.
+function believesKey(subjectId: EntityId, topicKey: string): string { return `${subjectId}:${topicKey}`; }
+function recordBelieves(agent: Agent, subjectId: EntityId, topicKey: string, conf: number): void {
+  if (!agent._theyBelieve) agent._theyBelieve = new Map();
+  agent._theyBelieve.set(believesKey(subjectId, topicKey), { conf: Math.max(0, Math.min(1, conf)) });
+}
+function believesConf(agent: Agent, subjectId: EntityId, topicKey: string): number {
+  const e = agent._theyBelieve ? agent._theyBelieve.get(believesKey(subjectId, topicKey)) : null;
+  return e ? (e.conf || 0) : 0;
 }
 
 // Do I KNOW the topic — present AND confident enough to act on (KNOW.minConf)? Own state only.
@@ -386,6 +418,10 @@ function atomHolds(atom: SubAtom, agent: Agent, ctx: CognitionCtx): boolean {
       // WAIT (Phase 4): the window is already OPEN when the inner condition is believed-true —
       // then no waiting is needed and the hold step drops out (e.g. the camp is already weak).
       return atom.cond ? atomHolds(atom.cond, agent, ctx) : true;
+    case 'force_ge':
+      // FORCE (Phase 5): a lone agent's LIVE believed force is just its own strength (recruits
+      // exist only inside a plan until they actually muster). Below target ⇒ composeForce runs.
+      return RECRUIT.selfStrength >= (atom.amt || 0);
     default:
       return false;
   }
@@ -718,6 +754,20 @@ export const PRIMITIVES: Primitive[] = [
     cost() { return HOLD.cost; },
     exec: { verb: 'hold' },
   },
+
+  // ── recruit(candidate): the muster row (Phase 5). The believed force a `force_ge` threshold
+  // composes is built from these — but the row-PICKING is done by composeForce (which enumerates
+  // believed candidates + weights each by compliance), so this primitive does NOT chain generically
+  // (effectMatches returns null); it exists so byName('recruit') resolves for the forward-state
+  // recompute + carries the exec verb. The effect (a Believes-the-offer, not a binding) is the
+  // executor's: it makes an OFFER the candidate perceives, who then forms its OWN join goal. ──
+  {
+    name: 'recruit',
+    effectMatches() { return null; },              // composeForce is the authority for force_ge
+    precondition(agent, ctx, bind) { return [Atom.inReach(bind.target as EntityId)]; },
+    cost() { return PLAN.actBase; },
+    exec: { verb: 'recruit' },
+  },
 ];
 
 const byName = (n: string): Primitive | null => PRIMITIVES.find((p) => p.name === n) || null;
@@ -815,6 +865,41 @@ function composeNeed(agent: Agent, ctx: CognitionCtx, atom: SubAtom, depth: numb
   return { steps, cost };
 }
 
+// Greedily MUSTER a believed force to `target` by recruiting (Phase 5 — the recruiter capstone).
+// Believed force = own strength + Σ each believed candidate's strength × COMPLIANCE (how likely
+// they are believed to follow, read off standing). Most reliable first — cheapest reliable force,
+// which is why a careful leader prefers four certain followers to eight doubtful ones. Like
+// composeGold it satisfices + flags frontier.partial when the camp can't be out-mustered. Belief-
+// only: iterates the agent's OWN beliefs, never the roster — so the leader over-counts exactly
+// when its read of a candidate's standing is wrong, and the muster can fall short at execution.
+function composeForce(agent: Agent, ctx: CognitionCtx, atom: SubAtom, frontier: Frontier, simState: SimState): Solved {
+  const target = atom.amt || 0;
+  let force = simState.force || RECRUIT.selfStrength;
+  if (force >= target) return { steps: [], cost: 0 };
+  const cands: { id: EntityId; contrib: number }[] = [];
+  if (agent.beliefs) for (const b of agent.beliefs.all()) {
+    if (!b || b.confidence < SIM.actOnBeliefMin) continue;
+    if (b.hostile || (agent.considerHostile && agent.considerHostile(b))) continue;   // not a foe
+    if ((b.standing || 0) < RECRUIT.minStanding) continue;                              // disposed enough to ask
+    const contrib = RECRUIT.candidateStrength * complianceOf(b.standing);
+    if (contrib < RECRUIT.minCompliance) continue;
+    cands.push({ id: b.subjectId, contrib });
+  }
+  cands.sort((a, b) => b.contrib - a.contrib);   // most reliable force first
+  const steps: PlanStep[] = [];
+  let cost = 0;
+  for (const c of cands) {
+    if (force >= target || steps.length >= PLAN.maxPlan - 1) break;
+    const tp = believedPos(agent, ctx, { subjectId: c.id });
+    const d = tp ? Math.hypot(tp.x - agent.pos.x, tp.z - agent.pos.z) : 30;
+    steps.push(mkStep('recruit', { name: 'recruit', target: c.id, amt: c.contrib }, 'recruit'));
+    cost += d * PLAN.travelPerMetre + PLAN.actBase;
+    force += c.contrib;
+  }
+  if (force < target) { frontier.partial = true; frontier.shortfall = target - force; }
+  return { steps, cost };
+}
+
 // ---------------------------------------------------------------------------
 // The backward-chaining solver. Returns the min-cost ordered primitive list
 // that satisfies `goalAtom` from believed state, or null. Depth + frontier
@@ -840,6 +925,9 @@ function solveAtom(agent: Agent, ctx: CognitionCtx, atom: SubAtom, depth: number
     if (atom.pred === 'gold_ge' && atom.subjectId == null) return composeGold(agent, ctx, atom, frontier, simState);
     if (atom.pred === 'need_ge') return composeNeed(agent, ctx, atom, depth, frontier, simState);
   }
+  // PHASE 5 (gated by RECRUIT): a believed-force threshold composes recruits the same way gold
+  // composes sales. Off → never reached, byte-identical.
+  if (RECRUIT.enabled && atom.pred === 'force_ge') return composeForce(agent, ctx, atom, frontier, simState);
 
   let best: Solved | null = null;
   for (const prim of PRIMITIVES) {
@@ -893,10 +981,10 @@ function solveAll(agent: Agent, ctx: CognitionCtx, atoms: SubAtom[], depth: numb
 function initState(agent: Agent): SimState {
   const inv: Record<string, number> = {};
   for (const c of COMMODITIES) inv[c] = (agent.inventory && agent.inventory[c]) || 0;
-  return { inv, gold: agent.gold || 0, at: null, received: {}, knownAssoc: {}, need: { ...(agent.needs || {}) }, known: {}, held: {} };
+  return { inv, gold: agent.gold || 0, at: null, received: {}, knownAssoc: {}, need: { ...(agent.needs || {}) }, known: {}, held: {}, force: RECRUIT.selfStrength };
 }
 function cloneState(s: SimState): SimState {
-  return { inv: { ...s.inv }, gold: s.gold, at: s.at, received: { ...s.received }, knownAssoc: { ...s.knownAssoc }, need: { ...s.need }, known: { ...s.known }, held: { ...s.held } };
+  return { inv: { ...s.inv }, gold: s.gold, at: s.at, received: { ...s.received }, knownAssoc: { ...s.knownAssoc }, need: { ...s.need }, known: { ...s.known }, held: { ...s.held }, force: s.force };
 }
 function applyEffect(prim: Primitive, bind: Bind, agent: Agent, s: SimState): void {
   switch (prim.name) {
@@ -925,6 +1013,8 @@ function applyEffect(prim: Primitive, bind: Bind, agent: Agent, s: SimState): vo
     // WAIT (Phase 4): the plan reasons THROUGH the hold optimistically — it assumes the window
     // opens — so downstream steps can be planned; execution actually waits (or abandons).
     case 'hold': s.held[holdKey(bind.cond)] = true; break;
+    // FORCE (Phase 5): a recruit adds the candidate's compliance-weighted believed strength.
+    case 'recruit': s.force = (s.force || 0) + (bind.amt || 0); break;
   }
 }
 function applyStepsForward(agent: Agent, s: SimState, steps: PlanStep[]): SimState {
@@ -956,6 +1046,8 @@ function atomSatisfied(atom: SubAtom, agent: Agent, ctx: CognitionCtx, s: SimSta
       return !!s.known[topicKey(atom.topic)] || atomHolds(atom, agent, ctx);
     case 'hold_until':
       return !!s.held[holdKey(atom.cond)] || atomHolds(atom, agent, ctx);
+    case 'force_ge':
+      return (s.force || 0) >= (atom.amt || 0);
     default:
       return atomHolds(atom, agent, ctx);
   }
@@ -991,6 +1083,10 @@ function effectAdvances(prim: Primitive, atom: SubAtom, bind: Bind, agent: Agent
       if (atomHolds(atom, agent, ctx)) return false;   // window already open → no wait
       return prim.name === 'hold';
     }
+    case 'force_ge': {
+      if ((s.force || 0) >= (atom.amt || 0)) return false;
+      return prim.name === 'recruit';
+    }
     default:       return true;
   }
 }
@@ -1016,8 +1112,9 @@ export function plan(agent: Agent, goal: Goal, ctx: CognitionCtx): Plan | null {
     // a PARTIAL result is the SATISFICE for an unreachable numeric threshold: it may carry
     // the best steps the agent can run (earn what it can) OR be empty (pure shortfall). Either
     // way it is NOT a dead end — plan() returns it (marked) so the goal layer runs/cools it
-    // rather than dropping the goal, and the drive persists in motivation.
-    const partial = !!(QUANTITY.enabled && frontier.partial);
+    // rather than dropping the goal, and the drive persists in motivation. frontier.partial is
+    // only ever set by a gated composer (gold/need/force), so reading it raw stays byte-stable.
+    const partial = !!frontier.partial;
     // TRACE (write-only, never read back): the GOAP outcome for this goal — a found plan
     // (with its step count) or a dead end (no feasible primitive chain → the agent replans
     // or abandons). Own data (goal kind + plan length). note() is internally guarded, and
@@ -1149,6 +1246,23 @@ export function goalLearn(topic: KnowTopic): Goal {
     predicate(agent: unknown) { return knowsTopic(agent as Agent, topic); },
   };
 }
+
+// muster(amt): build a believed force of AT LEAST `amt` — the leader who wants to assault a camp
+// of believed strength `amt` raises a force to outmatch it (Phase 5). Composed by recruiting,
+// greedily, cheapest reliable force first. predicate reads own believed force only; gated by
+// RECRUIT at the planner seam. The downstream assault then gates on this mustered force.
+export function goalMuster(amt: number): Goal {
+  const target = Math.max(1, amt || 0);
+  return {
+    kind: 'muster', target,
+    atoms: [Atom.forceGe(target)] as AtomT[],
+    predicate() { return false; },   // satisfied by the live party reaching strength (execution mechanic)
+  };
+}
+
+// Phase-5 knowledge accessors surfaced for the executor + tests: the one-level Believes model
+// (recordBelieves/believesConf) and the compliance prediction (complianceOf). Own-state only.
+export { recordBelieves, believesConf, complianceOf };
 
 // steal(mark, target): hold gold >= target by BURGLING the mark's believed stash. The
 // gold_ge atom carries the mark so the burgle primitive routes to it; the same gold target

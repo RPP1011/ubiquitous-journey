@@ -79,6 +79,19 @@ export interface RoamState {
   [k: string]: unknown;
 }
 
+/** One entry in the obligation ledger (docs/architecture/10, Phase 5): a standing intention —
+ *  a thing promised now and discharged later when a perceived event comes to pass, or lapsed at
+ *  expiry. The one piece of genuinely new machinery the action grammar needs (a little belief
+ *  table with decay); also rehomes recurrence (a trigger that is a time or a believed condition). */
+export interface Obligation {
+  trigger: string;           // what arms it: 'delivered' | 'time' | a believed-condition tag
+  action: string;            // the deferred action to take when the trigger fires ('pay' | 'testify' | …)
+  counterparty?: EntityId;   // who it is owed to / about
+  amount?: number;           // optional magnitude (coin promised, etc.)
+  expiry: number;            // sim-time after which the unfired obligation lapses
+  at?: number;               // sim-time the obligation was made (for recurrence re-derivation)
+}
+
 /** A belief-reference handle returned by _nearestHostile — NOT the real object. */
 export interface HostileRef {
   id: EntityId;
@@ -184,6 +197,12 @@ export interface Agent {
   _lodTick: number;
   _lastGoalChangeAt: number;
   _prevGoalKind: string | null | undefined;
+  // Action-grammar Phase 5 (docs/architecture/10) — gated own-state for the breadth vocabulary.
+  // Lazily created and read only when the feature flags are on, so off it is byte-stable.
+  _strengthBelief?: Map<string, { value: number; conf: number }>;   // Strength(place) topic home
+  _secretBelief?: Map<EntityId, { conf: number }>;                  // Secret(subject) topic home
+  _theyBelieve?: Map<string, { conf: number }>;                     // Believes(subject,topic), one level (key `subj:topicKey`)
+  _obligations?: Obligation[];                                      // the commitment ledger (Phase 5)
 
   // ───── OPTIONAL transient role/visual state ─────
   reporterTarget?: Vector3 | null;    // the gazetteer's current subject position

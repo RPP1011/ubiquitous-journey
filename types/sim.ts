@@ -33,7 +33,7 @@ export type {
 } from './goals.js';
 
 export type {
-  Personality, Needs, Mood, Life, HostileRef, Agent,
+  Personality, Needs, Mood, Life, HostileRef, Agent, Obligation,
   SpyState, ArbitrageState, TargetState, RoamState,
 } from './agent.js';
 
