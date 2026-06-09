@@ -255,6 +255,105 @@ response ops in `vocab.js`).
 > byte-for-byte; a pure-repulsor fill reproduces `fleeFrom` (a 6m synthetic away-point + the
 > radial-from-origin fallback) and never "arrives".
 
+### The action grammar: effects ⟂ actions ⟂ executors *(design — the target form of the world-interaction layer)*
+
+The steer-fills above compose **locomotion**. This is the symmetric story for **world-interactions**
+— the planner's actions and their verbs. The GOAP action library further down (`gather`/`buy` both
+`eff: have(g,+1)` — two actions, one effect) already shows the shape; this names the grammar behind
+it, so breadth stays *data* and the verb count never goes combinatorial.
+
+The trap to avoid is **coupling the verb with its purpose** — writing `buy`/`loot`/`burgle`/`coerce`/
+`tax` as five primitives when they are one effect (*acquire a resource*) reached five ways, or
+hard-coding `shadow` to yield a stash-location when the *same* surveil should yield a recipe or a
+camp's strength. That couples `verb × object × method × framing` and the product is what explodes.
+The fix is two levels — and the verbs are neither of them:
+
+- **Effects** — *what changes*; the planner's goal-currency. A small, **parameterized** vocabulary
+  (the planner chains on these): `Have(R)`, `At(place)`, `NeedMet(need)`, `Know(topic)`,
+  `Believes(subj, topic)`, `Dead/Freed/Intact(entity)`. The parameter is a typed term — `topic ∈
+  {Loc(subj,role) | Recipe(good) | Whereabouts(subj) | Strength(place)}`, `R ∈ {good | gold}` — so
+  one effect family spans many situations instead of one pred per object.
+- **Actions** — *what the agent does*; each declares the effect it produces. The planner selects
+  among the actions for an effect **by cost**.
+
+**The effect vocabulary partitions by what it changes — and the partition *is* the epistemic split.**
+List the cells of (whose? × which aspect?):
+
+| aspect | self | another entity |
+| --- | --- | --- |
+| location | **Move** → `At` | ∅ — they move themselves (no-roster) |
+| possessions | **Transfer** → `Have` | only as a *side-effect* of Transfer (give/seize), never my direct reach |
+| condition | **Tend** → `NeedMet` | ∅ |
+| knowledge | **Learn** → `Know` | — |
+| a mind | — | **Inform** → `Believes` (*my* model) → perception/gossip bridge (optimistic, may not land) |
+| physical world-state | — | **Affect** → `Dead/Freed/Intact` |
+
+Six reachable cells, six effect-producers. The **blank cells are the invariants**: I cannot directly
+move, feed, or decide *for* another agent (they act for themselves — the no-roster rule), and a
+foreign *mind* is writable only *through* `Inform`'s bridge (the epistemic split). The grammar's
+empty cells are not gaps — they are the founding constraints, made visible.
+
+**Actions are surface labels over `(effect + parameters)` — sugar, not grammar atoms.**
+`burgle ≡ (Have(gold), source=stash, transfer, covert→theft)`. The planner never refers to "burgle";
+it chains on `Have(gold)` and picks the cheapest row. The irreducible grammar is the **effects + the
+dimension-values** (`source`, `conserves?`, `consent`, `channel`, …); `buy`/`loot`/`burgle` are
+nicknames for points in that space, so a new action is a new **row (data)**, not new code. (This is
+Schank's Conceptual Dependency: surface verbs = a primitive act + modifiers — `Transfer` is ATRANS,
+`Learn`/`Inform` are MTRANS, `Move` is PTRANS; `buy` and `steal` differ only in the consent modifier.)
+
+Each effect's actions are a table whose columns are the genuine differences:
+
+```
+Transfer → Have    columns: source-kind × conserves? × consent→deed     (conserves is load-bearing: the closed money loop)
+  gather(node, MINT, —→labour)   produce(self, MINT, craft)   buy(market, transfer, consent)
+  loot(corpse, transfer, ownerless)   filch(stash, transfer, covert→theft)
+  seize(holder, transfer, force→robbery)   levy(holder, transfer, authority→tax)   beg(holder, transfer, charity→alms)
+  give/pay(self→other, transfer, consent→received)            # Transfer is bidirectional
+
+Learn → Know       columns: channel  ( = the provenance tiers: witnessed / talked / taught )
+  observe(first-hand)   ask(testimony)   study(instruction)        # topic is a PARAMETER: Loc, Recipe, Strength, …
+
+Inform → Believes  columns: channel × veracity
+  disguise(show-false)  demonstrate(show-true)  rumor(tell-gossip)  command(tell-imperative,+authority)  teach(tell-true)
+
+Affect → state     columns: target-state
+  strike→Dead    free→Freed    wreck→¬Intact
+
+Tend → NeedMet     columns: need
+  eat  rest  heal  socialize
+```
+
+**Grammar ⟂ executor — and at the grammar level *nothing* is a one-off.** Every action is
+`(effect, parameterized row, terminal verb)`; the idiosyncrasy lives one layer down, in the
+**executor** the terminal verb fires on arrival (dispatched off `exec.verb` in `act.js`, already
+separate from the planner). `strike`'s executor is the combat state-machine; `burgle`'s is the
+conserved transfer; `free`'s is the unbind (flip the `held` flag, truth-side, like combat resolves
+hp); `observe`'s is evidence-accrual into a belief field. `free` looks bespoke but factors exactly
+like `burgle` — a trivial terminal act gated by hard preconditions (`at(captive) ∧ unopposed`), where
+`unopposed` decomposes through `Learn{observe}(Strength)` + the scouted window + `Move`. So "one-off"
+means a one-off *executor*, never a one-off grammar entry; the grammar stays uniform.
+
+**What demanding justification collapses** (the minimality proof — each was a verb, none survives):
+- `Standing`/`Influence` as an effect → dropped: it is `Transfer(give)` to the subject, whose bridged
+  consequence is a standing shift, tracked as the actor's second-order `Believes(subj, standingToMe)`.
+- `Produce` as a top-level verb → a `Transfer{mint}` row.
+- `approach` → dropped: it is `Move` to a **know-gated place** (resolves via `Know(Loc)`; if unknown,
+  `Move`'s precondition *is* `Know(Loc)`, which inserts `Learn{observe}`). This deletes the
+  `approach` primitive added in Phase-4 Step 2.
+- `shadow`'s **triplication** (a vocab response, a steer-fill, a planner primitive) → one
+  `Learn{observe}` whose locomotion *is* the shared steer-fill.
+
+**Form & status.** The backward-chainer is unchanged; the actions are **generated from the dimension
+rows** (`PRIMITIVES = [...CORE, ...TRANSFER.map, ...LEARN.map]`) — the codebase's own IR-as-data idiom
+(*a behaviour is a row, not a branch* — identical to the schema catalogue and the ability DSL). This
+is the **target** form: today's planner has these as concrete hand-written primitives. The refactor is
+sequenced **before Phase-5 breadth, knowledge-axis first** — it deletes `approach`, de-triplicates
+`shadow`, and makes the teacher fall out as `Learn{study}(Recipe)` reusing the urchin's `observe`
+machine (Ex. 6's "the urchin machinery verbatim"). In these terms the [Phase-5 gap shortlist](#probe-backed-gap-analysis-the-phase-5-priority-order)
+is almost all **rows / effects**, not code: `filch`/`seize`/`levy` are Transfer rows, the
+`believedStandingToMe` lever is the `Believes` effect, `sabotage` is `Affect{wreck}`, `coerce` is
+`Transfer{seize}`.
+
 ---
 
 ## The `InteractionSchema` IR *(✓ landed, Phase 2a)*
