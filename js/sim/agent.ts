@@ -449,9 +449,18 @@ export class Agent {
         ptr >= goal.plan.steps.length ||
         !stepPrecondsHold(this, ctx, goal.plan.steps[ptr]);
       if (needPlan) {
+        // PHASE 1 (docs/architecture/10): an UNREACHABLE numeric-threshold goal rests on a
+        // brief cooldown rather than re-planning every tick — the anti-livelock the doc names.
+        // The drive persists in motivation (not on the goal) and rebuilds, so the agent retries
+        // when the cooldown lapses or a new lead arrives. Off (no partial plan ever) → the field
+        // is never set and this is a no-op, so the path stays byte-identical.
+        if (goal._cooldownUntil != null && ctx.time < goal._cooldownUntil) return null;
         const fresh = planGoal(this, goal, ctx);
         if (!fresh) { goal._unreachable = true; return null; }   // pruneGoals drops it
         goal.plan = fresh; goal.step = 0; ptr = 0; goal._unreachable = false;
+        // a PARTIAL (satisfice) plan ran what it could toward the threshold; cool the goal so
+        // the still-unreached target isn't hammered every tick. PLAN.partialCooldown is the rest.
+        if (fresh.partial) goal._cooldownUntil = ctx.time + PLAN.partialCooldown;
         // REASONING-COST (Phase 3, measurement only): tally this replan + the fresh plan's
         // depth. Own-scalar writes; read truth-side in depthMetrics. Degrade-safe.
         this._planReplans = (this._planReplans || 0) + 1;

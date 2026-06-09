@@ -18,7 +18,7 @@
 // this module standalone — it is NOT wired into decide() yet.
 
 import * as THREE from 'three';
-import { PROFESSIONS, COMMODITIES, ECON, SIM, URCHIN } from './simconfig.js';
+import { PROFESSIONS, COMMODITIES, ECON, SIM, URCHIN, QUANTITY } from './simconfig.js';
 import { POI_KIND } from './world.js';
 import { STAGE, REASON } from './trace.js';
 import type { Agent, CognitionCtx, Goal, Plan, PlanStep, EntityId, Atom as AtomT, Stage, Reason } from '../../types/sim.js';
@@ -47,6 +47,8 @@ interface SubAtom {
   kind?: string;
   item?: string;
   corpseId?: EntityId;
+  need?: string;        // need_ge: which need the graded threshold is on
+  level?: number;       // need_ge: the believed need-level to reach (0..1)
 }
 // The concrete params a primitive's effectMatches chose (one loose bind per primitive).
 interface Bind {
@@ -71,6 +73,7 @@ interface SimState {
   at: PlannerPlace | null;
   received: Record<string, boolean>;
   knownAssoc: Record<string, boolean>;   // subjectIds whose `assoc` an earlier shadow/ask step arranged
+  need: Record<string, number>;          // believed need-levels the plan raises (graded-needs composition)
 }
 // One authored primitive (effectMatches/precondition/cost + executor metadata).
 interface Primitive {
@@ -82,6 +85,11 @@ interface Primitive {
 }
 // A solved sub-result: an ordered primitive list + its accumulated cost.
 interface Solved { steps: PlanStep[]; cost: number; }
+// The best-first search state threaded through the whole solve. `n` bounds the frontier;
+// the rest are the Phase-1 threshold-composition side-channel: `widen` (a bold agent taps
+// riskier sources), `partial`/`shortfall` (set when a numeric target was UNREACHABLE — the
+// satisfice plan() reads to cool the goal down). All absent/false when QUANTITY is off.
+interface Frontier { n: number; widen?: boolean; partial?: boolean; shortfall?: number; }
 
 // PROFESSIONS (from the still-JS simconfig) keyed by dynamic profession name. One typed
 // view so the planner can index it by an arbitrary string without per-access casts.
@@ -101,6 +109,8 @@ export const PLAN = {
   // --- goal-stack bounds (Phase 2 wiring) ---
   stackDepth: 4,       // hard cap on agent.goals (LIFO; oldest/lowest dropped)
   reachRange: 2.2,     // distance at which a transfer/attack target is "at" reach
+  // --- numeric-threshold composition (docs/architecture/10, Phase 1; gated by QUANTITY) ---
+  partialCooldown: 12, // sim-seconds an unreachable threshold goal rests before re-planning
 };
 
 // Goods an agent can hand over as a gift of "value" (consumable/tradeable).
@@ -223,6 +233,9 @@ export const Atom = {
   // gold_ge flavoured with the MARK to burgle (routes the burgle primitive); plain gold_ge
   // (no subjectId) is the honest seek_fortune target satisfied by sell/loot.
   stealGold: (amt: number, subjectId: EntityId): SubAtom => ({ pred: 'gold_ge', amt, subjectId }),
+  // GRADED NEED (Phase 1): a need raised to AT LEAST `level` (0..1) — a threshold, not a
+  // flag, so eating twice when one meal is short is an ordinary composed plan.
+  needGe: (need: string, level: number): SubAtom => ({ pred: 'need_ge', need, level }),
 };
 
 function atomHolds(atom: SubAtom, agent: Agent, ctx: CognitionCtx): boolean {
@@ -258,6 +271,9 @@ function atomHolds(atom: SubAtom, agent: Agent, ctx: CognitionCtx): boolean {
       const b = atom.subjectId != null && agent.beliefs ? agent.beliefs.get(atom.subjectId) : null;
       return !!(b && b.assoc);
     }
+    case 'need_ge':
+      // GRADED NEED (Phase 1): is the need already at/above the threshold level? Own state.
+      return ((atom.need ? agent.needs?.[atom.need] : 0) || 0) >= (atom.level || 0);
     default:
       return false;
   }
@@ -514,6 +530,95 @@ const byName = (n: string): Primitive | null => PRIMITIVES.find((p) => p.name ==
 function inReachPrecond(bind: { target: EntityId }): SubAtom[] { return [Atom.at({ subjectId: bind.target })]; }
 
 // ---------------------------------------------------------------------------
+// PHASE 1 — numeric-threshold composition (docs/architecture/10). Gated by
+// QUANTITY.enabled at the solveAtom seam: when off, neither composer is reached and
+// the planner is byte-identical. Each composer reasons over the HANDFUL of believed
+// sources an agent actually knows of, greedily stacking the best yield-for-cost until
+// the believed total crosses the target — or, when it cannot, returns the best PARTIAL
+// plan (the SATISFICE) and flags `frontier.partial`/`shortfall` so plan() cools the goal.
+// This is the one place the planner spends more than one step on a single numeric atom.
+// ---------------------------------------------------------------------------
+
+// Build a plan step in the shape the generic solver emits (so the executor + precond
+// helpers read it uniformly): { prim, bind, exec:{verb} }.
+function mkStep(name: string, bind: Bind, verb: string): PlanStep {
+  return { prim: name, bind: bind as unknown as PlanStep['bind'], exec: { verb } };
+}
+
+// Greedily raise believed gold to `target` by SELLING surplus at the believed market —
+// the conserved (moved-not-made) source a professionless poor agent actually has. Best
+// believed price first (best yield per uniform sell-cost). `frontier.widen` (a bold or
+// hard-driven agent) sells into the keep RESERVE too — the doc's "widen toward riskier
+// options". Threads a per-good simulated surplus so each sale depletes the source. Returns
+// [goto(market), sell×k]; sets frontier.partial when the believed total still falls short.
+function composeGold(agent: Agent, ctx: CognitionCtx, atom: SubAtom, frontier: Frontier, simState: SimState): Solved {
+  const target = atom.amt || 0;
+  let gold = simState.gold || 0;
+  if (gold >= target) return { steps: [], cost: 0 };
+  const marketCost = travelCost(agent, ctx, POI_KIND.MARKET);   // believed market; ∞ if none in mind
+  const keep = (ECON.keep as Record<string, number> | undefined) || {};
+  // enumerate sell-sources from the SIMULATED inventory, best believed price first.
+  const sources: { good: string; price: number; units: number }[] = [];
+  for (const c of COMMODITIES) {
+    const price = believedPrice(agent, c);
+    if (price == null) continue;
+    const reserve = frontier.widen ? 0 : (keep[c] || 0);
+    const units = Math.max(0, Math.floor((simState.inv[c] || 0) - reserve));
+    if (units > 0) sources.push({ good: c, price, units });
+  }
+  sources.sort((a, b) => b.price - a.price);
+  const steps: PlanStep[] = [];
+  let cost = 0;
+  for (const src of sources) {
+    if (gold >= target || steps.length >= PLAN.maxPlan - 1) break;
+    // sell a BATCH of this good — only as many units as the target still needs (the doc's
+    // "a cartload's believed yield"). The believed yield is price × units; the source depletes.
+    const need = Math.ceil((target - gold) / src.price);
+    const n = Math.min(src.units, need);
+    if (n <= 0) continue;
+    steps.push(mkStep('sell', { name: 'sell', good: src.good, price: src.price, n }, 'sell'));
+    cost += PLAN.actBase;
+    gold += src.price * n;
+  }
+  if (steps.length && Number.isFinite(marketCost)) {
+    steps.unshift(mkStep('goto', { name: 'goto', place: POI_KIND.MARKET }, 'goto'));
+    cost += marketCost;
+  } else if (steps.length) {
+    // believed market unreachable: can't actually sell — drop the steps, it's a pure shortfall.
+    steps.length = 0; cost = 0; gold = simState.gold || 0;
+  }
+  if (gold < target) { frontier.partial = true; frontier.shortfall = target - gold; }
+  return { steps, cost };
+}
+
+// Raise a graded NEED to AT LEAST `level` by eating — meeting a need is crossing a
+// threshold, not flipping a flag, so one meal short means a second meal is an ordinary
+// composed plan. Acquire the meals first (through the generic acquire machinery — gather /
+// buy / from stock), then eat them. Phase-1 scope is hunger (the one need with a consumable
+// good); other needs (rest/heal/socialise) join as their Tend rows land. Sets
+// frontier.partial when the meals can't be acquired (the satisfice the caller cools down).
+function composeNeed(agent: Agent, ctx: CognitionCtx, atom: SubAtom, depth: number, frontier: Frontier, simState: SimState): Solved {
+  const need = atom.need || 'hunger';
+  const level = atom.level || 0;
+  const cur = (simState.need[need] != null) ? simState.need[need] : ((agent.needs && agent.needs[need]) || 0);
+  if (need !== 'hunger' || cur >= level) {
+    if (cur < level) { frontier.partial = true; frontier.shortfall = level - cur; }
+    return { steps: [], cost: 0 };
+  }
+  const meals = Math.max(1, Math.min(PLAN.maxPlan - 1, Math.ceil((level - cur) / (QUANTITY.needMeal || 0.34))));
+  // acquire the food first (generic solver: from stock, gather, buy, …), then eat it.
+  const acquire = solveAll(agent, ctx, [Atom.have('food', meals)], depth + 1, frontier, simState);
+  if (!acquire) { frontier.partial = true; frontier.shortfall = level - cur; return { steps: [], cost: 0 }; }
+  const steps: PlanStep[] = [...acquire.steps];
+  let cost = acquire.cost;
+  for (let i = 0; i < meals && steps.length < PLAN.maxPlan; i++) {
+    steps.push(mkStep('consume', { name: 'consume', item: 'food' } as Bind, 'consume'));
+    cost += PLAN.actBase;
+  }
+  return { steps, cost };
+}
+
+// ---------------------------------------------------------------------------
 // The backward-chaining solver. Returns the min-cost ordered primitive list
 // that satisfies `goalAtom` from believed state, or null. Depth + frontier
 // bounded; every access guarded; never throws.
@@ -522,13 +627,22 @@ function inReachPrecond(bind: { target: EntityId }): SubAtom[] { return [Atom.at
 // Solve a single open atom into an ordered primitive list (steps) + cost.
 // `inv` is a believed-inventory delta map tracking goods/gold the plan already
 // arranges, so a later precond can be met by an earlier step's effect.
-function solveAtom(agent: Agent, ctx: CognitionCtx, atom: SubAtom, depth: number, frontier: { n: number }, simState: SimState): Solved | null {
+function solveAtom(agent: Agent, ctx: CognitionCtx, atom: SubAtom, depth: number, frontier: Frontier, simState: SimState): Solved | null {
   if (depth > PLAN.maxDepth) return null;
   if (frontier.n > PLAN.maxFrontier) return null;
   frontier.n++;
 
   // already satisfied in the simulated believed state?
   if (atomSatisfied(atom, agent, ctx, simState)) return { steps: [], cost: 0 };
+
+  // PHASE 1 (gated by QUANTITY): numeric-threshold atoms COMPOSE several acquisitions toward
+  // the target instead of emitting a single advancing step, and satisfice + flag the frontier
+  // when it cannot be reached. The subjectId-flavoured gold_ge (the urchin's burgle) keeps its
+  // own single-source path. Off → neither branch is reached, so the planner is byte-identical.
+  if (QUANTITY.enabled) {
+    if (atom.pred === 'gold_ge' && atom.subjectId == null) return composeGold(agent, ctx, atom, frontier, simState);
+    if (atom.pred === 'need_ge') return composeNeed(agent, ctx, atom, depth, frontier, simState);
+  }
 
   let best: Solved | null = null;
   for (const prim of PRIMITIVES) {
@@ -563,7 +677,7 @@ function solveAtom(agent: Agent, ctx: CognitionCtx, atom: SubAtom, depth: number
 }
 
 // Solve a list of atoms in order, threading the simulated state forward.
-function solveAll(agent: Agent, ctx: CognitionCtx, atoms: SubAtom[], depth: number, frontier: { n: number }, simState: SimState): Solved | null {
+function solveAll(agent: Agent, ctx: CognitionCtx, atoms: SubAtom[], depth: number, frontier: Frontier, simState: SimState): Solved | null {
   let state = simState, steps: PlanStep[] = [], cost = 0;
   for (const atom of atoms) {
     const r = solveAtom(agent, ctx, atom, depth, frontier, state);
@@ -582,10 +696,10 @@ function solveAll(agent: Agent, ctx: CognitionCtx, atoms: SubAtom[], depth: numb
 function initState(agent: Agent): SimState {
   const inv: Record<string, number> = {};
   for (const c of COMMODITIES) inv[c] = (agent.inventory && agent.inventory[c]) || 0;
-  return { inv, gold: agent.gold || 0, at: null, received: {}, knownAssoc: {} };
+  return { inv, gold: agent.gold || 0, at: null, received: {}, knownAssoc: {}, need: { ...(agent.needs || {}) } };
 }
 function cloneState(s: SimState): SimState {
-  return { inv: { ...s.inv }, gold: s.gold, at: s.at, received: { ...s.received }, knownAssoc: { ...s.knownAssoc } };
+  return { inv: { ...s.inv }, gold: s.gold, at: s.at, received: { ...s.received }, knownAssoc: { ...s.knownAssoc }, need: { ...s.need } };
 }
 function applyEffect(prim: Primitive, bind: Bind, agent: Agent, s: SimState): void {
   switch (prim.name) {
@@ -632,6 +746,8 @@ function atomSatisfied(atom: SubAtom, agent: Agent, ctx: CognitionCtx, s: SimSta
       return !!s.received[String(atom.subjectId)];
     case 'know_assoc':
       return !!s.knownAssoc[String(atom.subjectId)] || atomHolds(atom, agent, ctx);
+    case 'need_ge':
+      return ((atom.need ? s.need[atom.need] : 0) || 0) >= (atom.level || 0);
     default:
       return atomHolds(atom, agent, ctx);
   }
@@ -674,18 +790,30 @@ export function plan(agent: Agent, goal: Goal, ctx: CognitionCtx): Plan | null {
   const atoms = (goal.atoms || (goal.atom ? [goal.atom] : null)) as SubAtom[] | null;
   if (!atoms || !atoms.length) return null;
   try {
-    const frontier = { n: 0 };
+    const frontier: Frontier = { n: 0 };
+    // PHASE 1 (gated): drive-scaled WIDENING — a bold agent widens the failure search toward
+    // riskier sources (sells into its keep reserve). Personality (risk_tolerance) is the lever
+    // the doc names; the timid never widen. Off / no personality → undefined (no widen).
+    if (QUANTITY.enabled && agent.personality) frontier.widen = (agent.personality.risk_tolerance || 0) >= QUANTITY.widenRiskTol;
     const state = initState(agent);
     const r = solveAll(agent, ctx, atoms, 0, frontier, state);
+    // a PARTIAL result is the SATISFICE for an unreachable numeric threshold: it may carry
+    // the best steps the agent can run (earn what it can) OR be empty (pure shortfall). Either
+    // way it is NOT a dead end — plan() returns it (marked) so the goal layer runs/cools it
+    // rather than dropping the goal, and the drive persists in motivation.
+    const partial = !!(QUANTITY.enabled && frontier.partial);
     // TRACE (write-only, never read back): the GOAP outcome for this goal — a found plan
     // (with its step count) or a dead end (no feasible primitive chain → the agent replans
     // or abandons). Own data (goal kind + plan length). note() is internally guarded, and
     // agent.trace is always present (ctor) — so it is called directly, never read-guarded
     // (a `.trace` read would trip the write-only scan rule). Bounded — planning is per-goal.
-    if (!r || !r.steps.length) agent.trace.note(ST.PLAN, RS.PLAN_FAILED, { t: ctx.time, a: goal.kind || null });
+    if (!r || (!r.steps.length && !partial)) agent.trace.note(ST.PLAN, RS.PLAN_FAILED, { t: ctx.time, a: goal.kind || null });
     else agent.trace.note(ST.PLAN, RS.PLAN_FOUND, { t: ctx.time, a: r.steps.length, b: goal.kind || null });
-    if (!r || !r.steps.length) return null;
-    return { steps: r.steps, cost: r.cost };
+    if (!r) return null;
+    if (!r.steps.length && !partial) return null;
+    const out: Plan = { steps: r.steps, cost: r.cost };
+    if (partial) { out.partial = true; out.shortfall = frontier.shortfall; }
+    return out;
   } catch (_e) {
     return null;   // never throw on the tick
   }
@@ -772,6 +900,20 @@ export function goalSeekFortune(place: string, target: number): Goal {
     kind: 'seek_fortune', place, target: amt,
     atoms: [Atom.goldGe(amt)] as AtomT[],
     predicate(agent: unknown) { return ((agent as Agent).gold || 0) >= amt; },
+  };
+}
+
+// sate(need, level): raise a graded need ABOVE a believed level by eating (Phase 1; the
+// threshold composition is gated by QUANTITY at the planner seam). Deliberately NOT wired
+// into deriveGoals — the reactive needs scheduler still services hunger live; this exposes
+// the SAME need as a planner threshold so a later breadth phase can compose a meal-run toward
+// it (the doc's "needs are graded"). predicate reads own need only; never others'.
+export function goalSate(need: string, level: number): Goal {
+  const lv = Math.max(0, Math.min(1, level || 0));
+  return {
+    kind: 'sate', need, target: lv,
+    atoms: [Atom.needGe(need, lv)] as AtomT[],
+    predicate(agent: unknown) { const n = (agent as Agent).needs; return !!(n && (n[need] || 0) >= lv); },
   };
 }
 

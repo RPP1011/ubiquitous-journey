@@ -356,6 +356,24 @@ export const MOTIVE = {
   succourHunger: 0.4,    // hunger at/below which receiving a gift counts as being succoured
 };
 
+// --- QUANTITIES: numeric-threshold plan composition (docs/architecture/10, Phase 1) ----
+// The planner composes several acquisitions toward a numeric goal (hold >= N gold, a need
+// raised above a level) rather than emitting a single advancing step. Greedy: take the
+// acquisition with the best believed yield-for-cost, then the next, until the believed
+// total crosses the target. When the target is UNREACHABLE (the common case for a poor
+// agent), it (1) WIDENS toward riskier sources scaled by how bold the agent is, (2)
+// SATISFICES — commits the best partial plan it CAN reach (earn the 50, not the 80) — and
+// (3) puts the goal on a brief COOLDOWN so the unreachable sum is not re-attempted every
+// tick (anti-livelock). The drive persists in motivation and rebuilds. Day-one OFF, so the
+// planner is byte-identical and the soak is unchanged until a breadth phase turns it on.
+export const QUANTITY = {
+  enabled: false,
+  partialCooldown: 12,   // sim-seconds an UNREACHABLE threshold goal rests before re-planning
+  widenRiskTol: 0.6,     // risk_tolerance at/above which the failure search WIDENS (sells into
+                         //   the keep reserve / acts on thinner leads) — the bold widen, the timid don't
+  needMeal: 0.34,        // believed need-level a single `consume` raises (graded-needs composition)
+};
+
 // --- episodic memory (three-tier ring buffers) ------------------------------
 // Salient life-events flow STM -> MTM -> LTM by consolidation; medium fades over
 // minutes, long-term sticks. Feeds the inspector biography and (later) goals.

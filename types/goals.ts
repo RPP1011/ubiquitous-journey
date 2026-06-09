@@ -15,7 +15,7 @@ export type GoalKind =
 
 /** One world-state predicate atom the planner satisfies (js/sim/planner.js Atom). */
 export interface Atom {
-  pred: 'at' | 'have' | 'gold_ge' | 'received' | 'dead' | 'in_reach' | 'know_assoc';
+  pred: 'at' | 'have' | 'gold_ge' | 'received' | 'dead' | 'in_reach' | 'know_assoc' | 'need_ge';
   place?: string;
   good?: string;
   n?: number;
@@ -23,6 +23,8 @@ export interface Atom {
   subjectId?: EntityId;
   value?: number;
   kind?: string;
+  need?: string;     // need_ge: which need (hunger/energy/…) the threshold is on
+  level?: number;    // need_ge: the believed need-level to reach (graded, 0..1)
 }
 
 /** The concrete parameters a primitive chose when its effect unified with a subgoal. */
@@ -51,10 +53,15 @@ export interface PlanStep {
   exec?: { verb: string; [k: string]: unknown };
 }
 
-/** A cached plan on a goal: an ordered primitive list + total cost. */
+/** A cached plan on a goal: an ordered primitive list + total cost. `partial` marks a
+ *  SATISFICE — the best plan the agent could reach toward a numeric threshold it cannot
+ *  fully meet (docs/architecture/10, Phase 1); `shortfall` is how far the believed total
+ *  still falls short. A partial plan runs (earns what it can), then the goal cools down. */
 export interface Plan {
   steps: PlanStep[];
   cost: number;
+  partial?: boolean;
+  shortfall?: number;
 }
 
 /** A motivation goal. `kind` is the discriminator; variant-specific fields are loose (the
@@ -82,6 +89,7 @@ export interface Goal {
   expiresAt?: number;
   predicate?: (agent: unknown, ctx: unknown) => boolean;
   _unreachable?: boolean;
+  _cooldownUntil?: number;      // sim-time before which an unreachable threshold goal won't re-plan
   [k: string]: unknown;
 }
 

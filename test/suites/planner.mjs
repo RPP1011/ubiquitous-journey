@@ -5,8 +5,8 @@
 
 import { World } from '../../js/sim/world.js';
 import { Agent } from '../../js/sim/agent.js';
-import { plan, goalRepay, goalSeekFortune, goalAvenge, goalSteal } from '../../js/sim/planner.js';
-import { URCHIN } from '../../js/sim/simconfig.js';
+import { plan, goalRepay, goalSeekFortune, goalAvenge, goalSteal, goalSate } from '../../js/sim/planner.js';
+import { URCHIN, QUANTITY } from '../../js/sim/simconfig.js';
 
 export function plannerSelfTest(ok, { makeFighter, stubScene }) {
   const P = () => ({ risk_tolerance: 0.5, social_drive: 0.5, ambition: 0.5, altruism: 0.5, curiosity: 0.5 });
@@ -134,6 +134,60 @@ export function plannerSelfTest(ok, { makeFighter, stubScene }) {
   const pAvenge = plan(avenger, goalAvenge(foe.id), ctx);
   ok(pAvenge && names(pAvenge).includes('attack'),
     `planner: avenge chains an attack on the believed target (${names(pAvenge).join('->') || 'NULL'})`);
+
+  // QUANTITY — numeric-threshold composition (docs/architecture/10, Phase 1). Forced ON
+  // (day-one OFF), restored after. Proves: the planner COMPOSES several sales toward a gold
+  // target (greedy, best price first); an UNREACHABLE target SATISFICES (best partial + the
+  // partial flag plan() cools the goal on); a BOLD agent WIDENS into its keep reserve where a
+  // timid one will not; and a graded NEED composes several meals toward a level threshold.
+  {
+    const prevQ = QUANTITY.enabled;
+    QUANTITY.enabled = true;
+    try {
+      const sells = (pl) => pl ? pl.steps.filter((s) => s.prim === 'sell').length : 0;
+
+      // COMPOSITION — one sale of a single good can't cross the target, so the planner ADDS a
+      // second acquisition (a sale of another good) until the believed total crosses it. food
+      // surplus 5 @6 = 30, ore surplus 7 @5 = 35; 30 alone < 60, so a second sale is composed.
+      const rich = debtor('Rich', (a) => { a.inventory.food = 8; a.inventory.ore = 8; a.priceBeliefs.food = 6; a.priceBeliefs.ore = 5; });
+      const pRich = plan(rich, goalSeekFortune('market', 60), ctx);
+      ok(pRich && !pRich.partial && pRich.steps[0].prim === 'goto' && sells(pRich) >= 2,
+        `planner Q1: composes goto + several sales across goods toward a high target (${names(pRich).join('->') || 'NULL'})`);
+
+      // GREEDY — best believed price first. ore@9 outranks food@6, so the first SALE is ore.
+      const greedy = debtor('Greedy', (a) => { a.inventory.food = 8; a.inventory.ore = 8; a.priceBeliefs.food = 6; a.priceBeliefs.ore = 9; });
+      const pGreedy = plan(greedy, goalSeekFortune('market', 40), ctx);
+      const firstSale = pGreedy && pGreedy.steps.find((s) => s.prim === 'sell');
+      ok(firstSale && firstSale.bind.good === 'ore',
+        `planner Q2: greedy sells the higher-priced good first (${firstSale ? firstSale.bind.good : 'NONE'})`);
+
+      // SATISFICE — an UNREACHABLE target returns the best partial it CAN run (earn what it can),
+      // marked .partial with a positive shortfall, NOT a null dead-end. surplus 1 @6 = 6 << 80.
+      const poor = debtor('Poor', (a) => { a.inventory.food = 4; a.priceBeliefs.food = 6; });
+      const pPoor = plan(poor, goalSeekFortune('market', 80), ctx);
+      ok(pPoor && pPoor.partial === true && pPoor.shortfall > 0 && sells(pPoor) >= 1,
+        `planner Q3: unreachable target satisfices (partial, shortfall ${pPoor ? pPoor.shortfall : '?'}, ${names(pPoor).join('->') || 'NULL'})`);
+
+      // WIDEN — at exactly the keep reserve (food 3 == keep) a TIMID agent has no surplus and
+      // can't reach a small target; a BOLD agent (risk_tolerance past the widen gate) sells into
+      // the reserve and reaches it. Same beliefs + means; only nature differs.
+      const timid = debtor('Timid', (a) => { a.inventory.food = 3; a.priceBeliefs.food = 6; a.personality.risk_tolerance = 0.3; });
+      const bold = debtor('Bold', (a) => { a.inventory.food = 3; a.priceBeliefs.food = 6; a.personality.risk_tolerance = 0.9; });
+      const pTimid = plan(timid, goalSeekFortune('market', 10), ctx);
+      const pBold = plan(bold, goalSeekFortune('market', 10), ctx);
+      ok(pTimid && pTimid.partial === true && sells(pTimid) === 0,
+        `planner Q4a: a timid agent won't sell its keep reserve (${names(pTimid).join('->') || 'NULL'})`);
+      ok(pBold && !pBold.partial && sells(pBold) >= 1,
+        `planner Q4b: a bold agent widens into the reserve and reaches it (${names(pBold).join('->') || 'NULL'})`);
+
+      // GRADED NEED — meeting a need is crossing a level, not a flag: raising hunger 0.1 -> 0.8
+      // composes SEVERAL meals (eat twice+ when one is short), eaten from stock.
+      const hungry = debtor('Hungry', (a) => { a.inventory.food = 6; a.needs.hunger = 0.1; });
+      const pSate = plan(hungry, goalSate('hunger', 0.8), ctx);
+      const meals = pSate ? pSate.steps.filter((s) => s.prim === 'consume').length : 0;
+      ok(pSate && meals >= 2, `planner Q5: a graded need composes several meals (${meals} consume steps)`);
+    } finally { QUANTITY.enabled = prevQ; }
+  }
 
   // never throws on the tick path even for a junk goal
   let threw = false;
