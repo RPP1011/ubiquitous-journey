@@ -15,23 +15,45 @@
 
 import { CITY } from '../sim/simconfig.js';
 
-export const PART = { WALL: 'wall', FLOOR: 'floor', ROOF: 'roof', DOOR: 'door' };
-export const MATERIAL = { WOOD: 'wood', STONE: 'stone' };
+// `as const` so the part/material values are literal unions (not widened `string`),
+// matching the PartType/Material types below at every call site.
+export const PART = { WALL: 'wall', FLOOR: 'floor', ROOF: 'roof', DOOR: 'door' } as const;
+export const MATERIAL = { WOOD: 'wood', STONE: 'stone' } as const;
 
-const key = (tx, ty, lv) => `${tx},${ty},${lv}`;
-const matHp = (mat) => (mat === MATERIAL.STONE ? CITY.part.stoneHp : CITY.part.woodHp);
-const flammable = (mat) => mat === MATERIAL.WOOD;
+// ── FILE-LOCAL shapes (module-private: not part of the shared type layer) ──
+type PartType = typeof PART[keyof typeof PART];
+type Material = typeof MATERIAL[keyof typeof MATERIAL];
+/** One component tile of a building (its own hp + material + burning state). */
+interface Part { type: PartType; material: Material; hp: number; maxHp: number; burning: number; }
+/** The procedural shell of a building: a sparse map of component parts. */
+export interface Structure {
+  parts: Map<string, Part>;
+  foot: Set<string>;
+  base: number;
+  top: number;
+  orig: { wall: number; roof: number; count: number };
+}
+/** A plot as returned by CityGrid.claimPlot (only these fields are read here). */
+interface Plot { tiles: { tx: number; ty: number }[]; baseLevel: number; topLevel: number; yaw?: number; }
+/** Per-shell options (currently only the wall/floor material). */
+interface ShellOpts { material?: Material; }
+/** Per-strike options (fire flag drives ignition). */
+interface DamageOpts { fire?: boolean; }
+
+const key = (tx: number, ty: number, lv: number): string => `${tx},${ty},${lv}`;
+const matHp = (mat: Material): number => (mat === MATERIAL.STONE ? CITY.part.stoneHp : CITY.part.woodHp);
+const flammable = (mat: Material): boolean => mat === MATERIAL.WOOD;
 
 // build the procedural shell for a plot. `plot` is what CityGrid.claimPlot returns:
 // { tiles:[{tx,ty}], baseLevel, topLevel, yaw }. Returns a Structure:
 //   { parts: Map<key, {type,material,hp,maxHp,burning}>, foot:Set<"tx,ty">, base, top }
-export function generateShell(plot, opts = {}) {
+export function generateShell(plot: Plot, opts: ShellOpts = {}): Structure {
   const material = opts.material || MATERIAL.WOOD;
   const foot = new Set(plot.tiles.map((t) => key(t.tx, t.ty, 0)).map((k) => k.slice(0, k.lastIndexOf(','))));
-  const inFoot = (tx, ty) => foot.has(`${tx},${ty}`);
-  const isPerim = (tx, ty) => !inFoot(tx - 1, ty) || !inFoot(tx + 1, ty) || !inFoot(tx, ty - 1) || !inFoot(tx, ty + 1);
-  const parts = new Map();
-  const add = (tx, ty, lv, type, mat = material) => parts.set(key(tx, ty, lv), { type, material: mat, hp: matHp(mat), maxHp: matHp(mat), burning: 0 });
+  const inFoot = (tx: number, ty: number): boolean => foot.has(`${tx},${ty}`);
+  const isPerim = (tx: number, ty: number): boolean => !inFoot(tx - 1, ty) || !inFoot(tx + 1, ty) || !inFoot(tx, ty - 1) || !inFoot(tx, ty + 1);
+  const parts = new Map<string, Part>();
+  const add = (tx: number, ty: number, lv: number, type: PartType, mat: Material = material): Map<string, Part> => parts.set(key(tx, ty, lv), { type, material: mat, hp: matHp(mat), maxHp: matHp(mat), burning: 0 });
 
   // walls (perimeter) + floors (interior), one storey per level
   for (let lv = plot.baseLevel; lv <= plot.topLevel; lv++) {
@@ -41,7 +63,7 @@ export function generateShell(plot, opts = {}) {
   // façade addresses the street). forward = (-sin yaw, -cos yaw); tile axes track x/z.
   const fx = -Math.sin(plot.yaw || 0), fy = -Math.cos(plot.yaw || 0);
   let cx = 0, cy = 0; for (const t of plot.tiles) { cx += t.tx; cy += t.ty; } cx /= plot.tiles.length; cy /= plot.tiles.length;
-  let door = null, bestDot = -Infinity;
+  let door: { tx: number; ty: number } | null = null, bestDot = -Infinity;
   for (const t of plot.tiles) {
     if (!isPerim(t.tx, t.ty)) continue;
     const dot = (t.tx - cx) * fx + (t.ty - cy) * fy;
@@ -61,7 +83,7 @@ export function generateShell(plot, opts = {}) {
 
 // shelter report — the fraction of walls/roof still standing, and whether the building
 // still keeps the weather out (the gate on whether it confers its benefit at all).
-export function shelterReport(struct) {
+export function shelterReport(struct: Structure): { wallFrac: number; roofFrac: number; sheltered: boolean; intact: number } {
   let wallH = 0, roofH = 0;
   for (const p of struct.parts.values()) {
     if (p.type === PART.WALL || p.type === PART.DOOR) wallH += Math.max(0, p.hp);
@@ -76,11 +98,11 @@ export function shelterReport(struct) {
   return { wallFrac, roofFrac, sheltered, intact: intactCount(struct) };
 }
 
-function intactCount(struct) { let n = 0; for (const p of struct.parts.values()) if (p.hp > 0) n++; return n; }
+function intactCount(struct: Structure): number { let n = 0; for (const p of struct.parts.values()) if (p.hp > 0) n++; return n; }
 
 // damage a specific part. On reaching 0 hp the part is REMOVED (a hole / collapse). `fire`
 // damage can also IGNITE a flammable part it doesn't yet destroy. Returns true if destroyed.
-export function damagePart(struct, tx, ty, lv, amount, opts = {}) {
+export function damagePart(struct: Structure, tx: number, ty: number, lv: number, amount: number, opts: DamageOpts = {}): boolean {
   const k = key(tx, ty, lv);
   const p = struct.parts.get(k);
   if (!p) return false;
@@ -92,8 +114,8 @@ export function damagePart(struct, tx, ty, lv, amount, opts = {}) {
 
 // the raid's reach into a building: damage the toughest-standing WALL/DOOR nearest a point
 // (a raider battering the façade). Returns the part type hit, or null if nothing left to hit.
-export function strikeNearestWall(struct, tx, ty, dmg, opts = {}) {
-  let best = null, bestD = Infinity;
+export function strikeNearestWall(struct: Structure, tx: number, ty: number, dmg: number, opts: DamageOpts = {}): PartType | null {
+  let best: string | null = null, bestD = Infinity;
   for (const [k, p] of struct.parts) {
     if (p.type !== PART.WALL && p.type !== PART.DOOR) continue;
     const [px, py] = k.split(',').map(Number);
@@ -102,13 +124,13 @@ export function strikeNearestWall(struct, tx, ty, dmg, opts = {}) {
   }
   if (!best) return null;
   const p = struct.parts.get(best); const [px, py, pl] = best.split(',').map(Number);
-  const type = p.type;
+  const type = p ? p.type : null;
   damagePart(struct, px, py, pl, dmg, opts);
   return type;
 }
 
 // a thrown torch: ignite a flammable part near a point (the spark a raid spreads from).
-export function torch(struct, tx, ty, rng = Math.random) {
+export function torch(struct: Structure, tx: number, ty: number, rng: () => number = Math.random): boolean {
   for (const [k, p] of struct.parts) {
     if (!flammable(p.material)) continue;
     const [px, py] = k.split(',').map(Number);
@@ -121,14 +143,14 @@ export function torch(struct, tx, ty, rng = Math.random) {
 
 // fire spreads to the 4 horizontal neighbours AND climbs/drops a storey (biased upward —
 // fire climbs). A torch can gut a whole wood house if it isn't put out.
-const FIRE_NB = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, 1], [0, 0, -1]];
+const FIRE_NB: [number, number, number][] = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, 1], [0, 0, -1]];
 
 // advance any spreading fire: burning parts lose hp and (probabilistically) ignite adjacent
 // flammable parts; consumed parts are removed, then the structure SETTLES (anything left
 // unsupported collapses). Returns the count destroyed this step (incl. collapse).
-export function tickFire(struct, dt, rng = Math.random) {
+export function tickFire(struct: Structure, dt: number, rng: () => number = Math.random): number {
   let destroyed = 0;
-  const burning = [];
+  const burning: [string, Part][] = [];
   for (const [k, p] of struct.parts) if (p.burning > 0) burning.push([k, p]);
   for (const [k, p] of burning) {
     p.hp -= CITY.part.firePerSec * dt;
@@ -149,7 +171,7 @@ export function tickFire(struct, dt, rng = Math.random) {
 // floor rests on the earth. Iterated to a fixed point. Returns how many parts collapsed.
 // This is what makes a raid's destruction structural: breach the ground floor and the
 // whole house comes down, not just the tiles you hit.
-export function settle(struct) {
+export function settle(struct: Structure): number {
   let removed = 0, changed = true;
   while (changed) {
     changed = false;
@@ -162,10 +184,10 @@ export function settle(struct) {
   return removed;
 }
 
-export function anyBurning(struct) { for (const p of struct.parts.values()) if (p.burning > 0) return true; return false; }
+export function anyBurning(struct: Structure): boolean { for (const p of struct.parts.values()) if (p.burning > 0) return true; return false; }
 
 // an ASCII slice of one level — W wall · D door · . floor · R roof · * burning · (space) gone.
-export function asciiLevel(struct, lv, foot) {
+export function asciiLevel(struct: Structure, lv: number, foot: Set<string>): string {
   let minx = Infinity, maxx = -Infinity, miny = Infinity, maxy = -Infinity;
   for (const f of foot) { const [x, y] = f.split(',').map(Number); minx = Math.min(minx, x); maxx = Math.max(maxx, x); miny = Math.min(miny, y); maxy = Math.max(maxy, y); }
   const rows = [];
