@@ -41,8 +41,65 @@ import { MentalMap } from './mentalmap.js';
 import { Scarecrow } from './percept.js';
 import { reason } from './schemas/interpreter.js';
 import { ACTIVE as SCHEMA_CATALOGUE } from './schemas/catalogue.js';
+import type {
+  Agent as AgentShape, Percept, Perceivable, World as IWorld, MentalMap as IMentalMap,
+  Town, FullCtx, CognitionCtx, ResolverFacade, SiteHandle, MakeFighter,
+  Fighter as IFighter, CombatEvent, EntityId, AgentRef, PosSnapshot, AbilitySpec, Personality,
+  ActionEvent,
+} from '../../types/sim.js';
 
-const rand = (a, b) => a + Math.random() * (b - a);
+// A spawned town carries more than the shared Town type's id/center (the MentalMap reads
+// only those two): the sim also tracks radius + display name. Local widening — runtime-only.
+interface SimTown extends Town { radius: number; name: string; }
+
+// A camp's config row (simconfig.js CAMPS[key]) — the fields spawn/reinforce read. The
+// source object is untyped JS; this names exactly what we consume (all optional/loose).
+interface CampCfg {
+  faction: string;
+  model?: string;
+  scatter?: number;
+  name?: string;
+  leaderName?: string;
+  leaderThreat?: number;
+  threat?: number;
+  patrolR?: number;
+  leashR?: number;
+  ringMin?: number;
+  ringMax?: number;
+  raidActive?: boolean;
+  leaders?: number;
+  followers?: number;
+  reinforceEvery?: number;
+  reinforceMax?: number;
+}
+
+// A frontier CAMP: a leader + ring of followers anchored off the town core. Pure sim state.
+interface Camp {
+  key: string;
+  faction: string;
+  anchor: THREE.Vector3;
+  leader: AgentShape | null;
+  members: AgentShape[];
+  raidActive: boolean;
+  _lastReinforce: number;
+  _born: number;
+}
+
+// A minimal browser-visual scene. The vendored `three` is un-typed JS, so TS cannot see
+// Object3D's transform members; this covers exactly what spawn()/_spawn* touch.
+interface SceneLike { add(o: { position: THREE.Vector3 }): void; remove(o: unknown): void; }
+
+const rand = (a: number, b: number): number => a + Math.random() * (b - a);
+
+// Re-typed config views (arena.js / simconfig.js are un-typed JS inferred without string
+// index signatures — these name the by-key lookups the spawn paths perform).
+const REGIONS_T = REGIONS as Record<string, { danger?: number } | undefined>;
+const CAMPS_T = CAMPS as Record<string, CampCfg> | null | undefined;
+
+// Mint the next agent id. Agents use NUMERIC ids (EntityId = number | string), but the agent
+// cluster's private AgentCfg narrows cfg.id to `string`; this localises the one needed cast
+// so the four spawn call-sites stay clean while keeping ids genuinely numeric at runtime.
+const idCfg = (n: number): string => n as unknown as string;
 
 // synthesise a plausible given name from syllables — the fallback when the curated
 // NAMES pool is exhausted (large multi-town worlds + generations). Keeps the
@@ -50,12 +107,12 @@ const rand = (a, b) => a + Math.random() * (b - a);
 const _SYL_A = ['Ar', 'Bel', 'Cor', 'Dra', 'El', 'Fen', 'Gar', 'Hal', 'Il', 'Jor', 'Kel', 'Lor', 'Mor', 'Nor', 'Or', 'Per', 'Quen', 'Ral', 'Sel', 'Tor', 'Ul', 'Ver', 'Wyn', 'Yor', 'Zel'];
 const _SYL_B = ['a', 'e', 'i', 'o', 'ae', 'ia', 'ei', 'au'];
 const _SYL_C = ['dric', 'wyn', 'mar', 'ric', 'sa', 'lyn', 'don', 'gar', 'the', 'ven', 'na', 'ris', 'mund', 'far', 'dis', 'wald', 'ric', 'beth'];
-function synthName() {
-  const p = (arr) => arr[(Math.random() * arr.length) | 0];
+function synthName(): string {
+  const p = (arr: string[]): string => arr[(Math.random() * arr.length) | 0];
   return p(_SYL_A) + p(_SYL_B) + p(_SYL_C);
 }
 
-function makePersonality() {
+function makePersonality(): Personality {
   return {
     risk_tolerance: rand(0.2, 0.8),
     social_drive:   rand(0.2, 0.8),
@@ -66,13 +123,64 @@ function makePersonality() {
 }
 
 export class Simulation {
-  constructor(scene, world, opts = {}) {
+  // ───── core roster + world handles ─────
+  scene: SceneLike;
+  world: IWorld;
+  makeFighter: MakeFighter;
+  agents: AgentShape[];
+  agentsById: Map<EntityId, AgentShape>;
+  percepts: Percept[];
+  map: IMentalMap | null;
+  time: number;
+  player?: AgentShape;
+  towns?: SimTown[];
+  camps?: Record<string, Camp>;
+
+  // ───── internal bookkeeping ─────
+  _acc: number;
+  _nextId: number;
+  _names: string[];
+  _houseEverGrew: Set<unknown>;
+  houseFeuds: Set<unknown>;
+  tradesThisTick: number;
+  _busOff: (() => void) | null;
+  _resolver?: ResolverFacade;
+  _deathSeen?: Set<EntityId>;
+  _spawned?: boolean;
+
+  // ───── subsystems (value-imported classes; types inferred from their .js modules) ─────
+  reputation: Reputation;
+  quests: QuestBoard;
+  party: Party;
+  groups: Groups;
+  defenses: Defenses;
+  faith: Faith;
+  watch: Watch;
+  expeditions: Expeditions;
+  patrician: Patrician;
+  cities: Cities;
+  buildSites: BuildSites;
+  surveyor: Surveyor;
+  director: Director;
+  lineage: Lineage;
+  chronicle: Chronicle;
+  gazette: Gazette;
+  reporter: Reporter;
+  bounties: Bounties;
+  arbitrage: Arbitrage;
+  intrigue: Intrigue;
+
+  constructor(scene: SceneLike, world: IWorld, opts: { makeFighter?: MakeFighter } = {}) {
     this.scene = scene;
     this.world = world;
     // body factory: the browser builds visual Fighters (default); a headless
     // harness injects a logic-only HeadlessFighter so the sim runs with no
     // renderer/DOM. Everything downstream only touches the shared interface.
-    this.makeFighter = opts.makeFighter || ((model, o = {}) => new Fighter(model, o));
+    // the default factory wraps the un-typed visual Fighter (../fighter.js): its real
+    // `root` is a THREE.Group whose transform members the vendored stubs don't expose, so
+    // the concrete class isn't structurally the shared Fighter — cast the factory to the
+    // shared MakeFighter (the only surface the sim ever touches). Contained, runtime-only.
+    this.makeFighter = opts.makeFighter || (((model: string, o: { isPlayer?: boolean } = {}) => new Fighter(model, o)) as unknown as MakeFighter);
     this.agents = [];
     this.agentsById = new Map();
     // PERCEPTS: hittable, perceivable PROPS with no mind (Scarecrows). Kept OUT of
@@ -185,7 +293,7 @@ export class Simulation {
 
   // unsubscribe the bus router (call if the Simulation is ever torn down so
   // listeners don't stack and multiply XP on a fresh instance).
-  dispose() {
+  dispose(): void {
     if (this._busOff) { this._busOff(); this._busOff = null; }
     if (this.quests && this.quests.dispose) this.quests.dispose();
     if (this.party && this.party.disband) this.party.disband();
@@ -205,7 +313,7 @@ export class Simulation {
     this.percepts.length = 0;        // drop any props so a rebuilt world starts clean
   }
 
-  _takeName() {
+  _takeName(): string {
     if (this._names.length) return this._names.splice((Math.random() * this._names.length) | 0, 1)[0];
     // pool exhausted (many towns + generations churn through it) — SYNTHESISE a
     // plausible given name from syllables rather than an ugly "Unit<id>" (which
@@ -213,14 +321,14 @@ export class Simulation {
     return synthName();
   }
 
-  spawn(opts = {}) {
+  spawn(opts: { townsfolkPerTown?: number } = {}): void {
     // OPEN WORLD: several dense town cores (see TOWNS). Each townsperson belongs to
     // ONE town and lives/works/defends within its home band — so the world is big
     // (wilderness + roads between towns) WITHOUT thinning any town's social drama.
-    const centers = (TOWNS && TOWNS.centers && TOWNS.centers.length) ? TOWNS.centers : [[0, 0]];
-    const tr = (TOWNS && TOWNS.radius) || 70;
-    const tnames = (TOWNS && TOWNS.names) || [];
-    this.towns = centers.map((c, i) => ({ id: i, center: new THREE.Vector3(c[0], 0, c[1]), radius: tr, name: tnames[i] || `Town ${i + 1}` }));
+    const centers: number[][] = (TOWNS && TOWNS.centers && TOWNS.centers.length) ? TOWNS.centers : [[0, 0]];
+    const tr: number = (TOWNS && TOWNS.radius) || 70;
+    const tnames: string[] = (TOWNS && TOWNS.names) || [];
+    this.towns = centers.map((c, i): SimTown => ({ id: i, center: new THREE.Vector3(c[0], 0, c[1]), radius: tr, name: tnames[i] || `Town ${i + 1}` }));
     // CITIES: drop one CityGrid per town now that the town anchors exist — BEFORE any
     // build can commission a plot. Idempotent + guarded (never throws on a re-spawn).
     this.cities.seed();
@@ -240,8 +348,9 @@ export class Simulation {
     // cost stays flat as N grows. When opts is empty this is BYTE-IDENTICAL to the
     // default cohort — soak/depth/scenarios call sim.spawn() with no args and are
     // untouched. The towns/anchors/sites are unchanged; only the per-town headcount.
-    if (Number.isFinite(opts.townsfolkPerTown) && opts.townsfolkPerTown > 0) {
-      cohort = opts.townsfolkPerTown | 0;
+    const perTown = opts.townsfolkPerTown;
+    if (Number.isFinite(perTown) && (perTown as number) > 0) {
+      cohort = (perTown as number) | 0;
     }
     // a FULL cohort per town — the open-world point is more dense cores, NOT one
     // town spread thin (spreading the same people thins the drama — measured).
@@ -261,7 +370,7 @@ export class Simulation {
         fighter.root.position.set(px, py, pz);
         this.scene.add(fighter.root);
         const agent = new Agent(fighter, {
-          id: this._nextId++, name: this._takeName(),
+          id: idCfg(this._nextId++), name: this._takeName(),
           profession: null, personality: makePersonality(),
           faction: 'townsfolk', townsperson: true,
         });
@@ -286,7 +395,7 @@ export class Simulation {
       for (let t = 0; t < 4; t++) {
         const c = findBiomeSpot(BIOME.WILDS, ARENA_RADIUS * 0.74, ARENA_RADIUS * 0.96);
         if (!c) continue;
-        const dg = (REGIONS[regionAt(c.x, c.z)] || {}).danger || 0;
+        const dg = (REGIONS_T[regionAt(c.x, c.z)] || {}).danger || 0;
         if (dg > bestDanger) { bestDanger = dg; spot = c; }
       }
       spot = spot || new THREE.Vector3(ARENA_RADIUS * 0.85, 0, -ARENA_RADIUS * 0.85);
@@ -295,7 +404,7 @@ export class Simulation {
       fighter.root.position.set(sx, sy, sz);
       this.scene.add(fighter.root);
       const m = new Agent(fighter, {
-        id: this._nextId++, name: `${MONSTER.name} ${i + 1}`, profession: null,
+        id: idCfg(this._nextId++), name: `${MONSTER.name} ${i + 1}`, profession: null,
         personality: makePersonality(), faction: MONSTER.faction,
         combatant: true, threat: MONSTER.threat,
       });
@@ -339,11 +448,11 @@ export class Simulation {
   // self-contained: if a camp config is missing it's simply skipped. The camp's
   // leader is recorded on this.camps[key] so the Director can find + order it;
   // absence of a Director just leaves the camp lurking near its own ground.
-  _spawnCamps() {
+  _spawnCamps(): void {
     this.camps = {};
-    if (!CAMPS) return;
-    for (const key in CAMPS) {
-      const C = CAMPS[key];
+    if (!CAMPS_T) return;
+    for (const key in CAMPS_T) {
+      const C = CAMPS_T[key];
       if (!C) continue;
       // a camp anchor on a frontier ring, away from the town core.
       const ang = rand(0, Math.PI * 2);
@@ -351,7 +460,7 @@ export class Simulation {
       const ringMax = ARENA_RADIUS * (C.ringMax ?? 0.9);
       const r = rand(ringMin, ringMax);
       const ax = Math.cos(ang) * r, az = Math.sin(ang) * r;
-      const camp = { key, faction: C.faction, anchor: new THREE.Vector3(ax, 0, az), leader: null, members: [], raidActive: !!C.raidActive, _lastReinforce: -Infinity, _born: 0 };
+      const camp: Camp = { key, faction: C.faction, anchor: new THREE.Vector3(ax, 0, az), leader: null, members: [], raidActive: !!C.raidActive, _lastReinforce: -Infinity, _born: 0 };
 
       const nLeaders = C.leaders ?? 1;
       const nFollowers = C.followers ?? 0;
@@ -367,7 +476,7 @@ export class Simulation {
   // build ONE camp member at the camp anchor and register it (shared by initial
   // spawn + reinforcement). `mint=false` forces a zero purse/inventory so a body
   // added MID-RUN never adds gold to the closed loop (conservation must hold).
-  _spawnCampMember(camp, C, isLeader, mint) {
+  _spawnCampMember(camp: Camp, C: CampCfg, isLeader: boolean, mint: boolean): AgentShape {
     const fighter = this.makeFighter(C.model || MONSTER.model, {});
     const sc = isLeader ? 0 : (C.scatter ?? 5);
     const px = camp.anchor.x + rand(-sc, sc), pz = camp.anchor.z + rand(-sc, sc);
@@ -377,7 +486,7 @@ export class Simulation {
     camp._born++;
     const name = isLeader ? (C.leaderName || `${C.name} Leader`) : `${C.name} ${camp._born}`;
     const a = new Agent(fighter, {
-      id: this._nextId++, name, profession: null,
+      id: idCfg(this._nextId++), name, profession: null,
       personality: makePersonality(), faction: C.faction,
       combatant: true, threat: isLeader ? (C.leaderThreat ?? C.threat ?? 1) : (C.threat ?? 1),
     });
@@ -403,11 +512,11 @@ export class Simulation {
   // cooldown. Reinforcements are gold-neutral (no minting). Without this the camps
   // self-annihilate early (monster↔all + bandit↔rival enmity) and the factions go
   // extinct. Called by the Director on its slow throttle; fully guarded.
-  reinforceCamps() {
+  reinforceCamps(): void {
     if (!this.camps) return;
     const now = this.time;
     for (const key in this.camps) {
-      const camp = this.camps[key], C = CAMPS[key];
+      const camp = this.camps[key], C: CampCfg | undefined = CAMPS_T ? CAMPS_T[key] : undefined;
       if (!camp || !C) continue;
       camp.members = camp.members.filter((m) => m && m.alive);   // drop the fallen
       const target = (C.leaders ?? 1) + (C.followers ?? 0);
@@ -421,9 +530,9 @@ export class Simulation {
     }
   }
 
-  addPlayer(fighter) {
+  addPlayer(fighter: IFighter): AgentShape {
     const agent = new Agent(fighter, {
-      id: this._nextId++, name: 'You', profession: null,
+      id: idCfg(this._nextId++), name: 'You', profession: null,
       personality: makePersonality(), controlled: true, faction: 'outsider',
     });
     this.agents.push(agent);
@@ -440,8 +549,8 @@ export class Simulation {
   // perceivable (in _perceivables) and raid-damaged separately (construction._raidPass), but
   // the combat/fighter loop never touches it. Fast-path returns the bare agent-fighter array
   // when there are no combat-body percepts (the default world), so nothing changes shape there.
-  get fighters() {
-    const f = this.agents.map((a) => a.fighter);
+  get fighters(): Array<IFighter | Percept> {
+    const f: Array<IFighter | Percept> = this.agents.map((a) => a.fighter);
     if (!this.percepts.length) return f;
     const bodies = this.percepts.filter((p) => typeof p.isHitActive === 'function' && typeof p.update === 'function');
     return bodies.length ? f.concat(bodies) : f;
@@ -451,23 +560,25 @@ export class Simulation {
   // but is NOT an agent, so it is consumed ONLY by the perceive loop (never decide/act/
   // gossip/subsystems). Empty-percepts fast-path returns the bare roster reference, so the
   // default world's perceive pass is byte-identical.
-  _perceivables() { return this.percepts.length ? this.agents.concat(this.percepts) : this.agents; }
+  _perceivables(): Perceivable[] {
+    return this.percepts.length ? (this.agents as Perceivable[]).concat(this.percepts) : this.agents;
+  }
 
   // Register a perceivable PROP (Scarecrow) or PLACE (finished building) — the test +
   // world-spawn + construction entry point. Lives in `percepts`, never `agents`, so no
   // cognition loop ever touches a mindless body.
-  spawnPercept(p) { this.percepts.push(p); return p; }
+  spawnPercept(p: Percept): Percept { this.percepts.push(p); return p; }
 
   // Remove a perceivable (a gutted/ruined building) so no agent perceives a ghost at the
   // rubble — the symmetric teardown of spawnPercept. Idempotent; guarded; never throws.
-  despawnPercept(p) {
+  despawnPercept(p: Percept): Percept {
     try { const i = this.percepts.indexOf(p); if (i >= 0) this.percepts.splice(i, 1); } catch { /* */ }
     return p;
   }
 
   // Config-gated world spawn (bonus): place SCARECROW.count props per town in the
   // SCARECROW.ring annulus, dressed as SCARECROW.appearsAs. Guarded; never throws.
-  _spawnScarecrows() {
+  _spawnScarecrows(): void {
     try {
       const [r0, r1] = SCARECROW.ring || [22, 40];
       const towns = this.towns || [];
@@ -490,7 +601,7 @@ export class Simulation {
   // Lazy shared MENTAL MAP, built ONCE from a snapshot of static geography. Passes PLAIN
   // static args (world + towns) into the scan-clean MentalMap.build — mentalmap.js never
   // names sim.*. Rebuilt on spawn() (POIs/towns exist then); cleared on dispose().
-  _mentalMap() { return this.map || (this.map = MentalMap.build(this.world, this.towns)); }
+  _mentalMap(): IMentalMap { return this.map || (this.map = MentalMap.build(this.world, this.towns)); }
 
   // FULL BRIDGE ctx: the sanctioned reality-touch + orchestration surface. Handed ONLY
   // to the allowlisted modules (perceive/gossip, onCombatEvents, the combat resolver, and
@@ -500,7 +611,7 @@ export class Simulation {
   // `perceivables` sibling carries agents+props and is consumed ONLY by the perceive loop —
   // so a 'bandit' Scarecrow never reaches surveyor/intrigue/director/the AoE scan (the seam
   // is narrow by design, not merely asserted-safe).
-  _ctx() { return { agents: this.agents, perceivables: this._perceivables(), agentsById: this.agentsById, world: this.world, map: this._mentalMap(), time: this.time, player: this.player, playerId: this.player ? this.player.id : null, buildSites: this.buildSites, cities: this.cities, resolver: this._cogResolver() }; }
+  _ctx(): FullCtx { return { agents: this.agents, perceivables: this._perceivables(), agentsById: this.agentsById, world: this.world, map: this._mentalMap(), time: this.time, player: this.player || null, playerId: this.player ? this.player.id : null, buildSites: this.buildSites, cities: this.cities, resolver: this._cogResolver() }; }
 
   // LOD RELEVANCE (Phase 3 — Scale): is this agent worth full-fidelity cognition THIS tick?
   // Truth-side (lives in Simulation orchestration — reads own-state + truth, NEVER widens the
@@ -520,7 +631,7 @@ export class Simulation {
   //   7. near the player (player present)
   //   8. near its OWN town centre (headless fallback; monsters/raiders have no townAnchor and
   //      fall through here — caught by signal 1 when hunting, correctly thinned when idle+distant)
-  _isRelevant(a, ctx) {
+  _isRelevant(a: AgentShape, ctx: FullCtx): boolean {
     try {
       const g = a.goal;
       if (g && (g.kind === 'fight' || g.kind === 'flee')) return true;             // 1
@@ -531,7 +642,9 @@ export class Simulation {
       for (const b of a.beliefs.all())
         if (a.considerHostile(b) && b.confidence >= conf) return true;
       if ((ctx.time - (a._lastGoalChangeAt || 0)) < LOD.recentWindow) return true; // 6
-      const pp = this.player && this.player.root && this.player.root.position;     // 7
+      // legacy `.root` lives on the index tail (AgentShape declares `pos`, not `root`); the
+      // original reads it directly, so cast minimally to preserve the exact runtime check.
+      const pp = this.player && (this.player as { root?: { position?: THREE.Vector3 } }).root?.position; // 7
       if (pp && a.pos.distanceTo(pp) < LOD.playerRadius) return true;
       if (a.townAnchor && a.pos.distanceTo(a.townAnchor) < LOD.townCentreRadius) return true; // 8
       return false;
@@ -548,6 +661,11 @@ export class Simulation {
   //   · partyLeader — the controlled player-led party's leader handle, a documented game
   //                   mechanic, supplied to the follow steer-fill (resolveLeaderRef in
   //                   agent/steer.js — // EPISTEMIC-OK) only.
+  // NOTE: the return type is pinned via `satisfies CognitionCtx` on the literal (below),
+  // NOT an annotation on `()` — the epistemic STRUCTURAL gate (test/suites/epistemic.mjs)
+  // regex-scans `_cognitionCtx() {` and asserts the literal carries no roster/player/
+  // buildSites key, so the signature must stay bare. `satisfies` still gives the exact-shape
+  // compile-time guarantee (excess/missing keys vs CognitionCtx are errors) without widening.
   _cognitionCtx() {
     return {
       world: this.world,
@@ -562,17 +680,21 @@ export class Simulation {
       playerId: this.player ? this.player.id : null,
       partyLeader: (this.party && this.party.leader) ? this.party.leader : null,
       resolver: this._cogResolver(),
-    };
+    } satisfies CognitionCtx;
   }
 
   // The cognition RESOLVER: a narrow facade the restricted ctx hands to combatStep /
   // transfers. Cognition holds only these methods — never the internal agentsById — so it
   // cannot scan or dereference arbitrary entities. Every method is vision-/conservation-
   // gated and guarded (never throws on the tick). Built once, lazily.
-  _cogResolver() {
+  _cogResolver(): ResolverFacade {
     if (this._resolver) return this._resolver;
     const sim = this;
-    this._resolver = {
+    // A build-site's mutable progress fields — the concrete shape behind the opaque
+    // SiteHandle (unknown on the facade). The truth-side BuildSites owns it; the facade
+    // methods cast their handle to this internally so the public surface stays opaque.
+    type SiteState = { woodNeeded: number; woodHave: number; progress: number; lastProgressAt: number; pos: PosSnapshot };
+    const resolver: ResolverFacade = {
       // VISION-GATED ACTIVE PERCEPTION: if `observer` can SEE subjectId, write a fresh
       // belief (truth in → belief out, the sanctioned bridge) and return the real agent;
       // else null. Lets combatStep re-acquire a visible quarry without holding the roster.
@@ -720,16 +842,17 @@ export class Simulation {
           } catch { return null; }
         },
         // wood still owed to a site handle (drives the fell-wood branch).
-        woodOwed(handle) { try { return handle ? Math.max(0, handle.woodNeeded - handle.woodHave) : 0; } catch { return 0; } },
+        woodOwed(handle) { try { const h = handle as SiteState | null; return h ? Math.max(0, h.woodNeeded - h.woodHave) : 0; } catch { return 0; } },
         // contribute up to `units` of the agent's carried wood into the site (a pure commodity
         // transfer — closed money loop). Mutates inv.wood + site.woodHave; returns units moved.
         feedWood(agent, handle, units) {
           try {
-            if (!handle || !agent) return 0;
+            const h = handle as SiteState | null;
+            if (!h || !agent) return 0;
             const inv = agent.inventory || (agent.inventory = {});
-            let moved = 0, want = Math.min(units || 0, handle.woodNeeded - handle.woodHave, inv.wood || 0);
-            while (want > 0 && (inv.wood || 0) > 0 && handle.woodHave < handle.woodNeeded) {
-              inv.wood -= 1; handle.woodHave += 1; moved += 1; want -= 1;
+            let moved = 0, want = Math.min(units || 0, h.woodNeeded - h.woodHave, inv.wood || 0);
+            while (want > 0 && (inv.wood || 0) > 0 && h.woodHave < h.woodNeeded) {
+              inv.wood -= 1; h.woodHave += 1; moved += 1; want -= 1;
             }
             return moved;
           } catch { return 0; }
@@ -737,16 +860,17 @@ export class Simulation {
         // advance progress capped by woodHave/woodNeeded; returns the advance delta (>=0).
         advance(handle, dtSeconds, ctx) {
           try {
-            if (!handle) return 0;
-            const woodCap = handle.woodHave / (handle.woodNeeded || 1);
-            const next = Math.min(woodCap, handle.progress + BUILD.progressPerSec * (dtSeconds || 0));
-            if (next <= handle.progress) return 0;
-            const adv = next - handle.progress;
-            handle.progress = next; handle.lastProgressAt = (ctx && ctx.time) || handle.lastProgressAt;
+            const h = handle as SiteState | null;
+            if (!h) return 0;
+            const woodCap = h.woodHave / (h.woodNeeded || 1);
+            const next = Math.min(woodCap, h.progress + BUILD.progressPerSec * (dtSeconds || 0));
+            if (next <= h.progress) return 0;
+            const adv = next - h.progress;
+            h.progress = next; h.lastProgressAt = (ctx && ctx.time) || h.lastProgressAt;
             return adv;
           } catch { return 0; }
         },
-        pos(handle) { try { return handle ? handle.pos : null; } catch { return null; } },
+        pos(handle) { try { const h = handle as SiteState | null; return h ? h.pos : null; } catch { return null; } },
         // nearest forest POI to the agent (the fell-wood destination) — execution geography,
         // routed through the facade so buildStep names neither ctx.buildSites NOR ctx.world.
         nearestWood(agent) {
@@ -754,10 +878,11 @@ export class Simulation {
         },
       },
     };
-    return this._resolver;
+    this._resolver = resolver;
+    return resolver;
   }
 
-  update(dt) {
+  update(dt: number): void {
     this.time += dt;
     this.world.update(dt);
     // DEATH SWEEP: catch agents that died WITHOUT a melee combat event — a ranged/instant
@@ -771,7 +896,9 @@ export class Simulation {
     const cog = this._cognitionCtx();         // RESTRICTED cognition ctx (decide/act): no live roster
 
     for (const a of this.agents) {
-      if (!a.alive) { a.setLabelVisible(false); continue; }
+      // setLabelVisible is a visual-decor method on the Agent class, not on the shared
+      // AgentShape surface (it rides the index tail as `unknown`) — narrow to call it.
+      if (!a.alive) { (a.setLabelVisible as (v: boolean) => void)(false); continue; }
       if (a.autonomous) a.drainNeeds(dt);
     }
 
@@ -871,10 +998,10 @@ export class Simulation {
   }
 
   // Town-wide standing-order double auction (see market.js).
-  _runMarket() { return runMarket(this); }
+  _runMarket(): void { runMarket(this); }
 
   // emergent "market price": population-average belief (no central authority).
-  avgPrice(c) {
+  avgPrice(c: string): number {
     let sum = 0, n = 0;
     for (const a of this.agents) {
       if (a.controlled || !a.alive) continue;
@@ -886,13 +1013,13 @@ export class Simulation {
   // What an NPC currently thinks of the player (-1..1) and a short label, for
   // the inspector / dialogue. Delegates to the reputation ledger (falls back to
   // the NPC's faction bias when it holds no personal belief yet).
-  playerStanding(npcAgent) { return this.reputation.standing(npcAgent); }
-  playerStandingLabel(npcAgent) { return this.reputation.describe(npcAgent); }
-  factionStanding(faction) { return this.reputation.factionStanding(faction); }
+  playerStanding(npcAgent: AgentShape | null): number { return this.reputation.standing(npcAgent); }
+  playerStandingLabel(npcAgent: AgentShape | null): string { return this.reputation.describe(npcAgent); }
+  factionStanding(faction: string): number { return this.reputation.factionStanding(faction); }
 
   // Combat hostility predicate for resolveCombat. Decisions read beliefs; this
   // resolves who a landed blow may actually damage (ground truth + reputation).
-  isHostile(attackerFighter, targetFighter) {
+  isHostile(attackerFighter: IFighter, targetFighter: IFighter): boolean {
     const A = attackerFighter.agent, T = targetFighter.agent;
     if (!A || !T) return true;
     if (A.controlled) return true;                  // the player hits what they aim at
@@ -903,7 +1030,7 @@ export class Simulation {
   }
 
   // Turn a salient bus deed into an autobiographical episode (see deedRouter.js).
-  _recordDeed(a, ev) { return recordDeed(this, a, ev); }
+  _recordDeed(a: AgentShape, ev: ActionEvent): void { recordDeed(this, a, ev); }
 
   // --- Phase-B memory hooks: succoured + relic-found ------------------------
   // recordSuccoured: a directed transfer (give/pay) or a quest hand-over MOVED
@@ -911,7 +1038,7 @@ export class Simulation {
   // is formative — it becomes a `succoured` episode whose `withId` is the
   // BENEFACTOR, so deriveGoals can lift it into a repay(benefactor) goal. Guarded;
   // never throws on the tick. fromId may be the player or another NPC.
-  recordSuccoured(receiver, fromId, valence = 1) {
+  recordSuccoured(receiver: AgentShape, fromId: EntityId, valence = 1): void {
     if (!receiver || !receiver.memory || fromId == null) return;
     // desperate == genuinely low on food OR hungry; otherwise a gift is just nice,
     // not life-saving, and we don't mint a debt of gratitude from it.
@@ -928,7 +1055,7 @@ export class Simulation {
 
   // recordRelic: an agent obtained a relic at `place` — a delve-worthy episode that
   // deriveGoals lifts into a delve(place) goal (aspirational for NPCs). Guarded.
-  recordRelic(agent, place = 'a ruin') {
+  recordRelic(agent: AgentShape, place = 'a ruin'): void {
     if (!agent || !agent.memory) return;
     try {
       agent.memory.record({ t: this.time, kind: 'relic', place, valence: 1, salience: 0.7 });
@@ -936,7 +1063,7 @@ export class Simulation {
   }
 
   // Fold combat outcomes back into beliefs/reputation/memory (see combatEvents.js).
-  onCombatEvents(events) { return onCombatEvents(this, events); }
+  onCombatEvents(events: CombatEvent[]): void { onCombatEvents(this, events); }
 
   // THE _slain / belief-death BRIDGE (shared by the melee combat path in combatEvents.js
   // AND the death sweep below). When `dead` falls — by whoever's hand `killer` (may be null)
@@ -945,11 +1072,11 @@ export class Simulation {
   // signal the goal layer reads, and ERASE their stale belief about it. This is what lets a
   // vendetta close the instant its quarry dies, wherever the avenger is, however the killing
   // blow landed. Reads/writes only agent state; never throws (the freeze lesson).
-  stampSlain(dead, killer = null) {
+  stampSlain(dead: AgentShape | null, killer: AgentShape | null = null): void {
     if (!dead) return;
     try {
       const id = dead.id;
-      if (killer) { (killer._slain || (killer._slain = new Set())).add(id); }
+      if (killer) { (killer._slain || (killer._slain = new Set<EntityId>())).add(id); }
       for (const w of this.agents) {
         if (w === dead || w.controlled) continue;
         // anyone pursuing it (active goal) — OR who COULD re-derive a vendetta against it
@@ -964,7 +1091,7 @@ export class Simulation {
         const byMemory = !!(w.memory && typeof w.memory.recent === 'function' &&
           w.memory.recent(12).some((e) => e && (e.kind === 'assaulted' || e.kind === 'witnessed_death') && (e.withId === id || e.byId === id)));
         if (byGoal || byBelief || byMemory) {
-          (w._slain || (w._slain = new Set())).add(id);
+          (w._slain || (w._slain = new Set<EntityId>())).add(id);
           if (w.beliefs) w.beliefs.erase(id);   // I KNOW it's dead now — drop the stale sighting
         }
       }
@@ -976,9 +1103,9 @@ export class Simulation {
   // haven't yet processed, run the death bridge so vendettas/beliefs resolve. Killer is
   // unknown here (no event), so `_slain` is stamped on the avengers (who close their goal),
   // not on a specific slayer. Idempotent via `_deathSeen`. Guarded.
-  _sweepDeaths() {
+  _sweepDeaths(): void {
     try {
-      if (!this._deathSeen) this._deathSeen = new Set();
+      if (!this._deathSeen) this._deathSeen = new Set<EntityId>();
       for (const a of this.agents) {
         if (a.alive) continue;
         if (this._deathSeen.has(a.id)) continue;
