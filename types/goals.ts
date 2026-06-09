@@ -15,7 +15,7 @@ export type GoalKind =
 
 /** One world-state predicate atom the planner satisfies (js/sim/planner.js Atom). */
 export interface Atom {
-  pred: 'at' | 'have' | 'gold_ge' | 'received' | 'dead' | 'in_reach' | 'know_assoc' | 'need_ge' | 'know' | 'hold_until' | 'force_ge';
+  pred: 'at' | 'have' | 'gold_ge' | 'received' | 'dead' | 'in_reach' | 'know_assoc' | 'need_ge' | 'know' | 'hold_until' | 'force_ge' | 'freed' | 'wrecked';
   place?: string;
   good?: string;
   n?: number;

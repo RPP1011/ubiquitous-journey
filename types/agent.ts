@@ -90,6 +90,7 @@ export interface Obligation {
   amount?: number;           // optional magnitude (coin promised, etc.)
   expiry: number;            // sim-time after which the unfired obligation lapses
   at?: number;               // sim-time the obligation was made (for recurrence re-derivation)
+  dueAt?: number;            // recurrence (trigger 'time'): the sim-time the next instance comes due
 }
 
 /** A belief-reference handle returned by _nearestHostile — NOT the real object. */

@@ -6,8 +6,8 @@
 import { World } from '../../js/sim/world.js';
 import { Agent } from '../../js/sim/agent.js';
 import { plan, goalRepay, goalSeekFortune, goalAvenge, goalSteal, goalSate, goalLearn, goalMuster,
-  ACQUIRE, Atom, stepEffectHolds, recordBelieves, believesConf, complianceOf } from '../../js/sim/planner.js';
-import { URCHIN, QUANTITY, KNOW, ROB, HOLD, RECRUIT } from '../../js/sim/simconfig.js';
+  goalFree, goalWreck, ACQUIRE, Atom, stepEffectHolds, recordBelieves, believesConf, complianceOf } from '../../js/sim/planner.js';
+import { URCHIN, QUANTITY, KNOW, ROB, HOLD, RECRUIT, AFFECT } from '../../js/sim/simconfig.js';
 
 export function plannerSelfTest(ok, { makeFighter, stubScene }) {
   const P = () => ({ risk_tolerance: 0.5, social_drive: 0.5, ambition: 0.5, altruism: 0.5, curiosity: 0.5 });
@@ -367,6 +367,29 @@ export function plannerSelfTest(ok, { makeFighter, stubScene }) {
          believesConf(leader, c2.id, 'will_follow') === 0,
         'planner M5: a one-level Believes(candidate, will_follow) records + reads back');
     } finally { RECRUIT.enabled = prevRecruit; }
+  }
+
+  // AFFECT — changing another entity's physical state (docs/architecture/10, Phase 5). Forced ON
+  // (day-one OFF), restored after. `free` (cut a captive's bonds → freed) and `wreck` (sabotage →
+  // not intact) chain like attack: reach the believed target, then the trivial final act.
+  {
+    const prevAffect = AFFECT.enabled;
+    AFFECT.enabled = true;
+    try {
+      const captive = mk('Captive'); captive.pos.set(25, 0, 25);
+      const rescuer = debtor('Rescuer', () => {});
+      rescuer.beliefs.observe(captive.id, captive.faction, captive.pos, ctx.time, false);
+      const pFree = plan(rescuer, goalFree(captive.id), ctx);
+      ok(pFree && names(pFree).includes('free') && names(pFree).includes('goto'),
+        `planner A1: free chains reach-then-cut-the-bonds (${names(pFree).join('->') || 'NULL'})`);
+
+      const machine = mk('Machine'); machine.pos.set(26, 0, 26);
+      const saboteur = debtor('Saboteur', () => {});
+      saboteur.beliefs.observe(machine.id, machine.faction, machine.pos, ctx.time, false);
+      const pWreck = plan(saboteur, goalWreck(machine.id), ctx);
+      ok(pWreck && names(pWreck).includes('wreck'),
+        `planner A2: wreck chains reach-then-sabotage (${names(pWreck).join('->') || 'NULL'})`);
+    } finally { AFFECT.enabled = prevAffect; }
   }
 
   // never throws on the tick path even for a junk goal

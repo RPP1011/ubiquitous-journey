@@ -18,6 +18,7 @@ import { shadowGuard } from './suites/shadows.mjs';
 import { combatUnit } from './suites/combat.mjs';
 import { proceduralAbilityTest } from './suites/abilities.mjs';
 import { plannerSelfTest } from './suites/planner.mjs';
+import { obligationsTest } from './suites/obligations.mjs';
 import { executionTest } from './suites/execution.mjs';
 import { memoryGoalTest, npcCastTest } from './suites/memoryGoals.mjs';
 import { perceptTest } from './suites/percept.mjs';
@@ -47,6 +48,8 @@ shadowGuard(ok);
 combatUnit(ok, helpers);
 proceduralAbilityTest(ok);
 plannerSelfTest(ok, helpers);
+// Action-grammar Phase 5: the obligation ledger (commitments + recurrence), the one new store.
+obligationsTest(ok);
 executionTest(ok, helpers);
 memoryGoalTest(ok, helpers);
 npcCastTest(ok, helpers);

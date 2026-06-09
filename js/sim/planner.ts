@@ -18,7 +18,7 @@
 // this module standalone — it is NOT wired into decide() yet.
 
 import * as THREE from 'three';
-import { PROFESSIONS, COMMODITIES, ECON, SIM, URCHIN, QUANTITY, KNOW, ROB, HOLD, RECRUIT } from './simconfig.js';
+import { PROFESSIONS, COMMODITIES, ECON, SIM, URCHIN, QUANTITY, KNOW, ROB, HOLD, RECRUIT, AFFECT } from './simconfig.js';
 import { POI_KIND } from './world.js';
 import { STAGE, REASON } from './trace.js';
 import type { Agent, CognitionCtx, Goal, Plan, PlanStep, EntityId, Atom as AtomT, KnowTopic, Stage, Reason } from '../../types/sim.js';
@@ -83,6 +83,8 @@ interface SimState {
   known: Record<string, boolean>;        // topic-keys an earlier observe/ask/study step learned (Phase 2)
   held: Record<string, boolean>;         // hold_until conds an earlier hold step waited out (Phase 4)
   force: number;                         // believed force the plan has mustered so far (Phase 5 recruit)
+  freed: Record<string, boolean>;        // entities a free step has freed (Phase 5 Affect)
+  wrecked: Record<string, boolean>;      // entities a wreck step has wrecked (Phase 5 Affect)
 }
 // One authored primitive (effectMatches/precondition/cost + executor metadata).
 interface Primitive {
@@ -255,6 +257,10 @@ export const Atom = {
   // FORCE (Phase 5): muster a believed force of AT LEAST `amt` — own strength plus each
   // recruit's strength weighted by how likely they are believed to follow. A threshold like gold.
   forceGe: (amt: number): SubAtom => ({ pred: 'force_ge', amt }),
+  // AFFECT (Phase 5): another entity's physical state — freed (bonds cut) / wrecked (sabotaged).
+  // Planned against a BELIEVED state, as exposed to being wrong as a raid on a moved cache.
+  freed: (subjectId: EntityId): SubAtom => ({ pred: 'freed', subjectId }),
+  wrecked: (subjectId: EntityId): SubAtom => ({ pred: 'wrecked', subjectId }),
 };
 
 // A stable key for a hold condition, so the simulated `held` map can index it (Phase 4).
@@ -422,6 +428,10 @@ function atomHolds(atom: SubAtom, agent: Agent, ctx: CognitionCtx): boolean {
       // FORCE (Phase 5): a lone agent's LIVE believed force is just its own strength (recruits
       // exist only inside a plan until they actually muster). Below target ⇒ composeForce runs.
       return RECRUIT.selfStrength >= (atom.amt || 0);
+    case 'freed': case 'wrecked':
+      // AFFECT (Phase 5): a priori unmet — only an explicit free/wreck this plan performs satisfies
+      // it (like `received`). The believed physical state is resolved truthfully at execution.
+      return false;
     default:
       return false;
   }
@@ -768,6 +778,33 @@ export const PRIMITIVES: Primitive[] = [
     cost() { return PLAN.actBase; },
     exec: { verb: 'recruit' },
   },
+
+  // ── free(captive): the Affect row that cuts a captive's bonds (→ freed). A trivial final act
+  // gated by a hard requirement — be at the captive (and, in the full rescue, unopposed, which the
+  // hold-until on camp strength supplies). Gated by AFFECT.enabled; off → never matches, byte-stable. ──
+  {
+    name: 'free',
+    effectMatches(sg) {
+      if (!AFFECT.enabled || sg.pred !== 'freed' || sg.subjectId == null) return null;
+      return { name: 'free', target: sg.subjectId };
+    },
+    precondition(agent, ctx, bind) { return [Atom.inReach(bind.target as EntityId)]; },
+    cost() { return PLAN.actBase; },
+    exec: { verb: 'free' },
+  },
+
+  // ── wreck(target): the Affect row that sabotages (→ not intact). Same shape as free: reach it,
+  // then the trivial act. Gated by AFFECT.enabled. ──
+  {
+    name: 'wreck',
+    effectMatches(sg) {
+      if (!AFFECT.enabled || sg.pred !== 'wrecked' || sg.subjectId == null) return null;
+      return { name: 'wreck', target: sg.subjectId };
+    },
+    precondition(agent, ctx, bind) { return [Atom.inReach(bind.target as EntityId)]; },
+    cost() { return PLAN.actBase; },
+    exec: { verb: 'wreck' },
+  },
 ];
 
 const byName = (n: string): Primitive | null => PRIMITIVES.find((p) => p.name === n) || null;
@@ -981,10 +1018,10 @@ function solveAll(agent: Agent, ctx: CognitionCtx, atoms: SubAtom[], depth: numb
 function initState(agent: Agent): SimState {
   const inv: Record<string, number> = {};
   for (const c of COMMODITIES) inv[c] = (agent.inventory && agent.inventory[c]) || 0;
-  return { inv, gold: agent.gold || 0, at: null, received: {}, knownAssoc: {}, need: { ...(agent.needs || {}) }, known: {}, held: {}, force: RECRUIT.selfStrength };
+  return { inv, gold: agent.gold || 0, at: null, received: {}, knownAssoc: {}, need: { ...(agent.needs || {}) }, known: {}, held: {}, force: RECRUIT.selfStrength, freed: {}, wrecked: {} };
 }
 function cloneState(s: SimState): SimState {
-  return { inv: { ...s.inv }, gold: s.gold, at: s.at, received: { ...s.received }, knownAssoc: { ...s.knownAssoc }, need: { ...s.need }, known: { ...s.known }, held: { ...s.held }, force: s.force };
+  return { inv: { ...s.inv }, gold: s.gold, at: s.at, received: { ...s.received }, knownAssoc: { ...s.knownAssoc }, need: { ...s.need }, known: { ...s.known }, held: { ...s.held }, force: s.force, freed: { ...s.freed }, wrecked: { ...s.wrecked } };
 }
 function applyEffect(prim: Primitive, bind: Bind, agent: Agent, s: SimState): void {
   switch (prim.name) {
@@ -1015,6 +1052,9 @@ function applyEffect(prim: Primitive, bind: Bind, agent: Agent, s: SimState): vo
     case 'hold': s.held[holdKey(bind.cond)] = true; break;
     // FORCE (Phase 5): a recruit adds the candidate's compliance-weighted believed strength.
     case 'recruit': s.force = (s.force || 0) + (bind.amt || 0); break;
+    // AFFECT (Phase 5): free cuts the bonds; wreck sabotages — each flips a believed physical state.
+    case 'free':    s.freed[String(bind.target)] = true; break;
+    case 'wreck':   s.wrecked[String(bind.target)] = true; break;
   }
 }
 function applyStepsForward(agent: Agent, s: SimState, steps: PlanStep[]): SimState {
@@ -1048,6 +1088,10 @@ function atomSatisfied(atom: SubAtom, agent: Agent, ctx: CognitionCtx, s: SimSta
       return !!s.held[holdKey(atom.cond)] || atomHolds(atom, agent, ctx);
     case 'force_ge':
       return (s.force || 0) >= (atom.amt || 0);
+    case 'freed':
+      return !!s.freed[String(atom.subjectId)];
+    case 'wrecked':
+      return !!s.wrecked[String(atom.subjectId)];
     default:
       return atomHolds(atom, agent, ctx);
   }
@@ -1087,6 +1131,8 @@ function effectAdvances(prim: Primitive, atom: SubAtom, bind: Bind, agent: Agent
       if ((s.force || 0) >= (atom.amt || 0)) return false;
       return prim.name === 'recruit';
     }
+    case 'freed':   return prim.name === 'free';
+    case 'wrecked': return prim.name === 'wreck';
     default:       return true;
   }
 }
@@ -1258,6 +1304,17 @@ export function goalMuster(amt: number): Goal {
     atoms: [Atom.forceGe(target)] as AtomT[],
     predicate() { return false; },   // satisfied by the live party reaching strength (execution mechanic)
   };
+}
+
+// free(captive) / wreck(target): the Affect goals (Phase 5). Plan against a BELIEVED physical
+// state (the captive is held here, the thing is intact) — sound at plan time, possibly wrong at
+// execution (moved/already-freed), resolved truthfully on arrival. predicate is external (the
+// believed state is confirmed by perception); gated by AFFECT at the planner seam.
+export function goalFree(subjectId: EntityId): Goal {
+  return { kind: 'free', subjectId, atoms: [Atom.freed(subjectId)] as AtomT[], predicate() { return false; } };
+}
+export function goalWreck(subjectId: EntityId): Goal {
+  return { kind: 'wreck', subjectId, atoms: [Atom.wrecked(subjectId)] as AtomT[], predicate() { return false; } };
 }
 
 // Phase-5 knowledge accessors surfaced for the executor + tests: the one-level Believes model

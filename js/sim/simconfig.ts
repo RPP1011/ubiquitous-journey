@@ -433,6 +433,29 @@ export const RECRUIT = {
   minCompliance: 0.15,   // a recruit contributing less believed force than this isn't worth a row
 };
 
+// --- AFFECT: changing another entity's physical state (docs/architecture/10, Phase 5) ----
+// The Affect rows beyond strike(→dead): `free` (→ freed — cut a captive's bonds) and `wreck`
+// (→ not intact — sabotage). Each is a trivial final act gated by a hard requirement (be there,
+// unopposed); combat already resolves the third (strike→dead). The plan reasons against a
+// BELIEVED physical state and is as exposed to being wrong as a raid on a moved cache — the
+// captives may have been moved by arrival. Day-one OFF (the rows emit nothing), so byte-stable.
+export const AFFECT = {
+  enabled: false,
+};
+
+// --- LEDGER: the obligation store (docs/architecture/10, Phase 5 — the one new machinery) ----
+// A small per-agent store of standing INTENTIONS, each a (trigger, deferred action, counterparty,
+// expiry), checked against perception each tick. It absorbs the two things pushed out of the
+// one-shot plan: COMMITMENTS ("I'll pay you when you deliver") and RECURRENCE (a debt due each
+// season — a trigger that is a time). Structurally a little belief table with decay: a handful of
+// entries per agent, most empty. A ledger entry OUTLIVES every plan (unlike a hold-until, which
+// dies with its plan) — which is exactly why a commitment cannot just be a hold-until step. Gated
+// by LEDGER.enabled for any LIVE per-tick wiring (none yet), so the soak is byte-stable.
+export const LEDGER = {
+  enabled: false,
+  max: 8,                // hard cap on outstanding obligations per agent (bounded, like the belief table)
+};
+
 // --- episodic memory (three-tier ring buffers) ------------------------------
 // Salient life-events flow STM -> MTM -> LTM by consolidation; medium fades over
 // minutes, long-term sticks. Feeds the inspector biography and (later) goals.
