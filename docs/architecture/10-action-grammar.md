@@ -70,6 +70,26 @@ not enough. An action contributes a **believed yield** toward the amount — a s
 its believed price, taking a cache roughly its believed size — and the planner adds actions until the
 yields sum past the target, choosing the cheapest combination that does.
 
+**Reaching a threshold is greedy, and can fail.** The planner does not weigh every combination of
+sources — a dozen known sources make that space large, and the depth limit on the plan tree does not
+bound it. It is greedy: add the acquisition with the best believed yield for its cost, then the next,
+until the believed total crosses the target. That is cheap (bounded by the handful of sources an agent
+actually knows of) and good enough; it is not guaranteed optimal, and that is an accepted trade.
+
+Often the target *cannot* be reached — an agent wants 80 gold but believes it can lay hands on only 50
+across everything it knows. This is the common case, not an edge: agents want more than they can reach
+all the time, so the failure path is the hot path, and what the planner does on it sets the personality
+of every poor agent in the town. It does three things, in order. It first widens the search to options
+it would otherwise pass over — riskier acts, lower-confidence leads (a half-heard cache, a dangerous
+mark) — because once the safe sources fall short, the only plans that reach the target are expensive
+ones; how far it widens is set by how hard the underlying drive is pushing, so a desperate agent acts
+on rumour and a comfortable one does not. If even that falls short, it commits the best plan it *can*
+reach (earn the 50), partly relieving the drive. And it puts the goal on a brief cooldown, so the same
+unreachable target is not re-attempted every tick — which is what would otherwise livelock. The drive
+persists (it lives in motivation, not the goal); its pressure rebuilds, or a new lead arrives, and the
+agent tries again. The felt result is a poor soul who does what it can, bides its time, and takes a
+risk when the want gets bad enough — not one frozen on an impossible sum, nor one that stops wanting.
+
 Some quantities live on both sides of a plan. `Strength(place)` (how strong a force is somewhere) and
 `Price(good, place)` are facts a plan *reads* — is the camp too strong to attack? is this good cheap
 here? — and also targets a plan can *build toward*: gather a force that outnumbers the camp; raise
@@ -163,10 +183,16 @@ each decide for themselves. None of this needs a shared plan or a way to write a
 Some plans must wait for the world to change rather than act on it. A small party cannot storm a camp
 of thirty — but if it holds in concealment until it sees the raiders leave, the camp is briefly weak.
 That waiting is an explicit step, not an accident of re-planning: a **hold-until** step keeps the agent
-somewhere safe or hidden, re-checks a condition each tick, advances when the condition becomes
-believed-true, and abandons if a **deadline** passes first. The "refuse, scout, wait, move" shape of a
-rescue is exactly *go to a vantage → observe the camp → hold-until its believed strength drops →
-move*.
+somewhere safe or hidden, re-checks a condition each tick, and advances when the condition becomes
+believed-true. It abandons on either of two failures, and they are different: the **deadline** passes
+(the window never opened — wait elsewhere, or give up the goal), or the spot stops being safe (the agent
+is discovered — flee *now*). The second is the reactive layer's doing — a believed threat appearing
+mid-hold fires the same flee any agent would — and it **preempts** the held step. So the reactive rules
+and the planner are not as separate as "checked alongside" suggests: a reaction can interrupt an
+in-progress plan step, dropping or suspending the plan, after which the agent re-plans from wherever it
+ends up. The hold is where that interaction is routine, so it is specified here rather than assumed away.
+The "refuse, scout, wait, move" shape of a rescue is exactly *go to a vantage → observe the camp →
+hold-until its believed strength drops → move*.
 
 The same step covers the social plays that act-then-wait: show weakness then hold until the foe
 closes; make an offer then hold until it is taken — each abandoned if nobody bites. Goals carry an
@@ -219,6 +245,11 @@ Whatever the topic, a known fact carries:
 - a **provenance** — how it was learned (seen first-hand, heard, taught) and how many retellings deep,
 - a **last-updated time**, so it can fade.
 
+Retelling-depth earns its place as its own field rather than folding into confidence: it independently
+drives how a fact is *retold and credited* — the newspaper hedges a third-hand rumour, a speaker cites a
+source — separately from how much a plan trusts it. If it only ever fed confidence decay it would be an
+input, not a field; it is kept because that retelling behaviour reads it directly.
+
 These four are what make knowledge behave like knowledge rather than a fact sheet. Confidence and
 fading let a fact go **stale** — Pip raids a cache that was moved; provenance lets a fact **spread**
 through gossip while getting vaguer; and all of it lets a fact be **wrong**. They are also what the
@@ -244,8 +275,12 @@ that reads the right home for a given topic.
 - **Spreading**: gossip already carries facts between nearby agents, lowering confidence and noting
   the extra retelling; topics spread the same way, which is why a tip can hand you a cache location you
   never saw.
-- **Fading**: the existing decay lowers confidence over time; a fact nobody refreshes drifts back
-  toward unknown.
+- **Fading, and what pushes back**: confidence falls with time and with each retelling, so a fact nobody
+  renews drifts back toward unknown — but first-hand re-observation pushes it back up. The equilibrium is
+  the believable one: what agents keep seeing stays sharp, what stops being seen fades, and the town
+  forgets exactly the things no one is watching any more — not everything. (Decay alone, with nothing
+  pushing up, would make a town monotonically forget all it did not witness this instant — a specific and
+  wrong world; the upward pressure is what stops that.)
 
 ### Some lifecycles
 
@@ -261,6 +296,14 @@ that reads the right home for a given topic.
 - **Believing what others believe.** Seeing a town treat me with suspicion, I come to believe they
   believe me guilty — a `Believes` topic, a field with the same four parts as any other — and a
   reactive rule can act on it (flee, or petition the peace-keeper).
+- **A raid on an empty camp.** Physical state is believed like everything else, not specially kept
+  accurate. A party commits to freeing captives it believes are held at a camp; by the time it arrives
+  they have been moved, or killed, or the camp has emptied. The plan was sound at plan time and wrong at
+  execution — the physical twin of raiding a moved cache, with lives committed instead of a night wasted
+  — and it resolves the same way: the agents perceive the truth on arrival and re-plan or retreat.
+  `strike` and `free` plan against a believed `Dead` / `Freed` / held state exactly as `take` plans
+  against a believed cache, with the same exposure to being wrong; the document is no more careful about
+  physical state than about gold, because the engine isn't either.
 
 ## Where each action's real code lives
 
@@ -291,13 +334,41 @@ beliefs. The maintained code grows with the *vocabulary* — the actions and top
 are what emerge from it. All agents share that vocabulary the way speakers share a language and still
 say different sentences; the differences come from the beliefs, which are per-agent.
 
-Planning is not free, but it is occasional (on a new goal or a forced re-plan), bounded (a small depth
-and step limit), and thinned for distant or idle agents, so the cost per agent per tick stays flat as
-the population grows.
+## Cost and scale
 
-## Three plans in full
+The whole flat-vocabulary, no-shared-structure architecture rests on planning staying affordable as the
+town grows, so here are numbers rather than an assurance. A single plan is a hard-bounded backward
+search — a depth limit, a frontier limit, an eight-step plan limit — and measures about **3 µs** today
+(~300,000 plans per second on one core); the greedy threshold-composition above adds a small pass over
+the handful of sources an agent knows, which should keep it in the low tens of µs. A full frame for ~66
+agents — perception, gossip, reasoning, deciding, the market, acting, combat, all of it — is about
+**0.45 ms** (~37× real-time).
 
-The opening heist is deliberately simple. These three are closer to what the planner actually produces,
+Planning runs only when an agent takes a new goal, or a belief a current plan depends on changes; most
+ticks, most agents are carrying out a plan, not making one. The hard case is not the average — it is the
+**burst**, and the design's own dynamics manufacture it: forty traders who heard the same price rumour
+discover it stale the same tick and all re-plan together. This survives for one reason — a plan is cheap
+*and* bounded — so even the pathological tick where *every* agent re-plans at once costs population ×
+per-plan: at a target near **250 agents** and ~12 µs per plan, about **3 ms**, inside a 16 ms frame. The
+burst is affordable because the per-plan cost is capped, not because re-plans are rare.
+
+Beyond that — a far larger population, or a worse pathology — there is a **per-tick planning budget**: a
+cap on plans computed per tick, with agents that want to plan entering a priority queue (urgency and
+nearness first). When a burst exceeds the budget the excess spills into the next few ticks; the give is
+latency — a low-priority agent reacts a tick or two late, invisible off-screen — and the gain is that
+the per-tick cost is clamped no matter how many spike at once. At the target population the budget is
+rarely reached; it is a ceiling, not the normal path.
+
+So "thinned" means *this budget and its priority*, not agents going dark — and it changes how *often* a
+low-priority agent deliberates, never whether the world stays correct. The conserved quantities, gold
+and goods, are maintained every tick by the market and physics passes, which are not thinned; an
+off-screen economy therefore stays conserved and consistent while its agents merely deliberate less
+often. The reasoning-cost-per-agent-per-tick is measured by the test harness and gated to stay flat as
+the population grows — the number, not this paragraph, is what holds the claim up.
+
+## Four plans in full
+
+The opening heist is deliberately simple. These four are closer to what the planner actually produces,
 and each leans on a different part of the design.
 
 **The smuggler — quantities, confidence, and a stale price.** Mara wants to hold at least 80 gold. She
@@ -337,34 +408,94 @@ it to refuse — and is wiped if it tries — or it never sees the window open a
 the knowledge, not the swords. And if the scout is away when the raiders leave, the window is simply
 never noticed.
 
-## What this covers
+**The recruiter — building a force, the hardest path.** The rescue began with a party of four already
+formed; this is where that party comes from, and it is the case most likely to need new machinery, so it
+is the one worth walking. A would-be leader wants to assault a camp it believes has strength thirty;
+alone it has strength near one. The assault requires a believed force that outmatches the camp, so the
+leader builds toward that number the same way it would build toward 80 gold — by accumulation. The
+acquisition here is `recruit`: approach a candidate and offer to lead them. But a command does not bind
+another agent — they decide for themselves — so `recruit`'s effect is not "+1 to my force," it is a
+belief: *I believe this candidate will follow*, held at a confidence reflecting how likely they are to
+(a loyal friend, high; a wary stranger, low). The leader's believed force is its own strength plus each
+candidate's strength weighted by that compliance confidence, and the planner adds recruits — greedily,
+cheapest reliable force first — until the believed sum outmatches the camp; then the assault, with the
+scout-and-wait of the rescue, is gated on that sum.
 
-Across the range of situations a believable town wants — trade and arbitrage, theft and blackmail,
-courtship and reconciliation, scouting and rescue, and the rest — nearly every one is expressible with
-these actions and topics plus, at most, a new row or a new topic: data, not new machinery. The narrow exceptions are
-*recurrence* (anything on a repeating schedule, which is re-derived from memory rather than planned —
-see [Waiting and deadlines](#waiting-and-deadlines)) and *sub-combat tactics* like a feint, which
-belong to the fighter, below the planner. Single waits and deadlines, by contrast, are first-class.
+This composes from pieces already here: a numeric threshold (the force), an `Inform`-style act whose
+effect is a one-level belief about another (will-they-follow), and confidence feeding the sum exactly as
+it feeds cost. The honest part is the failure, and it is a good one — the confidence-weighting means a
+leader who signed up six reluctant followers has a believed force barely over the line and a real chance
+that, at the camp, only three actually show: the believed force was optimistic, the real force falls
+short, and the leader (seeing the shortfall) pulls back or re-plans — the physical twin of arriving at a
+moved cache. It is also why a careful leader prefers four certain followers to eight doubtful ones.
+`recruit` is a new row and "believed force" is a derived reading rather than a stored topic, but no new
+subsystem is needed — and because this is the path most likely to have cracked the architecture, walking
+it cleanly is the strongest single piece of evidence the rest holds.
 
-Tracing the harder situations through the real planner also shows that a "plan" is often richer than a
-straight line: economic plans emerge only when the cheap local options run out; social plans (bait,
-threaten, court, command) act to shift the odds and then hold, expiring if the other party never bites;
-and operations like a rescue are *refuse, scout, hold for the moment, then move*. In every case the
-plan can only form once the relevant belief has been gathered — which is what makes the behaviour
-believable rather than omniscient.
+## What this covers, and what it doesn't
+
+The honest claim is narrower than "everything is a row." The situations actually traced here — trade and
+arbitrage, theft, blackmail, courtship and reconciliation, scouting, recruiting, rescue — are expressible
+with these actions and topics plus, at most, a new row or a new topic; behaviours that plainly compose
+from them (a market corner is repeated buys, sabotage is `wreck`, a famine flight is `Move` off a
+believed-depleted place) are rows too. That is the claim, bounded by what has been walked, not asserted
+over everything imaginable. Three things need more than a row, and naming them is better than pretending.
+
+**Commitments need one small store.** "I'll pay you when you deliver," "I'll testify if you do" — a
+thing promised now and discharged later, when an event the agent perceives comes to pass. That is not an
+acquire row; it is a standing intention — a remembered `(trigger, deferred action, counterparty, expiry)`
+that perception can satisfy and time can lapse. So the vocabulary needs one piece of genuinely new
+machinery: a small per-agent **obligation ledger**, a handful of outstanding intentions checked against
+perception each tick. It is modest — structurally a little belief table with decay — but it is a store
+and a per-tick check, not a row, and the doc says so rather than smuggling it in.
+
+That same ledger absorbs two things the rest of the design pushed out of the one-shot plan.
+**Recurrence** — a debt due each season, a nightly patrol — was exiled from the plan, but *something* has
+to notice when the next instance comes due; that something is an entry in this ledger (a trigger that is
+a time or a believed condition), so recurrence is rehomed rather than hand-waved, and its cost is the
+ledger check: a few entries per agent, most agents empty. **Reciprocity**, by contrast, does *not* need
+the ledger — "I owe her one" is a scalar on my belief about her, a relational field like standing, that
+motivation reads when we next deal; it is a row after all, provided it is a stored field and not
+something re-derived by scanning all of memory every tick (which it isn't).
+
+**Contested resources are accepted, and scoped.** Two agents plan to take the same cache; both believe
+the full yield; the first to arrive gets it and the second finds it empty — the stale-belief failure
+again, believable once. But if scarce contested prizes were *common*, every contested plan would be a
+guaranteed wasted trip for all but one taker, and those wasted trips feed straight into the re-plan
+burst. The design's answer is that most acquisition is **non-rival** — gather from a regenerating node,
+buy from a market with depth — so contention is rare and reserved for genuinely singular prizes (one
+stash, one relic), where the race *is* the drama. A future feature that made scarce contested resources
+common would owe a cost back to the [scale budget](#cost-and-scale); today they are rare by construction.
+
+**One level of belief-about-belief, no deeper.** An agent models what another believes, but not what
+another believes a *third* believes. Blackmail is worth checking against this, since it sounds recursive:
+it works only if the mark believes I hold their secret. But from each side the reasoning is one level — I
+act to make the mark believe I have leverage (`Believes(mark, I-hold-it)`), and the mark decides to pay
+from its own one-level read (`Believes(me, knows-it)`); neither side needs "I believe you believe I
+believe." So blackmail stays in, at depth one. What the cap genuinely forbids is the con that turns on a
+third level, and those are out by design.
+
+Beyond these, the only thing outside a plan is *sub-combat tactics* — a feint lives in the fighter, below
+the planner. And tracing the harder situations shows a "plan" is often richer than a straight line:
+economic plans emerge only when the cheap local options run out; social plans act to shift the odds and
+then hold, expiring if the other never bites; operations are *refuse, scout, hold, move*. In every case
+the plan forms only once the belief has been gathered — which is what makes the behaviour believable
+rather than omniscient.
 
 ## Building it
 
-The planner's search gains one capability and otherwise stays as it is: composing several actions
-toward a **numeric threshold** (summing believed yields past a target, for gold, stockpiles, and
-graded needs), since that underpins the very first example. The actions then become rows generated
-from the tables above — defined as data rather than written as code.
+The planner gains two real capabilities; the rest is turning code into data. The capabilities are
+**numeric-threshold composition** (greedily summing believed yields past a target, with the failure
+semantics above — widen, satisfice, cooldown — since the unsatisfiable goal is the common case) and the
+small **obligation ledger** (the one new store, for commitments and rehomed recurrence). The actions then
+become rows generated from the tables above — defined as data rather than written as code.
 
 A sensible order — each step leaving the tests green, and any new behaviour switched off by default so
 the long-running soak is unchanged:
 
-1. **Quantities.** Make the planner compose actions toward a threshold, and let needs be graded. This
-   is foundational and load-bearing for everything that accumulates.
+1. **Quantities.** Make the planner compose actions toward a threshold, with the greedy search and the
+   widen/satisfice/cooldown failure path; let needs be graded. Foundational — everything that accumulates
+   rests on it, and it sets the personality of every poor agent, so it ships first.
 2. **Knowledge.** Build `Know(topic)` and the `observe` / `ask` / `study` actions over the knowledge
    model, and fold confidence into cost. Generalise the current single-purpose `shadow` (which only
    learns a cache) into `observe` over any topic, and fold the current `approach` into ordinary
@@ -372,6 +503,12 @@ the long-running soak is unchanged:
    and it lets a teacher reuse the machinery a spy uses.
 3. **Resources.** Turn `buy` / `gather` / `produce` / `loot` / `take` into rows of the acquire table,
    carrying the conservation rule.
-4. **Waiting.** Add the hold-until step and goal deadlines.
+4. **Waiting.** Add the hold-until step (both abort paths, and its preemption by the reactive layer) and
+   goal deadlines.
 5. **The rest**, as breadth requires — each a row, a field, or a topic: the remaining acquire rows, the
-   `Believes` effect, wrecking and freeing, and the place-state, strength, secret, and price topics.
+   `Believes` effect (one level), `recruit`, wrecking and freeing, and the place-state, strength, secret,
+   and price topics; plus the obligation ledger when commitments are wanted.
+
+A few of these have a cost to confirm under load before they are trusted — the planning budget at the
+correlated-staleness peak, the obligation-ledger check across a debt-bearing town — and the throughput
+harness is where those numbers get taken, not asserted.
