@@ -6,3 +6,6 @@
 # TypeScript emit (reproducible: `bunx tsc --noEmit && bunx tsc`)
 dist/
 node_modules/
+
+# git worktrees used by parallel agents (never commit)
+.claude/worktrees/
