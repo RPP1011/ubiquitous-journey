@@ -14,11 +14,25 @@ import * as THREE from 'three';
 import { Agent } from './agent.js';
 import { REPORTER, MONSTER, GAZETTE, ALERT } from './simconfig.js';
 import { buildBrief, gatherDispatches } from './gazette.js';
+import type { FullCtx } from '../../types/sim.js';
+import type { Dispatch } from './gazette.js';
+
+// The (still-.js) Simulation is reached into loosely here (towns/agents/gazette/quests/
+// makeFighter + a wide untyped news tail), so a precise type would be all-optional noise.
+type Sim = any;   // js Simulation — justified loose type (untyped sim spine + news tail)
+type Ag = any;    // a roster agent + its transient reporter scratch fields — justified loose type
 
 const REPORTER_PERSONALITY = { risk_tolerance: 0.35, social_drive: 0.95, ambition: 0.5, altruism: 0.6, curiosity: 0.95 };
 
 export class Reporter {
-  constructor(sim) {
+  sim: Sim;
+  _acc: number;
+  _wireAcc: number;
+  _filedSigs: Map<string, number>;
+  reporters: Agent[];
+  stats: { filed: number; wire: number };
+
+  constructor(sim: Sim) {
     this.sim = sim;
     this._acc = 0;
     this._wireAcc = 0;
@@ -28,13 +42,13 @@ export class Reporter {
   }
 
   // create the gazetteer agent(s) — called from Simulation.spawn() after townsfolk.
-  spawn() {
+  spawn(): void {
     if (!REPORTER || !REPORTER.enabled) return;
     const n = REPORTER.count || 1;
     for (let i = 0; i < n; i++) this._spawnOne(i);
   }
 
-  _spawnOne(i) {
+  _spawnOne(i: number): Agent {
     const sim = this.sim;
     const town = (sim.towns && sim.towns[i % sim.towns.length]) || { center: new THREE.Vector3(), radius: 70, id: 0 };
     const fighter = sim.makeFighter('knight', {});
@@ -42,10 +56,12 @@ export class Reporter {
     const py = typeof document === 'undefined' ? 0 : 0;
     fighter.root.position.set(px, py, pz);
     sim.scene.add(fighter.root);
+    // ids are numeric in this sim (EntityId = number|string); AgentCfg.id is narrowly
+    // typed `string` in the wave-1 agent port, so pass the loose spawn cfg as any.
     const a = new Agent(fighter, {
       id: sim._nextId++, name: REPORTER.name || 'the Gazetteer',
       profession: null, personality: { ...REPORTER_PERSONALITY }, faction: 'townsfolk',
-    });
+    } as any);
     a.reporter = true;
     a.combatant = false;            // a press observer, never a fighter
     a.canWork = false;              // no trade / economy (guarded everywhere)
@@ -61,7 +77,7 @@ export class Reporter {
     return a;
   }
 
-  tick(ctx, dt) {
+  tick(ctx: FullCtx | null, dt: number): void {
     try {
       if (!this.sim._spawned || !REPORTER || !REPORTER.enabled) return;
       this._acc += dt;
@@ -79,13 +95,13 @@ export class Reporter {
   // THE WIRE DESK — the paper sells USEFUL info: each cycle, publish the single
   // freshest, highest-VALUE dispatch (a price shock, a road danger, a posted
   // bounty) that isn't on cooldown. This is what makes the Gazette worth buying.
-  _wireDesk(step) {
+  _wireDesk(step: number): void {
     this._wireAcc += step;
     if (this._wireAcc < (GAZETTE.wireEvery || 10)) return;
     this._wireAcc = 0;
     const sim = this.sim, now = sim.time;
     const items = gatherDispatches(sim);
-    let best = null;
+    let best: Dispatch | null = null;
     for (const it of items) {
       const last = this._filedSigs.get(it.sig);
       if (last != null && now - last < this._cooldown(it.brief.kind)) continue;   // recently covered
@@ -97,8 +113,9 @@ export class Reporter {
       this.stats.wire++;
       // a published THREAT advisory puts that town on ALERT — the Watch musters
       // early and caravans hold off the road (channel 2: the town reads the warning).
-      if (best.brief.kind === 'threat' && best.brief.townId != null && sim.towns && sim.towns[best.brief.townId]) {
-        sim.towns[best.brief.townId]._alertUntil = now + (ALERT.duration || 110);
+      const threatTownId = best.brief.townId as number | null | undefined;
+      if (best.brief.kind === 'threat' && threatTownId != null && sim.towns && sim.towns[threatTownId]) {
+        sim.towns[threatTownId]._alertUntil = now + (ALERT.duration || 110);
       }
       if (this._filedSigs.size > 256) {   // bound the dedupe map
         for (const [k, t] of this._filedSigs) if (now - t > 600) this._filedSigs.delete(k);
@@ -106,14 +123,14 @@ export class Reporter {
     }
   }
 
-  _cooldown(kind) {
+  _cooldown(kind: string): number {
     if (kind === 'market') return GAZETTE.cooldownMarket || 150;
     if (kind === 'threat') return GAZETTE.cooldownThreat || 300;
     if (kind === 'opportunity') return GAZETTE.cooldownOpp || 220;
     return 200;
   }
 
-  _stepReporter(r, step) {
+  _stepReporter(r: Ag, step: number): void {
     const sim = this.sim, now = sim.time;
     const phase = r._rPhase || 'roam';
     if (phase === 'roam') {
@@ -145,18 +162,18 @@ export class Reporter {
 
   // file a story: build the brief and publish it to the Gazette (template now; the
   // browser press pump may upgrade the prose with the LLM later, in place).
-  _file(r, subj) {
+  _file(r: Agent, subj: Agent): void {
     try {
       const brief = buildBrief(subj, this.sim);
-      brief.filedInTown = (this.sim.towns && this.sim.towns[r.townId] && this.sim.towns[r.townId].name) || brief.dateline;
+      brief.filedInTown = (this.sim.towns && this.sim.towns[r.townId as number] && this.sim.towns[r.townId as number].name) || brief.dateline;
       if (this.sim.gazette) { this.sim.gazette.file(brief); this.stats.filed++; }
     } catch { /* never throw */ }
   }
 
   // pick the most NEWSWORTHY living townsperson for this reporter (town-biased).
-  _select(r) {
+  _select(r: Agent): Agent | null {
     const sim = this.sim, now = sim.time;
-    let best = null, bestScore = (REPORTER.minNewsworthy || 0.5);
+    let best: Agent | null = null, bestScore = (REPORTER.minNewsworthy || 0.5);
     for (const a of sim.agents) {
       if (!a || !a.alive || a.controlled || a.reporter) continue;
       if (a.faction === MONSTER.faction || a.faction !== 'townsfolk') continue;
@@ -173,7 +190,7 @@ export class Reporter {
   // the storied, those tied to a feud or a fresh PIVOTAL turn (a windfall, a relic,
   // a reconciliation). NOT raw memory salience: that featured every bystander who
   // "saw X fall" after one death. Scaled to compare with the wire desks' values.
-  _score(a, now) {
+  _score(a: Agent, now: number): number {
     let s = 0;
     try {
       const lvl = (a.progression && a.progression.totalLevel) || 0;
@@ -196,7 +213,7 @@ export class Reporter {
     return s;
   }
 
-  _ensureReporters() {
+  _ensureReporters(): void {
     this.reporters = this.reporters.filter((r) => r && r.alive);
     const want = (REPORTER.count || 1);
     while (this.reporters.length < want) {
@@ -205,5 +222,5 @@ export class Reporter {
     }
   }
 
-  dispose() { this.reporters = []; }
+  dispose(): void { this.reporters = []; }
 }

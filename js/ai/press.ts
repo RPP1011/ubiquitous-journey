@@ -13,6 +13,11 @@
 // Enable from the devtools console (same handle as dialogue): llmConfig({ enabled: true }).
 
 import { getConfig, isEnabled } from './llm.js';
+import type { ChatMessage, LlmConfig } from './llm.js';
+import type { StoryBrief } from '../../types/sim.js';
+
+/** The enriched prose an article body is replaced with: a headline + body. */
+export interface Prose { headline: string; body: string; }
 
 const PRESS_MAX_TOKENS = 200;     // a headline + a few sentences (longer than a dialogue line)
 
@@ -20,11 +25,15 @@ const PRESS_MAX_TOKENS = 200;     // a headline + a few sentences (longer than a
 // handed to the model — the system prompt forbids inventing anything beyond it, so
 // the epistemic split holds (the article reports the subject's testimony, not
 // omniscient world truth) by construction.
-function buildMessages(brief) {
-  const b = brief || {};
+function buildMessages(brief: StoryBrief): ChatMessage[] {
+  const b = brief || ({} as StoryBrief);
   if (b.kind === 'obituary') return buildObituaryMessages(b);
-  const subjLine = `${b.subjectName || 'A townsperson'}${b.epithet ? `, called "${b.epithet}"` : ''} — ${(b.bio && b.bio[0]) || 'a soul of the town'}, of ${b.dateline || 'the town'}.`;
-  const lines = [`SUBJECT: ${subjLine}`];
+  const hearsay = b.hearsay as { text?: string } | null | undefined;
+  const bio = (b.bio || []) as string[];
+  const memories = (b.memories || []) as string[];
+  const beats = (b.beats || []) as string[];
+  const subjLine = `${b.subjectName || 'A townsperson'}${b.epithet ? `, called "${b.epithet}"` : ''} — ${bio[0] || 'a soul of the town'}, of ${b.dateline || 'the town'}.`;
+  const lines: string[] = [`SUBJECT: ${subjLine}`];
   // THE ANGLE — the throughline to build the piece around (their drive + a fresh turn).
   if (b.drive) lines.push(`THE ANGLE: this soul is ${b.drive}. Build the item around this.`);
   if (b.risen) lines.push(`FRESH TURN: they have newly risen as ${b.risen} — a development worth leading with.`);
@@ -34,19 +43,19 @@ function buildMessages(brief) {
   if (b.mood) lines.push(`PRESENTLY: ${b.mood}.`);
   // a rumour the subject themselves spreads — print it AS their claim, hedged by its
   // provenance (it may well be false); never assert it as fact in your own voice.
-  if (b.hearsay && b.hearsay.text) lines.push(`A RUMOUR THEY REPEAT (attribute to them, do not endorse): they ${b.hearsay.text}.`);
-  if (b.bio && b.bio.length) lines.push(`DEEDS: ${b.bio.join('; ')}.`);
-  if (b.memories && b.memories.length) {
+  if (hearsay && hearsay.text) lines.push(`A RUMOUR THEY REPEAT (attribute to them, do not endorse): they ${hearsay.text}.`);
+  if (bio.length) lines.push(`DEEDS: ${bio.join('; ')}.`);
+  if (memories.length) {
     lines.push('WHAT THEY LIVED THROUGH (their own account):');
-    for (const m of b.memories) lines.push(` - ${m}`);
+    for (const m of memories) lines.push(` - ${m}`);
   }
-  const rel = b.relations || {};
-  const rels = [];
+  const rel = (b.relations || {}) as Record<string, unknown>;
+  const rels: string[] = [];
   if (rel.spouse) rels.push(`wed to ${rel.spouse}`);
   if (rel.rival) rels.push(`rival to ${rel.rival}`);
   if (rel.kin) rels.push(`${rel.kin} of kin`);
   if (rels.length) lines.push(`RELATIONS: ${rels.join('; ')}.`);
-  if (b.beats && b.beats.length) lines.push(`RECENT TOWN BEATS: ${b.beats.join(' ')}`);
+  if (beats.length) lines.push(`RECENT TOWN BEATS: ${beats.join(' ')}`);
   lines.push('Write the item.');
 
   const system =
@@ -68,16 +77,21 @@ function buildMessages(brief) {
 // An OBITUARY: same only-from-facts discipline, an elegiac register, and the
 // on-theme instruction to eulogise the person the TOWN believed in — leaning into
 // the gap when a name was blackened by rumour.
-function buildObituaryMessages(b) {
-  const subjLine = `${b.subjectName || 'A townsperson'}${b.epithet ? `, called "${b.epithet}"` : ''} — ${(b.bio && b.bio[0]) || 'a soul of the town'}, of ${b.dateline || 'the town'}.`;
-  const lines = [`THE DECEASED: ${subjLine}`, `HOW THEY FELL: they ${b.cause || 'have died'}.`];
-  if (b.bio && b.bio.length) lines.push(`THEIR LIFE: ${b.bio.join('; ')}.`);
-  if (b.memories && b.memories.length) { lines.push('WHAT THEY LIVED THROUGH:'); for (const m of b.memories) lines.push(` - ${m}`); }
-  const rel = b.relations || {}, rels = [];
+function buildObituaryMessages(b: StoryBrief): ChatMessage[] {
+  const bio = (b.bio || []) as string[];
+  const memories = (b.memories || []) as string[];
+  const cause = (b.cause as string | undefined) || 'have died';
+  const regardVal = (b.regard as number | undefined) || 0;
+  const subjLine = `${b.subjectName || 'A townsperson'}${b.epithet ? `, called "${b.epithet}"` : ''} — ${bio[0] || 'a soul of the town'}, of ${b.dateline || 'the town'}.`;
+  const lines: string[] = [`THE DECEASED: ${subjLine}`, `HOW THEY FELL: they ${cause}.`];
+  if (bio.length) lines.push(`THEIR LIFE: ${bio.join('; ')}.`);
+  if (memories.length) { lines.push('WHAT THEY LIVED THROUGH:'); for (const m of memories) lines.push(` - ${m}`); }
+  const rel = (b.relations || {}) as Record<string, unknown>;
+  const rels: string[] = [];
   if (rel.spouse) rels.push(`wed to ${rel.spouse}`);
   if (rel.kin) rels.push(`${rel.kin} of kin left behind`);
   if (rels.length) lines.push(`THEY LEAVE: ${rels.join('; ')}.`);
-  const regard = (b.regard || 0) > 0.25 ? 'well loved' : (b.regard || 0) <= -0.25 ? 'little mourned' : 'an ordinary regard';
+  const regard = regardVal > 0.25 ? 'well loved' : regardVal <= -0.25 ? 'little mourned' : 'an ordinary regard';
   lines.push(`THE TOWN'S REGARD: ${regard}${b.hounded ? ', and in their last days rumour had turned many against them (perhaps unjustly)' : ''}.`);
   lines.push('Write the obituary.');
   const system =
@@ -92,7 +106,7 @@ function buildObituaryMessages(b) {
 
 // Parse the model's reply into { headline, body }, defensively. Returns null if it
 // can't make a usable article (then the template stands).
-function parseArticle(raw) {
+function parseArticle(raw: unknown): Prose | null {
   if (typeof raw !== 'string') return null;
   let text = raw.trim();
   if (!text) return null;
@@ -101,7 +115,7 @@ function parseArticle(raw) {
   const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
   if (!lines.length) return null;
 
-  let headline = null, bodyLines = [];
+  let headline: string | null = null, bodyLines: string[] = [];
   for (const l of lines) {
     const m = /^headline\s*:\s*(.+)$/i.exec(l);
     if (m && !headline) { headline = m[1].trim(); continue; }
@@ -109,12 +123,12 @@ function parseArticle(raw) {
   }
   if (!headline) { headline = lines[0]; bodyLines = lines.slice(1); }   // no marker -> first line is the head
   headline = clean(headline, 140);
-  let body = clean(bodyLines.join(' '), 600);
+  const body = clean(bodyLines.join(' '), 600);
   if (!headline || !body) return null;
   return { headline, body };
 }
 
-function clean(s, max) {
+function clean(s: unknown, max: number): string {
   if (typeof s !== 'string') return '';
   let t = s.replace(/^["'“‘]+|["'”’]+$/g, '').trim();
   if (t.length > max) t = t.slice(0, max).trim();
@@ -123,15 +137,15 @@ function clean(s, max) {
 
 // --- the one public call ---------------------------------------------------
 // Resolves to { headline, body } or null. NEVER throws.
-export async function generateArticle(brief) {
-  let cfg;
+export async function generateArticle(brief: StoryBrief): Promise<Prose | null> {
+  let cfg: LlmConfig;
   try { cfg = getConfig(); } catch { return null; }
   if (!cfg.enabled || !cfg.endpoint) return null;
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), cfg.timeoutMs);
   try {
-    const headers = { 'Content-Type': 'application/json' };
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (cfg.apiKey) headers['Authorization'] = `Bearer ${cfg.apiKey}`;
     const res = await fetch(cfg.endpoint, {
       method: 'POST', headers, signal: ctrl.signal,
@@ -160,7 +174,16 @@ export async function generateArticle(brief) {
 // Returns a stop() handle. Safe no-op when the LLM is disabled or unavailable.
 let _busy = false;
 
-export async function pumpOnce(sim) {
+// The slice of the (still-.js) Simulation the pump reaches into — just its Gazette.
+interface PressSim {
+  gazette?: {
+    takePendingId(): number | null;
+    getById(id: number): { brief?: StoryBrief } | null;
+    applyArticle(id: number, prose: Prose): boolean;
+  } | null;
+}
+
+export async function pumpOnce(sim: PressSim | null | undefined): Promise<void> {
   try {
     if (_busy || !sim || !sim.gazette || !isEnabled()) return;
     const id = sim.gazette.takePendingId();
@@ -176,8 +199,8 @@ export async function pumpOnce(sim) {
 }
 
 // start a periodic pump (idempotent). `getSim` returns the live sim. Returns stop().
-let _interval = null;
-export function startPress(getSim, everyMs = 1500) {
+let _interval: ReturnType<typeof setInterval> | null = null;
+export function startPress(getSim: () => PressSim | null | undefined, everyMs = 1500): () => void {
   if (typeof window === 'undefined') return () => {};
   if (_interval) return () => stopPress();
   _interval = setInterval(() => {
@@ -185,4 +208,4 @@ export function startPress(getSim, everyMs = 1500) {
   }, everyMs);
   return () => stopPress();
 }
-export function stopPress() { if (_interval) { clearInterval(_interval); _interval = null; } }
+export function stopPress(): void { if (_interval) { clearInterval(_interval); _interval = null; } }

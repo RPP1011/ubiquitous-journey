@@ -9,20 +9,31 @@
 // completion is credited from combatEvents when a hunter's killing blow lands.
 // Modeled on Watch/Reporter: a thin subsystem that flags ordinary agents.
 
-import { BOUNTY, MONSTER, SIM } from './simconfig.js';
+import { BOUNTY, MONSTER } from './simconfig.js';
 import { isHomeBuilder } from './construction.js';
+import type { Bounty, FullCtx, EntityId } from '../../types/sim.js';
+
+// The (still-.js) Simulation is reached into loosely (agents/quests/gazette/world/
+// chronicle + a wide untyped tail), so a precise type would be all-optional noise.
+type Sim = any;   // js Simulation — justified loose type
+type Ag = any;    // js Agent off the roster — justified loose type (untyped news tail)
 
 export class Bounties {
-  constructor(sim) {
+  sim: Sim;
+  _acc: number;
+  _readAcc: number;
+  stats: { taken: number; done: number; failed: number };
+
+  constructor(sim: Sim) {
     this.sim = sim;
     this._acc = 0;
     this._readAcc = 0;
     this.stats = { taken: 0, done: 0, failed: 0 };
   }
 
-  _hunters() { return this.sim.agents.filter((a) => a && a.alive && a.bounty); }
+  _hunters(): Ag[] { return this.sim.agents.filter((a: Ag) => a && a.alive && a.bounty); }
 
-  tick(ctx, dt) {
+  tick(ctx: FullCtx | null, dt: number): void {
     try {
       if (!this.sim._spawned || !BOUNTY || !BOUNTY.enabled) return;
       this._acc += dt;
@@ -38,7 +49,7 @@ export class Bounties {
 
   // a hunter whose quarry is gone, whose quest was already claimed, or who ran out
   // of time, gives up and reverts to town life.
-  _supervise(a) {
+  _supervise(a: Ag): void {
     const b = a.bounty; if (!b) return;
     const sim = this.sim;
     const quest = sim.quests && sim.quests.byId ? sim.quests.byId(b.questId) : null;
@@ -46,14 +57,14 @@ export class Bounties {
     if (sim.time > b.expire) { this._release(a, true); return; }            // gave up
   }
 
-  _readingRound() {
+  _readingRound(): void {
     const sim = this.sim;
     if (this._hunters().length >= (BOUNTY.maxConcurrent || 2)) return;
     // the work currently advertised in the paper: recent OPPORTUNITY articles whose
     // quest is a live COMBAT contract (a hunt or a vendetta).
     const arts = (sim.gazette && sim.gazette.recent) ? sim.gazette.recent(20) : [];
-    const jobs = [];
-    const seen = new Set();
+    const jobs: any[] = [];
+    const seen = new Set<unknown>();
     for (const art of arts) {
       const b = art.brief; if (!b || b.kind !== 'opportunity' || b.questId == null || seen.has(b.questId)) continue;
       const q = sim.quests && sim.quests.byId ? sim.quests.byId(b.questId) : null;
@@ -75,28 +86,28 @@ export class Bounties {
     }
   }
 
-  _eligible(a) {
+  _eligible(a: Ag): boolean {
     return a && a.alive && a.autonomous && a.faction === 'townsfolk' &&
       !a.bounty && !a.watch && !a.reporter && !a.inParty && !a.expedition && !a.caravanRun && !a.spy &&
       !isHomeBuilder(a) &&   // leave home-builders to their capital project
       a.personality && a.personality.risk_tolerance >= (BOUNTY.recruitRisk || 0.62);
   }
 
-  _nearAMarket(a, r2) {
+  _nearAMarket(a: Ag, r2: number): boolean {
     try {
       const m = this.sim.world && this.sim.world.nearest ? this.sim.world.nearest('market', a.pos) : null;
       return !!m && a.pos.distanceToSquared(m.pos) <= r2;
     } catch { return false; }
   }
 
-  _someoneOn(questId) { return this.sim.agents.some((a) => a.bounty && a.bounty.questId === questId); }
+  _someoneOn(questId: EntityId): boolean { return this.sim.agents.some((a: Ag) => a.bounty && a.bounty.questId === questId); }
 
   // flag an agent as a bounty-hunter and point it at the quarry.
-  _take(a, q) {
+  _take(a: Ag, q: any): void {
     const sim = this.sim;
     const giver = sim.agentsById.get(q.giverId);
     const tgt = giver ? giver.pos : a.pos;
-    const bounty = {
+    const bounty: Bounty = {
       questId: q.id, type: q.type,
       faction: (q.type === 'avenge') ? null : MONSTER.faction,
       killerId: (q.type === 'avenge' && q.target) ? q.target.killerId : null,
@@ -114,7 +125,7 @@ export class Bounties {
 
   // a hunter's killing blow landed on a valid quarry — advance, and finish the job
   // if the count is met. Called from combatEvents. Returns true if completed.
-  creditKill(hunter, victim) {
+  creditKill(hunter: Ag, victim: Ag): boolean {
     try {
       const b = hunter && hunter.bounty; if (!b || !victim) return false;
       const match = b.killerId != null ? (victim.id === b.killerId) : (victim.faction === b.faction);
@@ -132,7 +143,7 @@ export class Bounties {
     } catch { return false; }
   }
 
-  _release(a, gaveUp) {
+  _release(a: Ag, gaveUp: boolean): void {
     if (!a) return;
     const r = a._bountyRestore;
     if (r) { a.combatant = r.combatant; a.canWork = r.canWork; }
@@ -141,7 +152,7 @@ export class Bounties {
     if (gaveUp) this.stats.failed++;
   }
 
-  _note(id, text) { try { if (this.sim.chronicle && this.sim.chronicle.note) this.sim.chronicle.note('press', id, text); } catch { /* */ } }
+  _note(id: EntityId, text: string): void { try { if (this.sim.chronicle && this.sim.chronicle.note) this.sim.chronicle.note('press', id, text); } catch { /* */ } }
 
-  dispose() { for (const a of this._hunters()) this._release(a, false); }
+  dispose(): void { for (const a of this._hunters()) this._release(a, false); }
 }

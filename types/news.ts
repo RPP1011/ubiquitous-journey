@@ -49,8 +49,10 @@ export interface StoryBrief {
 /** A filed Gazette article (a brief + its rendered body). */
 export interface Article {
   brief: StoryBrief;
+  id?: number;                  // monotonic Gazette id (set on file(); UI new-entry detection)
   headline?: string;
   body?: string;
+  source?: string;              // 'template' | 'llm' — the prose provenance
   t?: number;
   [k: string]: unknown;
 }

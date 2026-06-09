@@ -12,17 +12,24 @@
 // pump, which swaps an article's prose in place by id. Epistemic split intact: a
 // brief carries what the subject BELIEVES/REMEMBERS — a newspaper prints testimony.
 
-import { GAZETTE, MONSTER, COMMODITIES, BASE_PRICE } from './simconfig.js';
+import { GAZETTE, MONSTER, BASE_PRICE } from './simconfig.js';
 import { agentBiography, agentDrive } from './biography.js';
 import { memoryPhrase } from './memory.js';
 import { provenanceLabel } from './beliefs.js';
+import type { StoryBrief, Article, EntityId } from '../../types/sim.js';
 
-const nameOf = (sim, id) => {
+// The (still-.js) Simulation, and Agent-shaped subjects, are reached into loosely
+// here: this layer reads a wide, untyped tail of drama/news/society flags off both
+// (e.g. nemesis/warlord/epithet/mateId), so a precise type would be all-optional noise.
+type Sim = any;       // js Simulation — justified loose type (untyped news/drama tail)
+type Subject = any;   // js Agent — justified loose type (untyped news/drama tail)
+
+const nameOf = (sim: Sim, id: EntityId): string | null => {
   try { const o = sim && sim.agentsById && sim.agentsById.get(id); return o ? (o.given || o.name) : null; } catch { return null; }
 };
 
 // the town an agent calls home, as a dateline label.
-function townName(sim, a) {
+function townName(sim: Sim, a: Subject): string {
   try {
     if (a && a.townId != null && sim.towns && sim.towns[a.townId]) return sim.towns[a.townId].name || `Town ${a.townId}`;
   } catch { /* */ }
@@ -30,8 +37,8 @@ function townName(sim, a) {
 }
 
 // Compose a StoryBrief from a subject's read-only state. Pure + guarded.
-export function buildBrief(subject, sim) {
-  const brief = {
+export function buildBrief(subject: Subject, sim: Sim): StoryBrief {
+  const brief: StoryBrief = {
     kind: 'person',
     subjectId: subject.id,
     subjectName: subject.name,
@@ -76,7 +83,7 @@ export function buildBrief(subject, sim) {
   } catch { /* */ }
   try {
     const eps = subject.memory && subject.memory.salient ? subject.memory.salient(6) : [];
-    const m = eps.find((e) => e && e.kind === 'milestone' && (sim.time - (e.t || 0)) < 90);
+    const m = eps.find((e: any) => e && e.kind === 'milestone' && (sim.time - (e.t || 0)) < 90);
     if (m) brief.risen = m.label || brief.calling || null;
   } catch { /* */ }
   try {
@@ -89,19 +96,19 @@ export function buildBrief(subject, sim) {
   // the subject's OWN salient episodes, rendered as past-tense "interview answers"
   try {
     const eps = subject.memory && subject.memory.salient ? subject.memory.salient((GAZETTE.briefMemories || 4) * 3) : [];
-    const phrases = [...new Set(eps.map((e) => memoryPhrase(e, (id) => nameOf(sim, id))).filter(Boolean))];
+    const phrases = [...new Set(eps.map((e: any) => memoryPhrase(e, (id) => nameOf(sim, id) || '')).filter(Boolean))] as string[];
     // COLLAPSE the raider/monster grind: "bested Raider 347, bested Raider 339, …"
     // reads like a roster dump — summarise it as one count and keep the DISTINCT,
     // human stories (a windfall, a reconciliation, a named foe) up front.
     const grind = /(?:bested|killed|survived).*(?:Raider|\b)?\b(Raider \d+|of the wilds)/i;
-    const isGrind = (p) => /Raider \d+/.test(p) || /of the wilds/.test(p);
-    let grindN = 0; const kept = [];
+    const isGrind = (p: string) => /Raider \d+/.test(p) || /of the wilds/.test(p);
+    let grindN = 0; const kept: string[] = [];
     for (const p of phrases) { if (isGrind(p)) grindN++; else kept.push(p); }
     if (grindN >= 2) kept.push(`felled ${grindN} raiders of the wilds of late`);
     else if (grindN === 1) kept.push('bested a raider on the frontier');
     // tidy for prose: drop class brackets ([Smith] -> Smith) and fold a run of
     // "joined with X" bonds into a single clause so the line doesn't stutter.
-    const bonds = [], folded = [];
+    const bonds: string[] = [], folded: string[] = [];
     for (const p of kept.map((s) => s.replace(/[[\]]/g, ''))) {
       const m = /^joined with (.+)$/.exec(p);
       if (m) bonds.push(m[1]); else folded.push(p);
@@ -112,24 +119,26 @@ export function buildBrief(subject, sim) {
 
   // relationships (resolved to names)
   try {
-    if (subject.mateId != null) brief.relations.spouse = nameOf(sim, subject.mateId);
-    if (subject.rivalId != null) brief.relations.rival = nameOf(sim, subject.rivalId);
-    const kin = Array.isArray(subject.kinIds) ? subject.kinIds.filter((id) => sim.agentsById.get(id)).length : 0;
-    if (kin) brief.relations.kin = kin;
+    const relations = (brief.relations ||= {}) as Record<string, unknown>;
+    if (subject.mateId != null) relations.spouse = nameOf(sim, subject.mateId);
+    if (subject.rivalId != null) relations.rival = nameOf(sim, subject.rivalId);
+    const kin = Array.isArray(subject.kinIds) ? subject.kinIds.filter((id: EntityId) => sim.agentsById.get(id)).length : 0;
+    if (kin) relations.kin = kin;
   } catch { /* */ }
 
   // chronicle beats that name this subject (v1: name-match, beats are name-phrased).
   try {
     const want = (subject.given || subject.name || '').trim();
     if (want && sim.chronicle) {
-      const pool = [].concat(
+      const beats = (brief.beats ||= []) as unknown[];
+      const pool: any[] = ([] as any[]).concat(
         sim.chronicle.recent ? sim.chronicle.recent(40) : [],
         sim.chronicle.legends ? sim.chronicle.legends(20) : []);
-      const seen = new Set();
-      for (let i = pool.length - 1; i >= 0 && brief.beats.length < (GAZETTE.briefBeats || 3); i--) {
+      const seen = new Set<unknown>();
+      for (let i = pool.length - 1; i >= 0 && beats.length < (GAZETTE.briefBeats || 3); i--) {
         const b = pool[i];
         if (!b || !b.text || seen.has(b.id) || b.text.indexOf(want) < 0) continue;
-        seen.add(b.id); brief.beats.push(b.text.replace(/[[\]]/g, ''));
+        seen.add(b.id); beats.push(b.text.replace(/[[\]]/g, ''));
       }
     }
   } catch { /* */ }
@@ -140,7 +149,7 @@ export function buildBrief(subject, sim) {
 // Is this soul worth an obituary? Named foes/heroes (epithet/nemesis/warlord) always
 // are; otherwise only townsfolk of some standing (a rank, a family, the Watch) — not
 // the faceless mobs that die by the dozen in a raid. Pure + guarded.
-export function obituaryWorthy(a) {
+export function obituaryWorthy(a: Subject): boolean {
   try {
     if (!a || a.controlled) return false;
     if (a.epithet || a.nemesis || a.warlord) return true;
@@ -156,7 +165,7 @@ export function obituaryWorthy(a) {
 // TOWN regarded them (the average standing among all who knew them), including
 // whether RUMOUR helped bring them down (a name blackened by hearsay). The paper
 // eulogises the person the town BELIEVED in, which may not be who they were. Pure.
-export function buildObituary(subject, sim, slayer) {
+export function buildObituary(subject: Subject, sim: Sim, slayer: Subject): StoryBrief {
   const brief = buildBrief(subject, sim);
   brief.kind = 'obituary';
   brief.hearsay = null;                                  // an obituary is about THEM, not their gossip
@@ -192,7 +201,9 @@ export function buildObituary(subject, sim, slayer) {
 // reports a soul's testimony ("X will tell you, thirdhand, that Y is a scoundrel"),
 // which the reader can weigh against the truth (the inspector). Prefers charged +
 // well-travelled hearsay (the kind most likely to be wrong). Pure + guarded.
-function subjectHearsay(subject, sim) {
+interface Hearsay { text: string; garbled: boolean; who: string; claim: string; }
+
+function subjectHearsay(subject: Subject, sim: Sim): Hearsay | null {
   try {
     if (!subject.beliefs || !subject.beliefs.all) return null;
     let best = null, bestScore = 0;
@@ -206,7 +217,7 @@ function subjectHearsay(subject, sim) {
     if (!best) return null;
     const who = nameOf(sim, best.subjectId);
     if (!who || /\d/.test(who)) return null;   // skip generic mob names ("Bandit 6") — print real folk
-    let claim;
+    let claim: string;
     if (best.hostile) claim = best.rumorBorn ? `${who} is an enemy — though ${who} has done nothing to earn it` : `${who} is an enemy, best given a wide berth`;
     else if (best.standing <= -0.6) claim = `${who} is a scoundrel through and through`;
     else if (best.standing <= -0.3) claim = `${who} is not to be trusted`;
@@ -216,9 +227,17 @@ function subjectHearsay(subject, sim) {
   } catch { return null; }
 }
 
+/** The rendered prose a template/LLM article body carries. */
+interface ArticleProse { headline: string; body: string; }
+
+// The kind-specific brief views the article renderers read (market/threat/saga/…):
+// each kind carries a different loose set of fields beyond StoryBrief's declared
+// ones, so a single precise type would be a large all-optional union — kept loose.
+type BriefView = any;   // a kind-specific StoryBrief view (justified loose type)
+
 // Render a brief into a plain article with no model. Pure, never throws. The paper
 // SELLS intel, so each kind leads with what's USEFUL to a reader.
-export function templateArticle(brief, _sim) {
+export function templateArticle(brief: StoryBrief, _sim?: Sim): ArticleProse {
   try {
     switch (brief && brief.kind) {
       case 'market':      return marketArticle(brief);
@@ -235,7 +254,7 @@ export function templateArticle(brief, _sim) {
 }
 
 // MARKET — the most sellable intel: where buyers go wanting, where goods pile up.
-function marketArticle(b) {
+function marketArticle(b: BriefView): ArticleProse {
   const gap = Math.abs((b.demand || 0) - (b.supply || 0));
   if (b.wanted) {
     return {
@@ -250,7 +269,7 @@ function marketArticle(b) {
 }
 
 // THREAT — survival intel: who's on the roads, where the Watch should look.
-function threatArticle(b) {
+function threatArticle(b: BriefView): ArticleProse {
   const what = b.warlord ? 'a warlord mustering the camps for war' : 'a dread of the wilds';
   return {
     headline: cap(`Beware the roads near ${b.town}: ${b.foe} abroad`),
@@ -259,7 +278,7 @@ function threatArticle(b) {
 }
 
 // OPPORTUNITY — actionable: who's hiring, what bounty is posted, where the coin is.
-function opportunityArticle(b) {
+function opportunityArticle(b: BriefView): ArticleProse {
   return {
     headline: cap(b.title || 'A notice from the townsfolk'),
     body: `${b.desc || 'Help is wanted in the town.'} Any willing hand should enquire in person — coin and goodwill await those who answer.`,
@@ -271,7 +290,7 @@ function opportunityArticle(b) {
 // returns ride the chronicle as 'legend' beats, so we sniff them out and give
 // them the colour of the road. Frame choice varies by beat time so a run of one
 // kind doesn't read with the same tag-line each time.
-function eventArticle(b) {
+function eventArticle(b: BriefView): ArticleProse {
   const txt = b.line || '';
   if (/compan(y|ies)|expedition|the deep|the wilds|climb(s|ed) back/i.test(txt)) {
     const frame = /triumph|relic|slain/i.test(txt)
@@ -281,7 +300,7 @@ function eventArticle(b) {
         : 'Such is the lot of those who go out past the safe roads — glory or the grave, and seldom much between.';
     return { headline: cap(txt || 'From the Wilds'), body: frame };
   }
-  const frames = {
+  const frames: Record<string, string[]> = {
     legend:    ['The tale is on every tongue, from the market to the gate.', 'They will be telling this one by the fire for a long winter yet.'],
     union:     ['A glad day — and, for some Houses, a long-awaited peace.', 'The wine ran freely, and old grudges went politely unspoken for a night.'],
     vendetta:  ['Folk take their sides, and the Watch takes quiet note of both.', 'Blood has been sworn; now the town waits to see whether it is answered.'],
@@ -298,7 +317,7 @@ function eventArticle(b) {
 
 // SAGA — a completed arc, threaded into one retrospective. The whole point of the
 // feature: the reader sees how it BEGAN, turned, and ended as a single tale.
-function sagaArticle(b) {
+function sagaArticle(b: BriefView): ArticleProse {
   const s = b.saga || {};
   if (s.sagaKind === 'reckoning') {
     return {
@@ -398,19 +417,19 @@ function sagaArticle(b) {
 // the subject picks among phrasings, so the feed reads written-by-hand rather than
 // stamped — yet the same soul always reads the same way (headless-stable). The
 // optional LLM (press.js) upgrades this; this is the floor, and it should sing.
-function personArticle(brief) {
+function personArticle(brief: BriefView): ArticleProse {
   const name = brief.subjectName || 'A townsperson';
   const given = brief.given || name;
   const town = brief.dateline || 'the town';
   const seed = ((brief.subjectId || 0) * 2654435761) >>> 0;          // stable per-soul hash
-  const pick = (arr) => arr[seed % arr.length];
+  const pick = (arr: string[]): string => arr[seed % arr.length];
 
   const callingNoun = strip(brief.calling) || ((brief.bio && strip(brief.bio[0])) || 'soul of the town');
   const lead = (brief.memories && brief.memories[0]) || null;
   const drive = brief.drive || null;
 
   // --- the ANGLE: a themed headline, ordered by what's most arresting about them.
-  let headline;
+  let headline: string;
   if (brief.risen) {
     headline = pick([
       `Come Into Their Own: ${name} Rises as ${article(brief.risen)}`,
@@ -437,8 +456,8 @@ function personArticle(brief) {
   headline = cap(headline);
 
   // --- body: identity → the drive woven with a deed → ties → a closing colour.
-  const S = [];
-  const idClauses = [`${name} is ${article(callingNoun)} of ${town}`];
+  const S: string[] = [];
+  const idClauses: string[] = [`${name} is ${article(callingNoun)} of ${town}`];
   if (brief.role) idClauses.push(brief.role);
   if (brief.faith) idClauses.push(`and keeps the faith of ${brief.faith}`);
   S.push(cap(idClauses.join(', ') + '.'));
@@ -457,7 +476,7 @@ function personArticle(brief) {
   }
 
   const rel = brief.relations || {};
-  const rc = [];
+  const rc: string[] = [];
   if (rel.spouse) rc.push(`wed to ${rel.spouse}`);
   if (rel.rival) rc.push(`locked in a rivalry with ${rel.rival}`);
   if (rel.kin) rc.push(`with ${rel.kin} of kin at their back`);
@@ -475,23 +494,23 @@ function personArticle(brief) {
 // fell, recalls a deed or two and who they leave, and closes on the TOWN'S regard —
 // warm for the loved, cold for the reviled, and pointed when a name was blackened by
 // rumour (the epistemic sting: the paper buries the person the town BELIEVED in).
-function obituaryArticle(b) {
+function obituaryArticle(b: BriefView): ArticleProse {
   const name = b.subjectName || 'A soul of the town';
   const given = b.given || name;
   const town = b.dateline || 'the town';
   const calling = strip(b.calling) || 'soul of the town';
-  let headline;
+  let headline: string;
   if (b.villain) headline = `${name} Is Dead`;
   else if (b.hero) headline = `In Memoriam: ${name}, a Hero Fallen`;
   else if ((b.regard || 0) <= -0.2) headline = `${name} Is Dead — and Few Will Mourn`;
   else headline = `In Memoriam: ${name} of ${town}`;
 
-  const S = [];
+  const S: string[] = [];
   S.push(cap(`${name}, ${article(calling)} of ${town}, ${b.cause || 'has died'}.`));
   const mem2 = (b.memories || []).slice(0, 2);
   if (mem2.length) S.push(cap(`In life they ${joinAnd(mem2)}.`));
   const rel = b.relations || {};
-  const rc = [];
+  const rc: string[] = [];
   if (rel.spouse) rc.push(`a spouse, ${rel.spouse}`);
   if (rel.kin) rc.push(`${rel.kin} of kin`);
   if (rc.length) S.push(cap(`They leave ${joinAnd(rc)} behind.`));
@@ -505,30 +524,33 @@ function obituaryArticle(b) {
   return { headline: cap(headline), body: S.join(' ') };
 }
 
-function cap(s) { return s && s.length ? s[0].toUpperCase() + s.slice(1) : s; }
-function strip(s) { return (s || '').replace(/^\[+|\]+$/g, '').trim(); }              // class names print bracketed
-function article(noun) { const s = strip(noun || ''); return (/^[aeiou]/i.test(s) ? 'an ' : 'a ') + s; }
-function joinAnd(a) {
+function cap(s: string): string { return s && s.length ? s[0].toUpperCase() + s.slice(1) : s; }
+function strip(s: string | null | undefined): string { return (s || '').replace(/^\[+|\]+$/g, '').trim(); }              // class names print bracketed
+function article(noun: string | null | undefined): string { const s = strip(noun || ''); return (/^[aeiou]/i.test(s) ? 'an ' : 'a ') + s; }
+function joinAnd(a: string[]): string {
   if (!a || !a.length) return '';
   if (a.length === 1) return a[0];
   if (a.length === 2) return `${a[0]} and ${a[1]}`;
   return `${a.slice(0, -1).join(', ')}, and ${a[a.length - 1]}`;
 }
 
-const nearestTown = (sim, pos) => {
+const nearestTown = (sim: Sim, pos: any): any => {
   try {
     let best = null, bd = Infinity;
     for (const t of (sim.towns || [])) { const d = t.center.distanceToSquared(pos); if (d < bd) { bd = d; best = t; } }
     return best;
   } catch { return null; }
 };
-const nearestTownName = (sim, pos) => { const t = nearestTown(sim, pos); return t ? (t.name || `Town ${t.id}`) : 'the town'; };
+const nearestTownName = (sim: Sim, pos: any): string => { const t = nearestTown(sim, pos); return t ? (t.name || `Town ${t.id}`) : 'the town'; };
+
+/** One desk dispatch: a candidate wire story with a usefulness value + dedupe sig. */
+export interface Dispatch { value: number; sig: string; brief: StoryBrief; }
 
 // THE DESKS — mine live sim state for USEFUL, sellable intel. Pure + guarded; each
 // item is { value (usefulness to a reader), sig (for dedupe), brief }. The Reporter
 // publishes the freshest high-value items (see reporter._wireDesk).
-export function gatherDispatches(sim) {
-  const out = [];
+export function gatherDispatches(sim: Sim): Dispatch[] {
+  const out: Dispatch[] = [];
   try {
     // MARKET: per town × STAPLE commodity, the REAL supply/demand imbalance — total
     // unmet buyer demand (wantQty) vs sellable supply (sellQty). This is TRUE intel:
@@ -536,10 +558,11 @@ export function gatherDispatches(sim) {
     // on it actually sells (a high price BELIEF alone didn't track real demand). Made
     // goods (tool/potion) are excluded — priced by too few to be trustworthy news.
     const margin = GAZETTE.marketMargin || 4;
+    const basePrice = BASE_PRICE as Record<string, number>;
     const STAPLES = ['food', 'wood', 'ore', 'herb'];
     for (const town of (sim.towns || [])) {
       for (const good of STAPLES) {
-        let demand = 0, supply = 0, believers = 0; const vals = [];
+        let demand = 0, supply = 0, believers = 0; const vals: number[] = [];
         for (const a of sim.agents) {
           if (!a.alive || !a.autonomous || a.faction !== 'townsfolk' || a.townId !== town.id) continue;
           believers++;
@@ -551,10 +574,10 @@ export function gatherDispatches(sim) {
         const net = demand - supply;
         if (Math.abs(net) < margin) continue;       // market roughly in balance — no story
         vals.sort((x, y) => x - y);
-        const med = vals.length ? +vals[vals.length >> 1].toFixed(1) : (BASE_PRICE[good] || 1);
+        const med = vals.length ? +vals[vals.length >> 1].toFixed(1) : (basePrice[good] || 1);
         const wanted = net > 0;
         out.push({ value: 1.0 + Math.min(2, Math.abs(net) / 8), sig: `mkt:${town.id}:${good}:${wanted ? 'up' : 'dn'}`,
-          brief: { kind: 'market', good, town: town.name, dateline: town.name, originTown: town.id, med, base: BASE_PRICE[good] || 1, wanted, demand, supply, t: sim.time } });
+          brief: { kind: 'market', good, town: town.name, dateline: town.name, originTown: town.id, med, base: basePrice[good] || 1, wanted, demand, supply, t: sim.time } });
       }
     }
     // THREAT: named, persistent foes (a nemesis / warlord) abroad near a town.
@@ -579,11 +602,11 @@ export function gatherDispatches(sim) {
     // Each beat is reported ONCE (dedup by beat id via the reporter's cooldown map);
     // the beat text is already a finished line, so it IS the headline. This is what
     // makes the Gazette report the unfolding story, not just prices + profiles.
-    const NEWS = { legend: 3.0, raid: 2.4, union: 2.2, patrician: 2.0, vendetta: 2.0, faith: 1.8, prodigy: 1.6, watch: 1.6 };
-    const beats = [].concat(
+    const NEWS: Record<string, number> = { legend: 3.0, raid: 2.4, union: 2.2, patrician: 2.0, vendetta: 2.0, faith: 1.8, prodigy: 1.6, watch: 1.6 };
+    const beats: any[] = ([] as any[]).concat(
       sim.chronicle && sim.chronicle.legends ? sim.chronicle.legends(12) : [],
       sim.chronicle && sim.chronicle.recent ? sim.chronicle.recent(20) : []);
-    const seenBeat = new Set();
+    const seenBeat = new Set<unknown>();
     for (const b of beats) {
       if (!b || !b.text || seenBeat.has(b.id)) continue;
       const v = NEWS[b.kind]; if (v == null) continue;
@@ -605,7 +628,12 @@ export function gatherDispatches(sim) {
 }
 
 export class Gazette {
-  constructor(sim) {
+  sim: Sim;
+  articles: Article[];
+  _seq: number;
+  _pending: number[];
+
+  constructor(sim: Sim) {
     this.sim = sim;
     this.articles = [];      // bounded ring of published Articles, newest LAST
     this._seq = 0;           // monotonic id (UI new-entry detection)
@@ -615,39 +643,43 @@ export class Gazette {
   // Deterministic FILE: render the template immediately and publish it (so the feed
   // is never empty and headless/offline both populate), and queue it for the
   // browser press pump to upgrade in place. Returns the published article.
-  file(brief) {
+  file(brief: StoryBrief): Article {
+    const id = ++this._seq;
+    // Object.assign's literal result lacks Article's [k:string] index signature; the
+    // shape is Article-compatible (brief + headline/body + the carried fields), so
+    // widen it through unknown.
     const art = Object.assign({
-      id: ++this._seq, t: this.sim.time,
+      id, t: this.sim.time,
       subjectId: brief.subjectId, subjectName: brief.subjectName,
       originTown: brief.originTown, dateline: brief.dateline,
       source: 'template', brief,
-    }, templateArticle(brief, this.sim));
+    }, templateArticle(brief, this.sim)) as unknown as Article;
     this.articles.push(art);
     const cap = (GAZETTE.cap || 60);
     if (this.articles.length > cap) this.articles.shift();
     // PERSON profiles and OBITUARIES get the optional LLM prose upgrade; market/
     // threat/opportunity notices are short factual intel — the template IS the voice.
     const k = brief.kind || 'person';
-    if (k === 'person' || k === 'obituary') this._pending.push(art.id);
+    if (k === 'person' || k === 'obituary') this._pending.push(id);
     return art;
   }
 
-  getById(id) { return this.articles.find((a) => a.id === id) || null; }
+  getById(id: number): Article | null { return this.articles.find((a) => a.id === id) || null; }
 
   // browser press pump: pull the next article needing enrichment (id), if any.
-  takePendingId() { return this._pending.length ? this._pending.shift() : null; }
+  takePendingId(): number | null { return this._pending.length ? (this._pending.shift() as number) : null; }
 
   // swap LLM prose into an already-published article (by id), keeping its slot.
-  applyArticle(id, prose) {
+  applyArticle(id: number, prose: { headline?: string; body?: string } | null | undefined): boolean {
     const a = this.getById(id);
     if (!a || !prose || !prose.headline || !prose.body) return false;
     a.headline = prose.headline; a.body = prose.body; a.source = 'llm';
     return true;
   }
 
-  recent(n = (GAZETTE.cap || 60)) { return this.articles.slice(-n).reverse(); }   // newest-first
-  count() { return this.articles.length; }
-  dispose() { this.articles = []; this._pending = []; }
+  recent(n = (GAZETTE.cap || 60)): Article[] { return this.articles.slice(-n).reverse(); }   // newest-first
+  count(): number { return this.articles.length; }
+  dispose(): void { this.articles = []; this._pending = []; }
 }
 
 export { MONSTER };

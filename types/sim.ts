@@ -34,6 +34,7 @@ export type {
 
 export type {
   Personality, Needs, Mood, Life, HostileRef, Agent,
+  SpyState, ArbitrageState, TargetState, RoamState,
 } from './agent.js';
 
 export type {

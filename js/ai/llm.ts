@@ -22,10 +22,41 @@
 
 const LS_KEY = 'hearsay.llm';
 
+/** Effective LLM client configuration (DEFAULTS overlaid with localStorage). */
+export interface LlmConfig {
+  enabled: boolean;
+  endpoint: string;
+  model: string;
+  apiKey: string;
+  timeoutMs: number;
+  maxTokens: number;
+  temperature: number;
+  cacheSize: number;
+}
+
+/** A chat message in the OpenAI-compatible request shape. */
+export interface ChatMessage { role: 'system' | 'user' | 'assistant'; content: string; }
+
+/** The plain persona bundle the dialogue layer fills from ONE NPC's beliefs/state. */
+export interface Persona {
+  name?: string;
+  profession?: string;
+  faction?: string;
+  traits?: string;
+  mood?: string;
+  needs?: string;
+  gold?: number;
+  want?: string;
+  aboutPlayer?: string;
+  rumour?: string;
+  prompt?: string;
+  [k: string]: unknown;
+}
+
 // Defaults. Endpoint port is 8001 on purpose: the game's static site is served
 // by `python3 -m http.server 8000`, so vLLM must listen elsewhere to avoid a
 // port clash. See docs/llm-npcs.md for the matching `vllm serve` command.
-const DEFAULTS = {
+const DEFAULTS: LlmConfig = {
   enabled: false,                                            // OFF by default
   endpoint: 'http://localhost:8001/v1/chat/completions',
   model: 'LiquidAI/LFM2.5-350M',
@@ -36,24 +67,24 @@ const DEFAULTS = {
   cacheSize: 64,               // tiny LRU of recent (key -> line)
 };
 
-function readLS() {
+function readLS(): Partial<LlmConfig> {
   try {
     const raw = localStorage.getItem(LS_KEY);
-    return raw ? JSON.parse(raw) : {};
+    return raw ? (JSON.parse(raw) as Partial<LlmConfig>) : {};
   } catch { return {}; }
 }
-function writeLS(obj) {
+function writeLS(obj: Partial<LlmConfig>): void {
   try { localStorage.setItem(LS_KEY, JSON.stringify(obj)); } catch { /* ignore */ }
 }
 
 // Effective config = DEFAULTS overlaid with whatever is in localStorage.
-export function getConfig() {
+export function getConfig(): LlmConfig {
   return { ...DEFAULTS, ...readLS() };
 }
 
 // Read or update config. Pass a partial patch to persist it; pass nothing to
 // just read. Returns the effective config either way.
-export function llmConfig(patch) {
+export function llmConfig(patch?: Partial<LlmConfig>): LlmConfig {
   if (patch && typeof patch === 'object') {
     const next = { ...readLS(), ...patch };
     writeLS(next);
@@ -61,32 +92,36 @@ export function llmConfig(patch) {
   return getConfig();
 }
 
-export function isEnabled() {
+export function isEnabled(): boolean {
   return !!getConfig().enabled;
 }
 
 // --- in-flight dedupe + tiny LRU cache -------------------------------------
-const _cache = new Map();        // key -> string (insertion-ordered = LRU)
-const _inflight = new Map();     // key -> Promise<string|null>
+const _cache = new Map<string, string>();              // key -> string (insertion-ordered = LRU)
+const _inflight = new Map<string, Promise<string | null>>();  // key -> Promise<string|null>
 
-function cacheGet(key) {
+function cacheGet(key: string): string | undefined {
   if (!_cache.has(key)) return undefined;
-  const v = _cache.get(key);     // bump recency
+  const v = _cache.get(key) as string;     // bump recency
   _cache.delete(key); _cache.set(key, v);
   return v;
 }
-function cacheSet(key, val, limit) {
+function cacheSet(key: string, val: string, limit: number): void {
   if (_cache.has(key)) _cache.delete(key);
   _cache.set(key, val);
-  while (_cache.size > limit) _cache.delete(_cache.keys().next().value);
+  while (_cache.size > limit) {
+    const oldest = _cache.keys().next().value;
+    if (oldest === undefined) break;
+    _cache.delete(oldest);
+  }
 }
 
 // --- prompt construction (BELIEFS, not ground truth) -----------------------
 // `persona` is a plain object the dialogue layer fills from one NPC's state.
 // We only read what's handed to us; we never reach back into the sim here.
-function buildMessages(persona) {
+function buildMessages(persona: Persona): ChatMessage[] {
   const p = persona || {};
-  const facts = [];
+  const facts: string[] = [];
   if (p.profession) facts.push(`You work as a ${p.profession}.`);
   if (p.faction) facts.push(`You belong to the ${p.faction}.`);
   if (p.traits) facts.push(`Your temperament: ${p.traits}.`);
@@ -114,7 +149,7 @@ function buildMessages(persona) {
 }
 
 // Stable cache key: persona identity + situation, NOT live config.
-function cacheKey(persona) {
+function cacheKey(persona: Persona): string {
   const p = persona || {};
   return [p.name, p.profession, p.mood, p.aboutPlayer, p.rumour, p.want, p.prompt]
     .map((x) => (x == null ? '' : String(x))).join('|');
@@ -122,7 +157,7 @@ function cacheKey(persona) {
 
 // Tidy a model line: strip wrapping quotes/whitespace, collapse to first line,
 // reject empties / obvious junk. Returns a clean string, or null if unusable.
-function sanitize(text) {
+function sanitize(text: unknown): string | null {
   if (typeof text !== 'string') return null;
   let s = text.trim();
   if (!s) return null;
@@ -135,21 +170,22 @@ function sanitize(text) {
 
 // --- the one public call ---------------------------------------------------
 // Resolves to a clean string or null. NEVER throws.
-export async function generateLine(persona) {
-  let cfg;
+export async function generateLine(persona: Persona): Promise<string | null> {
+  let cfg: LlmConfig;
   try { cfg = getConfig(); } catch { return null; }
   if (!cfg.enabled || !cfg.endpoint) return null;
 
   const key = cacheKey(persona);
   const cached = cacheGet(key);
   if (cached !== undefined) return cached;
-  if (_inflight.has(key)) return _inflight.get(key);
+  const pending = _inflight.get(key);
+  if (pending) return pending;
 
-  const promise = (async () => {
+  const promise: Promise<string | null> = (async () => {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), cfg.timeoutMs);
     try {
-      const headers = { 'Content-Type': 'application/json' };
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (cfg.apiKey) headers['Authorization'] = `Bearer ${cfg.apiKey}`;
       const res = await fetch(cfg.endpoint, {
         method: 'POST',
@@ -185,5 +221,6 @@ export async function generateLine(persona) {
 
 // expose a console handle (no-op effect on the game itself)
 if (typeof window !== 'undefined') {
-  try { window.llmConfig = llmConfig; } catch { /* ignore */ }
+  // window is the un-typed DOM global; attach the devtools handle via a loose view.
+  try { (window as unknown as { llmConfig?: typeof llmConfig }).llmConfig = llmConfig; } catch { /* ignore */ }
 }
