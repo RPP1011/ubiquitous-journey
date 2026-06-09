@@ -606,6 +606,17 @@ export function execPrimitive(a: Agent, step: PlanStep, dt: number, ctx: Cogniti
     case 'buy': case 'sell': marketStep(a, step, dt, ctx); break;
     case 'give': giveStep(a, b, dt, ctx); break;
     case 'pay':  payStep(a, b, dt, ctx); break;
+    case 'hold': {
+      // WAIT (Phase 4): hold at the safe/hidden spot; the plan advances (execPlanStep's
+      // stepEffectHolds) when the waited-for condition becomes believed-true. Walk to the safe
+      // place if not yet there, else wait in place. Abandonment lives elsewhere: the goal
+      // deadline (expiresAt) drops a window that never opens, and a believed threat fires the
+      // reactive flee that PREEMPTS the held step (decide scores flee over the plan candidate).
+      const tp = stepTargetPos(a, ctx, b.place);
+      if (tp && a.pos.distanceTo(tp) > (SIM.arriveDist || 1.5)) steer(a, { attractors: [{ pos: tp }] }, dt);
+      else a.fighter.setMoving(0);
+      break;
+    }
     default: a.fighter.setMoving(0);
   }
 }

@@ -18,7 +18,7 @@
 // this module standalone — it is NOT wired into decide() yet.
 
 import * as THREE from 'three';
-import { PROFESSIONS, COMMODITIES, ECON, SIM, URCHIN, QUANTITY, KNOW, ROB } from './simconfig.js';
+import { PROFESSIONS, COMMODITIES, ECON, SIM, URCHIN, QUANTITY, KNOW, ROB, HOLD } from './simconfig.js';
 import { POI_KIND } from './world.js';
 import { STAGE, REASON } from './trace.js';
 import type { Agent, CognitionCtx, Goal, Plan, PlanStep, EntityId, Atom as AtomT, KnowTopic, Stage, Reason } from '../../types/sim.js';
@@ -50,6 +50,8 @@ interface SubAtom {
   need?: string;        // need_ge: which need the graded threshold is on
   level?: number;       // need_ge: the believed need-level to reach (0..1)
   topic?: KnowTopic;    // know: the proposition to be known (Phase 2 knowledge model)
+  cond?: SubAtom;       // hold_until: the believed condition to wait for (Phase 4)
+  deadline?: number;    // hold_until: sim-time by which the window must open
 }
 // The concrete params a primitive's effectMatches chose (one loose bind per primitive).
 interface Bind {
@@ -67,6 +69,8 @@ interface Bind {
   corpse?: EntityId;
   fromStock?: boolean;
   topic?: KnowTopic;
+  cond?: SubAtom;       // hold: the believed condition the wait advances on
+  deadline?: number;    // hold: when to abandon the wait
 }
 // The simulated believed-state the solver threads forward (inventory/gold/at/received).
 interface SimState {
@@ -77,6 +81,7 @@ interface SimState {
   knownAssoc: Record<string, boolean>;   // subjectIds whose `assoc` an earlier shadow/ask step arranged
   need: Record<string, number>;          // believed need-levels the plan raises (graded-needs composition)
   known: Record<string, boolean>;        // topic-keys an earlier observe/ask/study step learned (Phase 2)
+  held: Record<string, boolean>;         // hold_until conds an earlier hold step waited out (Phase 4)
 }
 // One authored primitive (effectMatches/precondition/cost + executor metadata).
 interface Primitive {
@@ -242,7 +247,18 @@ export const Atom = {
   // KNOWLEDGE (Phase 2): a topic held confidently enough to act on (docs/architecture/10).
   // `Know(topic)` sits in a plan next to `Have`/`At`, satisfied by observe/ask/study.
   know: (topic: KnowTopic): SubAtom => ({ pred: 'know', topic }),
+  // WAIT (Phase 4): hold somewhere safe until a believed condition `cond` becomes true (the
+  // window opens), abandoning at `deadline`. `place` is the safe/hidden spot to wait at.
+  holdUntil: (cond: SubAtom, place?: PlannerPlace, deadline?: number): SubAtom =>
+    ({ pred: 'hold_until', cond, place, deadline }),
 };
+
+// A stable key for a hold condition, so the simulated `held` map can index it (Phase 4).
+function holdKey(cond: SubAtom | null | undefined): string {
+  if (!cond) return '';
+  const pl = typeof cond.place === 'object' ? JSON.stringify(cond.place) : (cond.place ?? '');
+  return `${cond.pred}:${cond.subjectId ?? ''}:${pl}:${cond.amt ?? cond.level ?? ''}`;
+}
 
 // ---------------------------------------------------------------------------
 // PHASE 2 — the knowledge model (docs/architecture/10). A topic's HOME is a field on the
@@ -366,6 +382,10 @@ function atomHolds(atom: SubAtom, agent: Agent, ctx: CognitionCtx): boolean {
     case 'know':
       // KNOWLEDGE (Phase 2): do I hold this topic confidently enough to act on it? Own state.
       return knowsTopic(agent, atom.topic);
+    case 'hold_until':
+      // WAIT (Phase 4): the window is already OPEN when the inner condition is believed-true —
+      // then no waiting is needed and the hold step drops out (e.g. the camp is already weak).
+      return atom.cond ? atomHolds(atom.cond, agent, ctx) : true;
     default:
       return false;
   }
@@ -683,6 +703,21 @@ export const PRIMITIVES: Primitive[] = [
     cost() { return KNOW.studyTuition; },
     exec: { verb: 'study' },
   },
+
+  // ── hold(cond): the WAIT step (Phase 4). It produces the `hold_until` effect — the agent
+  // holds at a safe/hidden spot and the plan advances when `cond` becomes believed-true. The
+  // precondition is being AT that safe place (so the wait happens under cover, not in the open).
+  // Gated by HOLD.enabled: off → effectMatches returns null and no plan ever contains a hold. ──
+  {
+    name: 'hold',
+    effectMatches(sg) {
+      if (!HOLD.enabled || sg.pred !== 'hold_until' || !sg.cond) return null;
+      return { name: 'hold', cond: sg.cond, place: sg.place, deadline: sg.deadline };
+    },
+    precondition(agent, ctx, bind) { return bind.place ? [Atom.at(bind.place as PlannerPlace)] : []; },
+    cost() { return HOLD.cost; },
+    exec: { verb: 'hold' },
+  },
 ];
 
 const byName = (n: string): Primitive | null => PRIMITIVES.find((p) => p.name === n) || null;
@@ -858,10 +893,10 @@ function solveAll(agent: Agent, ctx: CognitionCtx, atoms: SubAtom[], depth: numb
 function initState(agent: Agent): SimState {
   const inv: Record<string, number> = {};
   for (const c of COMMODITIES) inv[c] = (agent.inventory && agent.inventory[c]) || 0;
-  return { inv, gold: agent.gold || 0, at: null, received: {}, knownAssoc: {}, need: { ...(agent.needs || {}) }, known: {} };
+  return { inv, gold: agent.gold || 0, at: null, received: {}, knownAssoc: {}, need: { ...(agent.needs || {}) }, known: {}, held: {} };
 }
 function cloneState(s: SimState): SimState {
-  return { inv: { ...s.inv }, gold: s.gold, at: s.at, received: { ...s.received }, knownAssoc: { ...s.knownAssoc }, need: { ...s.need }, known: { ...s.known } };
+  return { inv: { ...s.inv }, gold: s.gold, at: s.at, received: { ...s.received }, knownAssoc: { ...s.knownAssoc }, need: { ...s.need }, known: { ...s.known }, held: { ...s.held } };
 }
 function applyEffect(prim: Primitive, bind: Bind, agent: Agent, s: SimState): void {
   switch (prim.name) {
@@ -887,6 +922,9 @@ function applyEffect(prim: Primitive, bind: Bind, agent: Agent, s: SimState): vo
     // KNOWLEDGE (Phase 2): observe/ask/study all ARRANGE the topic (the channels differ in
     // cost + believed quality, not in what the plan tracks — that it is now known).
     case 'observe': case 'ask': case 'study': s.known[topicKey(bind.topic)] = true; break;
+    // WAIT (Phase 4): the plan reasons THROUGH the hold optimistically — it assumes the window
+    // opens — so downstream steps can be planned; execution actually waits (or abandons).
+    case 'hold': s.held[holdKey(bind.cond)] = true; break;
   }
 }
 function applyStepsForward(agent: Agent, s: SimState, steps: PlanStep[]): SimState {
@@ -916,6 +954,8 @@ function atomSatisfied(atom: SubAtom, agent: Agent, ctx: CognitionCtx, s: SimSta
       return ((atom.need ? s.need[atom.need] : 0) || 0) >= (atom.level || 0);
     case 'know':
       return !!s.known[topicKey(atom.topic)] || atomHolds(atom, agent, ctx);
+    case 'hold_until':
+      return !!s.held[holdKey(atom.cond)] || atomHolds(atom, agent, ctx);
     default:
       return atomHolds(atom, agent, ctx);
   }
@@ -946,6 +986,10 @@ function effectAdvances(prim: Primitive, atom: SubAtom, bind: Bind, agent: Agent
     case 'know': {
       if (atomHolds(atom, agent, ctx)) return false;   // already known confidently → no step
       return prim.name === 'observe' || prim.name === 'ask' || prim.name === 'study';
+    }
+    case 'hold_until': {
+      if (atomHolds(atom, agent, ctx)) return false;   // window already open → no wait
+      return prim.name === 'hold';
     }
     default:       return true;
   }
@@ -1041,6 +1085,11 @@ export function stepEffectHolds(agent: Agent, ctx: CognitionCtx, step: PlanStep)
         return believedDead(agent, bind.target as EntityId);   // believed-dead (belief/_slain), not a roster read
       case 'loot':
         return true;
+      case 'hold':
+        // WAIT (Phase 4): the held step's effect "lands" — and the plan advances — the moment
+        // the waited-for condition becomes believed-true (the window opened). Belief-grounded;
+        // the deadline (goal.expiresAt) and the reactive flee preemption abandon it elsewhere.
+        return bind.cond ? atomHolds(bind.cond as SubAtom, agent, ctx) : true;
       default: return false;
     }
   } catch { return false; }

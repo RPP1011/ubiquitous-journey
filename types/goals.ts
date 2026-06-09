@@ -15,7 +15,7 @@ export type GoalKind =
 
 /** One world-state predicate atom the planner satisfies (js/sim/planner.js Atom). */
 export interface Atom {
-  pred: 'at' | 'have' | 'gold_ge' | 'received' | 'dead' | 'in_reach' | 'know_assoc' | 'need_ge' | 'know';
+  pred: 'at' | 'have' | 'gold_ge' | 'received' | 'dead' | 'in_reach' | 'know_assoc' | 'need_ge' | 'know' | 'hold_until';
   place?: string;
   good?: string;
   n?: number;
@@ -26,6 +26,8 @@ export interface Atom {
   need?: string;     // need_ge: which need (hunger/energy/…) the threshold is on
   level?: number;    // need_ge: the believed need-level to reach (graded, 0..1)
   topic?: KnowTopic; // know: the proposition to be known (docs/architecture/10 knowledge model)
+  cond?: Atom;       // hold_until: the believed condition to wait for (advance when it holds)
+  deadline?: number; // hold_until: sim-time by which the window must open, else abandon
 }
 
 /** A `topic` an agent can Know — a specific proposition with a HOME (a belief-table field for

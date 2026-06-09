@@ -5,8 +5,8 @@
 
 import { World } from '../../js/sim/world.js';
 import { Agent } from '../../js/sim/agent.js';
-import { plan, goalRepay, goalSeekFortune, goalAvenge, goalSteal, goalSate, goalLearn, ACQUIRE } from '../../js/sim/planner.js';
-import { URCHIN, QUANTITY, KNOW, ROB } from '../../js/sim/simconfig.js';
+import { plan, goalRepay, goalSeekFortune, goalAvenge, goalSteal, goalSate, goalLearn, ACQUIRE, Atom, stepEffectHolds } from '../../js/sim/planner.js';
+import { URCHIN, QUANTITY, KNOW, ROB, HOLD } from '../../js/sim/simconfig.js';
 
 export function plannerSelfTest(ok, { makeFighter, stubScene }) {
   const P = () => ({ risk_tolerance: 0.5, social_drive: 0.5, ambition: 0.5, altruism: 0.5, curiosity: 0.5 });
@@ -275,6 +275,48 @@ export function plannerSelfTest(ok, { makeFighter, stubScene }) {
       ok(rStep && rStep.exec.made === false && rStep.exec.socialTrace === 'robbery',
         `planner R3: ROB generates a moved/robbery acquire (${names(pRob).join('->') || 'NULL'})`);
     } finally { ROB.enabled = prevRob; }
+  }
+
+  // HOLD — the hold-until wait step (docs/architecture/10, Phase 4). Forced ON (day-one OFF),
+  // restored after. Proves: a plan with a hold_until condition INSERTS a wait at a safe spot and
+  // plans THROUGH it; an already-open window needs no wait (the step drops out); the held step
+  // ADVANCES the moment the condition becomes believed-true; and it carries its deadline.
+  {
+    const prevHold = HOLD.enabled;
+    HOLD.enabled = true;
+    try {
+      const lurker = mk('Lurker'); lurker.pos.set(40, 0, 40);   // a believed threat to wait out
+      const waiter = debtor('Waiter', () => {});
+      waiter.beliefs.observe(lurker.id, lurker.faction, lurker.pos, ctx.time, true);   // believed alive
+
+      // a goal to wait, under cover (at the market), until the threat is believed gone — then it
+      // would move. cond = dead(lurker), false now (the belief is fresh) ⇒ a hold step is inserted.
+      const waitGoal = {
+        kind: 'wait',
+        atoms: [Atom.holdUntil(Atom.dead(lurker.id), 'market', ctx.time + 30)],
+        predicate: () => false,
+      };
+      const pWait = plan(waiter, waitGoal, ctx);
+      const holdStep = pWait && pWait.steps.find((s) => s.prim === 'hold');
+      ok(pWait && holdStep && names(pWait).includes('goto'),
+        `planner H1: a hold_until inserts a wait at a safe spot (${names(pWait).join('->') || 'NULL'})`);
+      ok(holdStep && holdStep.bind.deadline === ctx.time + 30,
+        'planner H2: the held step carries its abandonment deadline');
+
+      // ALREADY OPEN — a condition already believed-true needs no wait, so the hold drops out and
+      // (with nothing else to do) the plan is null. dead(unknown) is believed-true (no belief).
+      const open = { kind: 'wait', atoms: [Atom.holdUntil(Atom.dead(987654), 'market')], predicate: () => false };
+      const pOpen = plan(waiter, open, ctx);
+      ok(pOpen === null, 'planner H3: an already-open window needs no wait (hold drops out)');
+
+      // ADVANCE — the held step's effect lands (the plan advances) only when the condition becomes
+      // believed-true. With the threat believed alive it waits; once the belief is gone, it advances.
+      ok(holdStep && stepEffectHolds(waiter, ctx, holdStep) === false,
+        'planner H4: the hold waits while the condition is still false');
+      waiter.beliefs.erase(lurker.id);   // the window opens (the threat is no longer believed present)
+      ok(holdStep && stepEffectHolds(waiter, ctx, holdStep) === true,
+        'planner H4: the hold advances the moment the condition becomes believed-true');
+    } finally { HOLD.enabled = prevHold; }
   }
 
   // never throws on the tick path even for a junk goal

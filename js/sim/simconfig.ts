@@ -403,6 +403,19 @@ export const ROB = {
   amount: 5,             // believed gold taken (a fixed estimate until wealth-cue inference lands)
 };
 
+// --- HOLD-UNTIL: waiting for the world to change (docs/architecture/10, Phase 4) -------
+// Some plans must WAIT rather than act: a small party holds in concealment until it sees the
+// raiders leave, then the camp is briefly weak. A hold-until step keeps the agent somewhere
+// safe/hidden, re-checks a believed condition each tick, and advances when it becomes
+// believed-true. It abandons two ways, and they differ: the DEADLINE passes (the window never
+// opened — the goal's expiresAt drops it) or the spot stops being SAFE (discovered — the
+// reactive flee preempts the held step, the same flee any agent would). Day-one OFF (the hold
+// row emits nothing), so no live goal produces a hold step and the soak is byte-stable.
+export const HOLD = {
+  enabled: false,
+  cost: 1,               // planner cost of inserting a wait (cheap, but not free, vs. acting now)
+};
+
 // --- episodic memory (three-tier ring buffers) ------------------------------
 // Salient life-events flow STM -> MTM -> LTM by consolidation; medium fades over
 // minutes, long-term sticks. Feeds the inspector biography and (later) goals.
