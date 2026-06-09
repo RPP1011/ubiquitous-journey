@@ -636,6 +636,65 @@ it; this table is the proof of generality.)
 | **G** | **Cooperative knowledge distribution** | the teacher (Ex. 6) — price calibration, danger geography, **recipe know-how**, map spots, demand priced by the planner (`learn` when tuition < losses-avoided); the priest as a teacher of god-beliefs (faith propagation made principled) | the *write* side of family E: `teach`/`quiz`; `source:'taught'` gossip provenance; `knows(recipe)` own-state gating production; bounded cooperative second-order ToM |
 | **H** | **Asymmetric operations** | the camp rescue (Ex. 7) — scout → place-occupancy belief → refuse frontal assault → exploit a perceived window → infiltrate/`free(captive)`/exfiltrate while the foe's own destination-intent pursues you | **place-occupancy (aggregate-strength) beliefs** (the ≤8 cap forces aggregation — armies as forces-at-places); group-level `outmatchedBy`; captive state + `free` verb; the catalogue composing into operations |
 
+### Probe-backed gap analysis (the Phase-5 priority order)
+
+A generative sweep — 35 imagined situations (unconstrained by current support), each mapped to a
+GOAP framing and, where expressible, run through the *real* `plan()` to confirm what chains and
+what dead-ends — produced this **leverage-ranked** shortlist of the missing substrate. Each is a
+small, data-shaped addition (a belief-field, an atom pred, or a primitive with pre/eff) consistent
+with the existing patterns; the count is how many of the 35 situations it unlocks.
+
+| Missing substrate | Kind | Unlocks | Family |
+| --- | --- | --- | --- |
+| **`believedStandingToMe`** — generalise the one-off `notoriety` into a believed-other's-belief-about-me field + a goal predicate `believe(@x,'standingToMe','>=',v)` | belief-field + atom | **7** (courtship, blackmail, framing, rep-laundering, bribery-effect, feigned-weakness, double-agent) | D |
+| **Per-place price belief** `priceAt(good,place)` + a `haul(good,from,to)` primitive | belief-field + primitive | **3–4** (smuggling/arbitrage, monopoly, contraband) — makes `arbitrage.js` *plannable* | C |
+| **Dynamic place-state beliefs on resource nodes & gates** (`depleted`/`infected`/`closed`/`watched`), read in `travelCost` + as preconditions | belief-field | **4–5** (dry vein, plague, curfew, famine migration) — Family A beyond homes | A |
+| **Captive state + `free(subj)` verb** | belief-field + primitive | **4** (jailbreak, siege, feast-assembly, camp rescue) | H |
+| **`know(recipe)` atom + `learn`/`teach` primitives** (pre `near(teacher)`+`gold≥tuition`, eff `know(recipe)`) | atom + primitives | **2–3** (apprenticeship, the teacher) — *probe-proven: a non-knower can only `buy`, never plan to learn the craft* | G |
+| **`coerce`/`demand` primitive** — eff raises `gold_ge` via the mark's transfer; pre `leverage(mark)`+`in_reach` | primitive + belief-field | **2** (blackmail, extortion) | D/E |
+| **`sabotage`/`destroy` verb** on a building/tool percept (eff: revise its usable/`sheltered` state) | primitive | **2** (sabotage, eviction) — generalises the truth-side raid/ruin | A/H |
+| **Place-occupancy (aggregate-strength) belief + group-level `outmatchedBy`** | belief-field + pred | **2** (siege, camp rescue) — the ≤8-cap-forced aggregation | H |
+
+The top three together touch ~14 of the 35 situations and are the leverage core; #4–#6 are the
+already-named Phase-4/5 features (captive/`free`, `know(recipe)`/teach) the roadmap specifies.
+
+### The actual boundary (and the patterns that respect it)
+
+The split forbids exactly two narrow operations in cognition: **reading ground truth**, and
+**writing another agent's belief store directly**. It does *not* forbid reasoning or acting on what
+others believe — that lives entirely inside one agent's own model. The sweep at first mis-flagged
+three families as "structural limits"; two of them are really **in-paradigm patterns**, and only a
+sliver of the third is a genuine gap:
+
+1. **Second-order ToM (deception, framing, feigned weakness) — IN-MODEL, not forbidden.** A
+   `believedStandingToMe` / `believedBelief(target,claim)` field is the *actor's own* belief about a
+   foreign mind — held in the actor's store, like any belief. A `deceive`/`feign` primitive's
+   planner-effect writes that **own** second-order belief ("I now expect the target believes X"); it
+   never touches `target.beliefs`. The target's *actual* update flows through the existing
+   perception/gossip bridges when it perceives the disguise / hears the planted rumour — and may not
+   happen (the actor misread → acted on a false second-order belief → replans). Identical shape to
+   the urchin burgling a stale stash. The *only* forbidden version is a primitive that mutates
+   `target.beliefs` directly — which second-order ToM never needs.
+2. **Coordination by command — emergent, not joint-planned.** A leader estimates, from its OWN
+   beliefs (standing, loyalty, group membership), how likely each agent is to comply, then plans its
+   OWN action — `command(followers, muster)` — with an **optimistic effect** ("they probably
+   assemble", weighted by that estimate). The followers independently decide to heed or not (their
+   own cognition reacting to the heard command). No co-planner, no shared plan: the leader acts on
+   its own model and reconciles by replanning if the muster falls short. The one genuinely
+   inexpressible thing is narrower — a precondition that requires another agent's **guaranteed**
+   commitment ("Y *will* bring food" as a fact) — and optimistic-effect-and-replan routes around it.
+3. **Temporal scheduling — the one real gap (and partly deferrable).** The plan is an ordered step
+   list with no clock: no "due at T", "every N days", or "default-consequence after a deadline".
+   Goals carry only an `expiresAt` decay. Recurrence is re-derived each tick from memory; a genuine
+   obligation-with-deadline needs a temporal substrate the GOAP layer lacks — though even this
+   softens (a deadline can be a believed-place-state that flips; a cadence, a memory-triggered
+   re-derivation). The Ex. 7 "learned schedule" is a v2 for this reason.
+
+The takeaway flips from the first pass: almost everything the sweep surfaced — including the
+deception and command families — is *in-paradigm*. The split is a narrow rule about two specific
+operations, not a ban on social cognition. (Sub-combat tactical ToM — a feint — remains below the
+planner's altitude by the three-tier rule.)
+
 ---
 
 ## Build-time enforcement
