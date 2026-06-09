@@ -12,12 +12,12 @@ and plant false rumours. You play one fighter; everyone forms beliefs about you 
 
 ## Build / typecheck / serve
 
-The project is **TypeScript with `tsc` as a dev-time transpiler**. The port is COMPLETE: the
-whole `js/**` tree is strict `.ts` — the **one deliberate exception is `js/main.js`** (it stays
-`.js` so its frame-loop try/catch can slice `err.stack` into the on-screen crash overlay; see
-below). `allowJs` stays on only to compile that single `.js` entry. The cross-module domain
-types live in **`types/**`** (a shared layer, barrel `types/sim.ts`) — author/extend types there,
-not ad-hoc per file; `CognitionCtx` vs `FullCtx` make the epistemic split a COMPILE error.
+The project is **TypeScript with `tsc` as a dev-time transpiler**. The whole `js/**` tree is
+strict `.ts`; the **one deliberate exception is `js/main.js`** (it stays `.js` so its frame-loop
+try/catch can slice `err.stack` into the on-screen crash overlay; see below). `allowJs` stays on
+only to compile that single `.js` entry. The cross-module domain types live in **`types/**`** (a
+shared layer, barrel `types/sim.ts`) — author/extend types there, not ad-hoc per file;
+`CognitionCtx` vs `FullCtx` make the epistemic split a COMPILE error.
 `tsc` is the **same category as the Bun test runner — NOT a runtime dependency**; there is no
 bundler and no npm runtime dep. Three things consume the source — keep all three green:
 
