@@ -367,7 +367,7 @@ export const MOTIVE = {
 // tick (anti-livelock). The drive persists in motivation and rebuilds. Day-one OFF, so the
 // planner is byte-identical and the soak is unchanged until a breadth phase turns it on.
 export const QUANTITY = {
-  enabled: false,
+  enabled: true,         // LIVE (docs/architecture/10 Phase 1 execution): threshold composition on
   partialCooldown: 12,   // sim-seconds an UNREACHABLE threshold goal rests before re-planning
   widenRiskTol: 0.6,     // risk_tolerance at/above which the failure search WIDENS (sells into
                          //   the keep reserve / acts on thinner leads) — the bold widen, the timid don't

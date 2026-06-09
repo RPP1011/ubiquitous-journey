@@ -829,13 +829,24 @@ function mkStep(name: string, bind: Bind, verb: string): PlanStep {
   return { prim: name, bind: bind as unknown as PlanStep['bind'], exec: { verb } };
 }
 
+// SATISFICE vs INFEASIBLE for an EMPTY unreachable threshold: it satisfices only at the GOAL's own
+// atom (depth 0) — flag frontier.partial and return a 0-step plan so the goal cools down rather than
+// being dropped. As a SUB-precondition (depth > 0) it is INFEASIBLE (null), so the branch that
+// needs it loses to one that can actually be met (the bug that surfaced when QUANTITY went live: a
+// 0-cost empty satisfice made an unaffordable `buy` look free and beat `gather`).
+function shortOrNull(depth: number, frontier: Frontier, shortfall: number): Solved | null {
+  if (depth > 0) return null;
+  frontier.partial = true; frontier.shortfall = shortfall;
+  return { steps: [], cost: 0 };
+}
+
 // Greedily raise believed gold to `target` by SELLING surplus at the believed market —
 // the conserved (moved-not-made) source a professionless poor agent actually has. Best
 // believed price first (best yield per uniform sell-cost). `frontier.widen` (a bold or
 // hard-driven agent) sells into the keep RESERVE too — the doc's "widen toward riskier
 // options". Threads a per-good simulated surplus so each sale depletes the source. Returns
 // [goto(market), sell×k]; sets frontier.partial when the believed total still falls short.
-function composeGold(agent: Agent, ctx: CognitionCtx, atom: SubAtom, frontier: Frontier, simState: SimState): Solved {
+function composeGold(agent: Agent, ctx: CognitionCtx, atom: SubAtom, depth: number, frontier: Frontier, simState: SimState): Solved | null {
   const target = atom.amt || 0;
   let gold = simState.gold || 0;
   if (gold >= target) return { steps: [], cost: 0 };
@@ -871,7 +882,14 @@ function composeGold(agent: Agent, ctx: CognitionCtx, atom: SubAtom, frontier: F
     // believed market unreachable: can't actually sell — drop the steps, it's a pure shortfall.
     steps.length = 0; cost = 0; gold = simState.gold || 0;
   }
-  if (gold < target) { frontier.partial = true; frontier.shortfall = target - gold; }
+  if (gold < target) {
+    // SATISFICE only applies to the GOAL's own threshold (depth 0): run what you can, then cool
+    // down. As a SUB-precondition (depth > 0 — e.g. the gold a `buy` needs), an unreachable
+    // threshold is INFEASIBLE (null), so the branch loses to one that can actually be met (gather),
+    // instead of a 0-cost empty "satisfice" making the dead branch look free.
+    if (depth > 0) return null;
+    frontier.partial = true; frontier.shortfall = target - gold;
+  }
   return { steps, cost };
 }
 
@@ -881,18 +899,16 @@ function composeGold(agent: Agent, ctx: CognitionCtx, atom: SubAtom, frontier: F
 // buy / from stock), then eat them. Phase-1 scope is hunger (the one need with a consumable
 // good); other needs (rest/heal/socialise) join as their Tend rows land. Sets
 // frontier.partial when the meals can't be acquired (the satisfice the caller cools down).
-function composeNeed(agent: Agent, ctx: CognitionCtx, atom: SubAtom, depth: number, frontier: Frontier, simState: SimState): Solved {
+function composeNeed(agent: Agent, ctx: CognitionCtx, atom: SubAtom, depth: number, frontier: Frontier, simState: SimState): Solved | null {
   const need = atom.need || 'hunger';
   const level = atom.level || 0;
   const cur = (simState.need[need] != null) ? simState.need[need] : ((agent.needs && agent.needs[need]) || 0);
-  if (need !== 'hunger' || cur >= level) {
-    if (cur < level) { frontier.partial = true; frontier.shortfall = level - cur; }
-    return { steps: [], cost: 0 };
-  }
+  if (cur >= level) return { steps: [], cost: 0 };
+  if (need !== 'hunger') return shortOrNull(depth, frontier, level - cur);   // only hunger has a meal channel yet
   const meals = Math.max(1, Math.min(PLAN.maxPlan - 1, Math.ceil((level - cur) / (QUANTITY.needMeal || 0.34))));
   // acquire the food first (generic solver: from stock, gather, buy, …), then eat it.
   const acquire = solveAll(agent, ctx, [Atom.have('food', meals)], depth + 1, frontier, simState);
-  if (!acquire) { frontier.partial = true; frontier.shortfall = level - cur; return { steps: [], cost: 0 }; }
+  if (!acquire) return shortOrNull(depth, frontier, level - cur);   // can't get the meals
   const steps: PlanStep[] = [...acquire.steps];
   let cost = acquire.cost;
   for (let i = 0; i < meals && steps.length < PLAN.maxPlan; i++) {
@@ -909,7 +925,7 @@ function composeNeed(agent: Agent, ctx: CognitionCtx, atom: SubAtom, depth: numb
 // composeGold it satisfices + flags frontier.partial when the camp can't be out-mustered. Belief-
 // only: iterates the agent's OWN beliefs, never the roster — so the leader over-counts exactly
 // when its read of a candidate's standing is wrong, and the muster can fall short at execution.
-function composeForce(agent: Agent, ctx: CognitionCtx, atom: SubAtom, frontier: Frontier, simState: SimState): Solved {
+function composeForce(agent: Agent, ctx: CognitionCtx, atom: SubAtom, depth: number, frontier: Frontier, simState: SimState): Solved | null {
   const target = atom.amt || 0;
   let force = simState.force || RECRUIT.selfStrength;
   if (force >= target) return { steps: [], cost: 0 };
@@ -933,7 +949,10 @@ function composeForce(agent: Agent, ctx: CognitionCtx, atom: SubAtom, frontier: 
     cost += d * PLAN.travelPerMetre + PLAN.actBase;
     force += c.contrib;
   }
-  if (force < target) { frontier.partial = true; frontier.shortfall = target - force; }
+  if (force < target) {
+    if (depth > 0) return null;   // a force a downstream act NEEDS but can't be raised → infeasible
+    frontier.partial = true; frontier.shortfall = target - force;
+  }
   return { steps, cost };
 }
 
@@ -959,12 +978,12 @@ function solveAtom(agent: Agent, ctx: CognitionCtx, atom: SubAtom, depth: number
   // when it cannot be reached. The subjectId-flavoured gold_ge (the urchin's burgle) keeps its
   // own single-source path. Off → neither branch is reached, so the planner is byte-identical.
   if (QUANTITY.enabled) {
-    if (atom.pred === 'gold_ge' && atom.subjectId == null) return composeGold(agent, ctx, atom, frontier, simState);
+    if (atom.pred === 'gold_ge' && atom.subjectId == null) return composeGold(agent, ctx, atom, depth, frontier, simState);
     if (atom.pred === 'need_ge') return composeNeed(agent, ctx, atom, depth, frontier, simState);
   }
   // PHASE 5 (gated by RECRUIT): a believed-force threshold composes recruits the same way gold
   // composes sales. Off → never reached, byte-identical.
-  if (RECRUIT.enabled && atom.pred === 'force_ge') return composeForce(agent, ctx, atom, frontier, simState);
+  if (RECRUIT.enabled && atom.pred === 'force_ge') return composeForce(agent, ctx, atom, depth, frontier, simState);
 
   let best: Solved | null = null;
   for (const prim of PRIMITIVES) {
