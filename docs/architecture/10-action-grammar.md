@@ -421,16 +421,31 @@ candidate's strength weighted by that compliance confidence, and the planner add
 cheapest reliable force first — until the believed sum outmatches the camp; then the assault, with the
 scout-and-wait of the rescue, is gated on that sum.
 
-This composes from pieces already here: a numeric threshold (the force), an `Inform`-style act whose
-effect is a one-level belief about another (will-they-follow), and confidence feeding the sum exactly as
-it feeds cost. The honest part is the failure, and it is a good one — the confidence-weighting means a
-leader who signed up six reluctant followers has a believed force barely over the line and a real chance
-that, at the camp, only three actually show: the believed force was optimistic, the real force falls
-short, and the leader (seeing the shortfall) pulls back or re-plans — the physical twin of arriving at a
-moved cache. It is also why a careful leader prefers four certain followers to eight doubtful ones.
-`recruit` is a new row and "believed force" is a derived reading rather than a stored topic, but no new
-subsystem is needed — and because this is the path most likely to have cracked the architecture, walking
-it cleanly is the strongest single piece of evidence the rest holds.
+The follower is a real agent, not a number in the leader's head, and the design has to say what makes
+following rational for *them*. `recruit` does **not** write a goal into the candidate — that would be the
+foreign-mind write the rest of the design forbids. It is an `Inform`: the leader makes an *offer* the
+candidate perceives — a share of the venture's spoils, a role, an appeal to standing — which changes the
+candidate's *beliefs* (there is an offer, with a believed payoff), nothing more. What happens next is the
+candidate's **own** motivation: it weighs that believed payoff against the believed risk, tilted by its
+standing toward the leader, and — if the balance favours it — forms its *own* goal to join, whose first
+step is to rally at the muster. A loyal friend with a good share forms that goal readily; a wary stranger
+does not. (This is the reputation-gated party-join the sim already has, with a risk-and-reward weighing
+on top.)
+
+So both sides are modelled, symmetrically. The leader's "compliance confidence" is its *prediction* of
+that independent decision, read off the cues it can see — the candidate's standing, its apparent
+situation, the size of the offer — calibrated against a real choice, not a dice-roll, which is exactly
+why it can be wrong. The failure now has a mechanism at both ends: the three no-shows did not roll low,
+they **re-planned** — their own scout-gossip put the camp's strength higher, or a better opportunity won,
+or a fear preempted, and the join-goal lost to something else in *their* heads. The leader, unable to see
+those internals, over-counted. That is why a careful leader prefers four certain followers to eight
+doubtful ones, and why one who can raise the believed payoff (more spoils, a safer plan) recruits more
+reliably: it is shifting a real decision, not nudging a random number.
+
+`recruit` is a new row, "believed force" is a derived reading rather than a stored topic, and the
+follower side is an ordinary goal-generator (the candidate wants the share, or values the bond) — no new
+subsystem, and no foreign-mind write. Because this is the path most likely to have cracked the
+architecture, walking *both* ends of it cleanly is the strongest single piece of evidence the rest holds.
 
 ## What this covers, and what it doesn't
 
@@ -449,14 +464,29 @@ machinery: a small per-agent **obligation ledger**, a handful of outstanding int
 perception each tick. It is modest — structurally a little belief table with decay — but it is a store
 and a per-tick check, not a row, and the doc says so rather than smuggling it in.
 
+A ledger entry and a [hold-until step](#waiting-and-deadlines) look alike — both are "when a believed
+condition becomes true, do a thing, with an expiry" — so it is worth saying why they are not one
+mechanism. The line is **lifetime**: a hold-until wait lives and dies inside a single plan (drop that
+plan on the next re-plan and the wait is gone with it), while a ledger entry **outlives** every plan the
+agent makes between promising and keeping. That is exactly why a commitment cannot just be a hold-until
+step — the plan it lived in would be discarded at the next re-plan, taking the promise with it — and why
+the persistent thing has to sit outside any plan, in the ledger.
+
 That same ledger absorbs two things the rest of the design pushed out of the one-shot plan.
 **Recurrence** — a debt due each season, a nightly patrol — was exiled from the plan, but *something* has
 to notice when the next instance comes due; that something is an entry in this ledger (a trigger that is
 a time or a believed condition), so recurrence is rehomed rather than hand-waved, and its cost is the
 ledger check: a few entries per agent, most agents empty. **Reciprocity**, by contrast, does *not* need
-the ledger — "I owe her one" is a scalar on my belief about her, a relational field like standing, that
-motivation reads when we next deal; it is a row after all, provided it is a stored field and not
-something re-derived by scanning all of memory every tick (which it isn't).
+the ledger — but for a subtler reason than "it's just a field," and the earlier gloss ("motivation reads
+it when we next deal") undersold it. "I owe her one" is a scalar on my belief about her, a relational
+field like standing; but motivation reads it as a *drive*, not only opportunistically. A large enough
+debt **generates a repay goal of its own** (the planner already has `repay(X)`), which sends the agent
+across town to seek her out and square up — so reciprocity is active, it can move an agent to make good,
+not merely discharge if a deal happens to recur. It is still a row, because the persistent part is the
+scalar and the goal is re-derived from it like any other. The line to the ledger is therefore not
+passive-versus-active but *what it waits on*: reciprocity is a standing magnitude the agent acts on of
+its own accord, with no armed trigger; a commitment is a response **armed for a specific perceived
+event** ("you deliver → I pay"), and arming and persisting that trigger is what the ledger is for.
 
 **Contested resources are accepted, and scoped.** Two agents plan to take the same cache; both believe
 the full yield; the first to arrive gets it and the second finds it empty — the stale-belief failure
