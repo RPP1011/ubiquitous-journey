@@ -380,6 +380,42 @@ families carry tendencies: a line of cautious traders, a line of bold raiders, n
 grain. Personality is a weight vector read at the points the agent already decides; it is never its own
 subsystem and never its own actions.
 
+## Acting under uncertainty
+
+The planner reasons in believed quantities — a believed yield, a believed price, a believed strength —
+and the examples have so far let those be roughly knowable. Many are not. The urchin's whole plan turns
+on how much gold is in the cache, and that is a number it will **never** observe until the moment it
+cracks it: surveillance can confirm *where* the cache is, but not *how much* is inside. So how does it
+decide the heist is worth doing?
+
+It doesn't know; it **estimates**. A believed quantity is not a measured fact, it is an *expected value
+with a confidence*, and where it cannot be observed directly it is inferred from what can — the mark's
+apparent wealth, the size and guard of his house, his trade, the gossip that he is rich. Those proxies
+give the urchin an expected haul, wide and held at low confidence, and the planner acts on that
+expectation exactly as it acts on a price it has only heard. The decision to commit is expected gain
+against cost and risk: a believed-fat cache, discounted by how unsure the estimate is and by the danger
+of the act.
+
+Two levers already in the design carry it. **Confidence enters the cost**, so a hazy estimate makes the
+heist *expensive* — likely a wasted, dangerous night — which pushes a careful agent to case the mark
+longer (sharpening the proxy: more of his trade seen, a better read on his means) before committing, and
+lets a hurried one gamble on a guess. **Risk tolerance** sets the appetite for the spread: a bold urchin
+robs on "merchants are rich, it's probably worth it"; a cautious one moves only on a mark it has built
+real confidence is loaded, and otherwise leaves it. The same ambiguous prize is a tempting bet for one
+agent and not worth it for another — character and uncertainty interacting.
+
+And because the estimate was never certain, it can simply be **wrong**: the urchin cracks the cache
+expecting fifty and finds eight — the merchant banks most of it, or had a bad season. The plan was
+rational on what was known; the gamble didn't pay. This is the believable-failure shape of the stale
+cache and the stale price, but its root is worth distinguishing: staleness is a fact that *was* true and
+went off; this is a quantity that was *never* observed and was only ever a hopeful guess. Some acts are
+gambles by nature, and the design lets agents take them — and regret them — rather than pretend they
+have information they could not have. The same holds wherever a plan leans on what it cannot measure: a
+camp's strength is a scout's glimpse and can be undercounted; a recruit's loyalty is a read on a choice
+not yet made; a foreign price is a number heard, not seen. In each, the agent acts on an expectation —
+inferred from proxies, carrying its own uncertainty, weighted by character — and is sometimes wrong,
+which is the point.
+
 ## Cost and scale
 
 The whole flat-vocabulary, no-shared-structure architecture rests on planning staying affordable as the
@@ -437,8 +473,11 @@ likely wastes the night. So the cheapest plan that reaches the threshold is to m
 first: `observe` Olen (slow, first-hand, trustworthy) or `ask` a fence (fast and cheap, but it tips
 Olen off). Pip, despised and with no one to ask, observes. Once the location is confident, `go → take`
 runs. If Olen has moved the cache in the meantime, Pip arrives to an empty hole — his belief was stale
-— and re-cases. The same machinery, pointed at a `Recipe` instead of a `Loc`, is an apprentice who
-`study`s a master, or a spy who `observe`s a rival workshop.
+— and re-cases. Note what Pip *cannot* learn by casing: how much is actually in the cache. He never sees
+inside until he cracks it, so the haul is an estimate from Olen's apparent wealth — and the whole heist
+is a bet on that estimate, decided as [acting under uncertainty](#acting-under-uncertainty) describes.
+The same machinery, pointed at a `Recipe` instead of a `Loc`, is an apprentice who `study`s a master, or
+a spy who `observe`s a rival workshop.
 
 **The rescue — strength, hold-until, and a control that loses.** Four want to free captives held at a
 camp of thirty. Freeing a captive requires being at the captive and *unopposed*, and unopposed means
