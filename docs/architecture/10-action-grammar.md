@@ -108,8 +108,10 @@ An **action** is described by four things:
 
 The planner usually has **several actions for the same effect** and chooses between them by cost. To
 get gold, an agent might `sell` goods it holds, `loot` a corpse, or `take` from a cache it has
-located; whichever is cheapest given its beliefs wins. This is why two agents with the same actions
-behave differently — the choice falls out of each one's beliefs, not from anything authored per agent.
+located; whichever is cheapest given its beliefs wins. This is one of the two reasons two agents with
+the same actions behave differently — the choice falls out of each one's beliefs, not from anything
+authored per agent. The other reason is that the *cost itself* is weighted by who the agent is, not
+only by what it believes; that is [personality](#personality--nature-alongside-nurture), below.
 
 **Cost includes confidence.** An action's cost is computed from the agent's beliefs, *and from how
 sure they are*. An action that leans on a shaky belief — a half-glimpsed cache, a third-hand rumour of
@@ -332,7 +334,51 @@ thrown away — a short, bounded search. The situations this doc keeps naming ar
 code; they are paths the planner happens to find through the same flat set of actions under different
 beliefs. The maintained code grows with the *vocabulary* — the actions and topics — and the behaviours
 are what emerge from it. All agents share that vocabulary the way speakers share a language and still
-say different sentences; the differences come from the beliefs, which are per-agent.
+say different sentences; the differences come from each agent's **beliefs** (what it has seen — nurture)
+and its **personality** (what it was born like — nature; see [Personality](#personality--nature-alongside-nurture)),
+both per-agent.
+
+## Personality — nature alongside nurture
+
+Everything so far makes agents differ by *circumstance*: same vocabulary, same planner, different
+beliefs, so different plans. But circumstance alone is all nurture and no nature — a town of identical
+souls who would each behave the same in the same spot. The missing axis is **personality**: a small,
+fixed vector of innate traits each agent is born with — how far it tolerates risk, how hard it chases
+status, how much it values company, curiosity, and the welfare of others — set at birth, partly
+inherited from its line, and roughly constant across a life. Personality adds no actions and no effects.
+It **weights the machinery already here**, at three points, so two agents with identical beliefs in
+identical circumstances still choose differently.
+
+**What you want.** The rules that turn needs and drives into goals are weighted by personality, so the
+*agenda* differs. The ambitious form wealth and renown goals sooner and hold them harder; the sociable
+reach for belonging and company; the curious go out of their way to observe and explore; the kind form
+goals to help. Two equally poor agents want different things — one to get rich, one to be liked —
+because their drives are weighted differently. This is the largest lever: personality shapes what an
+agent is even trying to do.
+
+**What you'll pay and risk.** The planner chooses by cost, and personality re-weights cost. Risk
+tolerance discounts or inflates the danger-and-uncertainty penalties: a bold agent finds the heist on a
+half-seen cache, or the assault at marginal odds, *cheap* and takes it; a cautious one finds the same
+plan dear, scouts more, and refuses thin margins. The same trait sets how far the
+[failure path](#effects--the-units-a-plan-is-made-of) widens toward desperate options — the reckless act
+on rumour, the timid never do. Altruism discounts the cost of giving and helping — a generous soul finds
+repaying a favour or sharing food cheap, a grasping one finds it dear — so the same gift is an easy plan
+for one agent and an unaffordable one for the next.
+
+**What you'll even consider.** Some goals are gated by disposition, not just ability. A scrupulous
+agent's goal-rules never produce theft or coercion even when broke and perfectly able to pull them off —
+it begs, works, or goes without; a larcenous one reaches for them readily. So Pip robs the merchant
+partly because he is broke (nurture) and partly because he is the sort who would (nature); a different
+poor soul in the same straits works a field or asks for alms. This gate is what stops "everyone turns
+thief when money is tight" — poverty is the circumstance, character is the choice.
+
+So three axes, clean: the **grammar** is the shared language every agent speaks; **beliefs** are the
+world each one happens to have seen (nurture); **personality** is the innate weighting each was born with
+(nature). Identical beliefs in identical circumstances still diverge, because the same plan costs them
+differently and the same need pushes them differently — and because personality is partly **inherited**,
+families carry tendencies: a line of cautious traders, a line of bold raiders, nature with a heritable
+grain. Personality is a weight vector read at the points the agent already decides; it is never its own
+subsystem and never its own actions.
 
 ## Cost and scale
 
