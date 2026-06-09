@@ -42,8 +42,43 @@ import * as arcs from './director/arcs.js';
 import * as roles from './director/roles.js';
 import * as caravans from './director/caravans.js';
 
+// The Director is a thin STATE+ORCHESTRATION shell; behaviour lives in js/sim/director/*.ts
+// over the instance. `sim` (a separate, wave-2 cluster still in .js) and the long tail of
+// ad-hoc drama state (arcs/sagas/feud lists/tone/cooldown maps) are typed opaquely on
+// purpose — the surface is large and freeform; behaviour is unchanged and fully guarded.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Sim = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Ag = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Ctx = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Arc = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Saga = any;
+
 export class Director {
-  constructor(sim) {
+  sim: Sim;
+  _acc: number;
+  _sinceEvent: number;
+  _raiders: Ag[];
+  _lastRaidAt: number;
+  _lastTropeAt: number;
+  _warlord: Ag | null;
+  _warCamp: Ag | null;
+  _caravans: Ag[];
+  _lastCaravanAt: number;
+  _tension: number;
+  _reliefUntil: number;
+  _threatWas: boolean;
+  _points: number;
+  _lastPop: number | null;
+  stats: Record<string, number>;
+  // the long tail of ad-hoc drama state lazily set across the behaviour modules
+  // (_favored, _arcs, _sagas, _tone, _kindAt, _reunited, _arcSeq, _coreCache, …).
+  [k: string]: unknown;
+
+  constructor(sim: Sim) {
     this.sim = sim;
     this._acc = 0;            // throttle accumulator (sim-seconds)
     this._sinceEvent = 0;     // sim-seconds since ANY director event fired
@@ -68,7 +103,7 @@ export class Director {
   }
 
   // count living townsfolk — the population knob that scales raid pressure.
-  _townPop() {
+  _townPop(): number {
     let n = 0;
     for (const a of this.sim.agents) {
       if (a.alive && a.autonomous && a.faction === 'townsfolk') n++;
@@ -78,7 +113,7 @@ export class Director {
 
   // fixed-tick entry. Self-throttled to DIRECTOR.interval; fully guarded so a bad
   // roll can never throw inside the sim's fixed-tick while-loop (the freeze lesson).
-  tick(ctx, dt) {
+  tick(ctx: Ctx, dt: number): void {
     this._sinceEvent += dt;
     this._acc += dt;
     if (this._acc < DIRECTOR.interval) return;
@@ -134,7 +169,7 @@ export class Director {
   // --- SHARED BELIEF / UTILITY HELPERS (used across the behaviour modules) -------
 
   // push observer A's belief-standing toward B downward (a grievance seed).
-  _sour(A, B, drop) {
+  _sour(A: Ag, B: Ag, drop: number): void {
     if (!A || !B || !A.beliefs) return;
     const b = A.beliefs._ensure ? A.beliefs._ensure(B.id) : null;
     if (!b) return;
@@ -143,7 +178,7 @@ export class Director {
   }
 
   // the inverse of _sour: warm A's belief-standing toward B (un-latches enmity).
-  _warm(A, B, amt) {
+  _warm(A: Ag, B: Ag, amt: number): void {
     if (!A || !B || !A.beliefs || !A.beliefs._ensure) return;
     const b = A.beliefs._ensure(B.id);
     if (!b) return;
@@ -154,7 +189,7 @@ export class Director {
 
   // plant a believed opinion in an OBSERVER about a subject (the spark for slander /
   // a false reputation spike). Belief-only — never touches ground truth (the split).
-  _plant(observer, subjectId, { dStanding = 0, suspicion = 0, confidence = 0 }) {
+  _plant(observer: Ag, subjectId: unknown, { dStanding = 0, suspicion = 0, confidence = 0 }: { dStanding?: number; suspicion?: number; confidence?: number }): void {
     if (!observer || !observer.beliefs || !observer.beliefs._ensure) return;
     const b = observer.beliefs._ensure(subjectId);
     if (!b) return;
@@ -163,17 +198,17 @@ export class Director {
     if (confidence) b.confidence = Math.min(1, Math.max(b.confidence, confidence));
   }
 
-  _remember(a, ep) { try { if (a && a.memory && a.memory.record) a.memory.record(ep); } catch { /* never throw */ } }
+  _remember(a: Ag, ep: unknown): void { try { if (a && a.memory && a.memory.record) a.memory.record(ep); } catch { /* never throw */ } }
 
-  _townsfolkAlive() { return this.sim.agents.filter((a) => a.alive && a.autonomous && a.faction === 'townsfolk'); }
-  _lvl(a) { return (a.progression && a.progression.totalLevel) || 0; }
-  _note(kind, id, text, arc) { try { if (this.sim.chronicle && this.sim.chronicle.note) this.sim.chronicle.note(kind, id, text, arc); } catch { /* */ } }
-  _shuffle(arr) { const a = arr.slice(); for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; const t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
+  _townsfolkAlive(): Ag[] { return this.sim.agents.filter((a: any) => a.alive && a.autonomous && a.faction === 'townsfolk'); }
+  _lvl(a: Ag): number { return (a.progression && a.progression.totalLevel) || 0; }
+  _note(kind: string, id: unknown, text: string, arc?: unknown): void { try { if (this.sim.chronicle && this.sim.chronicle.note) this.sim.chronicle.note(kind, id, text, arc); } catch { /* */ } }
+  _shuffle<T>(arr: T[]): T[] { const a = arr.slice(); for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; const t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
 
   // idle, non-grouped townsfolk are the safe pool to nudge (we avoid disturbing
   // agents already busy in a party/group or fleeing).
-  _idleTownsfolk() {
-    return this.sim.agents.filter((a) =>
+  _idleTownsfolk(): Ag[] {
+    return this.sim.agents.filter((a: any) =>
       a.alive && a.autonomous && a.faction === 'townsfolk');
   }
 
@@ -181,10 +216,10 @@ export class Director {
 
   // raids.js
   _pruneRaiders() { return raids._pruneRaiders(this); }
-  _despawn(a) { return raids._despawn(this, a); }
+  _despawn(a: Ag) { return raids._despawn(this, a); }
   _withdrawAll() { return raids._withdrawAll(this); }
-  _raid(pop) { return raids._raid(this, pop); }
-  _spawnRaider(x, z) { return raids._spawnRaider(this, x, z); }
+  _raid(pop: number) { return raids._raid(this, pop); }
+  _spawnRaider(x: number, z: number) { return raids._spawnRaider(this, x, z); }
   _tropeNemesis() { return raids._tropeNemesis(this); }
   _tropeWar() { return raids._tropeWar(this); }
 
@@ -192,71 +227,71 @@ export class Director {
   _pace() { return roll._pace(this); }
   _enterRelief() { return roll._enterRelief(this); }
   _inRelief() { return roll._inRelief(this); }
-  _roll(ctx) { return roll._roll(this, ctx); }
-  _opportunity(pop) { return roll._opportunity(this, pop); }
+  _roll(ctx: Ctx) { return roll._roll(this, ctx); }
+  _opportunity(pop: number) { return roll._opportunity(this, pop); }
   _crisis() { return roll._crisis(this); }
   _spark() { return roll._spark(this); }
   _processFavoredFalls() { return roll._processFavoredFalls(this); }
 
   // tropes.js
-  _instigateTrope(ctx) { return tropes._instigateTrope(this, ctx); }
-  _tropeReunion(folk) { return tropes._tropeReunion(this, folk); }
-  _tropeUnlikelyFriendship(folk) { return tropes._tropeUnlikelyFriendship(this, folk); }
-  _tropeFalseWitness(folk) { return tropes._tropeFalseWitness(this, folk); }
-  _tropeFavoredRise(folk) { return tropes._tropeFavoredRise(this, folk); }
-  _tropeMistakenJealousy(folk) { return tropes._tropeMistakenJealousy(this, folk); }
-  _tropeBetrayal(folk) { return tropes._tropeBetrayal(this, folk); }
-  _tropeMiserReformed(folk) { return tropes._tropeMiserReformed(this, folk); }
-  _tropeProdigalReturn(folk) { return tropes._tropeProdigalReturn(this, folk); }
-  _tropeDebtRepaid(folk) { return tropes._tropeDebtRepaid(this, folk); }
-  _tropeMentorPride(folk) { return tropes._tropeMentorPride(this, folk); }
+  _instigateTrope(ctx: Ctx) { return tropes._instigateTrope(this, ctx); }
+  _tropeReunion(folk: Ag[]) { return tropes._tropeReunion(this, folk); }
+  _tropeUnlikelyFriendship(folk: Ag[]) { return tropes._tropeUnlikelyFriendship(this, folk); }
+  _tropeFalseWitness(folk: Ag[]) { return tropes._tropeFalseWitness(this, folk); }
+  _tropeFavoredRise(folk: Ag[]) { return tropes._tropeFavoredRise(this, folk); }
+  _tropeMistakenJealousy(folk: Ag[]) { return tropes._tropeMistakenJealousy(this, folk); }
+  _tropeBetrayal(folk: Ag[]) { return tropes._tropeBetrayal(this, folk); }
+  _tropeMiserReformed(folk: Ag[]) { return tropes._tropeMiserReformed(this, folk); }
+  _tropeProdigalReturn(folk: Ag[]) { return tropes._tropeProdigalReturn(this, folk); }
+  _tropeDebtRepaid(folk: Ag[]) { return tropes._tropeDebtRepaid(this, folk); }
+  _tropeMentorPride(folk: Ag[]) { return tropes._tropeMentorPride(this, folk); }
   _tropeSpyUnmasked() { return tropes._tropeSpyUnmasked(this); }
-  _tropeTyrantMarket(folk) { return tropes._tropeTyrantMarket(this, folk); }
-  _tropeHouseFeud(folk) { return tropes._tropeHouseFeud(this, folk); }
-  _tropeStarCrossed(folk) { return tropes._tropeStarCrossed(this, folk); }
-  _tropeBoastBackfires(folk) { return tropes._tropeBoastBackfires(this, folk); }
-  _tropeRivalApprentices(folk, T) { return tropes._tropeRivalApprentices(this, folk, T); }
-  _tropeFeud(folk, T) { return tropes._tropeFeud(this, folk, T); }
-  _tropeVendetta(folk, T) { return tropes._tropeVendetta(this, folk, T); }
-  _tropeProphet(folk, T) { return tropes._tropeProphet(this, folk, T); }
+  _tropeTyrantMarket(folk: Ag[]) { return tropes._tropeTyrantMarket(this, folk); }
+  _tropeHouseFeud(folk: Ag[]) { return tropes._tropeHouseFeud(this, folk); }
+  _tropeStarCrossed(folk: Ag[]) { return tropes._tropeStarCrossed(this, folk); }
+  _tropeBoastBackfires(folk: Ag[]) { return tropes._tropeBoastBackfires(this, folk); }
+  _tropeRivalApprentices(folk: Ag[], T: unknown) { return tropes._tropeRivalApprentices(this, folk, T); }
+  _tropeFeud(folk: Ag[], T: unknown) { return tropes._tropeFeud(this, folk, T); }
+  _tropeVendetta(folk: Ag[], T: unknown) { return tropes._tropeVendetta(this, folk, T); }
+  _tropeProphet(folk: Ag[], T: unknown) { return tropes._tropeProphet(this, folk, T); }
 
   // arcs.js
   _advanceArcs() { return arcs._advanceArcs(this); }
-  _recordSaga(saga) { return arcs._recordSaga(this, saga); }
-  _arcFree(a) { return arcs._arcFree(this, a); }
-  _stepReckoning(arc, now) { return arcs._stepReckoning(this, arc, now); }
-  _stepTyrantFall(arc, now) { return arcs._stepTyrantFall(this, arc, now); }
-  _stepSpyWeb(arc, now) { return arcs._stepSpyWeb(this, arc, now); }
-  _stepRomance(arc, now) { return arcs._stepRomance(this, arc, now); }
-  _stepAccused(arc, now) { return arcs._stepAccused(this, arc, now); }
+  _recordSaga(saga: Saga) { return arcs._recordSaga(this, saga); }
+  _arcFree(a: Ag) { return arcs._arcFree(this, a); }
+  _stepReckoning(arc: Arc, now: number) { return arcs._stepReckoning(this, arc, now); }
+  _stepTyrantFall(arc: Arc, now: number) { return arcs._stepTyrantFall(this, arc, now); }
+  _stepSpyWeb(arc: Arc, now: number) { return arcs._stepSpyWeb(this, arc, now); }
+  _stepRomance(arc: Arc, now: number) { return arcs._stepRomance(this, arc, now); }
+  _stepAccused(arc: Arc, now: number) { return arcs._stepAccused(this, arc, now); }
   _seedSpyWebs() { return arcs._seedSpyWebs(this); }
 
   // roles.js
-  _tropeBodyguard(folk) { return roles._tropeBodyguard(this, folk); }
-  _enlistBodyguard(g, charge) { return roles._enlistBodyguard(this, g, charge); }
-  _freeBodyguard(g) { return roles._freeBodyguard(this, g); }
+  _tropeBodyguard(folk: Ag[]) { return roles._tropeBodyguard(this, folk); }
+  _enlistBodyguard(g: Ag, charge: Ag) { return roles._enlistBodyguard(this, g, charge); }
+  _freeBodyguard(g: Ag) { return roles._freeBodyguard(this, g); }
   _superviseBodyguards() { return roles._superviseBodyguards(this); }
-  _enlistDuelist(a) { return roles._enlistDuelist(this, a); }
-  _freeDuelist(a) { return roles._freeDuelist(this, a); }
-  _resolveDuel(victor, yielder, satisfied) { return roles._resolveDuel(this, victor, yielder, satisfied); }
+  _enlistDuelist(a: Ag) { return roles._enlistDuelist(this, a); }
+  _freeDuelist(a: Ag) { return roles._freeDuelist(this, a); }
+  _resolveDuel(victor: Ag, yielder: Ag, satisfied: boolean) { return roles._resolveDuel(this, victor, yielder, satisfied); }
   _superviseDuels() { return roles._superviseDuels(this); }
-  _tropeDuel(folk) { return roles._tropeDuel(this, folk); }
+  _tropeDuel(folk: Ag[]) { return roles._tropeDuel(this, folk); }
   _superviseProtege() { return roles._superviseProtege(this); }
-  _enlistProtege(g, player) { return roles._enlistProtege(this, g, player); }
-  _freeProtege(g) { return roles._freeProtege(this, g); }
-  _endProtege(a, why) { return roles._endProtege(this, a, why); }
-  _enlistGuardian(g, player, savedFrom) { return roles._enlistGuardian(this, g, player, savedFrom); }
-  _freeGuardian(g) { return roles._freeGuardian(this, g); }
+  _enlistProtege(g: Ag, player: Ag) { return roles._enlistProtege(this, g, player); }
+  _freeProtege(g: Ag) { return roles._freeProtege(this, g); }
+  _endProtege(a: Ag, why: string) { return roles._endProtege(this, a, why); }
+  _enlistGuardian(g: Ag, player: Ag, savedFrom: string) { return roles._enlistGuardian(this, g, player, savedFrom); }
+  _freeGuardian(g: Ag) { return roles._freeGuardian(this, g); }
   _superviseGrateful() { return roles._superviseGrateful(this); }
-  _endGuardian(a, why) { return roles._endGuardian(this, a, why); }
+  _endGuardian(a: Ag, why: string) { return roles._endGuardian(this, a, why); }
   _superviseLegend() { return roles._superviseLegend(this); }
   _superviseAvengers() { return roles._superviseAvengers(this); }
-  _endAvenger(a, why) { return roles._endAvenger(this, a, why); }
+  _endAvenger(a: Ag, why: string) { return roles._endAvenger(this, a, why); }
 
   // caravans.js
   _tropeCaravan() { return caravans._tropeCaravan(this); }
-  _enlistEscort(a, leader, role, good) { return caravans._enlistEscort(this, a, leader, role, good); }
-  _disbandEscorts(trader) { return caravans._disbandEscorts(this, trader); }
+  _enlistEscort(a: Ag, leader: Ag, role: string, good: string) { return caravans._enlistEscort(this, a, leader, role, good); }
+  _disbandEscorts(trader: Ag) { return caravans._disbandEscorts(this, trader); }
   _advanceCaravans() { return caravans._advanceCaravans(this); }
-  _caravanWindfall(trader, good) { return caravans._caravanWindfall(this, trader, good); }
+  _caravanWindfall(trader: Ag, good: string) { return caravans._caravanWindfall(this, trader, good); }
 }

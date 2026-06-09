@@ -17,12 +17,27 @@ import { isHomeBuilder } from './construction.js';
 import { ARENA_RADIUS } from '../arena.js';
 import { TUNE } from '../constants.js';
 
+// `sim` (the owning Simulation — wave-2, still .js) and the expedition Agents (captains +
+// followers, via their expedition/band flags) are typed opaquely on purpose; behaviour
+// is unchanged.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Sim = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Ag = any;
+
 const CORE = new THREE.Vector3(0, 0, 0);
-const rand = (a, b) => a + Math.random() * (b - a);
+const rand = (a: number, b: number): number => a + Math.random() * (b - a);
 const HORROR_PERS = { risk_tolerance: 0.6, social_drive: 0.3, ambition: 0.5, altruism: 0.2, curiosity: 0.4 };
 
 export class Expeditions {
-  constructor(sim) {
+  sim: Sim;
+  _acc: number;
+  _lastForm: number;
+  active: Ag[];
+  stats: Record<string, number>;
+  _horrorSeq?: number;
+
+  constructor(sim: Sim) {
     this.sim = sim;
     this._acc = 0;
     this._lastForm = -Infinity;
@@ -30,7 +45,7 @@ export class Expeditions {
     this.stats = { mounted: 0, triumphs: 0, losses: 0, slain: 0 };
   }
 
-  tick(ctx, dt) {
+  tick(ctx: unknown, dt: number): void {
     try {
       if (!this.sim._spawned || !EXPEDITION || !EXPEDITION.enabled) return;
       this._acc += dt;
@@ -42,43 +57,43 @@ export class Expeditions {
     } catch { /* never throw on the fixed tick */ }
   }
 
-  _lvl(a) { return (a && a.progression && a.progression.totalLevel) || 0; }
-  _brave(a) {
+  _lvl(a: Ag): number { return (a && a.progression && a.progression.totalLevel) || 0; }
+  _brave(a: Ag): boolean {
     return a && a.alive && a.autonomous && a.faction === 'townsfolk' && !a.watch && !a.reporter &&
       !a.inParty && a.expedition == null && a.expeditionOf == null && !isHomeBuilder(a);
   }
 
   // raise a new company when one is warranted (off cooldown, under the cap, a worthy
   // captain + a couple of brave souls to follow).
-  _maybeForm() {
+  _maybeForm(): void {
     if (this.active.length >= (EXPEDITION.maxActive || 1)) return;
     const now = this.sim.time;
     if (now - this._lastForm < (EXPEDITION.formEvery || 90)) return;
     if (Math.random() > (EXPEDITION.formChance ?? 0.5)) return;
     // don't drain a struggling town — a company is only mustered when there are folk to spare.
-    const townPop = this.sim.agents.filter((a) => a.alive && a.autonomous && a.faction === 'townsfolk').length;
+    const townPop = this.sim.agents.filter((a: any) => a.alive && a.autonomous && a.faction === 'townsfolk').length;
     if (townPop < (EXPEDITION.minTownPop || 18)) return;
 
-    const pool = this.sim.agents.filter((a) => this._brave(a));
+    const pool = this.sim.agents.filter((a: any) => this._brave(a));
     // a captain of some renown (level), ideally already a fighter/hero.
-    const captains = pool.filter((a) => this._lvl(a) >= (EXPEDITION.captainMinLevel || 5) &&
+    const captains = pool.filter((a: any) => this._lvl(a) >= (EXPEDITION.captainMinLevel || 5) &&
       (a.combatant || a.epithet || (a.personality && a.personality.risk_tolerance >= (EXPEDITION.recruitRisk || 0.5))))
-      .sort((x, y) => this._lvl(y) - this._lvl(x));
+      .sort((x: any, y: any) => this._lvl(y) - this._lvl(x));
     const cap = captains[0];
     if (!cap) return;
 
     // brave followers near the captain.
     const want = Math.max(1, (EXPEDITION.partySize || 3) - 1);
-    const followers = pool.filter((a) => a !== cap &&
+    const followers = pool.filter((a: any) => a !== cap &&
       a.personality && a.personality.risk_tolerance >= (EXPEDITION.recruitRisk || 0.5))
-      .sort((x, y) => cap.pos.distanceToSquared(x.pos) - cap.pos.distanceToSquared(y.pos))
+      .sort((x: any, y: any) => cap.pos.distanceToSquared(x.pos) - cap.pos.distanceToSquared(y.pos))
       .slice(0, want);
     if (!followers.length) return;
 
     this._form(cap, followers);
   }
 
-  _form(cap, followers) {
+  _form(cap: Ag, followers: Ag[]): void {
     const members = [cap, ...followers];
     cap.expedition = { phase: 'out', members, startedAt: this.sim.time, killsAt0: this._killCount(members) };
     // make the followers a marching company (band-follow the captain — the warband path).
@@ -112,7 +127,7 @@ export class Expeditions {
   // DELVE — descend the party into an isolated underground pocket and loose the
   // horrors of the deep on them. They hold and fight there; the dark is far below
   // everything else, so it's isolated by distance (the dungeon spatial trick).
-  _descend(cap, who) {
+  _descend(cap: Ag, who: string): void {
     const E = cap.expedition;
     E.delve = true; E.phase = 'delve';
     E.horrorIds = [];
@@ -135,7 +150,7 @@ export class Expeditions {
 
   // one HORROR of the deep — a tougher monster-faction body, gold-neutral (no minting),
   // pinned at the delve depth.
-  _spawnHorror(x, y, z) {
+  _spawnHorror(x: number, y: number, z: number): Ag {
     const sim = this.sim;
     const f = sim.makeFighter(MONSTER.model, {});
     f.root.position.set(x, y, z);
@@ -153,7 +168,7 @@ export class Expeditions {
     return a;
   }
 
-  _despawnHorror(h) {
+  _despawnHorror(h: Ag): void {
     try {
       if (!h) return;
       if (h.fighter) h.fighter.alive = false;   // NB: agent.alive is a getter — set the field
@@ -164,13 +179,13 @@ export class Expeditions {
     } catch { /* */ }
   }
 
-  _killCount(members) {
+  _killCount(members: Ag[]): number {
     let n = 0;
     for (const m of members) n += (m && m.life && m.life.monsterKills) || 0;
     return n;
   }
 
-  _advance(cap) {
+  _advance(cap: Ag): void {
     const E = cap.expedition;
     if (!E) return;
     if (E.delve) { this._advanceDelve(cap); return; }
@@ -183,7 +198,7 @@ export class Expeditions {
       return;
     }
     if (E.phase === 'hunt') {
-      const lost = E.members.filter((m) => m && !m.alive).length;
+      const lost = E.members.filter((m: any) => m && !m.alive).length;
       if (now >= (E.huntUntil || 0) || lost > 0) { E.phase = 'return'; E.target = CORE; }
       return;
     }
@@ -193,22 +208,22 @@ export class Expeditions {
   }
 
   // the delve runs until the deep is CLEARED, time runs out, or the party is wiped.
-  _advanceDelve(cap) {
+  _advanceDelve(cap: Ag): void {
     const E = cap.expedition;
     const now = this.sim.time;
-    const aliveMembers = E.members.filter((m) => m && m.alive).length;
-    const horrorsLeft = (E.horrorIds || []).filter((id) => { const h = this.sim.agentsById.get(id); return h && h.alive; }).length;
+    const aliveMembers = E.members.filter((m: any) => m && m.alive).length;
+    const horrorsLeft = (E.horrorIds || []).filter((id: any) => { const h = this.sim.agentsById.get(id); return h && h.alive; }).length;
     if (horrorsLeft === 0 || now >= (E.delveUntil || 0) || aliveMembers === 0) {
       this._endDelve(cap, horrorsLeft === 0);
     }
   }
 
-  _endDelve(cap, cleared) {
+  _endDelve(cap: Ag, cleared: boolean): void {
     const E = cap.expedition;
     if (!E) return;
     const members = E.members;
-    const survivors = members.filter((m) => m && m.alive);
-    const fallen = members.filter((m) => m && !m.alive);
+    const survivors = members.filter((m: any) => m && m.alive);
+    const fallen = members.filter((m: any) => m && !m.alive);
     const kills = Math.max(0, this._killCount(survivors) - (E.killsAt0 || 0));
     this.stats.slain += kills;
     // bring the survivors back into the light (the town core); free everyone's flags.
@@ -224,7 +239,7 @@ export class Expeditions {
       this._note(`${cap.name}'s company was swallowed by the dark — none climbed back into the light.`);
     } else if (fallen.length) {
       this.stats.losses++;
-      const names = fallen.map((m) => m.name).join(' and ');
+      const names = fallen.map((m: any) => m.name).join(' and ');
       this._note(`${cap.name}'s company climbs back from the deep, ${kills} horror${kills === 1 ? '' : 's'} slain — but ${names} was left below.`);
     } else {
       this.stats.triumphs++;
@@ -240,12 +255,12 @@ export class Expeditions {
     }
   }
 
-  _end(cap, how) {
+  _end(cap: Ag, how: string): void {
     const E = cap.expedition;
     if (!E) return;
     const members = E.members || [cap];
-    const survivors = members.filter((m) => m && m.alive);
-    const fallen = members.filter((m) => m && !m.alive);
+    const survivors = members.filter((m: any) => m && m.alive);
+    const fallen = members.filter((m: any) => m && !m.alive);
     const kills = Math.max(0, this._killCount(survivors) - (E.killsAt0 || 0));
     this.stats.slain += kills;
 
@@ -260,7 +275,7 @@ export class Expeditions {
       this._note(`The expedition is lost — ${cap.name}'s company did not return from the wilds.`);
     } else if (fallen.length) {
       this.stats.losses++;
-      const names = fallen.map((m) => m.name).join(' and ');
+      const names = fallen.map((m: any) => m.name).join(' and ');
       this._note(`${cap.name}'s company returns from the wilds, ${kills} foe${kills === 1 ? '' : 's'} slain — but ${names} did not come home.`);
     } else if (kills > 0) {
       this.stats.triumphs++;
@@ -270,7 +285,7 @@ export class Expeditions {
     }
   }
 
-  _restore(m) {
+  _restore(m: Ag): void {
     if (!m) return;
     const r = m._expRestore;
     if (r) {
@@ -281,10 +296,10 @@ export class Expeditions {
     m.expeditionOf = null;
   }
 
-  _note(text) { try { if (this.sim.chronicle && this.sim.chronicle.note) this.sim.chronicle.note('legend', -15, text); } catch { /* */ } }
+  _note(text: string): void { try { if (this.sim.chronicle && this.sim.chronicle.note) this.sim.chronicle.note('legend', -15, text); } catch { /* */ } }
 
   // teardown: dissolve any company (despawn its horrors, surface + restore members).
-  disband() {
+  disband(): void {
     for (const cap of this.active.slice()) {
       const E = cap.expedition;
       if (E) {

@@ -11,6 +11,16 @@ import { BEAT } from '../chronicle.js';
 import { grantEpithet } from '../combatEvents.js';
 import { rand, clamp } from './util.js';
 
+// `d` is the Director (a thin STATE+ORCHESTRATION shell — director.ts) and `sim`/`a` are
+// the Simulation/Agents it steers. All three carry a large freeform surface of ad-hoc
+// drama fields (raider lists, war state, role flags) not worth a rigid shape; simulation.ts
+// is a separate (wave-2) cluster still in .js. We type them opaquely on purpose (any) —
+// behaviour is unchanged and fully guarded.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Dir = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Ag = any;
+
 // A blank personality so a spawned body has the fields decide()/groups read,
 // without importing the Simulation's private makePersonality. Mid-range, inert.
 function flatPersonality() {
@@ -28,7 +38,7 @@ function flatPersonality() {
 // from being ground out by an ever-accumulating besieging force and creates the
 // LULLS that let it recover (the pulse). Raiders carry no gold, so removing them
 // never touches conservation.
-export function _pruneRaiders(d) {
+export function _pruneRaiders(d: Dir): void {
   if (!d._raiders.length) return;
   const now = d.sim.time;
   const keep = [];
@@ -42,7 +52,7 @@ export function _pruneRaiders(d) {
 
 // remove a director-spawned body from the world (it has withdrawn). Pulled from
 // the roster + scene so combat/perception stop seeing it. Gold-neutral by spawn.
-export function _despawn(d, a) {
+export function _despawn(d: Dir, a: Ag): void {
   try {
     if (a.fighter) a.fighter.alive = false;             // NB: agent.alive is a getter — set the field
     if (a.fighter && a.fighter.root) d.sim.scene.remove(a.fighter.root);
@@ -54,7 +64,7 @@ export function _despawn(d, a) {
 
 // a decimated town gets a true REPRIEVE: call off the raid entirely (withdraw
 // every live raider) so the survivors can rebuild instead of being mopped up.
-export function _withdrawAll(d) {
+export function _withdrawAll(d: Dir): void {
   if (!d._raiders.length) return;
   const keep = [];
   for (const a of d._raiders) {
@@ -67,7 +77,7 @@ export function _withdrawAll(d) {
 // --- RAID: a small WAVE of monster-faction raiders near the town -----------
 // Size scales with population; concurrent raiders are capped; lulls are enforced
 // by DIRECTOR.raidCooldown so the town never faces a continuous swarm.
-export function _raid(d, pop) {
+export function _raid(d: Dir, pop: number): void {
   const R = DIRECTOR.raid;
   const WAR = DIRECTOR.war || {};
   const atWar = !!(d._warlord && d._warlord.alive);   // raids INTENSIFY during a war
@@ -117,7 +127,7 @@ export function _raid(d, pop) {
 // build ONE monster-faction raider, reusing the makeFighter factory + Agent spawn
 // pattern from simulation.js. CRITICAL: gold is forced to 0 so spawning a body
 // never mints money (the soak's gold-conservation assertion must hold).
-export function _spawnRaider(d, x, z) {
+export function _spawnRaider(d: Dir, x: number, z: number): Ag {
   const sim = d.sim;
   const fighter = sim.makeFighter(MONSTER.model, {});
   const px = clamp(x, -ARENA_RADIUS * 0.97, ARENA_RADIUS * 0.97);
@@ -146,9 +156,9 @@ export function _spawnRaider(d, x, z) {
 // The town defends so well that few raiders ever rack up the kills to earn a dread
 // name organically, so the director anoints one: a singular recurring antagonist
 // that won't withdraw and must be put down by a hero. One nemesis at a time.
-export function _tropeNemesis(d) {
-  if (d.sim.agents.some((a) => a.alive && a.nemesis)) return false;   // a singular threat
-  const cands = d._raiders.filter((a) => a && a.alive && !a.nemesis);
+export function _tropeNemesis(d: Dir): boolean {
+  if (d.sim.agents.some((a: any) => a.alive && a.nemesis)) return false;   // a singular threat
+  const cands = d._raiders.filter((a: any) => a && a.alive && !a.nemesis);
   if (!cands.length) return false;
   const boss = d._shuffle(cands)[0];
   grantEpithet(d.sim, boss, 'villain');
@@ -159,7 +169,7 @@ export function _tropeNemesis(d) {
 // town: a persistent, un-leashed boss (reusing the nemesis machinery) while raids
 // INTENSIFY (see _raid). The war is a saga arc with a clear end — it lasts until a
 // hero brings the warlord down. One war at a time.
-export function _tropeWar(d) {
+export function _tropeWar(d: Dir): boolean {
   if (d._warlord && d._warlord.alive) return false;
   const camps = d.sim.camps ? Object.keys(d.sim.camps).map((k) => d.sim.camps[k]) : [];
   const camp = d._shuffle(camps.filter((c) => c && c.leader && c.leader.alive && !c.leader.warlord))[0];

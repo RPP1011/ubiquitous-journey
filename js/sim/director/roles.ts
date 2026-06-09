@@ -11,20 +11,27 @@ import { BEAT } from '../chronicle.js';
 import { grantEpithet } from '../combatEvents.js';
 import { clamp } from './util.js';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Dir = any;   // the Director instance (thin shell — director.ts). `g`/`a`/`folk`/etc.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Ag = any;    // are Agents accessed via their long-tail role flags. Opaque on purpose;
+                  // behaviour is unchanged and fully guarded.
+
+
 // THE BODYGUARD (LOYALTY/SACRIFICE — the SHIELD verb): a brave soul is sworn to
 // shadow and shield an endangered or notable charge. It reuses the warband band-
 // follow path (bandLeaderId = charge → follow + fight threats near the charge), so
 // the protection is emergent; the drama is the guard laying down their life (the
 // sacrifice beat fires from combatEvents on a guard's death while the charge lives).
-export function _tropeBodyguard(d, folk) {
+export function _tropeBodyguard(d: Dir, folk: Ag[]): boolean {
   const T = DIRECTOR.tropes;
-  if (d.sim.agents.filter((a) => a.alive && a.bodyguardOf != null).length >= (T.bodyguardMax || 2)) return false;
+  if (d.sim.agents.filter((a: any) => a.alive && a.bodyguardOf != null).length >= (T.bodyguardMax || 2)) return false;
   // a CHARGE worth guarding: a hero (epithet) or someone MARKED by a rivalry/vendetta —
   // notable or endangered, and not already a fighter.
   const charges = folk.filter((a) => !a.combatant && !a.watch && !a.bodyguardOf && (a.epithet || a.rivalId != null));
   for (const C of d._shuffle(charges)) {
-    if (d.sim.agents.some((g) => g.bodyguardOf === C.id)) continue;   // already has a guard
-    const guard = d._shuffle(folk).find((a) =>
+    if (d.sim.agents.some((g: any) => g.bodyguardOf === C.id)) continue;   // already has a guard
+    const guard = d._shuffle(folk).find((a: any) =>
       a !== C && a.bodyguardOf == null && !a.watch && !a.reporter && !a.inParty && !a.expedition && !a.caravanRun && !a.bounty && !a.spy &&
       a.personality && a.personality.risk_tolerance >= (T.bodyguardRisk || 0.55) && a.pos.distanceTo(C.pos) <= (T.proximity || 26) * 1.5);
     if (!guard) continue;
@@ -35,14 +42,14 @@ export function _tropeBodyguard(d, folk) {
   return false;
 }
 
-export function _enlistBodyguard(d, g, charge) {
+export function _enlistBodyguard(d: Dir, g: Ag, charge: Ag): void {
   g._bgRestore = { combatant: g.combatant, canWork: g.canWork, inParty: g.inParty, bandLeaderId: g.bandLeaderId, groupType: g.groupType };
   g.bodyguardOf = charge.id;
   g.bandLeaderId = charge.id;     // shadow + defend the charge (the warband follow path)
   g.inParty = true; g.combatant = true; g.canWork = false; g.groupType = 'warband';
 }
 
-export function _freeBodyguard(d, g) {
+export function _freeBodyguard(d: Dir, g: Ag): void {
   if (!g) return;
   const r = g._bgRestore;
   g.bodyguardOf = null; g._bgRestore = null;
@@ -52,7 +59,7 @@ export function _freeBodyguard(d, g) {
 
 // standing bodyguards: when a charge falls, the guard's duty ends (a grief beat);
 // a guard who died is cleared (its sacrifice beat fired in combatEvents).
-export function _superviseBodyguards(d) {
+export function _superviseBodyguards(d: Dir): void {
   for (const g of d.sim.agents) {
     if (!g || g.bodyguardOf == null) continue;
     if (!g.alive) { g.bodyguardOf = null; continue; }
@@ -64,12 +71,12 @@ export function _superviseBodyguards(d) {
   }
 }
 
-export function _enlistDuelist(d, a) {
+export function _enlistDuelist(d: Dir, a: Ag): void {
   a._duelRestore = { combatant: a.combatant, canWork: a.canWork };
   a._duelStart = d.sim.time;
   a.combatant = true; a.canWork = false;
 }
-export function _freeDuelist(d, a) {
+export function _freeDuelist(d: Dir, a: Ag): void {
   if (!a) return; const r = a._duelRestore;
   a._duelWith = null; a._duelRestore = null;
   if (r) { a.combatant = r.combatant; a.canWork = r.canWork; }
@@ -77,7 +84,7 @@ export function _freeDuelist(d, a) {
 
 // resolve a duel: CLOSE the feud (unlatch hostility + warm to wary respect + clear
 // the rivalry) and stand both down. (A death is handled in combatEvents.)
-export function _resolveDuel(d, victor, yielder, satisfied) {
+export function _resolveDuel(d: Dir, victor: Ag, yielder: Ag, satisfied: boolean): void {
   for (const [x, y] of [[victor, yielder], [yielder, victor]]) {
     if (x.beliefs && x.beliefs._ensure) { const bel = x.beliefs._ensure(y.id); bel.hostile = false; bel.standing = clamp(Math.max(bel.standing, -0.1), -1, 1); }
     if (x.rivalId === y.id) x.rivalId = null;
@@ -88,7 +95,7 @@ export function _resolveDuel(d, victor, yielder, satisfied) {
 
 // watch active duels: a yield at low HP (or a timeout) ends it; a death is handled
 // in combatEvents (it stands the survivor down + a blood beat).
-export function _superviseDuels(d) {
+export function _superviseDuels(d: Dir): void {
   const maxH = (TUNE && TUNE.maxHealth) || 100;
   for (const a of d.sim.agents) {
     if (!a || a._duelWith == null) continue;
@@ -108,10 +115,10 @@ export function _superviseDuels(d) {
 // single combat. Unlike a feud (which only festers or is brokered) a duel RESOLVES
 // it: a yield at low HP closes the feud with wary respect (both live), a death ends
 // it in blood. One duel at a time; not the player; not a nemesis/warlord.
-export function _tropeDuel(d, folk) {
-  if (d.sim.agents.some((a) => a.alive && a._duelWith != null)) return false;   // one at a time
+export function _tropeDuel(d: Dir, folk: Ag[]): boolean {
+  if (d.sim.agents.some((a: any) => a.alive && a._duelWith != null)) return false;   // one at a time
   // free = not otherwise committed (a combatant CAN duel — a warrior settles it with steel).
-  const free = (a) => a && !a.watch && !a.reporter && !a.bounty && !a.inParty &&
+  const free = (a: any) => a && !a.watch && !a.reporter && !a.bounty && !a.inParty &&
     !a.expedition && !a.caravanRun && !a.bodyguardOf && a._duelWith == null && !a.nemesis && !a.warlord;
   const cands = folk.filter((a) => a.rivalId != null && free(a));
   for (const A of d._shuffle(cands)) {
@@ -130,7 +137,7 @@ export function _tropeDuel(d, folk) {
 // warband path (bandLeaderId = the player) so the protégé shadows + fights at the
 // player's side; gains accelerated XP; and after surviving long enough at a hero's
 // side, GRADUATES — comes into their own as a hero, a legacy of the player's fame.
-export function _superviseProtege(d) {
+export function _superviseProtege(d: Dir): void {
   if (!PROTEGE || !PROTEGE.enabled) return;
   const p = d.sim.player;
   let live = 0;
@@ -155,20 +162,20 @@ export function _superviseProtege(d) {
     if (best) d._enlistProtege(best, p);
   }
 }
-export function _enlistProtege(d, g, player) {
+export function _enlistProtege(d: Dir, g: Ag, player: Ag): void {
   g._protegeRestore = { combatant: g.combatant, canWork: g.canWork, inParty: g.inParty, bandLeaderId: g.bandLeaderId, groupType: g.groupType };
   g.protegeOf = player.id; g._protegeSince = d.sim.time;
   g.bandLeaderId = player.id; g.inParty = true; g.combatant = true; g.canWork = false; g.groupType = 'warband';
   try { const b = g.beliefs._ensure(player.id); b.hostile = false; b.standing = 1; b.confidence = Math.max(b.confidence || 0, 0.85); } catch { /* */ }
   if (d.sim.chronicle && d.sim.chronicle.note) d.sim.chronicle.note('fortune', g.id, `Young ${g.name}, dazzled by the traveller's deeds, has taken to following in their shadow — hungry to learn the trade of heroes.`);
 }
-export function _freeProtege(d, g) {
+export function _freeProtege(d: Dir, g: Ag): void {
   if (!g) return; const r = g._protegeRestore;
   g.protegeOf = null; g._protegeRestore = null;
   if (r) { g.combatant = r.combatant; g.canWork = r.canWork; g.inParty = r.inParty; g.bandLeaderId = r.bandLeaderId; g.groupType = r.groupType; }
   else { g.inParty = false; g.bandLeaderId = null; g.combatant = false; g.canWork = true; g.groupType = null; }
 }
-export function _endProtege(d, a, why) {
+export function _endProtege(d: Dir, a: Ag, why: string): void {
   if (why === 'graduated') {
     try { grantEpithet(d.sim, a, 'hero'); } catch { /* */ }   // the player's fame seeds a NEW hero
     if (d.sim.chronicle && d.sim.chronicle.note) d.sim.chronicle.note('legend', a.id, `${a.name}, once a green youth who trailed the traveller, has become a warrior of note in their own right — a hero made in a hero's shadow.`);
@@ -180,13 +187,13 @@ export function _endProtege(d, a, why) {
 // THE LEGEND — fade the player's notoriety/fame slowly (infamy lingers but isn't
 // eternal: reform and the town forgets), and NARRATE the milestones as the realm comes
 // to name the traveller a villain or hail them a hero. Latched so each fires once.
-export function _superviseLegend(d) {
+export function _superviseLegend(d: Dir): void {
   if (!LEGEND || !LEGEND.enabled) return;
   const p = d.sim.player; if (!p) return;
   const k = (LEGEND.decayPerTick ?? 0.99955);
   if (p.notoriety) p.notoriety *= k;
   if (p.fame) p.fame *= k;
-  const note = (t, arc) => { if (d.sim.chronicle && d.sim.chronicle.note) d.sim.chronicle.note('legend', p.id, t, arc); };
+  const note = (t: any, arc: any) => { if (d.sim.chronicle && d.sim.chronicle.note) d.sim.chronicle.note('legend', p.id, t, arc); };
   // CRESCENDO: a reputation is EARNED across many deeds, so narrate it RISING — the town
   // first murmurs, then talks openly, then anoints. The 0.66 saga lands as the climax of
   // a thread the player watched build, not a title sprung from nowhere. Each beat threads
@@ -224,20 +231,20 @@ export function _superviseLegend(d) {
 // a loyal GUARDIAN: it reuses the bodyguard/warband path (bandLeaderId = the player) so
 // _decideParty makes it shadow and defend the player, no new behaviour needed. The
 // bond is kept warm against decay and bounded by a TTL, then a grateful farewell.
-export function _enlistGuardian(d, g, player, savedFrom) {
+export function _enlistGuardian(d: Dir, g: Ag, player: Ag, savedFrom: string): void {
   g._guardRestore = { combatant: g.combatant, canWork: g.canWork, inParty: g.inParty, bandLeaderId: g.bandLeaderId, groupType: g.groupType };
   g.guardianOf = player.id; g._guardSince = d.sim.time; g.guardSavedFrom = savedFrom; g._guardRepaid = false;
   g.bandLeaderId = player.id; g.inParty = true; g.combatant = true; g.canWork = false; g.groupType = 'warband';
   try { const b = g.beliefs._ensure(player.id); b.hostile = false; b.standing = 1; b.confidence = Math.max(b.confidence || 0, 0.85); } catch { /* never throw */ }
   if (d.sim.chronicle && d.sim.chronicle.note) d.sim.chronicle.note('fortune', g.id, `${g.name}, saved from ${savedFrom} by the traveller, has sworn to watch their back a while in thanks.`);
 }
-export function _freeGuardian(d, g) {
+export function _freeGuardian(d: Dir, g: Ag): void {
   if (!g) return; const r = g._guardRestore;
   g.guardianOf = null; g._guardRestore = null;
   if (r) { g.combatant = r.combatant; g.canWork = r.canWork; g.inParty = r.inParty; g.bandLeaderId = r.bandLeaderId; g.groupType = r.groupType; }
   else { g.inParty = false; g.bandLeaderId = null; g.combatant = false; g.canWork = true; g.groupType = null; }
 }
-export function _superviseGrateful(d) {
+export function _superviseGrateful(d: Dir): void {
   if (!GRATEFUL || !GRATEFUL.enabled) return;
   const player = d.sim.player;
   for (const a of d.sim.agents) {
@@ -248,7 +255,7 @@ export function _superviseGrateful(d) {
     if (d.sim.time - (a._guardSince || 0) > (GRATEFUL.ttl || 150)) d._endGuardian(a, 'farewell');
   }
 }
-export function _endGuardian(d, a, why) {
+export function _endGuardian(d: Dir, a: Ag, why: string): void {
   const savedFrom = a.guardSavedFrom || 'death', repaid = !!a._guardRepaid;
   if (why === 'farewell') {
     const player = d.sim.player, gift = Math.min((GRATEFUL.gift || 6), Math.max(0, Math.floor(a.gold || 0)));
@@ -264,7 +271,7 @@ export function _endGuardian(d, a, why) {
 // drift) and the avenger drift back to market; here we re-stamp the hostility every
 // tick so the hunt never fades, bound it with a TTL (so an unreachable player isn't
 // hunted forever), and file the vendetta as a saga when it ends.
-export function _superviseAvengers(d) {
+export function _superviseAvengers(d: Dir): void {
   if (!AVENGER || !AVENGER.enabled) return;
   const player = d.sim.player;
   for (const a of d.sim.agents) {
@@ -276,7 +283,7 @@ export function _superviseAvengers(d) {
     if (d.sim.time - (a._avengerSince || 0) > (AVENGER.ttl || 240)) d._endAvenger(a, 'unslaked');
   }
 }
-export function _endAvenger(d, a, why) {
+export function _endAvenger(d: Dir, a: Ag, why: string): void {
   const victim = a.avengerVictim || 'their kin';
   a.avengerOf = null; a.combatant = false;
   if (why === 'unslaked' && d.sim.chronicle && d.sim.chronicle.note) {

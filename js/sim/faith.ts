@@ -14,8 +14,22 @@
 import { FAITH } from './simconfig.js';
 import { TUNE } from '../constants.js';
 
+// `sim` (the owning Simulation — wave-2, still .js) and the believer Agents (via their
+// `faith` creed flag) are typed opaquely on purpose; behaviour is unchanged.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Sim = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Ag = any;
+
 export class Faith {
-  constructor(sim) {
+  sim: Sim;
+  _acc: number;
+  _macc: number;
+  _booted: boolean;
+  stats: Record<string, number>;
+  _tier: Record<string, string>;
+
+  constructor(sim: Sim) {
     this.sim = sim;
     this._acc = 0;
     this._macc = 0;
@@ -25,12 +39,12 @@ export class Faith {
   }
 
   // living, free (non-controlled) townsfolk who hold a given creed.
-  believers(god) {
-    return this.sim.agents.filter((a) => a.alive && a.autonomous && a.faith === god);
+  believers(god: string): Ag[] {
+    return this.sim.agents.filter((a: Ag) => a.alive && a.autonomous && a.faith === god);
   }
-  power(god) { return this.believers(god).length; }
+  power(god: string): number { return this.believers(god).length; }
 
-  tick(ctx, dt) {
+  tick(ctx: unknown, dt: number): void {
     try {
       if (!this.sim._spawned) return;   // a real town only (not bare test sub-sims)
       if (!this._booted) this._bootstrap();
@@ -43,7 +57,7 @@ export class Faith {
 
   // anoint a starting flock for each god once townsfolk exist, so several faiths
   // contend from the outset (the director revives any that later dwindle).
-  _bootstrap() {
+  _bootstrap(): void {
     const folk = this._faithless();
     if (!folk.length) return;                 // town not spawned yet — try next tick
     this._booted = true;
@@ -55,13 +69,13 @@ export class Faith {
     }
   }
 
-  _faithless() {
-    return this.sim.agents.filter((a) => a.alive && a.autonomous && a.faction === 'townsfolk' && !a.faith);
+  _faithless(): Ag[] {
+    return this.sim.agents.filter((a: any) => a.alive && a.autonomous && a.faction === 'townsfolk' && !a.faith);
   }
 
   // PROSELYTISE: each believer may win one nearby faithless soul. Conversion odds
   // rise with the god's power (a thriving faith is contagious — bandwagon).
-  _spread() {
+  _spread(): void {
     const range2 = (FAITH.convertRange || 6) ** 2;
     for (const god of FAITH.gods) {
       const flock = this.believers(god);
@@ -84,7 +98,7 @@ export class Faith {
 
   // DOUBT: believers lapse at random — EXCEPT a small god's final believer, who
   // stays loyal (so the faith survives as an ember and can be revived).
-  _doubt() {
+  _doubt(): void {
     for (const god of FAITH.gods) {
       const flock = this.believers(god);
       if (flock.length <= (FAITH.smallGodAt || 1)) continue;   // protect the last of the faithful
@@ -98,7 +112,7 @@ export class Faith {
   // MIRACLES: each god mends and heartens its flock, scaled by how many believe —
   // a great god's faithful are markedly hardier, which is WHY belief is worth
   // spreading. Uses no gold; only restores health and quells fear.
-  _miracles() {
+  _miracles(): void {
     const maxH = (TUNE && TUNE.maxHealth) || 100;
     for (const god of FAITH.gods) {
       const flock = this.believers(god);
@@ -119,7 +133,7 @@ export class Faith {
   // ANOINT a prophet (the director's Small-Gods instigator): convert a charismatic
   // soul to a god — by default the WEAKEST faith, reviving a dwindling/dead god.
   // Returns the chosen {prophet, god} or null. Guarded.
-  anointProphet(agent, preferGod) {
+  anointProphet(agent: Ag, preferGod?: string): { god: string; reviving: boolean } | null {
     try {
       if (!agent || !agent.alive) return null;
       let god = preferGod;
@@ -137,7 +151,7 @@ export class Faith {
   }
 
   // chronicle a god crossing a tier (great / small), once per transition.
-  _noteTier(god) {
+  _noteTier(god: string): void {
     try {
       const p = this.power(god);
       const tier = p >= (FAITH.greatGodAt || 8) ? 'great' : p <= (FAITH.smallGodAt || 1) ? 'small' : 'rising';

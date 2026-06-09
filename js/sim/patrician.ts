@@ -11,14 +11,26 @@
 
 import { PATRICIAN } from './simconfig.js';
 
+// `sim`/`ctx` (the owning Simulation + cognition context — wave-2, still .js) and the
+// agents (via their belief/standing flags) are typed opaquely on purpose; this layer is
+// belief-only and fully guarded, so behaviour is unchanged.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Sim = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Ag = any;
+
 export class Patrician {
-  constructor(sim) {
+  sim: Sim;
+  _acc: number;
+  stats: Record<string, number>;
+
+  constructor(sim: Sim) {
     this.sim = sim;
     this._acc = 0;
     this.stats = { truces: 0, quelled: 0 };
   }
 
-  tick(ctx, dt) {
+  tick(ctx: unknown, dt: number): void {
     try {
       if (!this.sim._spawned) return;   // a real town only (not bare test sub-sims)
       this._acc += dt;
@@ -29,8 +41,8 @@ export class Patrician {
   }
 
   // find the single most-mutually-hostile pair of townsfolk and broker a truce.
-  _broker() {
-    const folk = this.sim.agents.filter((a) => a.alive && a.autonomous && a.faction === 'townsfolk');
+  _broker(): void {
+    const folk = this.sim.agents.filter((a: any) => a.alive && a.autonomous && a.faction === 'townsfolk');
     // a real intra-town FEUD is a latched HOSTILE belief between two townsfolk (what
     // the director's feud / a kin-vendetta leaves behind) — NOT merely a low standing,
     // which a fond pair soured by a spark never crosses. Find the most bitter such pair.
@@ -63,7 +75,7 @@ export class Patrician {
   }
 
   // pull A's standing toward B back up toward neutral, and defuse a latched hostility.
-  _truce(A, B) {
+  _truce(A: Ag, B: Ag): void {
     const b = A.beliefs && A.beliefs.get ? A.beliefs.get(B.id) : null;
     if (!b) return;
     b.standing = Math.min(0.1, (b.standing || 0) + (PATRICIAN.brokerAmount || 0));
@@ -74,7 +86,7 @@ export class Patrician {
   // simply re-sour), hostility is cleared, and each records a reconciliation bond.
   // If the two belong to different Houses, it's a peace between their lines — a
   // saga-worthy beat (the marriage-alliance / feud's-end trope).
-  _reconcile(A, B) {
+  _reconcile(A: Ag, B: Ag): void {
     for (const [x, y] of [[A, B], [B, A]]) {
       const b = x.beliefs && x.beliefs.get ? x.beliefs.get(y.id) : null;
       if (b) { b.standing = Math.max(b.standing || 0, PATRICIAN.reconcileStanding || 0.4); b.hostile = false; }
@@ -88,5 +100,5 @@ export class Patrician {
     this._note(text, 'legend');   // peace endures in the saga
   }
 
-  _note(text, kind) { try { if (this.sim.chronicle && this.sim.chronicle.note) this.sim.chronicle.note(kind || 'patrician', kind === 'legend' ? -14 : -12, text); } catch { /* */ } }
+  _note(text: string, kind?: string): void { try { if (this.sim.chronicle && this.sim.chronicle.note) this.sim.chronicle.note(kind || 'patrician', kind === 'legend' ? -14 : -12, text); } catch { /* */ } }
 }

@@ -20,12 +20,22 @@ import { terrainHeight } from '../arena.js';
 import { ABILITY_CATALOG } from '../rpg/abilities/catalog.js';
 import { BEAT } from './chronicle.js';
 
-const rand = (a, b) => a + Math.random() * (b - a);
-const groundY = (x, z) => { try { return typeof document === 'undefined' ? 0 : terrainHeight(x, z); } catch { return 0; } };
+// `sim` (the owning Simulation — wave-2, still .js), `cfg` (the SEEDS.rivalApprentices
+// config block) and the seeded Agents are typed opaquely on purpose; this runs once at
+// world build and is fully guarded, so behaviour is unchanged.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Sim = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Ag = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Cfg = any;
+
+const rand = (a: number, b: number): number => a + Math.random() * (b - a);
+const groundY = (x: number, z: number): number => { try { return typeof document === 'undefined' ? 0 : terrainHeight(x, z); } catch { return 0; } };
 
 // entry point — run all enabled seeds. Guarded per-seed so one bad seed can't
 // abort the others (or the world build).
-export function seedNarratives(sim) {
+export function seedNarratives(sim: Sim): void {
   if (!SEEDS || !SEEDS.enabled) return;
   try {
     const ra = SEEDS.rivalApprentices;
@@ -37,7 +47,7 @@ export function seedNarratives(sim) {
 
 // build one trade family: a veteran master + two rival apprentices, clustered so
 // the apprenticeship pass (proximity-gated) immediately recognises the master.
-function seedRivalApprentices(sim, cfg, idx) {
+function seedRivalApprentices(sim: Sim, cfg: Cfg, idx: number): void {
   try {
     // a quiet spot near the town core (inside the watchtower ring, so the smithy is
     // defended). Spread successive trios apart a little.
@@ -95,7 +105,7 @@ function seedRivalApprentices(sim, cfg, idx) {
 
 // spawn a townsperson the same way Simulation does (so combat/groups/inspector all
 // just work), at (x,z), with personality overrides merged onto a sane baseline.
-function makeTownsperson(sim, x, z, pers = {}) {
+function makeTownsperson(sim: Sim, x: number, z: number, pers: Record<string, number> = {}): Ag {
   const fighter = sim.makeFighter('knight', {});
   const px = x, pz = z, py = groundY(px, pz);
   fighter.root.position.set(px, py, pz);
@@ -115,7 +125,7 @@ function makeTownsperson(sim, x, z, pers = {}) {
 
 // stamp a behaviour profile so the class matcher reads the intended identity and
 // XP routes to the trade class. Additive onto whatever the agent started with.
-function seedProfile(agent, tags) {
+function seedProfile(agent: Ag, tags: Record<string, number> | null | undefined): void {
   const bp = agent.progression && agent.progression.behavior_profile;
   if (!bp || !tags) return;
   for (const tag in tags) bp[tag] = (bp[tag] || 0) + tags[tag];
@@ -123,7 +133,7 @@ function seedProfile(agent, tags) {
 
 // grant a specific TEMPLATE class at a seeded level (a veteran). Reuses the
 // progression internals (same module ecosystem) and recomputes the cached total.
-function grantSeededClass(agent, key, name, level) {
+function grantSeededClass(agent: Ag, key: string, name: string | null, level: number): void {
   const prog = agent.progression;
   if (!prog) return;
   prog._grantClass(key, name || key, 0);
@@ -137,9 +147,9 @@ function grantSeededClass(agent, key, name, level) {
 // progression ledger and the Agent, like Progression._grantAbility would). This is
 // what keeps a seeded veteran from violating the "classed ⇒ armed" invariant before
 // the lazily-loaded ability catalog has resolved in a fresh sim.
-function armFromCatalog(agent, abilityId) {
+function armFromCatalog(agent: Ag, abilityId: string | null | undefined): void {
   try {
-    const spec = abilityId && ABILITY_CATALOG[abilityId];
+    const spec = abilityId && (ABILITY_CATALOG as Record<string, { id?: string } | undefined>)[abilityId];
     if (!spec || !spec.id) return;
     if (agent.progression) { agent.progression.abilities.set(spec.id, spec); agent.progression.cooldowns.set(spec.id, 0); }
     agent.grantAbility(spec);
@@ -147,7 +157,7 @@ function armFromCatalog(agent, abilityId) {
 }
 
 // push observer A's belief-standing toward B down (a grievance / rivalry seed).
-function sour(A, B, amount) {
+function sour(A: Ag, B: Ag, amount: number): void {
   try {
     const b = A.beliefs && A.beliefs._ensure ? A.beliefs._ensure(B.id) : null;
     if (!b) return;
@@ -159,6 +169,6 @@ function sour(A, B, amount) {
 
 // record a relationship bond memory (kin/mentor/apprentice/mate) — the same episode
 // kind lineage uses, so the biography/chronicle read it uniformly.
-function bond(a, withId, rel) {
+function bond(a: Ag, withId: unknown, rel: string): void {
   try { if (a && a.memory) a.memory.record({ t: 0, kind: 'bond', withId, rel, valence: rel === 'mentor' || rel === 'apprentice' ? 0.6 : 1, salience: 0.6 }); } catch { /* */ }
 }

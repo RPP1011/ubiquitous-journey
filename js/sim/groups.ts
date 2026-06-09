@@ -21,21 +21,31 @@
 import { BAND, GROUP_TYPES } from './simconfig.js';
 import { isHomeBuilder } from './construction.js';
 
-const adventurous = (a) =>
+// `sim` (the owning Simulation — wave-2, still .js) and the agents (via their long-tail
+// band/group flags) are typed opaquely on purpose; behaviour is unchanged.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Sim = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Ag = any;
+
+// the per-type group config block, dynamically keyed by group-type name (GROUP_TYPES[type]).
+const GROUP_TYPES_T = GROUP_TYPES as Record<string, { cohesion: string; combatant?: boolean; maxFollowers: number }>;
+
+const adventurous = (a: Ag): boolean =>
   (a.ambition && (a.ambition.kind === 'renown' || a.ambition.kind === 'wanderlust')) ||
   (a.personality && a.personality.risk_tolerance > 0.6);
-const homebody = (a) => a.personality && a.personality.risk_tolerance < 0.45;
+const homebody = (a: Ag): boolean => a.personality && a.personality.risk_tolerance < 0.45;
 
 // the stable key of an agent's PRIMARY (strongest) class, or null. Occupation is
 // emergent now, so professional kinship is "same dominant class", not "same
 // profession". Guarded — never throws.
-function primaryClassKey(a) {
+function primaryClassKey(a: Ag): string | null {
   const pc = a && a.progression && a.progression.primaryClass && a.progression.primaryClass();
   return pc ? pc.key : null;
 }
 
 // which kind of group a compatible, co-located pair forms (priority order)
-function pickType(L, F) {
+function pickType(L: Ag, F: Ag): string {
   if (adventurous(L) && adventurous(F)) return 'warband';
   // guild = same TRADE, which with emergent occupations means the pair has earned
   // the SAME PRIMARY CLASS (e.g. both [Farmer]). We require a real shared class —
@@ -48,15 +58,18 @@ function pickType(L, F) {
 }
 
 export class Groups {
-  constructor(sim) { this.sim = sim; this._acc = 0; }
+  sim: Sim;
+  _acc: number;
 
-  _playerId() { return this.sim.player ? this.sim.player.id : -1; }
-  _eligible(a) { return a && a.alive && a.autonomous && a.faction === 'townsfolk' && !a.watch && !isHomeBuilder(a); }
-  _followersOf(id) { return this.sim.agents.filter((x) => x.alive && x.bandLeaderId === id); }
-  _isLeader(a) { return this._followersOf(a.id).length > 0; }
+  constructor(sim: Sim) { this.sim = sim; this._acc = 0; }
+
+  _playerId(): unknown { return this.sim.player ? this.sim.player.id : -1; }
+  _eligible(a: Ag): boolean { return a && a.alive && a.autonomous && a.faction === 'townsfolk' && !a.watch && !isHomeBuilder(a); }
+  _followersOf(id: unknown): Ag[] { return this.sim.agents.filter((x: Ag) => x.alive && x.bandLeaderId === id); }
+  _isLeader(a: Ag): boolean { return this._followersOf(a.id).length > 0; }
 
   // fixed-tick: dissolve broken groups, then (throttled) try to grow one
-  tick(ctx, dt) {
+  tick(ctx: unknown, dt: number): void {
     this._prune();
     this._acc += dt;
     if (this._acc < BAND.formEvery) return;
@@ -64,11 +77,11 @@ export class Groups {
     this._form();
   }
 
-  _form() {
+  _form(): void {
     // try a few distinct anchors per formation tick (not just one) so multiple
     // small groups reliably coexist — emergent occupations make any single pair's
     // TYPE noisier, so we lean on group VOLUME for a diverse town. Bounded.
-    const anchors = this.sim.agents.filter((a) => this._eligible(a) && !a.inParty && a.bandLeaderId == null);
+    const anchors = this.sim.agents.filter((a: Ag) => this._eligible(a) && !a.inParty && a.bandLeaderId == null);
     if (!anchors.length) return;
     const tries = Math.min(BAND.formAttempts || 1, anchors.length);
     for (let t = 0; t < tries; t++) {
@@ -78,7 +91,7 @@ export class Groups {
   }
 
   // attempt to grow ONE group anchored on L (the original single-anchor logic).
-  _formFrom(L) {
+  _formFrom(L: Ag): void {
     if (!L || L.inParty || L.bandLeaderId != null) return;
     // if L already anchors a group its type is fixed; else it's chosen per-pair
     const existing = this._followersOf(L.id);
@@ -95,12 +108,12 @@ export class Groups {
     if (!best) return;
 
     const type = fixedType || pickType(L, best);
-    const gt = GROUP_TYPES[type];
+    const gt = GROUP_TYPES_T[type];
     if (existing.length >= gt.maxFollowers) return;
     this._join(best, L, type, gt);
   }
 
-  _join(F, L, type, gt) {
+  _join(F: Ag, L: Ag, type: string, gt: { cohesion: string; combatant?: boolean; maxFollowers: number }): void {
     F._bandRestore = { combatant: F.combatant, goal: F.goal };
     F.bandLeaderId = L.id;
     F.groupType = type;
@@ -114,7 +127,7 @@ export class Groups {
     // loose groups: no follow — the tag alone biases decide() + reads in relations
   }
 
-  _prune() {
+  _prune(): void {
     const pid = this._playerId();
     for (const F of this.sim.agents) {
       if (F.controlled) continue;
@@ -127,7 +140,7 @@ export class Groups {
     }
   }
 
-  _revert(F) {
+  _revert(F: Ag): void {
     if (F._bandRestore) { F.combatant = F._bandRestore.combatant; F.goal = F._bandRestore.goal; F._bandRestore = null; }
     else F.goal = { kind: F.canWork ? 'work' : 'wander' };
     F.inParty = false;
@@ -136,7 +149,7 @@ export class Groups {
   }
 
   // restore every NPC-group member (world teardown). Leaves the player's party alone.
-  disband() {
+  disband(): void {
     const pid = this._playerId();
     for (const F of this.sim.agents) if (F.bandLeaderId != null && F.bandLeaderId !== pid) this._revert(F);
   }

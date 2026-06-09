@@ -7,10 +7,20 @@ import { DIRECTOR, SIM } from '../simconfig.js';
 import { BEAT } from '../chronicle.js';
 import { rand, clamp } from './util.js';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Dir = any;   // the Director instance (thin shell — director.ts). `arc`/`saga`/`a` are
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Ag = any;    // file-local freeform drama records / Agents. Opaque on purpose; the
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Arc = any;   // behaviour is unchanged and fully guarded.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Saga = any;
+
+
 // the title each arc kind reads under in the chronicle — so its scattered beats
 // (set-up → escalation → climax) thread together as one named tale instead of
 // disconnected log lines. A new arc kind without an entry just falls back to 'A Tale'.
-const ARC_TITLE = {
+const ARC_TITLE: Record<string, string> = {
   reckoning:  'The Reckoning',
   tyrantFall: "The Tyrant's Fall",
   spyWeb:     "The Spy's Web",
@@ -20,7 +30,7 @@ const ARC_TITLE = {
 
 // step active multi-beat stories toward their climax. A dispatcher over per-kind
 // steppers; each fires when its scheduled moment arrives.
-export function _advanceArcs(d) {
+export function _advanceArcs(d: Dir): void {
   if (!d._arcs || !d._arcs.length) return;
   const now = d.sim.time, keep = [];
   for (const arc of d._arcs) {
@@ -46,7 +56,7 @@ export function _advanceArcs(d) {
 // record a completed arc as a SAGA — a structured retrospective the Gazette threads
 // into a single feature article, so the player reads the whole shaped story at once
 // instead of stitching scattered beats from the feed. Bounded ring; deduped by sig.
-export function _recordSaga(d, saga) {
+export function _recordSaga(d: Dir, saga: Saga): void {
   const S = (d._sagas = d._sagas || []);
   saga.t = d.sim.time;
   saga.sig = `saga:${saga.sagaKind}:${saga.key || ''}:${Math.floor(d.sim.time)}`;
@@ -55,13 +65,13 @@ export function _recordSaga(d, saga) {
 }
 
 // duelists/principals must be unencumbered to stage an arc climax.
-export function _arcFree(d, a) {
+export function _arcFree(d: Dir, a: Ag): boolean {
   return a && a.alive && !a.watch && !a.reporter && !a.bounty && !a.inParty &&
     !a.expedition && !a.caravanRun && !a.bodyguardOf && a._duelWith == null && !a.nemesis && !a.warlord;
 }
 
 // THE RECKONING — a betrayal → sworn vengeance → a duel to settle it.
-export function _stepReckoning(d, arc, now) {
+export function _stepReckoning(d: Dir, arc: Arc, now: number): Arc | null {
   const A = d.sim.agentsById.get(arc.wronged), L = d.sim.agentsById.get(arc.betrayer);
   if (!A || !A.alive || !L || !L.alive) return null;           // a principal is gone — dissolve
   if (arc.stage === 1) {
@@ -88,11 +98,11 @@ export function _stepReckoning(d, arc, now) {
 // either brings them DOWN (a duel, dark) or shames them into RELENTING (redemption,
 // warm). A tonal FORK on the tyrant's conscience: the remorseless are challenged; the
 // ones with a shred of shame make amends and lower their prices.
-export function _stepTyrantFall(d, arc, now) {
+export function _stepTyrantFall(d: Dir, arc: Arc, now: number): Arc | null {
   const M = d.sim.agentsById.get(arc.tyrant);
   if (!M || !M.alive) return null;
-  const folk = d.sim.agents.filter((a) => a.alive && a.autonomous && a.faction === 'townsfolk' && a !== M);
-  const near = folk.filter((a) => a.pos && M.pos && a.pos.distanceTo(M.pos) <= (DIRECTOR.tropes.proximity || 26) * 2.2);
+  const folk = d.sim.agents.filter((a: any) => a.alive && a.autonomous && a.faction === 'townsfolk' && a !== M);
+  const near = folk.filter((a: any) => a.pos && M.pos && a.pos.distanceTo(M.pos) <= (DIRECTOR.tropes.proximity || 26) * 2.2);
   if (arc.stage === 1) {
     // ESCALATION: the muttering hardens into open resentment.
     for (const C of d._shuffle(near).slice(0, 4)) d._sour(C, M, 0.18);
@@ -135,7 +145,7 @@ export function _stepTyrantFall(d, arc, now) {
 
 // THE SPY'S WEB — a slow-burn MYSTERY: a disguised infiltrator → suspicion WHISPERS
 // gather around them → the cover is torn away (revelation) → the town hunts the traitor.
-export function _stepSpyWeb(d, arc, now) {
+export function _stepSpyWeb(d: Dir, arc: Arc, now: number): Arc | null {
   const intr = d.sim.intrigue;
   const spy = d.sim.agentsById.get(arc.spyId);
   if (!spy || !spy.alive || !spy.disguiseFaction) return null;   // gone, or already exposed elsewhere
@@ -143,7 +153,7 @@ export function _stepSpyWeb(d, arc, now) {
     // SUSPICION: a wary neighbour starts to wonder about the newcomer (a planted doubt,
     // low-confidence so it fades if the spy lies low — but the whisper is out).
     const vis = (SIM && SIM.visionRange) || 22;
-    const obs = d.sim.agents.find((a) => a.alive && a.autonomous && a.faction === 'townsfolk' && a !== spy && a.pos && spy.pos && a.pos.distanceTo(spy.pos) <= vis);
+    const obs = d.sim.agents.find((a: any) => a.alive && a.autonomous && a.faction === 'townsfolk' && a !== spy && a.pos && spy.pos && a.pos.distanceTo(spy.pos) <= vis);
     if (obs) d._plant(obs, spy.id, { suspicion: 0.5 });
     d._note(BEAT.VENDETTA, spy.id, `Folk have begun to whisper that ${spy.name} is not quite what they seem.`, arc);
     arc.stage = 2; arc.nextAt = now + rand(34, 54); return arc;
@@ -160,12 +170,12 @@ export function _stepSpyWeb(d, arc, now) {
 // then the TRUTH prevails (their name is cleared) — or, if cut down first, comes too
 // late (a tragedy narrated in combatEvents). The deepest expression of the belief
 // primitive: NPCs act on what they BELIEVE, and a lie can cost an innocent everything.
-export function _stepAccused(d, arc, now) {
+export function _stepAccused(d: Dir, arc: Arc, now: number): Arc | null {
   const B = d.sim.agentsById.get(arc.b);
   if (!B || !B.alive) return null;     // a death mid-slander is narrated as tragedy in combatEvents
   if (arc.stage === 1) {
     // ESCALATION: the slander hardens and spreads wider through the town.
-    const folk = d.sim.agents.filter((a) => a.alive && a.autonomous && a.faction === 'townsfolk' && a !== B);
+    const folk = d.sim.agents.filter((a: any) => a.alive && a.autonomous && a.faction === 'townsfolk' && a !== B);
     for (const O of d._shuffle(folk).slice(0, 5)) d._plant(O, B.id, { suspicion: 0.4, dStanding: -0.2 });
     d._note(BEAT.VENDETTA, B.id, `The whispers against ${B.name} have hardened into open suspicion — neighbours cross the street, and old friends keep their distance.`, arc);
     arc.stage = 2; arc.nextAt = now + rand(34, 52); return arc;
@@ -188,7 +198,7 @@ export function _stepAccused(d, arc, now) {
 // THE STAR-CROSSED LOVERS — a forbidden courtship across a feud → the obstacle (kin's
 // disapproval) → a fork on the lovers' NERVE: bold hearts WED (and the union heals the
 // feud, via lineage._wed); timid ones bow to the old hatred and part, heartbroken.
-export function _stepRomance(d, arc, now) {
+export function _stepRomance(d: Dir, arc: Arc, now: number): Arc | null {
   const A = d.sim.agentsById.get(arc.a), B = d.sim.agentsById.get(arc.b);
   const clear = () => { if (A) A._courtingId = null; if (B) B._courtingId = null; };
   if (!A || !A.alive || !B || !B.alive || A.mateId != null || B.mateId != null) { clear(); return null; }   // gone or wed to another
@@ -215,7 +225,7 @@ export function _stepRomance(d, arc, now) {
 // catch a freshly-disguised spy the INSTANT it appears (a frequent tick-scan beats the
 // intrigue system's own abrupt random unmask), so the exposure gets the slow-burn arc
 // treatment — suspicion, then revelation — instead of a bolt from the blue.
-export function _seedSpyWebs(d) {
+export function _seedSpyWebs(d: Dir): void {
   if (!DIRECTOR.tropes.spyWebArc) return;
   const intr = d.sim.intrigue;
   if (!intr || !intr.spies) return;

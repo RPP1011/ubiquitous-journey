@@ -50,7 +50,7 @@ const seedRecipesFor = (out: string | null /* a producer's own output, or null *
 
 // The spawn config the Simulation/roster hands the constructor (loose by design).
 interface AgentCfg {
-  id: string;
+  id: EntityId;
   name: string;
   profession: string | null;
   controlled?: boolean;

@@ -10,11 +10,17 @@ import { BEAT } from '../chronicle.js';
 import { rand } from './util.js';
 import { isHomeBuilder } from '../construction.js';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Dir = any;   // the Director instance (thin shell — see director.ts). Opaque on
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Ag = any;    // purpose: a large freeform drama surface; behaviour is unchanged.
+
+
 // DISPATCH A CARAVAN — one caravan on the road at a time.
-export function _tropeCaravan(d) {
-  if (d._caravans.some((c) => c && c.alive && c.caravanRun)) return false;
+export function _tropeCaravan(d: Dir): boolean {
+  if (d._caravans.some((c: any) => c && c.alive && c.caravanRun)) return false;
   const C = DIRECTOR.caravan || {};
-  const folk = d._townsfolkAlive().filter((a) =>
+  const folk = d._townsfolkAlive().filter((a: any) =>
     !a.inParty && !a.expedition && !a.caravanRun && !a.watch && !a.reporter && !isHomeBuilder(a) &&
     a.goal && a.goal.kind !== 'fight');
   const trader = d._shuffle(folk)[0];
@@ -24,12 +30,12 @@ export function _tropeCaravan(d) {
   // home = the trader's own town; destination = ANOTHER town (a real trade route)
   // if the world has more than one, else a far point on the open road (legacy).
   const now = d.sim.time;
-  const alerted = (t) => t && t._alertUntil != null && now < t._alertUntil;
+  const alerted = (t: any) => t && t._alertUntil != null && now < t._alertUntil;
   // a caravan WON'T set out from a town on alert (a Gazette threat advisory) — the
   // roads are too dangerous; trade waits for the warning to pass (channel 2).
   if (trader.townId != null && d.sim.towns && alerted(d.sim.towns[trader.townId])) return false;
   const home = trader.townAnchor ? trader.townAnchor.clone() : new THREE.Vector3(0, 0, 0);
-  const towns = (d.sim.towns || []).filter((t) => t.center.distanceToSquared(home) > 1 && !alerted(t));
+  const towns = (d.sim.towns || []).filter((t: any) => t.center.distanceToSquared(home) > 1 && !alerted(t));
   let dest;
   if (towns.length) {
     dest = d._shuffle(towns)[0].center.clone();
@@ -42,7 +48,7 @@ export function _tropeCaravan(d) {
   // a caravan is a GROUP: recruit hired ESCORTS from idle townsfolk of the trader's
   // own town standing nearby — GUARDS (band-follow + fight the ambush) and PORTERS
   // (band-follow + flee). They reuse the warband/hearth follow path (decideParty).
-  const pool = d._shuffle(folk.filter((a) =>
+  const pool = d._shuffle(folk.filter((a: any) =>
     a !== trader && a.townId === trader.townId && a.pos.distanceTo(trader.pos) <= (C.recruitR || 26)));
   const nG = C.guards ?? 2, nP = C.porters ?? 2;
   const guards = pool.slice(0, nG);
@@ -77,7 +83,7 @@ export function _tropeCaravan(d) {
 // flag a townsperson as a caravan ESCORT: a band-follower of the trader. Guards
 // fight (warband), porters flee (hearth) — reusing decideParty's follow/fight/flee.
 // Restores cleanly on disband. Mirrors expeditions._form's warband enlistment.
-export function _enlistEscort(d, a, leader, role, good) {
+export function _enlistEscort(d: Dir, a: Ag, leader: Ag, role: string, good: string): void {
   if (!a || !leader) return;
   a._caravanRestore = { combatant: a.combatant, canWork: a.canWork, goal: a.goal, bandLeaderId: a.bandLeaderId, inParty: a.inParty, groupType: a.groupType };
   a.caravanEscort = { leaderId: leader.id, role, good };
@@ -90,7 +96,7 @@ export function _enlistEscort(d, a, leader, role, good) {
 }
 
 // release a caravan's escorts back to civilian life (run ended: home, lost, or TTL).
-export function _disbandEscorts(d, trader) {
+export function _disbandEscorts(d: Dir, trader: Ag): void {
   if (!trader || !trader._caravanEscorts) return;
   for (const a of trader._caravanEscorts) {
     if (!a) continue;
@@ -105,7 +111,7 @@ export function _disbandEscorts(d, trader) {
 
 // advance dispatched caravans: out → return on reaching the far point; home safe →
 // a windfall (the good gets cheaper). A loss is handled in combatEvents (death).
-export function _advanceCaravans(d) {
+export function _advanceCaravans(d: Dir): void {
   if (!d._caravans || !d._caravans.length) return;
   const C = DIRECTOR.caravan || {};
   const keep = [];
@@ -126,7 +132,7 @@ export function _advanceCaravans(d) {
   d._caravans = keep;
 }
 
-export function _caravanWindfall(d, trader, good) {
+export function _caravanWindfall(d: Dir, trader: Ag, good: string): void {
   let touched = 0;
   for (const w of d.sim.agents) {
     if (touched >= 8) break;

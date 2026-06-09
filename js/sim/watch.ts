@@ -11,11 +11,33 @@
 // Reuses combat + the leash; touches no gold. Guarded — never throws on the tick.
 
 import * as THREE from 'three';
+import type { Vector3 } from 'three';
 import { WATCH, TOWNS, ALERT, factionHostile } from './simconfig.js';
 import { isHomeBuilder } from './construction.js';
 
+// `sim` (the owning Simulation — wave-2, still .js) and the watchman Agents (via their
+// _watch* role flags) are typed opaquely on purpose; behaviour is unchanged.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Sim = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Ag = any;
+
+// a town core to guard: its centre, leash radius, and (when from the spawned registry)
+// the owning town record.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+interface Core { pos: Vector3; r: number; town?: any; }
+
 export class Watch {
-  constructor(sim) {
+  sim: Sim;
+  _acc: number;
+  _calm: number[];
+  roster: Ag[];
+  captain: Ag | null;
+  _founded: boolean;
+  stats: Record<string, number>;
+  _coreCache?: Core[];
+
+  constructor(sim: Sim) {
     this.sim = sim;
     this._acc = 0;
     this._calm = [];            // per-town sim-seconds since last threatened (hysteresis)
@@ -27,18 +49,18 @@ export class Watch {
 
   // the town cores to guard (open world: one watch institution, many towns). Prefer
   // the spawned town registry; fall back to the TOWNS config, else the origin.
-  _cores() {
+  _cores(): Core[] {
     if (this._coreCache) return this._coreCache;
-    if (this.sim.towns && this.sim.towns.length) this._coreCache = this.sim.towns.map((t) => ({ pos: t.center, r: t.radius, town: t }));
+    if (this.sim.towns && this.sim.towns.length) this._coreCache = this.sim.towns.map((t: Ag) => ({ pos: t.center, r: t.radius, town: t }));
     else {
       const cs = (TOWNS && TOWNS.centers && TOWNS.centers.length) ? TOWNS.centers : [[0, 0]];
       const r = (TOWNS && TOWNS.radius) || 70;
-      this._coreCache = cs.map((c) => ({ pos: new THREE.Vector3(c[0], 0, c[1]), r }));
+      this._coreCache = cs.map((c: number[]) => ({ pos: new THREE.Vector3(c[0], 0, c[1]), r }));
     }
-    return this._coreCache;
+    return this._coreCache!;
   }
 
-  tick(ctx, dt) {
+  tick(ctx: unknown, dt: number): void {
     try {
       if (!this.sim._spawned) return;   // a real town only (not bare test sub-sims)
       this._acc += dt;
@@ -65,10 +87,10 @@ export class Watch {
     } catch { /* never throw on the tick */ }
   }
 
-  _lvl(a) { return (a && a.progression && a.progression.totalLevel) || 0; }
+  _lvl(a: Ag): number { return (a && a.progression && a.progression.totalLevel) || 0; }
 
   // count town-hostile bodies menacing a given core (that town's muster signal).
-  _threat(corePos) {
+  _threat(corePos: Vector3): number {
     let n = 0;
     const r2 = (WATCH.threatRange || 64) ** 2;
     for (const a of this.sim.agents) {
@@ -80,7 +102,7 @@ export class Watch {
   }
 
   // drop the fallen from the roster (a watchman's death is a beat).
-  _prune() {
+  _prune(): void {
     const kept = [];
     for (const w of this.roster) {
       if (w && w.alive && w.watch) kept.push(w);
@@ -92,17 +114,17 @@ export class Watch {
   // willing recruits for a town: brave, free townsfolk near THAT core, not already
   // serving / in a band. Proximity gate (within the town's home band) keeps each
   // town's guard drawn from its own people.
-  _willing(core) {
+  _willing(core: Core): Ag[] {
     const r2 = (core.r || 70) ** 2;
-    return this.sim.agents.filter((a) =>
+    return this.sim.agents.filter((a: any) =>
       a.alive && a.autonomous && a.faction === 'townsfolk' && !a.watch && !a.combatant && !a.inParty && !a.reporter &&
       !isHomeBuilder(a) &&   // don't conscript someone raising (or about to raise) their home
       a.personality && a.personality.risk_tolerance >= (WATCH.recruitRisk || 0) &&
       core.pos.distanceToSquared(a.pos) <= r2)
-      .sort((x, y) => this._lvl(y) - this._lvl(x));   // veterans first
+      .sort((x: any, y: any) => this._lvl(y) - this._lvl(x));   // veterans first
   }
 
-  _muster(core, ti, target) {
+  _muster(core: Core, ti: number, target: number): void {
     const pool = this._willing(core);
     let have = this.roster.filter((w) => w._watchTown === ti).length;
     let i = 0;
@@ -117,7 +139,7 @@ export class Watch {
     }
   }
 
-  _enlist(a, core, ti) {
+  _enlist(a: Ag, core: Core, ti: number): void {
     a._watchRestore = { combatant: a.combatant, canWork: a.canWork };
     a.watch = true;
     a._watchTown = ti;
@@ -133,7 +155,7 @@ export class Watch {
 
   // peace: release the single most-junior watchman of a town back to civilian life
   // (never below the standing base; one per pass, gated on that town's calm).
-  _releaseOne(ti) {
+  _releaseOne(ti: number): void {
     const town = this.roster.filter((w) => w._watchTown === ti);
     if (town.length <= (WATCH.base || 0)) return;
     let jr = null;
@@ -141,7 +163,7 @@ export class Watch {
     if (jr) { this._revert(jr); this.roster = this.roster.filter((w) => w.watch); }
   }
 
-  _revert(a) {
+  _revert(a: Ag): void {
     if (!a) return;
     const r = a._watchRestore;
     a.watch = false;
@@ -153,14 +175,14 @@ export class Watch {
     a.campAnchor = null;
   }
 
-  _seniorOf(list) {
+  _seniorOf(list: Ag[]): Ag | null {
     let best = null;
     for (const w of list) if (w && w.alive && (!best || this._lvl(w) > this._lvl(best))) best = w;
     return best;
   }
 
   // the senior watchman commands; announce a change of captain (a Vimes rises).
-  _captaincy() {
+  _captaincy(): void {
     const cap = this._seniorOf(this.roster);
     if (cap && cap !== this.captain) {
       const first = !this.captain;
@@ -172,8 +194,8 @@ export class Watch {
     }
   }
 
-  _note(text, id) { try { if (this.sim.chronicle && this.sim.chronicle.note) this.sim.chronicle.note('watch', id == null ? -11 : id, text); } catch { /* */ } }
+  _note(text: string, id?: unknown): void { try { if (this.sim.chronicle && this.sim.chronicle.note) this.sim.chronicle.note('watch', id == null ? -11 : id, text); } catch { /* */ } }
 
   // restore every watchman (world teardown / dispose) so flags don't leak.
-  disband() { for (const w of this.roster.slice()) this._revert(w); this.roster = []; this.captain = null; }
+  disband(): void { for (const w of this.roster.slice()) this._revert(w); this.roster = []; this.captain = null; }
 }

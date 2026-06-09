@@ -15,6 +15,26 @@
 
 import { bus } from '../rpg/events.js';
 import { CHRONICLE, MONSTER } from './simconfig.js';
+import type { ActionEvent } from '../../types/sim.js';
+
+// `sim` is the owning Simulation (a separate, wave-2 cluster still in .js); typed opaquely
+// on purpose — this module reads its drama/agent state read-only and is fully guarded.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Sim = any;
+
+// one chronicle beat in the rolling ring (a FILE-LOCAL shape — the UI reads these via
+// recent()/legends(); distinct from the shared news Beat, which the gazette uses).
+interface ChronicleBeat {
+  id: number;
+  t: number;
+  kind: string;
+  text: string;
+  arcId: string | null;
+  arcTitle: string | null;
+}
+
+// an optional arc binding threaded onto a beat (set-up → escalation → climax grouping).
+interface ArcRef { id?: string | null; title?: string | null; }
 
 // event KINDS the UI colour-codes by. Keep these stable (the panel keys off them).
 export const BEAT = {
@@ -35,7 +55,18 @@ export const BEAT = {
 };
 
 export class Chronicle {
-  constructor(sim) {
+  sim: Sim;
+  _ring: ChronicleBeat[];
+  _legends: ChronicleBeat[];
+  _seq: number;
+  _dedupe: Map<string, number>;
+  _lastPoll: number;
+  _raidsSeen: number;
+  _birthsSeen: number;
+  _apprSeen: number;
+  _off: (() => void) | null;
+
+  constructor(sim: Sim) {
     this.sim = sim;
     this._ring = [];          // bounded ring of beats (most-recent appended last)
     this._legends = [];       // the SAGA: only the momentous beats, kept far longer than
@@ -52,27 +83,27 @@ export class Chronicle {
     this._off = bus.on((ev) => this._onEvent(ev));
   }
 
-  dispose() { if (this._off) { this._off(); this._off = null; } }
+  dispose(): void { if (this._off) { this._off(); this._off = null; } }
 
   // ---- public read API (UI) ------------------------------------------------
   // newest-first shallow copy so callers can't mutate the ring.
-  recent(n = CHRONICLE.cap) {
+  recent(n: number = CHRONICLE.cap): ChronicleBeat[] {
     const k = Math.max(0, Math.min(n | 0 || CHRONICLE.cap, this._ring.length));
     const out = this._ring.slice(this._ring.length - k);
     out.reverse();
     return out;
   }
 
-  count() { return this._ring.length; }
+  count(): number { return this._ring.length; }
 
   // public: record a custom beat (e.g. a seeded narrative premise). Guarded +
   // de-duplicated exactly like the internal captures. `arc` (optional `{id,title}`)
   // ties this beat to a multi-beat STORY so the feed can group its chapters — see
   // the Director's arcs (the betrayal and the duel that answers it read as one tale).
-  note(kind, subjectId, text, arc) { this._push(kind || 'note', subjectId, text, arc); }
+  note(kind: string, subjectId: unknown, text: string, arc?: ArcRef): void { this._push(kind || 'note', subjectId, text, arc); }
 
   // ---- capture -------------------------------------------------------------
-  _nameOf(id) {
+  _nameOf(id: unknown): string {
     if (id == null) return 'someone';
     try {
       const a = this.sim && this.sim.agentsById && this.sim.agentsById.get(id);
@@ -80,11 +111,11 @@ export class Chronicle {
     } catch { return 'someone'; }
   }
 
-  _now() { try { return (this.sim && this.sim.time) || 0; } catch { return 0; } }
+  _now(): number { try { return (this.sim && this.sim.time) || 0; } catch { return 0; } }
 
   // push a beat onto the ring, de-duplicated per (kind, subject) within a short
   // window so a flurry of identical events collapses to one entry. Guarded.
-  _push(kind, subjectId, text, arc) {
+  _push(kind: string, subjectId: unknown, text: string, arc?: ArcRef): void {
     try {
       if (!text) return;
       const t = this._now();
@@ -114,7 +145,7 @@ export class Chronicle {
   // student surpassing a master, a vendetta fulfilled, the Watch founded, and a
   // prodigy reaching a high tier. The everyday feed keeps everything; this is what
   // the town REMEMBERS a year on.
-  _legendary(kind, text) {
+  _legendary(kind: string, text: string): boolean {
     if (kind === BEAT.LEGEND) return true;                          // heroes hailed / nemeses risen & felled
     if (kind === BEAT.FAITH && /great god|small god/.test(text)) return true;
     if (kind === BEAT.MENTOR && /surpassed|outstripped/.test(text)) return true;
@@ -127,14 +158,14 @@ export class Chronicle {
   }
 
   // public: the saga, newest-first (the UI's "Legends" view).
-  legends(n = 60) {
+  legends(n: number = 60): ChronicleBeat[] {
     const k = Math.max(0, Math.min(n | 0 || 60, this._legends.length));
     return this._legends.slice(this._legends.length - k).reverse();
   }
 
   // route a bus ActionEvent to a beat — only the story-worthy ones. Guarded so a
   // malformed event can never break the loop (one bad subscriber must not freeze).
-  _onEvent(ev) {
+  _onEvent(ev: ActionEvent): void {
     try {
       if (!ev || !ev.verb) return;
       switch (ev.verb) {
@@ -147,7 +178,7 @@ export class Chronicle {
     } catch { /* never throw */ }
   }
 
-  _isMonster(id) {
+  _isMonster(id: unknown): boolean {
     try {
       const a = this.sim && this.sim.agentsById && this.sim.agentsById.get(id);
       return !!a && a.faction === MONSTER.faction;
@@ -157,7 +188,7 @@ export class Chronicle {
   // a lethal blow. Frame it from the fallen's side (a death) — and, when the
   // slain was no monster, note the slayer (a darker beat). Vendettas are derived
   // from the witnesses below (a liked friend murdered -> someone will avenge).
-  _onKill(ev) {
+  _onKill(ev: ActionEvent): void {
     const slayer = this._nameOf(ev.actorId);
     const slain = this._nameOf(ev.targetId);
     if (this._isMonster(ev.targetId)) {
@@ -173,7 +204,7 @@ export class Chronicle {
   // a witness who thought well of the fallen turns against the killer — read
   // belief state READ-ONLY to phrase a vendetta (the witness "swears revenge").
   // We surface at most ONE per kill (the most-aggrieved) so it stays a beat, not spam.
-  _noteVendetta(killerId, fallenId) {
+  _noteVendetta(killerId: unknown, fallenId: unknown): void {
     try {
       const sim = this.sim;
       const agents = (sim && sim.agents) || [];
@@ -195,7 +226,7 @@ export class Chronicle {
   }
 
   // a brand-new class emerged for an agent — a calling found (the prodigy rising).
-  _onClassGained(ev) {
+  _onClassGained(ev: ActionEvent): void {
     try {
       const a = this.sim && this.sim.agentsById && this.sim.agentsById.get(ev.actorId);
       if (!a || a.controlled) return;
@@ -207,7 +238,7 @@ export class Chronicle {
 
   // a level-up — only chronicle when it CROSSES a milestone level (the prodigy
   // ascending), not every routine tick of XP.
-  _onLevel(ev) {
+  _onLevel(ev: ActionEvent): void {
     try {
       const lvl = Math.round(ev.magnitude || 0);
       const marks = CHRONICLE.levelMarks || [];
@@ -223,7 +254,7 @@ export class Chronicle {
   // an exceptionally shrewd deal — a coup at the market. buy/sell carry a profit/
   // bargain RATIO in magnitude (1 + margin over the agent's price belief), so a
   // big margin is a fortune made (drove a hard bargain), not a routine trade.
-  _onWindfall(ev) {
+  _onWindfall(ev: ActionEvent): void {
     try {
       const margin = (ev.magnitude || 0) - 1;
       if (margin < (CHRONICLE.windfallMargin ?? Infinity)) return;
@@ -235,14 +266,14 @@ export class Chronicle {
   }
 
   // ---- poll-based sources (Director / Lineage expose COUNTERS, not bus events) --
-  _dirRaids() { try { return (this.sim.director && this.sim.director.stats && this.sim.director.stats.raids) || 0; } catch { return 0; } }
-  _linBirths() { try { return (this.sim.lineage && this.sim.lineage.births) || 0; } catch { return 0; } }
-  _linApprentices() { try { return (this.sim.lineage && this.sim.lineage.apprenticeships) || 0; } catch { return 0; } }
+  _dirRaids(): number { try { return (this.sim.director && this.sim.director.stats && this.sim.director.stats.raids) || 0; } catch { return 0; } }
+  _linBirths(): number { try { return (this.sim.lineage && this.sim.lineage.births) || 0; } catch { return 0; } }
+  _linApprentices(): number { try { return (this.sim.lineage && this.sim.lineage.apprenticeships) || 0; } catch { return 0; } }
 
   // Called from Simulation's fixed tick. Samples the Director/Lineage tallies and
   // logs a beat for each new raid/birth/mentorship since last poll. Degrades
   // gracefully if either subsystem is absent (the seam moved / not wired). Guarded.
-  tick() {
+  tick(): void {
     try {
       const t = this._now();
       if (t - this._lastPoll < (CHRONICLE.pollSecs || 0)) return;

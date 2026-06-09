@@ -24,8 +24,24 @@
 
 import { INTRIGUE, SOURCE, SIM } from './simconfig.js';
 
+// `sim`/`ctx` (the owning Simulation + its cognition context — wave-2, still .js) and the
+// spy Agents (via their disguise/spy state flags) are typed opaquely on purpose; the
+// epistemic split is preserved at runtime (only beliefs are falsified). Behaviour unchanged.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Sim = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Ag = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Ctx = any;
+
 export class Intrigue {
-  constructor(sim) {
+  sim: Sim;
+  _acc: number;
+  _assigned: boolean;
+  spies: Ag[];
+  stats: Record<string, number>;
+
+  constructor(sim: Sim) {
     this.sim = sim;
     this._acc = 0;
     this._assigned = false;
@@ -36,7 +52,7 @@ export class Intrigue {
 
   // Pick the spies once the world has spawned: a config fraction of each enabling
   // camp's members become infiltrators wearing a town cover identity. Idempotent.
-  _assignSpies() {
+  _assignSpies(): void {
     this._assigned = true;
     const sim = this.sim;
     if (!INTRIGUE || !INTRIGUE.enabled || !sim.camps) return;
@@ -45,7 +61,7 @@ export class Intrigue {
       if (!camp || !Array.isArray(camp.members)) continue;
       if (INTRIGUE.spyFactions && INTRIGUE.spyFactions.indexOf(camp.faction) === -1) continue;
       // followers (not the leader) make the spies — the leader stays to lead.
-      const pool = camp.members.filter((m) => m && m.alive && m !== camp.leader);
+      const pool = camp.members.filter((m: any) => m && m.alive && m !== camp.leader);
       const want = Math.min(pool.length, Math.max(0, Math.round(pool.length * INTRIGUE.spyFraction)));
       for (let i = 0; i < want; i++) {
         const m = pool[i];
@@ -69,7 +85,7 @@ export class Intrigue {
   // Per-cadence: each live, disguised spy near the town core that has a willing
   // OBSERVER (a townsperson within talk range) plants a false feud spark — marking
   // a third innocent townsperson as hostile in the observer's beliefs. Guarded.
-  tick(ctx, step) {
+  tick(ctx: Ctx, step: number): void {
     if (!INTRIGUE || !INTRIGUE.enabled) return;
     if (!this._assigned) this._assignSpies();
     if (!this.spies.length) return;
@@ -85,7 +101,7 @@ export class Intrigue {
     }
   }
 
-  _runSpy(spy, ctx) {
+  _runSpy(spy: Ag, ctx: Ctx): void {
     if (!spy || !spy.alive || !spy.spy) return;
     const S = spy.spy;
     // dropped cover (e.g. once it starts fighting in a raid) — a spy in open
@@ -153,7 +169,7 @@ export class Intrigue {
   // hostile faction and the town hunts it), stop it spying, and let every nearby
   // townsperson SEE the truth at once. A saga-worthy beat: a trusted neighbour was
   // a bandit infiltrator all along.
-  _unmask(spy, ctx) {
+  _unmask(spy: Ag, ctx: Ctx): void {
     try {
       spy.disguiseFaction = null;     // cover blown — true faction now perceived
       spy.spy = null;                 // no longer an infiltrator (a hunted enemy now)

@@ -6,11 +6,17 @@ import { DIRECTOR } from '../simconfig.js';
 import { BEAT } from '../chronicle.js';
 import { clamp } from './util.js';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Dir = any;        // the Director instance (thin shell — see director.ts). Opaque on
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Ctx = any;        // purpose: a large freeform drama surface; behaviour is unchanged.
+
+
 // roll the weighted event table, gently modulated by world-state.
 // DRAMATIC PACING — track tension and grant a RELIEF window when a high-tension
 // peak resolves (a war won, a raid wave seen off). Gives the world a breath after
 // the storm: no new raids, fear lifts, and bonds form in the calm.
-export function _pace(d) {
+export function _pace(d: Dir): void {
   const P = DIRECTOR.pacing; if (!P || !P.enabled) return;
   d._tension = Math.max(0, d._tension - (P.decay || 0.06));
   const threatNow = d._raiders.length > 0 || !!d._warlord;
@@ -22,7 +28,7 @@ export function _pace(d) {
   d._threatWas = threatNow;
 }
 
-export function _enterRelief(d) {
+export function _enterRelief(d: Dir): void {
   if (d.sim.time < d._reliefUntil) return;     // already breathing — don't re-fire
   const P = DIRECTOR.pacing;
   d._reliefUntil = d.sim.time + (P.reliefDuration || 45);
@@ -35,9 +41,9 @@ export function _enterRelief(d) {
   d._note(BEAT.FORTUNE, -14, `With the danger passed, the townsfolk gather in relief — there is feasting, and old quarrels are set aside for a while.`);
 }
 
-export function _inRelief(d) { return d.sim.time < d._reliefUntil; }
+export function _inRelief(d: Dir): boolean { return d.sim.time < d._reliefUntil; }
 
-export function _roll(d, ctx) {
+export function _roll(d: Dir, ctx: Ctx): void {
   const pop = d._townPop();
   // a dead/near-dead town: hold all events (reprieve) so it can recover.
   if (pop < DIRECTOR.minPopForEvents) return;
@@ -77,7 +83,7 @@ export function _roll(d, ctx) {
 // gets a small ambition kick (curiosity) and a "caravan" raises that agent's
 // sell-side price beliefs a touch (a richer market for a while). No new bodies,
 // no minted gold — the emergent systems carry it from there.
-export function _opportunity(d, pop) {
+export function _opportunity(d: Dir, pop: number): void {
   const folk = d._idleTownsfolk();
   if (!folk.length) return;
   const a = folk[(Math.random() * folk.length) | 0];
@@ -101,7 +107,7 @@ export function _opportunity(d, pop) {
 // Raises a handful of townsfolk's price beliefs on ONE staple — a scarcity
 // shock the market then tatonnements back down. Bounded, no economic mutation
 // beyond beliefs (no inventory/gold change).
-export function _crisis(d) {
+export function _crisis(d: Dir): void {
   const folk = d._idleTownsfolk();
   if (!folk.length) return;
   const C = DIRECTOR.crisis;
@@ -125,7 +131,7 @@ export function _crisis(d) {
 // We write BELIEFS (the deception/standing layer), never ground truth — two
 // townsfolk come to mistrust each other, which the existing decide/groups code
 // reacts to. Guarded; a missing belief store just skips.
-export function _spark(d) {
+export function _spark(d: Dir): void {
   const folk = d._idleTownsfolk();
   if (folk.length < 2) return;
   const i = (Math.random() * folk.length) | 0;
@@ -144,7 +150,7 @@ export function _spark(d) {
 
 // the FALL: when a favored rise's window passes, the inflated esteem sours back and
 // the town wonders what it ever saw — completing the rise-and-fall arc.
-export function _processFavoredFalls(d) {
+export function _processFavoredFalls(d: Dir): void {
   if (!d._favored || !d._favored.length) return;
   const now = d.sim.time;
   for (const f of d._favored) {
@@ -154,5 +160,5 @@ export function _processFavoredFalls(d) {
     if (up && up.alive) d._note(BEAT.FORTUNE, f.id, `${up.name}'s star has fallen as fast as it rose — the town's favour was ever a fickle thing.`);
     f.live = false;
   }
-  d._favored = d._favored.filter((f) => f && f.live);
+  d._favored = d._favored.filter((f: any) => f && f.live);
 }

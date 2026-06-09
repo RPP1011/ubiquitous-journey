@@ -20,11 +20,43 @@
 // a purseless raider mints nothing). Guarded; never throws on the fixed tick.
 
 import * as THREE from 'three';
+import type { Vector3 } from 'three';
 import { DEFENSE, TOWNS, factionHostile } from './simconfig.js';
 import { terrainHeight } from '../arena.js';
 
+// `sim` (the owning Simulation — wave-2, still .js) is typed opaquely on purpose;
+// behaviour is unchanged.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Sim = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Ag = any;
+
+// CONTAINED THREE TYPE-VIEW (the vendored three.module.js leaves Object3D transform props
+// as runtime getters tsc can't see, and over-narrows the Mesh material param). This
+// minimal local view covers exactly what _mesh() builds; adds nothing at runtime.
+interface Obj3DLike {
+  position: { set(x: number, y: number, z: number): void; y: number; copy(v: { x: number; y: number; z: number }): unknown };
+  add(o: Obj3DLike): void;
+}
+interface T3Shape {
+  Group: new () => Obj3DLike;
+  Mesh: new (geo: unknown, mat: unknown) => Obj3DLike;
+  CylinderGeometry: new (...a: number[]) => unknown;
+  ConeGeometry: new (...a: number[]) => unknown;
+  MeshStandardMaterial: new (opts: Record<string, unknown>) => unknown;
+}
+const T3 = THREE as unknown as T3Shape;
+
+// a watchtower emplacement: a world position + (browser-only) its visual marker group.
+interface Tower { pos: Vector3; mesh?: Obj3DLike; }
+
 export class Defenses {
-  constructor(sim) {
+  sim: Sim;
+  towers: Tower[];
+  _acc: number;
+  stats: Record<string, number>;
+
+  constructor(sim: Sim) {
     this.sim = sim;
     this.towers = [];
     this._acc = 0;
@@ -36,11 +68,11 @@ export class Defenses {
 
   // ring EACH town core with watchtowers (open world: every town holds its own
   // ground). Towns come from the sim if spawned, else the TOWNS config, else origin.
-  build() {
+  build(): void {
     const n = DEFENSE.towers ?? 5;
     const R = DEFENSE.ringR ?? 16;
     const centers = (this.sim.towns && this.sim.towns.length)
-      ? this.sim.towns.map((t) => [t.center.x, t.center.z])
+      ? this.sim.towns.map((t: Ag) => [t.center.x, t.center.z])
       : ((TOWNS && TOWNS.centers && TOWNS.centers.length) ? TOWNS.centers : [[0, 0]]);
     for (const [cx, cz] of centers) {
       for (let i = 0; i < n; i++) {
@@ -55,16 +87,16 @@ export class Defenses {
   }
 
   // simple browser-only marker so the watchtowers are visible on the map.
-  _mesh(tower) {
+  _mesh(tower: Tower): void {
     try {
-      const grp = new THREE.Group();
-      const post = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.6, 0.9, 6, 8),
-        new THREE.MeshStandardMaterial({ color: 0x6b5a44 }));
+      const grp = new T3.Group();
+      const post = new T3.Mesh(
+        new T3.CylinderGeometry(0.6, 0.9, 6, 8),
+        new T3.MeshStandardMaterial({ color: 0x6b5a44 }));
       post.position.y = 3;
-      const cap = new THREE.Mesh(
-        new THREE.ConeGeometry(1.3, 1.6, 8),
-        new THREE.MeshStandardMaterial({ color: 0x8a3b2e }));
+      const cap = new T3.Mesh(
+        new T3.ConeGeometry(1.3, 1.6, 8),
+        new T3.MeshStandardMaterial({ color: 0x8a3b2e }));
       cap.position.y = 6.6;
       grp.add(post); grp.add(cap);
       grp.position.copy(tower.pos);
@@ -74,11 +106,11 @@ export class Defenses {
   }
 
   // an agent's APPARENT faction — a disguised infiltrator fools the watch.
-  _apparent(a) { return a.disguiseFaction || a.faction; }
+  _apparent(a: Ag): string { return a.disguiseFaction || a.faction; }
 
   // fixed-tick: on a cooldown, every tower fires on the nearest town-hostile body
   // in range. Fully guarded — never throws/stalls the fixed loop.
-  tick(ctx, dt) {
+  tick(ctx: unknown, dt: number): void {
     try {
       this._acc += dt;
       const every = DEFENSE.fireEvery ?? 1.0;
@@ -103,7 +135,7 @@ export class Defenses {
     } catch { /* never throw on the tick */ }
   }
 
-  dispose() {
+  dispose(): void {
     if (typeof document === 'undefined') return;
     for (const t of this.towers) if (t.mesh) { try { this.sim.scene.remove(t.mesh); } catch { /* */ } }
     this.towers = [];
@@ -111,4 +143,4 @@ export class Defenses {
 }
 
 // terrain height is a pure function but guard it anyway (never throw at construction).
-function safeHeight(x, z) { try { return terrainHeight(x, z); } catch { return 0; } }
+function safeHeight(x: number, z: number): number { try { return terrainHeight(x, z); } catch { return 0; } }

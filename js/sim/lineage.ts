@@ -27,10 +27,29 @@ import { LINEAGE, SIM } from './simconfig.js';
 import { terrainHeight } from '../arena.js';
 import { assignHouse, areHousesFeuding, endHouseFeud, feudingHouseOf } from './houses.js';
 
-const clamp01 = (x) => Math.max(0, Math.min(1, x));
+// `sim`/`ctx` (the owning Simulation + cognition context — wave-2, still .js) and the
+// parent/child/master/apprentice Agents (via their kin/mate/master flags) are typed
+// opaquely on purpose; behaviour is unchanged (gold conserved, beliefs read for safety).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Sim = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Ag = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Ctx = any;
+
+const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
 
 export class Lineage {
-  constructor(sim) {
+  sim: Sim;
+  _acc: number;
+  _appAcc: number;
+  _gestating: Map<string, number>;
+  _birthReady: Map<unknown, number>;
+  _taught: Map<string, number>;
+  births: number;
+  apprenticeships: number;
+
+  constructor(sim: Sim) {
     this.sim = sim;
     this._acc = 0;             // birth-pass throttle
     this._appAcc = 0;          // apprenticeship-pass throttle
@@ -49,7 +68,7 @@ export class Lineage {
   }
 
   // fixed-tick entry (self-throttled). Never throws.
-  tick(ctx, dt) {
+  tick(ctx: Ctx, dt: number): void {
     try {
       this._acc += dt;
       if (this._acc >= LINEAGE.tickEvery) {
@@ -68,30 +87,30 @@ export class Lineage {
 
   // is `a` an alive, non-controlled, non-combatant townsperson? (a candidate
   // parent / apprentice / master — never a monster or the player)
-  _civ(a) {
+  _civ(a: Ag): boolean {
     return a && a.alive && a.autonomous && !a.combatant && a.faction === 'townsfolk';
   }
 
-  _livingTownsfolk() {
-    return this.sim.agents.filter((a) => this._civ(a)).length;
+  _livingTownsfolk(): number {
+    return this.sim.agents.filter((a: any) => this._civ(a)).length;
   }
 
   // a parent is SAFE if it believes no hostile is within danger range, and FED if
   // its hunger is healthy. Births are gated on both (stability). Belief-only for
   // the safety read — decisions read beliefs, never ground truth.
-  _safe(a, ctx) {
+  _safe(a: Ag, ctx: Ctx): boolean {
     const h = a._nearestHostile ? a._nearestHostile(ctx) : null;
     if (!h) return true;
     const d = a.pos.distanceTo(h.pos);
     return d > SIM.dangerRange;
   }
-  _fed(a) {
+  _fed(a: Ag): boolean {
     return a.needs && a.needs.hunger >= LINEAGE.fedHunger;
   }
 
   // do A and B mutually like each other enough to pair-bond? (mutual belief
   // standing, OR an existing hearth bond between them). Belief-only read.
-  _fond(A, B) {
+  _fond(A: Ag, B: Ag): boolean {
     // an established social bond (same group: one leads the other, or both follow
     // the same anchor) is the most reliable, persistent affinity the sim maintains
     // — a hearth especially (homebodies who stay together) reads as a couple.
@@ -102,7 +121,7 @@ export class Lineage {
     return !!(ab && ba && ab.standing >= LINEAGE.pairStanding && ba.standing >= LINEAGE.pairStanding);
   }
 
-  _pairKey(a, b) { return a.id < b.id ? `${a.id}:${b.id}` : `${b.id}:${a.id}`; }
+  _pairKey(a: Ag, b: Ag): string { return a.id < b.id ? `${a.id}:${b.id}` : `${b.id}:${a.id}`; }
 
   // BIRTHS pass --------------------------------------------------------------
   // Births run off PERSISTENT COUPLES (a.mateId), not a fresh proximity scan each
@@ -113,7 +132,7 @@ export class Lineage {
   // PULSE: a peaceful town's couples reliably bear children (pop ↑), a besieged
   // town's don't (pop holds/↓) — without depending on two homebodies happening to
   // stand within a few metres for 30s straight (which almost never held).
-  _births(ctx) {
+  _births(ctx: Ctx): void {
     // the cap is PER TOWN — scale it by the number of towns so every town in the
     // open world sustains its own bloodlines (births are naturally within-town:
     // couples court by proximity).
@@ -121,7 +140,7 @@ export class Lineage {
     if (this._livingTownsfolk() >= LINEAGE.popSoftCap * towns) { this._gestating.clear(); return; }
     const now = this.sim.time;
     const step = LINEAGE.tickEvery;
-    const civs = this.sim.agents.filter((a) => this._civ(a));
+    const civs = this.sim.agents.filter((a: any) => this._civ(a));
 
     // (1) court: pair up some unattached, fond, co-located, fit townsfolk into
     // lasting couples (bounded — at most one new couple per pass).
@@ -169,7 +188,7 @@ export class Lineage {
   // COURTSHIP — wed at most one new couple per pass. A candidate pair must both be
   // unattached, fond, fit (fed + safe), and currently within mateRange (they met).
   // Once wed the bond PERSISTS (a.mateId) and survives them drifting apart to work.
-  _courtship(ctx, civs) {
+  _courtship(ctx: Ctx, civs: Ag[]): void {
     for (let i = 0; i < civs.length; i++) {
       const A = civs[i];
       if (A.mateId != null || !this._fed(A) || !this._safe(A, ctx)) continue;
@@ -185,7 +204,7 @@ export class Lineage {
     }
   }
 
-  _wed(A, B) {
+  _wed(A: Ag, B: Ag): void {
     A.mateId = B.id; B.mateId = A.id;
     const t = this.sim.time;
     this._bond(A, B.id, t, 'mate');
@@ -213,8 +232,8 @@ export class Lineage {
   // a MARRIAGE ALLIANCE — warm every member of one house toward every member of the
   // other and clear any hostility between them (the union ties the two lines, and
   // can quietly end a simmering inter-house feud). Bounded: houses are small.
-  _allyHouses(h1, h2) {
-    const here = (h) => this.sim.agents.filter((a) => a.alive && a.faction === 'townsfolk' && a.house === h);
+  _allyHouses(h1: string, h2: string): void {
+    const here = (h: any) => this.sim.agents.filter((a: any) => a.alive && a.faction === 'townsfolk' && a.house === h);
     const m1 = here(h1), m2 = here(h2);
     for (const a of m1) for (const b of m2) {
       if (a === b) continue;
@@ -228,7 +247,7 @@ export class Lineage {
   // spawn one CHILD agent near its parents, inheriting blended personality + a
   // fraction of their behaviour tags. Gold conserved (0 or a MOVED dowry).
   // Returns true on success, false if anything prevented the birth (guarded).
-  _birth(A, B, ctx) {
+  _birth(A: Ag, B: Ag, ctx: Ctx): boolean {
     try {
       const sim = this.sim;
       const px = (A.pos.x + B.pos.x) / 2 + (Math.random() * 4 - 2);
@@ -295,7 +314,7 @@ export class Lineage {
         if (house && !child.rivalId) {
           const enemyHouse = feudingHouseOf(sim, house);
           if (enemyHouse) {
-            const foe = sim.agents.find((o) => o.alive && !o.controlled && o.faction === 'townsfolk' && o.house === enemyHouse && o.rivalId == null);
+            const foe = sim.agents.find((o: any) => o.alive && !o.controlled && o.faction === 'townsfolk' && o.house === enemyHouse && o.rivalId == null);
             if (foe) {
               child.rivalId = foe.id; foe.rivalId = child.id;
               if (sim.chronicle && sim.chronicle.note) sim.chronicle.note('vendetta', child.id, `${child.name} is born into the feud between Houses ${house} and ${enemyHouse} — and inherits the grudge.`);
@@ -317,12 +336,12 @@ export class Lineage {
     } catch { return false; }      // a failed birth must never stall the tick
   }
 
-  _richer(A, B) { return A.gold >= B.gold ? A : B; }
+  _richer(A: Ag, B: Ag): Ag { return A.gold >= B.gold ? A : B; }
 
-  _blendPersonality(pa, pb) {
+  _blendPersonality(pa: Record<string, number> | null | undefined, pb: Record<string, number> | null | undefined): Record<string, number> {
     const a = pa || {}, b = pb || {};
     const keys = ['risk_tolerance', 'social_drive', 'ambition', 'altruism', 'curiosity'];
-    const out = {};
+    const out: Record<string, number> = {};
     for (const k of keys) {
       const base = ((a[k] ?? 0.5) + (b[k] ?? 0.5)) / 2;
       const j = (Math.random() * 2 - 1) * LINEAGE.personalityJitter;
@@ -332,7 +351,7 @@ export class Lineage {
   }
 
   // copy a FRACTION of a parent's top-N behaviour tags onto the child's profile.
-  _inheritTags(child, parent) {
+  _inheritTags(child: Ag, parent: Ag): void {
     const bp = parent && parent.progression && parent.progression.behavior_profile;
     const cp = child && child.progression && child.progression.behavior_profile;
     if (!bp || !cp) return;
@@ -346,10 +365,10 @@ export class Lineage {
   // APPRENTICESHIP pass ------------------------------------------------------
   // pair a young/low-total-level townsperson with a nearby high-class master of a
   // trade; copy a fraction of the master's dominant tags to fast-track that class.
-  _apprenticeships(ctx) {
+  _apprenticeships(ctx: Ctx): void {
     const now = this.sim.time;
-    const civs = this.sim.agents.filter((a) => this._civ(a));
-    const masters = civs.filter((a) => this._totalLevel(a) >= LINEAGE.masterMinLevel);
+    const civs = this.sim.agents.filter((a: any) => this._civ(a));
+    const masters = civs.filter((a: any) => this._totalLevel(a) >= LINEAGE.masterMinLevel);
     if (!masters.length) return;
 
     for (const app of civs) {
@@ -370,13 +389,13 @@ export class Lineage {
     }
   }
 
-  _totalLevel(a) {
+  _totalLevel(a: Ag): number {
     return (a && a.progression && a.progression.totalLevel) || 0;
   }
 
   // copy ~30% of the master's dominant behaviour tags onto the apprentice and
   // record a mentorship bond memory on both. Guarded; returns true on a session.
-  _teach(master, app, now) {
+  _teach(master: Ag, app: Ag, now: number): boolean {
     try {
       const mp = master.progression && master.progression.behavior_profile;
       const ap = app.progression && app.progression.behavior_profile;
@@ -399,7 +418,7 @@ export class Lineage {
   // SURPASS — the payoff that closes the rival-apprentices arc: when an apprentice's
   // total level pulls clear of their living master (or old rival) by a margin, the
   // student has outgrown the teacher (or won the rivalry). Announced ONCE each.
-  _surpass() {
+  _surpass(): void {
     const margin = LINEAGE.surpassMargin || 2;
     for (const a of this.sim.agents) {
       if (!a.alive || a.controlled || a.faction !== 'townsfolk' || !a.progression) continue;
@@ -421,14 +440,14 @@ export class Lineage {
     }
   }
 
-  _noteSurpass(text, id) { try { if (this.sim.chronicle && this.sim.chronicle.note) this.sim.chronicle.note('mentor', id == null ? -3 : id, text); } catch { /* never throw */ } }
+  _noteSurpass(text: string, id?: unknown): void { try { if (this.sim.chronicle && this.sim.chronicle.note) this.sim.chronicle.note('mentor', id == null ? -3 : id, text); } catch { /* never throw */ } }
 
   // RECONCILIATION — the peaceful end of a rivalry. Two long-standing rivals (the
   // durable `rivalId` bond, unlike a feud's standing which "forgiveness" drift erodes
   // in seconds) eventually set their strife aside and become friends — more readily
   // once one has surpassed the other (the contest is settled). The warm counterpoint
   // to all the vengeance. Across Houses it's a peace between two lines.
-  _reconcileRivals() {
+  _reconcileRivals(): void {
     for (const a of this.sim.agents) {
       if (!a.alive || a.controlled || a.faction !== 'townsfolk' || a.rivalId == null) continue;
       const b = this.sim.agentsById.get(a.rivalId);
@@ -453,7 +472,7 @@ export class Lineage {
 
   // record a `bond` episode (memory.js renders it "joined with X"). `rel` is kept
   // on the episode for the chronicle/biography to distinguish kin vs mentorship.
-  _bond(a, withId, t, rel) {
+  _bond(a: Ag, withId: unknown, t: number, rel: string): void {
     if (!a || !a.memory) return;
     try {
       a.memory.record({ t, kind: 'bond', withId, rel, valence: 1, salience: 0.7 });

@@ -20,7 +20,41 @@ import * as THREE from 'three';
 import { terrainHeight } from '../arena.js';
 import { TOWNS } from './simconfig.js';
 
-const WALL = (TOWNS && TOWNS.wall) || {};
+// CONTAINED THREE TYPE-VIEW (the vendored three.module.js leaves Object3D transform props
+// — .position/.rotation/.matrix — as runtime getters tsc can't see, and over-narrows the
+// Mesh material param). This minimal local view covers exactly what buildWalls() touches;
+// it adds nothing at runtime (mirrors js/sim/world.ts). The collision half of this module
+// is pure config and stays fully typed.
+interface Mat4Like { clone(): Mat4Like; }
+interface Obj3DLike {
+  position: { set(x: number, y: number, z: number): void };
+  rotation: { set(x: number, y: number, z: number): void };
+  matrix: Mat4Like;
+  name: string;
+  castShadow: boolean;
+  receiveShadow: boolean;
+  frustumCulled: boolean;
+  updateMatrix(): void;
+  add(o: Obj3DLike): void;
+  setMatrixAt(i: number, m: Mat4Like): void;
+}
+// loose so any caller's scene-view (e.g. world.ts's own SceneLike) is assignable.
+interface SceneLike { add(o: unknown): void; }
+// the THREE namespace cast to the loose constructors this module uses (geometry/material
+// args are opaque — only the returned object shape matters here).
+interface T3Shape {
+  Object3D: new () => Obj3DLike;
+  Group: new () => Obj3DLike;
+  Mesh: new (geo: unknown, mat: unknown) => Obj3DLike;
+  InstancedMesh: new (geo: unknown, mat: unknown, count: number) => Obj3DLike;
+  CylinderGeometry: new (...a: number[]) => unknown;
+  BoxGeometry: new (...a: number[]) => unknown;
+  MeshStandardMaterial: new (opts: Record<string, unknown>) => unknown;
+}
+const T3 = THREE as unknown as T3Shape;
+
+// the wall config block (loosely keyed — TOWNS.wall is an optional sub-config object).
+const WALL = ((TOWNS && TOWNS.wall) || {}) as Record<string, number>;
 const RADIUS = WALL.radius || 0;                 // ring radius from each town centre (0 = disabled)
 const HALF = (WALL.thickness || 2) / 2;          // collision band half-thickness
 const HEIGHT = WALL.height || 5;
@@ -29,12 +63,12 @@ const GATES = WALL.gates || 4;                    // count of evenly-spaced gate
 const GATE_HALF = RADIUS ? ((WALL.gateWidth || 8) / 2) / RADIUS : 0;   // gate half-angle (rad, arc≈width)
 const UNDERGROUND_Y = -50;                        // below this y the mover is in a dungeon: walls don't apply
 
-function centers() {
+function centers(): number[][] {
   return (TOWNS && TOWNS.centers && TOWNS.centers.length) ? TOWNS.centers : [[0, 0]];
 }
 
 // Is the angle (rad) aligned with one of this ring's gate gaps?
-function inGate(ang) {
+function inGate(ang: number): boolean {
   for (let g = 0; g < GATES; g++) {
     const ga = (g / GATES) * Math.PI * 2;
     let d = Math.abs(ang - ga);
@@ -53,7 +87,7 @@ function inGate(ang) {
 // deadlocks at a narrow gate). Returns a shared {x,z} (copy if you keep it) or
 // null when no wall lies between the two points. Pure config — headless-safe.
 const _wp = { x: 0, z: 0 };
-export function gateWaypoint(px, pz, tx, tz) {
+export function gateWaypoint(px: number, pz: number, tx: number, tz: number): { x: number; z: number } | null {
   if (!RADIUS) return null;
   const cs = centers();
   for (let i = 0; i < cs.length; i++) {
@@ -93,7 +127,7 @@ export function gateWaypoint(px, pz, tx, tz) {
 // may overlap a town centre — walls are overworld-only, so bypass. Mutates
 // pos.{x,z}; leaves y alone.
 const EPS = 0.05;
-export function collideWalls(pos, px, pz) {
+export function collideWalls(pos: { x: number; y: number; z: number }, px: number, pz: number): void {
   if (!RADIUS || pos.y < UNDERGROUND_Y) return;
   const cs = centers();
   for (let i = 0; i < cs.length; i++) {
@@ -116,17 +150,17 @@ export function collideWalls(pos, px, pz) {
 // Raise the ring meshes + gate towers for every town. Browser-only: skipped
 // headless (no document) and when walls are disabled. Stone is instanced — the
 // whole perimeter of both towns is two InstancedMeshes plus a handful of towers.
-export function buildWalls(scene) {
+export function buildWalls(scene: SceneLike): Obj3DLike | undefined {
   if (typeof document === 'undefined' || !RADIUS || !scene) return;
   const cs = centers();
   const SEGS = 96;                                  // angular resolution of the ring
   const dθ = (Math.PI * 2) / SEGS;
   const segLen = RADIUS * dθ * 1.12;               // chord + overlap so corners don't gap
-  const bodies = [], crenels = [];                  // instance matrices
-  const dummy = new THREE.Object3D();
-  const towerGroup = new THREE.Group();
-  const towerGeo = new THREE.CylinderGeometry(THICK * 0.95, THICK * 1.1, HEIGHT + 2.2, 8);
-  const towerMat = new THREE.MeshStandardMaterial({ color: 0x837b70, roughness: 1, flatShading: true });
+  const bodies: Mat4Like[] = [], crenels: Mat4Like[] = [];   // instance matrices
+  const dummy = new T3.Object3D();
+  const towerGroup = new T3.Group();
+  const towerGeo = new T3.CylinderGeometry(THICK * 0.95, THICK * 1.1, HEIGHT + 2.2, 8);
+  const towerMat = new T3.MeshStandardMaterial({ color: 0x837b70, roughness: 1, flatShading: true });
 
   for (let i = 0; i < cs.length; i++) {
     const cx = cs[i][0], cz = cs[i][1];
@@ -154,7 +188,7 @@ export function buildWalls(scene) {
       for (const e of [-1, 1]) {
         const a = ga + e * (GATE_HALF + dθ * 0.5);
         const x = cx + Math.cos(a) * RADIUS, z = cz + Math.sin(a) * RADIUS;
-        const t = new THREE.Mesh(towerGeo, towerMat);
+        const t = new T3.Mesh(towerGeo, towerMat);
         t.position.set(x, safeHeight(x, z) + (HEIGHT + 2.2) / 2, z);
         t.castShadow = true; t.receiveShadow = true;
         towerGroup.add(t);
@@ -162,11 +196,11 @@ export function buildWalls(scene) {
     }
   }
 
-  const bodyMesh = makeInstanced(new THREE.BoxGeometry(segLen, HEIGHT, THICK),
-    new THREE.MeshStandardMaterial({ color: 0x8a8278, roughness: 1, flatShading: true }), bodies);
-  const crenelMesh = makeInstanced(new THREE.BoxGeometry(segLen * 0.45, HEIGHT * 0.3, THICK * 1.05),
-    new THREE.MeshStandardMaterial({ color: 0x6f685e, roughness: 1, flatShading: true }), crenels);
-  const group = new THREE.Group();
+  const bodyMesh = makeInstanced(new T3.BoxGeometry(segLen, HEIGHT, THICK),
+    new T3.MeshStandardMaterial({ color: 0x8a8278, roughness: 1, flatShading: true }), bodies);
+  const crenelMesh = makeInstanced(new T3.BoxGeometry(segLen * 0.45, HEIGHT * 0.3, THICK * 1.05),
+    new T3.MeshStandardMaterial({ color: 0x6f685e, roughness: 1, flatShading: true }), crenels);
+  const group = new T3.Group();
   group.name = 'townWalls';
   if (bodyMesh) group.add(bodyMesh);
   if (crenelMesh) group.add(crenelMesh);
@@ -175,13 +209,13 @@ export function buildWalls(scene) {
   return group;
 }
 
-function makeInstanced(geo, mat, mats) {
+function makeInstanced(geo: unknown, mat: unknown, mats: Mat4Like[]): Obj3DLike | null {
   if (!mats.length) return null;
-  const m = new THREE.InstancedMesh(geo, mat, mats.length);
+  const m = new T3.InstancedMesh(geo, mat, mats.length);
   for (let i = 0; i < mats.length; i++) m.setMatrixAt(i, mats[i]);
   m.castShadow = true; m.receiveShadow = true;
   m.frustumCulled = true;
   return m;
 }
 
-function safeHeight(x, z) { try { return terrainHeight(x, z); } catch { return 0; } }
+function safeHeight(x: number, z: number): number { try { return terrainHeight(x, z); } catch { return 0; } }

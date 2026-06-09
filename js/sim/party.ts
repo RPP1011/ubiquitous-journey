@@ -8,20 +8,31 @@
 import { PARTY } from './simconfig.js';
 import { bus, makeEvent } from '../rpg/events.js';
 
+// `sim` (the owning Simulation — a separate, wave-2 cluster still in .js) and the party
+// MEMBERS (Agents, via the long-tail party flags they branch on) are typed opaquely on
+// purpose. Behaviour is unchanged.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Sim = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Ag = any;
+
 export class Party {
-  constructor(sim) {
+  sim: Sim;
+  members: Ag[];
+
+  constructor(sim: Sim) {
     this.sim = sim;
     this.members = [];     // Agents, ordered — index drives the follow-ring slot
   }
 
-  get leader() { return this.sim.player; }
-  get size() { return this.members.length; }
-  has(a) { return this.members.includes(a); }
-  isFull() { return this.members.length >= PARTY.maxSize; }
+  get leader(): Ag { return this.sim.player; }
+  get size(): number { return this.members.length; }
+  has(a: Ag): boolean { return this.members.includes(a); }
+  isFull(): boolean { return this.members.length >= PARTY.maxSize; }
 
   // Would this NPC agree to join right now? Townsfolk only, must be alive, not
   // already recruited, party not full, and it has to actually like the player.
-  canRecruit(a) {
+  canRecruit(a: Ag): boolean {
     if (!a || !a.alive || a.controlled || this.has(a)) return false;
     if (a.faction === 'monster') return false;
     if (this.isFull()) return false;
@@ -31,7 +42,7 @@ export class Party {
 
   // Flip an NPC into a follower. Reversible: we stash what we overwrote so
   // dismiss() can restore the agent to an ordinary townsperson.
-  recruit(a) {
+  recruit(a: Ag): boolean {
     if (!this.canRecruit(a)) return false;
     a.inParty = true;
     a._partyRestore = { combatant: a.combatant, goal: a.goal };
@@ -45,7 +56,7 @@ export class Party {
     return true;
   }
 
-  dismiss(a) {
+  dismiss(a: Ag): boolean {
     if (!this.has(a)) return false;
     a.inParty = false;
     a.bandLeaderId = null;
@@ -63,7 +74,7 @@ export class Party {
 
   // Drop anyone who died (their corpse stays in the world; they just leave the
   // roster). Called every frame from the sim so the HUD + slots stay honest.
-  prune() {
+  prune(): boolean {
     let changed = false;
     for (const a of [...this.members]) {
       if (!a.alive) { this.dismiss(a); changed = true; }
@@ -71,8 +82,8 @@ export class Party {
     return changed;
   }
 
-  _reslot() { this.members.forEach((m, i) => (m.partySlot = i)); }
+  _reslot(): void { this.members.forEach((m, i) => (m.partySlot = i)); }
 
   // Tear the whole party down (world rebuild). Restores every member first.
-  disband() { for (const a of [...this.members]) this.dismiss(a); }
+  disband(): void { for (const a of [...this.members]) this.dismiss(a); }
 }
