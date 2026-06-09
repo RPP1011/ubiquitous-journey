@@ -396,6 +396,23 @@ expectation exactly as it acts on a price it has only heard. The decision to com
 against cost and risk: a believed-fat cache, discounted by how unsure the estimate is and by the danger
 of the act.
 
+**How the estimate is actually formed** is not a probability calculation; it is the same evidence-accrual
+that builds every other belief, anchored on a prior. The mark's *category* — a merchant, a master of his
+trade, of a known house — gives a baseline: roughly what someone like that is worth, a typical figure of
+the same kind as a base price, held at low confidence when it is all the urchin has. Then each wealth-cue
+the urchin *perceives* nudges that baseline and firms it up — a fat transaction seen at the market, a
+large and well-guarded house, the gossip that he is rich — each shifting the expected amount toward what
+it implies and raising confidence, a thing seen first-hand counting for more than a thing merely heard.
+This is the identical machinery that consolidates a stash's *location* from repeated sightings or a
+camp's *strength* from a scout's glimpses: the amount is just another believed quantity accrued onto the
+urchin's belief about the mark, carrying the usual value, confidence, provenance, and decay. Every input
+is itself a belief — the urchin acts on what it *thinks* it saw of the mark's trade, never on his real
+ledger — so it all stays in belief-space and the split holds. It is a heuristic, a prior nudged by
+weighted cues rather than a posterior, and that is exactly what makes it fallibly believable: the
+estimate is wrong precisely when the cues mislead — a merchant who dresses and trades richly but banks
+every coin reads as a fat mark and yields an empty cache, while a quiet miser reads as poor and is passed
+over. The urchin's mistake is *rational on what it could see*, which is the only fairness it is owed.
+
 Two levers already in the design carry it. **Confidence enters the cost**, so a hazy estimate makes the
 heist *expensive* — likely a wasted, dangerous night — which pushes a careful agent to case the mark
 longer (sharpening the proxy: more of his trade seen, a better read on his means) before committing, and
