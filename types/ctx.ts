@@ -37,11 +37,14 @@ export interface ResolverFacade {
   isLiveAgent(subjectId: EntityId): boolean;
   marketClear(a: Agent, good: string, buying: boolean): boolean;
   deliverTo(from: Agent, toId: EntityId, payload: { item?: string; n?: number; gold?: number }): boolean;
-  // Action-grammar execution (docs/architecture/10, Phase 5): conserved theft (burgle/rob), and the
-  // Affect flag-flips (free a captive / wreck a target). Callers gate location; these do the effect.
-  pilfer(thief: Agent, markId: EntityId, amount: number): number;
-  cutBonds(freer: Agent, captiveId: EntityId): boolean;
-  sabotage(wrecker: Agent, targetId: EntityId): boolean;
+  // Action-grammar execution (docs/architecture/10): the GENERIC "moved" acquire mechanic + the
+  // EMERGENT consequence + physical Affect. `take` moves value source→taker (conserved, no baked
+  // reaction — the social meaning is the acquire row's data); `witnessDeed` folds a perceived wrong
+  // into the victim + bystanders' beliefs (per-perceiver, witness-gated — not a hardcoded victim);
+  // `affect` applies a physical-state change (freed/wrecked). Callers gate location.
+  take(a: Agent, sourceId: EntityId, payload: { item?: string; n?: number; gold?: number }): number;
+  witnessDeed(actor: Agent, victimId: EntityId | null, kind: string, severity?: number): void;
+  affect(actor: Agent, targetId: EntityId, state: 'freed' | 'wrecked'): boolean;
   buildSite: BuildSiteFacade;
 }
 

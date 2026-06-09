@@ -11,8 +11,13 @@
 //   import { goalSteal } from '../planner.js';
 //   - surveil: walk toward the believed mark at standoff; belief.recordAssocSighting('stash', …)
 //   - approach: steer to the believed assoc (stash) pos
-//   - burgle: when at the stash, ctx.resolver.pilfer(a, markId, believedHaul)
-//   - deriver: a poor/despised agent with a believed-rich mark pushes goalSteal(markId, target)
+//   - burgle: when at the stash, ctx.resolver.take(a, markId, { gold: believedHaul }) — the
+//     GENERIC conserved transfer; then ctx.resolver.witnessDeed(a, markId, 'theft') so the
+//     consequence (mark + any witnesses souring) EMERGES from perception. Do NOT hardcode a
+//     reaction on the mark — that is the witnessDeed/perception layer's job, per-perceiver.
+//   - deriver: a poor/despised agent with a believed-rich mark pushes goalSteal(markId, target).
+//     Pick the mark + the believed haul from CUES on the belief (an emergent wealth estimate),
+//     not a hardcoded role/target.
 //   - effect-holds: surveil → knows the stash; burgle → gold raised
 //   Keep the DERIVER belief-only (epistemic split); the EXECUTORS may read truth (act layer).
 export {};

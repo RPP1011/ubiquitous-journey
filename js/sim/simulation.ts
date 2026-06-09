@@ -37,6 +37,7 @@ import { castSpec } from '../rpg/abilities/interpreter.js';
 import { POI_KIND } from './world.js';
 import { PLAN } from './planner.js';
 import { installDeedRouter, recordDeed } from './deedRouter.js';
+import { bus, makeEvent as makeEventRaw } from '../rpg/events.js';
 import { onCombatEvents } from './combatEvents.js';
 import { MentalMap } from './mentalmap.js';
 import { Scarecrow } from './percept.js';
@@ -46,8 +47,12 @@ import type {
   Agent as AgentShape, Percept, Perceivable, World as IWorld, MentalMap as IMentalMap,
   Town, FullCtx, CognitionCtx, ResolverFacade, SiteHandle, MakeFighter,
   Fighter as IFighter, CombatEvent, EntityId, AgentRef, PosSnapshot, AbilitySpec, Personality,
-  ActionEvent,
+  ActionEvent, ActionEventSpec,
 } from '../../types/sim.js';
+
+// events.js infers makeEvent's `tags=[]` default as never[]; re-type at the seam (combatEvents
+// does the same). A thin emit helper so the witnessed-deed fold publishes deeds onto the shared bus.
+const busEmit = (spec: ActionEventSpec): void => { bus.emit((makeEventRaw as (s: ActionEventSpec) => ActionEvent)(spec)); };
 
 // A spawned town carries more than the shared Town type's id/center (the MentalMap reads
 // only those two): the sim also tracks radius + display name. Local widening — runtime-only.
@@ -826,49 +831,81 @@ export class Simulation {
           return true;
         } catch { return false; }
       },
-      // CONSERVED THEFT (docs/architecture/10, Phase 5 execution): move up to `amount` gold from a
-      // mark's purse to the `thief` — the closed-loop transfer behind burgle (from a stash) and rob
-      // (by force). The CALLER (the executor) gates location (at the stash / on the mark); this just
-      // moves the gold (debits the mark, credits the thief — no minting) and, IF the mark is right
-      // there to SEE it (witnessed theft), sours the mark toward the thief through the mark's OWN
-      // belief store (suspicion up, hostile, standing down). Returns the gold actually taken. Guarded.
-      pilfer(thief, markId, amount) {
+      // CONSERVED TAKE (docs/architecture/10) — the GENERIC "moved" acquire mechanic: move value
+      // from a source to the taker `a`, debiting the source as it credits the taker (no minting).
+      // That is ALL it does. It is one operation behind loot / burgle / rob / take — they differ
+      // only in the SOURCE and the SOCIAL TRACE, which are the acquire row's DATA, not code here.
+      // It bakes in NO reaction: who thinks worse of the taker is a CONSEQUENCE that emerges from
+      // perception (witnessDeed), the same way combat outcomes fold back, not a constant stamped on
+      // one victim. The caller gates location (at the stash / on the mark / at the corpse). Returns
+      // the amount actually taken (gold) or units moved (item). Guarded; never throws.
+      take(a, sourceId, payload) {
         try {
-          const mark = sim.agentsById.get(markId);
-          if (!mark || !mark.alive || !thief) return 0;
-          const take = Math.min(Math.max(0, amount || 0), mark.gold || 0);
-          if (take <= 0) return 0;
-          mark.gold -= take;
-          thief.gold = (thief.gold || 0) + take;
-          // WITNESSED THEFT — only if the mark can actually see the thief (epistemic: the loss is
-          // felt as a wrong only by a mark that perceives it). Writes the MARK's own belief.
-          if (mark.beliefs && mark.pos.distanceTo(thief.pos) <= SIM.visionRange) {
-            const rel = mark.beliefs.get(thief.id) || mark.beliefs.observe(thief.id, thief.faction, thief.pos, sim.time, true);
-            if (rel) { rel.standing = Math.max(-1, (rel.standing || 0) - 0.4); rel.suspicion = Math.min(1, (rel.suspicion || 0) + 0.5); rel.hostile = true; }
+          const src = sim.agentsById.get(sourceId);
+          if (!src || !a) return 0;
+          const gold = payload.gold || 0, item = payload.item, n = payload.n || 1;
+          if (gold) {
+            const got = Math.min(Math.max(0, gold), src.gold || 0);
+            if (got <= 0) return 0;
+            src.gold -= got; a.gold = (a.gold || 0) + got;
+            return got;
           }
-          return take;
+          if (item) {
+            const got = Math.min(Math.max(0, n), src.inventory[item] || 0);
+            if (got <= 0) return 0;
+            src.inventory[item] -= got; a.inventory[item] = (a.inventory[item] || 0) + got;
+            return got;
+          }
+          return 0;
         } catch { return 0; }
       },
-      // FREE A CAPTIVE (Affect row): cut the bonds — flip the captive's believed-held state. The
-      // caller gates location (be at the captive). Conserved-safe (no gold/goods move). Stamps
-      // `_freedBy` so the freed agent's own logic can react (e.g. follow its rescuer). Returns true
-      // on a landed free. Guarded; minimal until a richer captivity mechanic lands.
-      cutBonds(freer, captiveId) {
+      // WITNESSED DEED → BELIEFS (docs/architecture/10) — the EMERGENT consequence, mirroring
+      // onCombatEvents' fold. A wrong by `actor` against `victimId` (theft/robbery/sabotage, named
+      // by `kind`) folds into the beliefs of the victim AND every bystander who can SEE the actor —
+      // each through ITS OWN belief store, scaled by ITS OWN view (the victim reacts harder than a
+      // stranger; a wronged friend harder still). The reaction is the PERCEIVER's, not a constant on
+      // one designated victim, and it is WITNESS-GATED (a theft no one sees breeds no suspicion).
+      // Also publishes the deed on the shared bus so it feeds the actor's emergent class (a thief
+      // builds toward a rogue). `severity` scales the souring. Guarded; never throws on the tick.
+      witnessDeed(actor, victimId, kind, severity = 0.4) {
         try {
-          const cap = sim.agentsById.get(captiveId);
-          if (!cap || !cap.alive || !freer) return false;
-          cap._held = false; cap._freedBy = freer.id;
-          return true;
-        } catch { return false; }
+          if (!actor) return;
+          const sev = Math.max(0, Math.min(1, severity));
+          const victim = victimId != null ? sim.agentsById.get(victimId) : null;
+          // the victim, if it can see the actor, sours + grows suspicious (its own belief), weighted
+          // by how much it already valued them (a betrayal by a friend cuts deeper).
+          if (victim && victim.alive && !victim.controlled && victim.beliefs && victim.pos.distanceTo(actor.pos) <= SIM.visionRange) {
+            const rel = victim.beliefs.get(actor.id) || victim.beliefs.observe(actor.id, actor.faction, actor.pos, sim.time, false);
+            if (rel) {
+              const betrayal = 1 + Math.max(0, rel.standing || 0);     // valued-then-wronged stings more
+              rel.standing = Math.max(-1, (rel.standing || 0) - sev * betrayal);
+              rel.suspicion = Math.min(1, (rel.suspicion || 0) + sev);
+            }
+          }
+          // bystanders who see it grow suspicious of the actor (their own belief; lighter than the victim).
+          for (const w of sim.agents) {
+            if (w === actor || w === victim || !w.alive || w.controlled) continue;
+            if (w.pos.distanceTo(actor.pos) > SIM.visionRange) continue;
+            const wb = w.beliefs.get(actor.id) || w.beliefs.observe(actor.id, actor.faction, actor.pos, sim.time, false);
+            if (wb) wb.suspicion = Math.min(1, (wb.suspicion || 0) + sev * 0.5);
+          }
+          // the deed feeds the RPG progression (the actor's emergent class) via the shared bus.
+          busEmit({ actorId: actor.id, verb: kind, tags: ['THEFT', 'RISK'], targetId: victimId ?? undefined, magnitude: sev, t: sim.time });
+        } catch { /* never throw on the tick */ }
       },
-      // SABOTAGE (Affect row): wreck a target's intact state. The caller gates location. Conserved-
-      // safe (no gold/goods). Marks `_wrecked` so the world/UI can reflect it. Returns true. Guarded.
-      sabotage(wrecker, targetId) {
+      // PHYSICAL AFFECT (docs/architecture/10) — apply a believed physical-state change to another
+      // entity (the Affect rows beyond strike→dead): 'freed' cuts a captive's bonds, 'wrecked'
+      // sabotages a target. The PHYSICAL effect only — like combat resolving health; any REACTION
+      // (a freed captive's gratitude, an owner's anger) EMERGES from perception, not here. The
+      // caller gates location. `_freedBy` lets the freed agent's own logic respond. Returns true on
+      // a landed change. Guarded; minimal until richer captivity/structure mechanics land.
+      affect(actor, targetId, state) {
         try {
           const t = sim.agentsById.get(targetId);
-          if (!t || !wrecker) return false;
-          t._wrecked = true;
-          return true;
+          if (!t || !actor) return false;
+          if (state === 'freed') { t._held = false; t._freedBy = actor.id; return true; }
+          if (state === 'wrecked') { t._wrecked = true; return true; }
+          return false;
         } catch { return false; }
       },
       // BUILD-STATE EXECUTION FACADE (Phase 2a, debt #2 retirement): the truth-side build
