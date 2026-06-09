@@ -3,7 +3,7 @@
 // read beliefs only — never ground truth — which is what makes deception work.
 
 import type { Vector3 } from 'three';
-import type { EntityId } from './core.js';
+import type { EntityId, Vec2Like } from './core.js';
 
 /** One observed-action liveness tally on a belief (lazy; null until the subject acts alive). */
 export interface AnimacyTally {
@@ -11,6 +11,15 @@ export interface AnimacyTally {
   blocked: number;
   harmedMe: number;
   moved: number;
+}
+
+/** A consolidated subject↔place ASSOCIATION (e.g. assoc(mark,'stash')=P) — built from
+ *  repeated surveil sightings (the urchin's `shadow`) or supplied first by gossip. The
+ *  epistemic-gather precondition `know_assoc` reads `!!belief.assoc`. null = none held. */
+export interface AssocBelief {
+  placeKind: string;        // role tag for the associated place: 'stash' | …
+  pos: Vec2Like;            // believed location of that place (own-belief, not ground truth)
+  conf: number;            // 0..1 confidence P
 }
 
 /** One observer→subject belief row (the spec's per-(observer,subject) cell). */
@@ -38,9 +47,14 @@ export interface BeliefState {
   sheltered: boolean | null;        // believed shelter state of a place-belief
   inertEvidence: number;            // higher-order reasoning scalar (schema #6)
   inert: boolean;                   // revised "proven harmless" (overrides hostile + faction prior)
+  assoc: AssocBelief | null;        // subject↔place association (the urchin's stash belief); null = none
+  assocSightings: number;           // raw surveil-sighting accumulator (pre-consolidation)
 
   // record one piece of liveness evidence ('struck'|'blocked'|'harmedMe'|'moved'). Guarded.
   recordAnimacy(kind: 'struck' | 'blocked' | 'harmedMe' | 'moved'): void;
+  // accumulate one surveil sighting of the subject near a `placeKind`; after `minSightings`
+  // confirmations it CONSOLIDATES into `assoc` (conf grows by `gainConf`/sighting). Guarded.
+  recordAssocSighting(placeKind: string, pos: Vec2Like, gainConf: number, minSightings: number): void;
 }
 
 /** Options accepted by BeliefStore.plant (deception). */

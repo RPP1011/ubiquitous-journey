@@ -13,7 +13,7 @@
 export type { EntityId, Vec2Like, PosSnapshot, AgentRef } from './core.js';
 
 export type {
-  BeliefState, BeliefStore, AnimacyTally, PlantOpts,
+  BeliefState, BeliefStore, AnimacyTally, AssocBelief, PlantOpts,
 } from './beliefs.js';
 
 export type {

@@ -10,8 +10,8 @@ import * as THREE from 'three';
 import { ARENA_RADIUS } from '../arena.js';
 import { SIM, SOURCE, HEARSAY, MAP } from './simconfig.js';
 import type {
-  AnimacyTally, BeliefState as IBeliefState, BeliefStore as IBeliefStore,
-  PlantOpts, EntityId, MentalMap, Place,
+  AnimacyTally, AssocBelief, BeliefState as IBeliefState, BeliefStore as IBeliefStore,
+  PlantOpts, EntityId, MentalMap, Place, Vec2Like,
 } from '../../types/sim.js';
 
 const clampStanding = (s: number) => Math.max(-1, Math.min(1, s));
@@ -61,6 +61,8 @@ export class BeliefState implements IBeliefState {
   sheltered: boolean | null;
   inertEvidence: number;
   inert: boolean;
+  assoc: AssocBelief | null;
+  assocSightings: number;
 
   constructor(subjectId: EntityId) {
     this.subjectId = subjectId;
@@ -105,6 +107,11 @@ export class BeliefState implements IBeliefState {
     // considerHostile() honours it, so it overrides BOTH a latched hostile and the faction
     // prior (the disengage from a proven scarecrow). False for every live subject.
     this.inert = false;
+    // SUBJECT↔PLACE ASSOCIATION (Phase 4, the urchin's epistemic gather) — null until
+    // repeated surveil sightings consolidate a believed stash/cache location, or gossip
+    // supplies one first. Read by the planner's `know_assoc` precondition (own-state).
+    this.assoc = null;
+    this.assocSightings = 0;
   }
 
   // record one piece of liveness evidence on this belief (lazy-allocates the tally on the
@@ -113,6 +120,19 @@ export class BeliefState implements IBeliefState {
     if (!kind) return;
     if (!this.animacyTally) this.animacyTally = { struck: 0, blocked: 0, harmedMe: 0, moved: 0 };
     if (this.animacyTally[kind] != null) this.animacyTally[kind] += 1;
+  }
+
+  // accumulate one surveil sighting of this subject near a `placeKind` (the urchin's
+  // `shadow`/`surveil` — the epistemic gather). The loose tally CONSOLIDATES into a
+  // believed `assoc` only after `minSightings` confirmations; confidence grows by
+  // `gainConf` per sighting (capped 1). Own-state, guarded, never throws.
+  recordAssocSighting(placeKind: string, pos: Vec2Like, gainConf: number, minSightings: number) {
+    if (!placeKind) return;
+    this.assocSightings += 1;
+    const conf = Math.min(1, (this.assoc ? this.assoc.conf : 0) + (gainConf || 0));
+    if (this.assocSightings >= (minSightings || 1)) {
+      this.assoc = { placeKind, pos: { x: pos.x, z: pos.z }, conf };
+    }
   }
 }
 
