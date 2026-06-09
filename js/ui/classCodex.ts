@@ -10,10 +10,22 @@
 
 import { CLASS_TEMPLATES } from '../rpg/classes.js';
 import { xpByVerb, xpTotal } from '../rpg/xpstats.js';
+import type { Agent } from '../../types/sim.js';
 
 const PANEL_ID = 'classCodex';
 
+// one aggregated row across every agent holding a given class
+interface ExtantRow {
+  key: string; name: string; proc: boolean;
+  holders: number; minL: number; maxL: number; xp: number; levels: number;
+}
+
 export class ClassCodex {
+  agents: Agent[];
+  visible: boolean;
+  _sig: string;
+  el!: HTMLElement;
+
   constructor() {
     this.agents = [];
     this.visible = false;
@@ -22,19 +34,19 @@ export class ClassCodex {
     this._build();
   }
 
-  setAgents(a) { this.agents = a || []; this._sig = ''; }
-  toggle() { this.visible ? this.hide() : this.show(); }
-  show() { this.visible = true; this.el.style.display = 'block'; this._sig = ''; this.render(); }
-  hide() { this.visible = false; this.el.style.display = 'none'; }
+  setAgents(a: Agent[] | null): void { this.agents = a || []; this._sig = ''; }
+  toggle(): void { this.visible ? this.hide() : this.show(); }
+  show(): void { this.visible = true; this.el.style.display = 'block'; this._sig = ''; this.render(); }
+  hide(): void { this.visible = false; this.el.style.display = 'none'; }
 
-  _build() {
+  _build(): void {
     let el = document.getElementById(PANEL_ID);
     if (!el) { el = document.createElement('div'); el.id = PANEL_ID; document.body.appendChild(el); }
     this.el = el;
     this.el.style.display = 'none';
   }
 
-  _injectStyles() {
+  _injectStyles(): void {
     if (document.getElementById('classCodexStyles')) return;
     const s = document.createElement('style');
     s.id = 'classCodexStyles';
@@ -71,8 +83,8 @@ export class ClassCodex {
   }
 
   // aggregate every class currently held by any agent
-  _extant() {
-    const m = new Map();   // key -> { key, name, proc, holders, minL, maxL, xp, levels }
+  _extant(): ExtantRow[] {
+    const m = new Map<string, ExtantRow>();   // key -> { key, name, proc, holders, minL, maxL, xp, levels }
     for (const a of this.agents) {
       if (!a.progression || !a.progression.classes) continue;
       for (const c of a.progression.classes.values()) {
@@ -85,7 +97,7 @@ export class ClassCodex {
     return [...m.values()].sort((a, b) => (b.holders - a.holders) || (b.maxL - a.maxL));
   }
 
-  render() {
+  render(): void {
     if (!this.visible) return;
     const extant = this._extant();
     const verbs = xpByVerb();

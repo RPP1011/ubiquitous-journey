@@ -12,6 +12,7 @@
 // nothing here changes and the modal behaves exactly as before.
 
 import { generateLine, isEnabled } from '../ai/llm.js';
+import type { DialogueSession, DialogueOption, DialogueResult, Tone } from '../dialogue/dialogue.js';
 
 const CSS = `
 #dlg { position: fixed; left: 50%; bottom: 7%; transform: translateX(-50%);
@@ -37,25 +38,39 @@ const CSS = `
 `;
 
 export class DialogueView {
+  isOpen: boolean;
+  session: DialogueSession | null;
+  onClose: (() => void) | null;
+  _sayToken: number;
+  _situation: string | null;
+  _opts: DialogueOption[];
+  el!: HTMLElement;
+  nameEl!: HTMLElement;
+  sayEl!: HTMLElement;
+  optsEl!: HTMLElement;
+  _key: (e: KeyboardEvent) => void;
+
   constructor() {
     this.isOpen = false;
     this.session = null;
     this.onClose = null;        // optional callback when the modal closes
     this._sayToken = 0;         // bumped each time the spoken line changes; lets a
                                 // slow async LLM line refuse to clobber a newer turn
+    this._situation = null;
+    this._opts = [];
     this._injectCss();
     this._build();
-    this._key = (e) => this._onKey(e);
+    this._key = (e: KeyboardEvent) => this._onKey(e);
   }
 
-  _injectCss() {
+  _injectCss(): void {
     if (document.getElementById('dlg-css')) return;
     const s = document.createElement('style');
     s.id = 'dlg-css'; s.textContent = CSS;
     document.head.appendChild(s);
   }
 
-  _build() {
+  _build(): void {
     const el = document.createElement('div');
     el.id = 'dlg'; el.className = 'hidden';
     el.innerHTML =
@@ -65,12 +80,12 @@ export class DialogueView {
       `<div class="dlg-foot">number keys to choose · <b>Esc</b> to leave</div>`;
     document.body.appendChild(el);
     this.el = el;
-    this.nameEl = el.querySelector('.dlg-name');
-    this.sayEl = el.querySelector('.dlg-say');
-    this.optsEl = el.querySelector('.dlg-opts');
+    this.nameEl = el.querySelector('.dlg-name') as HTMLElement;
+    this.sayEl = el.querySelector('.dlg-say') as HTMLElement;
+    this.optsEl = el.querySelector('.dlg-opts') as HTMLElement;
   }
 
-  open(session) {
+  open(session: DialogueSession): void {
     this.session = session;
     this.isOpen = true;
     this._situation = null;     // greeting uses the persona's default prompt
@@ -87,14 +102,14 @@ export class DialogueView {
   // Fire-and-forget LLM call for the CURRENT spoken turn. Captures the say-token
   // so a line that arrives after the player has moved on is discarded. Never
   // throws (generateLine resolves null on any failure) and never blocks the UI.
-  _tryLlmSwap(tone) {
+  _tryLlmSwap(_tone: Tone): void {
     let on = false;
     try { on = isEnabled(); } catch { on = false; }
     if (!on || !this.session || typeof this.session.llmPersona !== 'function') return;
     const token = this._sayToken;
     let persona;
     try { persona = this.session.llmPersona(this._situation); } catch { return; }
-    Promise.resolve(generateLine(persona)).then((line) => {
+    Promise.resolve(generateLine(persona)).then((line: string | null) => {
       if (!line) return;                         // failure / junk -> keep fallback
       if (!this.isOpen || this._sayToken !== token) return;  // stale turn
       // swap text only; keep the tone/colour the fallback already established
@@ -102,7 +117,7 @@ export class DialogueView {
     }).catch(() => { /* never throws to caller */ });
   }
 
-  close() {
+  close(): void {
     if (!this.isOpen) return;
     this.isOpen = false;
     this.session = null;
@@ -111,21 +126,25 @@ export class DialogueView {
     if (this.onClose) this.onClose();
   }
 
-  _say(text, tone) {
+  _say(text: string, tone: Tone): void {
     this._sayToken++;            // invalidate any in-flight LLM swap for the old line
     this.sayEl.textContent = text;
     this.sayEl.className = 'dlg-say' + (tone === 'good' ? ' good' : tone === 'bad' ? ' bad' : '');
   }
 
-  _renderHeader() {
-    const s = this.session.standing();
+  _renderHeader(): void {
+    const session = this.session;
+    if (!session) return;
+    const s = session.standing();
     const col = s > 0.1 ? '#7fd18a' : s < -0.1 ? '#e36f6f' : '#9aa6b2';
     const word = s > 0.35 ? 'friendly' : s > 0.1 ? 'warm' : s < -0.35 ? 'hostile' : s < -0.1 ? 'cold' : 'neutral';
-    this.nameEl.innerHTML = `${this.session.npc.name}<span class="stand" style="color:${col}">${word}</span>`;
+    this.nameEl.innerHTML = `${session.npc.name}<span class="stand" style="color:${col}">${word}</span>`;
   }
 
-  _renderOpts() {
-    const opts = this.session.options();
+  _renderOpts(): void {
+    const session = this.session;
+    if (!session) return;
+    const opts = session.options();
     this._opts = opts;
     this.optsEl.innerHTML = opts.map((o, i) => {
       const n = i + 1;
@@ -133,14 +152,16 @@ export class DialogueView {
       return `<button class="dlg-opt${leave}" data-id="${o.id}" data-i="${i}">` +
         `<span class="num">${n}</span><span>${o.label}</span></button>`;
     }).join('');
-    this.optsEl.querySelectorAll('.dlg-opt').forEach((b) =>
-      b.addEventListener('click', () => this._pick(b.dataset.id)));
+    this.optsEl.querySelectorAll<HTMLElement>('.dlg-opt').forEach((b) =>
+      b.addEventListener('click', () => { if (b.dataset.id != null) this._pick(b.dataset.id); }));
   }
 
-  _pick(id) {
-    const res = this.session.choose(id);
+  _pick(id: string): void {
+    const session = this.session;
+    if (!session) return;
+    const res = session.choose(id);
     if (res) this._say(res.text, res.tone);
-    if (this.session.over) {
+    if (session.over) {
       // give the player a beat to read the parting line, then close. (We don't
       // LLM-swap a parting line — the modal is about to vanish.)
       this.optsEl.innerHTML = '';
@@ -157,7 +178,7 @@ export class DialogueView {
 
   // Map a chosen option id to a short situational instruction for the model, so
   // its reply fits what the player just did. Falls back to a generic reply.
-  _situationFor(id, res) {
+  _situationFor(id: string, res: DialogueResult | null): string {
     switch (id) {
       case 'ask_rumour': return 'The traveller asks if you have heard any news lately. Share your latest rumour in your own words.';
       case 'ask_need':   return 'The traveller asks what goods you need. Tell them, in character.';
@@ -169,7 +190,7 @@ export class DialogueView {
     }
   }
 
-  _onKey(e) {
+  _onKey(e: KeyboardEvent): void {
     if (!this.isOpen) return;
     e.stopPropagation();
     if (e.code === 'Escape' || e.code === 'KeyQ') { e.preventDefault(); this.close(); return; }

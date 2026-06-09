@@ -6,11 +6,25 @@
 // the Class Codex; reads agents off the live sim each frame. Toggles with a key.
 
 import { isMelee } from '../rpg/abilities/ir.js';
+import type { Agent, AbilitySpec } from '../../types/sim.js';
 
 const PANEL_ID = 'abilityIndex';
 
+// simulation.js is a later cluster — typed as the minimal read surface used here.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Sim = any; /* Simulation — ported in a later cluster */
+
+interface AbilEntry { spec: AbilitySpec; holders: string[]; }
+
 export class AbilityIndex {
-  constructor(getSim) {
+  getSim: () => Sim | null;
+  visible: boolean;
+  _sig: string;
+  _firstSeen: Map<string, number>;
+  _lastNow: number;
+  el!: HTMLElement;
+
+  constructor(getSim: (() => Sim | null) | null) {
     this.getSim = getSim || (() => null);
     this.visible = false;
     this._sig = '';
@@ -20,17 +34,17 @@ export class AbilityIndex {
     this._build();
   }
 
-  toggle() { this.visible ? this.hide() : this.show(); }
-  show() { this.visible = true; this.el.style.display = 'block'; this._sig = ''; this.render(); }
-  hide() { this.visible = false; this.el.style.display = 'none'; }
+  toggle(): void { this.visible ? this.hide() : this.show(); }
+  show(): void { this.visible = true; this.el.style.display = 'block'; this._sig = ''; this.render(); }
+  hide(): void { this.visible = false; this.el.style.display = 'none'; }
 
-  _build() {
+  _build(): void {
     let el = document.getElementById(PANEL_ID);
     if (!el) { el = document.createElement('div'); el.id = PANEL_ID; document.body.appendChild(el); }
     this.el = el; this.el.style.display = 'none';
   }
 
-  _injectStyles() {
+  _injectStyles(): void {
     if (document.getElementById('abilityIndexStyles')) return;
     const s = document.createElement('style');
     s.id = 'abilityIndexStyles';
@@ -56,13 +70,13 @@ export class AbilityIndex {
   }
 
   // every ability currently held by any agent: id -> { spec, holders[] }
-  _collect() {
+  _collect(): Map<string, AbilEntry> {
     const sim = this.getSim();
-    const agents = sim ? sim.agents : [];
-    const now = sim ? sim.time : 0;
+    const agents: Agent[] = sim ? sim.agents : [];
+    const now: number = sim ? sim.time : 0;
     if (now < this._lastNow) this._firstSeen.clear();   // world rebuilt -> reset "first seen"
     this._lastNow = now;
-    const map = new Map();
+    const map = new Map<string, AbilEntry>();
     for (const a of agents) {
       // a.abilities is the SUPERSET — the player's starter loadout plus every
       // class-granted ability (progression mirrors its grants onto the agent).
@@ -80,7 +94,7 @@ export class AbilityIndex {
   }
 
   // "damage 55 + knockback 3 @on_hit [FIRE]" — what the ability does
-  _effectText(spec) {
+  _effectText(spec: AbilitySpec): string {
     return (spec.effects || []).map((ef) => {
       let s = ef.op + (ef.amount ? ' ' + Math.round(ef.amount) : '');
       if (ef.dur) s += ' ' + ef.dur + 's';
@@ -91,16 +105,18 @@ export class AbilityIndex {
   }
 
   // "cone(5,90) · projectile · cd 8s · rng 12" — how it's delivered
-  _headerText(spec) {
-    const h = spec.header || {};
-    const a = h.area || { kind: 'self' };
+  _headerText(spec: AbilitySpec): string {
+    const h = spec.header;
+    // area is a discriminated union (self/circle/cone/line); read its per-kind dims
+    // through one loose view so the optional r/deg/len probe stays terse.
+    const a = (h.area || { kind: 'self' }) as { kind: string; r?: number; deg?: number; len?: number };
     const area = a.kind === 'self' ? 'self'
       : a.kind + (a.r != null ? `(${a.r}${a.deg != null ? ',' + a.deg : ''})` : a.len != null ? `(${a.len})` : '');
     const del = (h.delivery && h.delivery.kind) || 'instant';
     return `${area} · ${del} · cd ${h.cooldown}s · rng ${h.range} · ${h.target}`;
   }
 
-  render() {
+  render(): void {
     const map = this._collect();   // always: stamps first-seen even while the panel is closed
     if (!this.visible) return;
     const rows = [...map.entries()].map(([id, e]) => ({ id, ...e, first: this._firstSeen.get(id) || 0 }))

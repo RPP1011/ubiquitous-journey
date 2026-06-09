@@ -3,10 +3,18 @@
 // index.html edits). Read-only — recruiting/dismissing happens in dialogue.
 
 import { TUNE } from '../constants.js';
+import type { Agent } from '../../types/sim.js';
 
 const PANEL_ID = 'partyHud';
 
+// Party (js/sim/party.js) is a later cluster — typed loosely as its read surface.
+interface PartyLike { members: Agent[]; }
+
 export class PartyHUD {
+  party: PartyLike | null;
+  _sig: string;
+  el!: HTMLElement;
+
   constructor() {
     this.party = null;
     this._sig = '';
@@ -14,15 +22,15 @@ export class PartyHUD {
     this._build();
   }
 
-  setParty(p) { this.party = p; this._sig = ''; }
+  setParty(p: PartyLike | null): void { this.party = p; this._sig = ''; }
 
-  _build() {
+  _build(): void {
     let el = document.getElementById(PANEL_ID);
     if (!el) { el = document.createElement('div'); el.id = PANEL_ID; document.body.appendChild(el); }
     this.el = el;
   }
 
-  _injectStyles() {
+  _injectStyles(): void {
     if (document.getElementById('partyHudStyles')) return;
     const s = document.createElement('style');
     s.id = 'partyHudStyles';
@@ -43,8 +51,8 @@ export class PartyHUD {
     document.head.appendChild(s);
   }
 
-  render() {
-    const members = this.party ? this.party.members : [];
+  render(): void {
+    const members: Agent[] = this.party ? this.party.members : [];
     if (!members.length) { this.el.style.display = 'none'; this._sig = ''; return; }
     this.el.style.display = 'flex';
 

@@ -5,11 +5,19 @@
 // ground-truth completion tracking.
 
 import { QUEST_STATE } from '../quest/quest.js';
+import type { QuestBoard, Quest } from '../quest/quest.js';
+import type { Agent } from '../../types/sim.js';
 
 const PANEL_ID = 'questLog';
 
 export class QuestLog {
-  constructor(player) {
+  player: Agent | null;
+  board: QuestBoard | null;
+  visible: boolean;
+  _sig: string;
+  el!: HTMLElement;
+
+  constructor(player?: Agent | null) {
     this.player = player || null;     // for accept(); can be set later via setPlayer
     this.board = null;
     this.visible = false;
@@ -18,15 +26,15 @@ export class QuestLog {
     this._build();
   }
 
-  setBoard(b) { this.board = b; this._sig = ''; }
-  setPlayer(p) { this.player = p; }
+  setBoard(b: QuestBoard | null): void { this.board = b; this._sig = ''; }
+  setPlayer(p: Agent | null): void { this.player = p; }
 
-  toggle() { this.visible ? this.hide() : this.show(); }
-  show() { this.visible = true; this.el.style.display = 'block'; this._sig = ''; this.render(); }
-  hide() { this.visible = false; this.el.style.display = 'none'; }
+  toggle(): void { this.visible ? this.hide() : this.show(); }
+  show(): void { this.visible = true; this.el.style.display = 'block'; this._sig = ''; this.render(); }
+  hide(): void { this.visible = false; this.el.style.display = 'none'; }
 
   // ---- DOM scaffold --------------------------------------------------------
-  _build() {
+  _build(): void {
     let el = document.getElementById(PANEL_ID);
     if (!el) {
       el = document.createElement('div');
@@ -36,16 +44,17 @@ export class QuestLog {
     this.el = el;
     this.el.style.display = 'none';
     // accept an offered quest by clicking it
-    this.el.addEventListener('click', (e) => {
-      const row = e.target.closest('.q-offer');
-      if (!row || !this.board) return;
-      const q = this.board.offers.find((x) => x.id === +row.dataset.id);
+    this.el.addEventListener('click', (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      const row = target ? target.closest<HTMLElement>('.q-offer') : null;
+      if (!row || !this.board || row.dataset.id == null) return;
+      const q = this.board.offers.find((x) => x.id === +(row.dataset.id as string));
       const player = this.player || this.board.sim?.player;
       if (q && player) { this.board.accept(q, player); this.render(); }
     });
   }
 
-  _injectStyles() {
+  _injectStyles(): void {
     if (document.getElementById('questLogStyles')) return;
     const s = document.createElement('style');
     s.id = 'questLogStyles';
@@ -87,11 +96,11 @@ export class QuestLog {
   }
 
   // ---- render --------------------------------------------------------------
-  render() {
+  render(): void {
     if (!this.visible) return;
     const board = this.board;
-    const offers = board ? board.offers : [];
-    const active = board ? board.active : [];
+    const offers: Quest[] = board ? board.offers : [];
+    const active: Quest[] = board ? board.active : [];
 
     // cheap signature so we don't thrash innerHTML every frame (kills hover)
     const sig = offers.map((q) => q.id).join(',') + '|' +
@@ -114,7 +123,7 @@ export class QuestLog {
       </div>`;
   }
 
-  _row(q, isOffer) {
+  _row(q: Quest, isOffer: boolean): string {
     const reward = `Reward: ${q.reward.gold}g · ${q.reward.xp} xp`;
     let prog = '';
     if (!isOffer) {
@@ -135,7 +144,7 @@ export class QuestLog {
     </div>`;
   }
 
-  _progressPct(q) {
+  _progressPct(q: Quest): number {
     if (q.type === 'hunt' || q.type === 'bounty') return q.target.count ? Math.min(1, q.progress / q.target.count) : 0;
     return Math.min(1, q.progress || 0);
   }

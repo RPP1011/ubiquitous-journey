@@ -6,11 +6,26 @@
 // swaps an article's prose in place; this panel just shows whatever's published.
 
 import { startPress } from '../ai/press.js';
+import type { Article } from '../../types/sim.js';
 
 const PANEL_ID = 'gazettePanel';
 
+// simulation.js / gazette.js / press.js are later clusters — typed as the minimal
+// read surface used here. Articles carry id/source/dateline at runtime (the news
+// Article type's index signature), narrowed locally for this panel.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Sim = any; /* Simulation — ported in a later cluster */
+type GazArticle = Article & { id: number; headline: string; body: string; source?: string; dateline?: string; t: number };
+
 export class GazettePanel {
-  constructor(getSim) {
+  getSim: () => Sim | null;
+  visible: boolean;
+  _sig: string;
+  el!: HTMLElement;
+  _press?: unknown;
+  _erred?: boolean;
+
+  constructor(getSim: (() => Sim | null) | null) {
     this.getSim = getSim || (() => null);
     this.visible = false;
     this._sig = '';
@@ -18,22 +33,22 @@ export class GazettePanel {
     this._build();
   }
 
-  toggle() { this.visible ? this.hide() : this.show(); }
-  show() {
+  toggle(): void { this.visible ? this.hide() : this.show(); }
+  show(): void {
     this.visible = true; this.el.style.display = 'block'; this._sig = ''; this.render();
     // first time the reader opens the paper, start the optional LLM press pump
     // (browser-only; no-ops unless the LLM is enabled — see js/ai/press.js).
     if (!this._press) { try { this._press = startPress(this.getSim); } catch { /* */ } }
   }
-  hide() { this.visible = false; this.el.style.display = 'none'; }
+  hide(): void { this.visible = false; this.el.style.display = 'none'; }
 
-  _build() {
+  _build(): void {
     let el = document.getElementById(PANEL_ID);
     if (!el) { el = document.createElement('div'); el.id = PANEL_ID; document.body.appendChild(el); }
     this.el = el; this.el.style.display = 'none';
   }
 
-  _injectStyles() {
+  _injectStyles(): void {
     if (document.getElementById('gazettePanelStyles')) return;
     const s = document.createElement('style');
     s.id = 'gazettePanelStyles';
@@ -84,7 +99,7 @@ export class GazettePanel {
   }
 
   // section order + rubric for the lower fold, keyed by the brief's desk kind.
-  static SECTIONS = [
+  static SECTIONS: Array<{ keys: string[]; rubric: string }> = [
     { keys: ['obituary'],    rubric: 'In Memoriam' },
     { keys: ['saga'],        rubric: 'Sagas of the Realm' },
     { keys: ['event'],       rubric: 'Of Note' },
@@ -94,26 +109,27 @@ export class GazettePanel {
     { keys: ['opportunity'], rubric: 'Notices & Bounties' },
   ];
 
-  _kicker(a) {
+  _kicker(a: GazArticle): string {
     const k = (a.brief && a.brief.kind) || 'person';
-    return ({ obituary: 'In Memoriam', saga: 'A Saga', event: 'Dispatch', threat: 'Peril', market: 'Market', opportunity: 'Notice' }[k]) || (a.dateline || 'the town');
+    const map: Record<string, string> = { obituary: 'In Memoriam', saga: 'A Saga', event: 'Dispatch', threat: 'Peril', market: 'Market', opportunity: 'Notice' };
+    return map[k] || (a.dateline || 'the town');
   }
 
-  _chip(a) {
+  _chip(a: GazArticle): string {
     if (a.source === 'llm') return '<span class="chip llm">filed</span>';
     const k = (a.brief && a.brief.kind) || 'person';
     const lbl = (k === 'market' || k === 'threat' || k === 'opportunity') ? 'wire' : (k === 'event' || k === 'saga') ? 'dispatch' : 'notice';
     return `<span class="chip">${lbl}</span>`;
   }
 
-  _ts(t) { const m = Math.floor(t / 60), s = Math.round(t % 60); return `${m}:${String(s).padStart(2, '0')}`; }
+  _ts(t: number): string { const m = Math.floor(t / 60), s = Math.round(t % 60); return `${m}:${String(s).padStart(2, '0')}`; }
 
-  render() {
+  render(): void {
     if (!this.visible) return;
     try {
       const sim = this.getSim();
       const gaz = sim && sim.gazette;
-      const arts = gaz ? gaz.recent(40) : [];     // newest-first
+      const arts: GazArticle[] = gaz ? gaz.recent(40) : [];     // newest-first
 
       const sig = (arts.length ? `${arts[0].id}:${arts.length}:${arts[0].source}` : '0');
       if (sig === this._sig) return;
@@ -158,7 +174,7 @@ export class GazettePanel {
     }
   }
 
-  _esc(s) {
+  _esc(s: string): string {
     return String(s).replace(/[&<>]/g, (c) => (c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'));
   }
 }

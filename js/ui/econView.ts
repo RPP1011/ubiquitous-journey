@@ -6,28 +6,44 @@
 // changed (the dominant per-frame cost of a live HUD panel).
 
 import { allCommodityStats, recentTrades, econTotals } from '../sim/econstats.js';
+import type { EntityId } from '../../types/sim.js';
 
-const ARROW = { 1: '▲', '-1': '▼', 0: '·' };
-const ARROW_COL = { 1: '#e0894e', '-1': '#7fd18a', 0: '#9aa6b2' };
+// simulation.js is a later cluster — typed as the minimal read surface used here.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Sim = any; /* Simulation — ported in a later cluster */
+
+// reuse the econstats return shapes so the view never drifts from the ledger.
+type CommodityRow = NonNullable<ReturnType<typeof allCommodityStats>[number]>;
+type FeedRow = ReturnType<typeof recentTrades>[number];
+type Totals = ReturnType<typeof econTotals>;
+
+const ARROW: Record<number, string> = { 1: '▲', '-1': '▼', 0: '·' };
+const ARROW_COL: Record<number, string> = { 1: '#e0894e', '-1': '#7fd18a', 0: '#9aa6b2' };
 
 // scarcity ratio -> a short word + colour. >1.15 scarce (dear), <0.85 glut (cheap).
-function scarcityTag(s) {
+function scarcityTag(s: number): { label: string; col: string } {
   if (s >= 1.15) return { label: 'scarce', col: '#e0894e' };
   if (s <= 0.85) return { label: 'glut', col: '#7fd18a' };
   return { label: 'steady', col: '#9aa6b2' };
 }
 
 export class EconView {
+  el: HTMLElement | null;
+  getSim: (() => Sim | null) | null;
+  _sig: string | null;
+  _nameCache: Map<EntityId, string>;
+  _erred?: boolean;
+
   // mountEl: the tab body container to fill. getSim: () => Simulation | null
   // (so the view survives world rebuilds — it just reads whatever sim is current).
-  constructor(mountEl, getSim) {
+  constructor(mountEl: HTMLElement | null, getSim: (() => Sim | null) | null) {
     this.el = mountEl;
     this.getSim = getSim;
     this._sig = null;
     this._nameCache = new Map();   // id -> short name (refreshed lazily)
   }
 
-  _nameOf(id) {
+  _nameOf(id: EntityId | undefined): string {
     if (id == null) return '?';
     const sim = this.getSim && this.getSim();
     const a = sim && sim.agentsById && sim.agentsById.get(id);
@@ -35,7 +51,7 @@ export class EconView {
     return this._nameCache.get(id) || '?';
   }
 
-  render() {
+  render(): void {
     if (!this.el) return;
     try {
       const rows = allCommodityStats();
@@ -57,7 +73,7 @@ export class EconView {
     }
   }
 
-  _html(rows, feed, totals) {
+  _html(rows: CommodityRow[], feed: FeedRow[], totals: Totals): string {
     if (!rows.length) {
       return `<div class="econ-empty">No trades yet — the market hasn't cleared.
         Wander the town and watch prices form.</div>` + this._css();
@@ -100,7 +116,7 @@ export class EconView {
       ${this._css()}`;
   }
 
-  _css() {
+  _css(): string {
     // scoped inline styles; injected once per redraw (cheap, cache-gated above)
     return `<style>
       .econ-tbl { width: 100%; border-collapse: collapse; font-size: 11px; color: #cbd5e1; }

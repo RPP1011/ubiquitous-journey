@@ -16,16 +16,54 @@ import { GazettePanel } from './gazette.js';
 import { DialogueView } from './dialogueView.js';
 import { makeTabsDraggable } from './dragtabs.js';
 import { COMMODITIES } from '../sim/simconfig.js';
+import type { PerspectiveCamera, OrthographicCamera } from 'three';
+
+// simulation.js / dungeonManager.js / the game shell are later clusters — typed as
+// the minimal read surfaces used here.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Sim = any; /* Simulation — ported in a later cluster */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type DungeonMgr = any; /* DungeonManager — ported in a later cluster */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Game = any; /* the main game shell (state machine) — ported in a later cluster */
+type Cam = PerspectiveCamera | OrthographicCamera;
+// the shared item-consume callback (slot click + H hotkey share one path)
+type UseHandler = (commodity: string, player: import('../../types/sim.js').Agent) => void;
+
+export interface HudOpts {
+  camera: Cam;
+  getSim: () => Sim | null;
+  getDungeonMgr: () => DungeonMgr | null;
+}
 
 export class Hud {
+  _getSim: () => Sim | null;
+  _getDungeonMgr: () => DungeonMgr | null;
+  inspector: Inspector;
+  mind: MindBrowser;
+  questLog: QuestLog;
+  partyHud: PartyHUD;
+  inventory: InventoryPanel;
+  classCodex: ClassCodex;
+  dialogueView: DialogueView;
+  econView: EconView;
+  abilityIndex: AbilityIndex;
+  chronicle: ChroniclePanel;
+  gazette: GazettePanel;
+  hpFill: HTMLElement | null;
+  _hurt: HTMLElement;
+  _dbg: HTMLElement;
+  _pstats: HTMLElement;
+  _prompt: HTMLElement;
+
   // camera: for the inspector raycast.  getSim: () => current Simulation (survives
   // world rebuilds).  getDungeonMgr: () => current DungeonManager (or null).
-  constructor({ camera, getSim, getDungeonMgr }) {
+  constructor({ camera, getSim, getDungeonMgr }: HudOpts) {
     this._getSim = getSim;
     this._getDungeonMgr = getDungeonMgr;
 
-    this.inspector = new Inspector(document.getElementById('inspector'), camera, null);
-    this.mind = new MindBrowser(document.getElementById('mindList'), document.getElementById('mindDetail'), this.inspector);
+    this.inspector = new Inspector(document.getElementById('inspector') as HTMLElement, camera, null);
+    this.mind = new MindBrowser(document.getElementById('mindList') as HTMLElement, document.getElementById('mindDetail') as HTMLElement, this.inspector);
     this.questLog = new QuestLog();   // self-mounts #questLog; board/player set in setWorld()
     this.partyHud = new PartyHUD();   // self-mounts #partyHud; party set in setWorld()
     this.inventory = new InventoryPanel();   // self-mounts #inventory; player set in setWorld()
@@ -85,7 +123,7 @@ export class Hud {
 
   // (Re)wire every panel to a freshly built world. useHandler is the shared
   // item-consume callback (so a slot click and the H hotkey share one path).
-  setWorld(sim, useHandler) {
+  setWorld(sim: Sim, useHandler: UseHandler): void {
     this.inspector.setAgents(sim.agents);
     this.inspector.sim = sim;   // wire reputation 'thinks of you' panel
     this.mind.setAgents(sim.agents);
@@ -97,21 +135,21 @@ export class Hud {
     this.inventory.setUseHandler(useHandler);
   }
 
-  flashHurt() {
+  flashHurt(): void {
     this._hurt.style.opacity = '1';
     setTimeout(() => (this._hurt.style.opacity = '0'), 60);
   }
 
   // collapsible tabs: click a header, or press its number key
-  toggleTab(n) {
+  toggleTab(n: number | string): void {
     const t = document.querySelector(`#tabs .tab[data-tab="${n}"]`);
     if (t) t.classList.toggle('collapsed');
   }
 
-  setDebug(text) { this._dbg.textContent = text; }
-  setCrash(text) { this._dbg.style.color = '#f88'; this._dbg.textContent = text; }
+  setDebug(text: string): void { this._dbg.textContent = text; }
+  setCrash(text: string): void { this._dbg.style.color = '#f88'; this._dbg.textContent = text; }
 
-  _updatePrompt(game) {
+  _updatePrompt(game: Game): void {
     const dungeonMgr = this._getDungeonMgr();
     if (!dungeonMgr || !game.sim || !game.sim.player || game.state !== 'playing') { this._prompt.style.display = 'none'; return; }
     const line = dungeonMgr.prompt(game.sim.player);
@@ -119,7 +157,7 @@ export class Hud {
     else { this._prompt.style.display = 'none'; }
   }
 
-  _updatePlayerStats(game) {
+  _updatePlayerStats(game: Game): void {
     const dungeonMgr = this._getDungeonMgr();
     const p = game.sim && game.sim.player;
     if (!p) { this._pstats.textContent = ''; return; }
@@ -128,14 +166,15 @@ export class Hud {
       return n > 0 ? `${n} ${c}` : null;
     }).filter(Boolean).join('  ');
     const cls = p.progression && p.progression.primaryClass && p.progression.primaryClass();
-    const relics = (p.relics | 0) > 0 ? `  ·  ${p.relics | 0} relic${p.relics > 1 ? 's' : ''}` : '';
+    const relicN = (p.relics | 0);
+    const relics = relicN > 0 ? `  ·  ${relicN} relic${relicN > 1 ? 's' : ''}` : '';
     const depth = dungeonMgr && dungeonMgr.active ? `  ·  depth ${dungeonMgr.depth}` : '';
     this._pstats.textContent = `${Math.round(p.gold)}g  ·  ${cls ? cls.name + ' Lv' + cls.level : 'no class yet'}  ·  ${inv || 'empty pack'}${relics}${depth}`;
   }
 
   // Per-frame panel render + readouts. `stageFn(name)` lets the caller keep its
   // crash-surface stage tracking; mirrors the original inline stage labels.
-  render(game, mouseNDC, stageFn) {
+  render(game: Game, mouseNDC: { x: number; y: number }, stageFn: (name: string) => void): void {
     stageFn('inspector');  this.inspector.center.set(mouseNDC.x, mouseNDC.y); this.inspector.update();
     stageFn('mind');       this.mind.update();
     stageFn('questLog');   this.questLog.render();

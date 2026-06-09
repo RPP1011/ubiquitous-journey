@@ -5,16 +5,41 @@
 // options() and calls choose(id). Choices mutate the NPC's beliefs (standing,
 // planted rumours) so a conversation actually changes the social sim.
 
-import { SIM, COMMODITIES, FACTIONS, SOURCE } from '../sim/simconfig.js';
+import { COMMODITIES, FACTIONS, SOURCE } from '../sim/simconfig.js';
 import { provenanceLabel } from '../sim/beliefs.js';
+import type { Agent, BeliefState, EntityId } from '../../types/sim.js';
 
-const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
-const rand = (a, b) => a + Math.random() * (b - a);
+// simulation.js is a later cluster — typed as the minimal read surface used here.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Sim = any; /* Simulation — ported in a later cluster */
+
+/** A resolved dialogue line + its tonal colour. */
+export type Tone = 'good' | 'bad' | 'neutral';
+export interface DialogueResult { text: string; tone: Tone; }
+
+/** A standing offer pinned on an NPC by the quest board / market. */
+interface OpenOffer {
+  label?: string;
+  acceptText?: string;
+  onAccept?: (player: Agent | null, npc: Agent, sim: Sim | null) => void;
+  [k: string]: unknown;
+}
+
+/** One offered conversation option. */
+export interface DialogueOption {
+  id: string;
+  label: string;
+  kind: string;
+  _want?: { commodity: string; qty: number };
+}
+
+const clamp = (x: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, x));
+const rand = (a: number, b: number): number => a + Math.random() * (b - a);
 
 // pull a 0..1 skill level off the player's progression (if the RPG layer is
 // wired in) — e.g. the highest level among "social" tagged classes. Falls back
 // to a flat baseline so dialogue works before progression exists.
-function playerSkill(player, kind) {
+function playerSkill(player: Agent | null, _kind: string): number {
   const prog = player && player.progression;
   if (!prog || !prog.topClasses) return 0.25;
   let best = 0;
@@ -28,7 +53,15 @@ function playerSkill(player, kind) {
 }
 
 export class DialogueSession {
-  constructor(npc, player, sim) {
+  npc: Agent;
+  player: Agent | null;
+  sim: Sim | null;
+  over: boolean;
+  lastResult: DialogueResult | null;
+  _revealed: boolean;
+  _opts: DialogueOption[];
+
+  constructor(npc: Agent, player: Agent | null, sim: Sim | null) {
     this.npc = npc;
     this.player = player;
     this.sim = sim;
@@ -40,19 +73,19 @@ export class DialogueSession {
 
   // --- the NPC's current opinion of the player (drives greeting + check DC) ---
   // Reads the NPC's belief about the player: standing (-1..1) and hostility.
-  _beliefOfPlayer() {
+  _beliefOfPlayer(): BeliefState | null {
     const pid = this.player ? this.player.id : null;
     if (pid == null || !this.npc.beliefs) return null;
     return this.npc.beliefs.get(pid);
   }
 
-  standing() {
+  standing(): number {
     const b = this._beliefOfPlayer();
     return b ? b.standing : 0;
   }
 
   // greeting text tinted by how the NPC feels about the player
-  greeting() {
+  greeting(): string {
     const s = this.standing();
     const name = this.npc.name;
     if (this.npc.mood && this.npc.mood.fear > 0.3) return `${name} eyes you warily.`;
@@ -68,14 +101,14 @@ export class DialogueSession {
   // truth (the epistemic split). Returns a plain object the llm client consumes.
   // Pure read; mutates nothing. Used only when the LLM feature flag is ON; when
   // OFF this is never called and the templated greeting() above is authoritative.
-  llmPersona(situation) {
+  llmPersona(situation: string | null): Record<string, unknown> {
     const npc = this.npc;
     const s = this.standing();
     const P = npc.personality || {};
 
     // disposition toward the player, as a phrase (from the NPC's belief)
     const b = this._beliefOfPlayer();
-    let aboutPlayer;
+    let aboutPlayer: string;
     if (npc.mood && npc.mood.fear > 0.3) aboutPlayer = 'wary and a little afraid of them';
     else if (b && b.hostile) aboutPlayer = 'you consider them an enemy';
     else if (s > 0.35) aboutPlayer = 'you like and trust them';
@@ -86,10 +119,10 @@ export class DialogueSession {
 
     // top rumour about a third party, in the NPC's own (possibly wrong) words
     const rum = this._topRumour();
-    let rumour = null;
+    let rumour: string | null = null;
     if (rum) {
       const subj = this._subjectName(rum.subjectId);
-      let claim;
+      let claim: string;
       if (rum.hostile) claim = `${subj} is bad business, best avoided`;
       else if (rum.standing < -0.1) claim = `${subj} is not much to be trusted`;
       else if (rum.standing > 0.1) claim = `${subj} is solid, good people`;
@@ -100,21 +133,21 @@ export class DialogueSession {
     }
 
     // strongest unmet need, as a phrase
-    const n = npc.needs || {};
-    let needs = null;
+    const n = npc.needs || ({} as Record<string, number>);
+    let needs: string | null = null;
     if (n.hunger != null && n.hunger < 0.4) needs = 'you are hungry';
     else if (n.energy != null && n.energy < 0.4) needs = 'you are tired';
     else if (n.social != null && n.social < 0.4) needs = 'you crave a bit of company';
 
     // mood phrase
-    const m = npc.mood || {};
+    const m = npc.mood || ({} as Record<string, number>);
     let mood = 'even-tempered';
     if (m.anger > 0.4) mood = 'irritated';
     else if (m.fear > 0.3) mood = 'uneasy';
     else if (s > 0.35) mood = 'friendly';
 
     // personality traits, named from the dominant axes
-    const traits = [];
+    const traits: string[] = [];
     if (P.ambition > 0.6) traits.push('ambitious'); else if (P.ambition < 0.3) traits.push('content');
     if (P.risk_tolerance > 0.6) traits.push('bold'); else if (P.risk_tolerance < 0.3) traits.push('cautious');
     if (P.social_drive > 0.6) traits.push('chatty'); else if (P.social_drive < 0.3) traits.push('reserved');
@@ -140,10 +173,10 @@ export class DialogueSession {
 
   // --- the NPC's loudest rumour about SOMEONE ELSE (theory-of-mind surface) ---
   // Most-confident belief about a third party (not the player), to gossip about.
-  _topRumour() {
+  _topRumour(): BeliefState | null {
     if (!this.npc.beliefs) return null;
-    const pid = this.player ? this.player.id : -1;
-    let best = null;
+    const pid: EntityId = this.player ? this.player.id : -1;
+    let best: BeliefState | null = null;
     for (const b of this.npc.beliefs.all()) {
       if (b.subjectId === pid || b.subjectId === this.npc.id) continue;
       if (b.confidence < 0.3) continue;
@@ -152,13 +185,13 @@ export class DialogueSession {
     return best;
   }
 
-  _subjectName(id) {
+  _subjectName(id: EntityId): string {
     const a = this.sim && this.sim.agentsById && this.sim.agentsById.get(id);
     return a ? a.name : `#${id}`;
   }
 
   // what does this NPC WANT? read its trade desires (wantQty) for an "I need…"
-  _wants() {
+  _wants(): { commodity: string; qty: number } | null {
     const npc = this.npc;
     if (!npc.wantQty) return null;
     for (const c of COMMODITIES) {
@@ -169,9 +202,9 @@ export class DialogueSession {
   }
 
   // --- option generation: rebuilt each turn from live state ------------------
-  options() {
+  options(): DialogueOption[] {
     if (this.over) return [];
-    const opts = [];
+    const opts: DialogueOption[] = [];
 
     // 1) gossip: ask the NPC what it's heard (reveals its top rumour)
     const rum = this._topRumour();
@@ -192,9 +225,9 @@ export class DialogueSession {
     }
 
     // 3) a standing offer, if the NPC carries one (set by quests / market)
-    if (this.npc.openOffer) {
-      const o = this.npc.openOffer;
-      opts.push({ id: 'take_offer', label: o.label || 'About that offer…', kind: 'offer' });
+    const openOffer = this.npc.openOffer as OpenOffer | undefined;
+    if (openOffer) {
+      opts.push({ id: 'take_offer', label: openOffer.label || 'About that offer…', kind: 'offer' });
     }
 
     // 4) party: recruit a willing NPC, or dismiss an existing companion
@@ -219,9 +252,9 @@ export class DialogueSession {
   }
 
   // --- resolve a choice ------------------------------------------------------
-  choose(id) {
+  choose(id: string): DialogueResult | null {
     if (this.over) return this.lastResult;
-    const opt = this._opts.find((o) => o.id === id) || { id, kind: id };
+    const opt: DialogueOption = this._opts.find((o) => o.id === id) || { id, label: '', kind: id };
     switch (opt.kind) {
       case 'gossip':     return this._doRumour();
       case 'trade':      return this._doNeed(opt._want);
@@ -237,7 +270,7 @@ export class DialogueSession {
     }
   }
 
-  _doRecruit() {
+  _doRecruit(): DialogueResult {
     const ok = this.sim && this.sim.party && this.sim.party.recruit(this.npc);
     this.over = true;
     return (this.lastResult = ok
@@ -245,19 +278,19 @@ export class DialogueSession {
       : { text: `${this.npc.name} shakes their head. "Not the life for me."`, tone: 'bad' });
   }
 
-  _doDismiss() {
+  _doDismiss(): DialogueResult {
     if (this.sim && this.sim.party) this.sim.party.dismiss(this.npc);
     this.over = true;
     return (this.lastResult = { text: `${this.npc.name} nods. "Fair enough. Watch yourself out there."`, tone: 'neutral' });
   }
 
-  _doRumour() {
+  _doRumour(): DialogueResult {
     const rum = this._topRumour();
     this._revealed = true;
     if (!rum) return (this.lastResult = { text: `"Nothing worth repeating."`, tone: 'neutral' });
     const subj = this._subjectName(rum.subjectId);
-    const fac = FACTIONS[rum.lastFaction];
-    let text;
+    const fac = rum.lastFaction ? FACTIONS[rum.lastFaction as keyof typeof FACTIONS] : undefined;
+    let text: string;
     if (rum.hostile) {
       text = `"${subj}? Bad business — I'd steer clear of them."`;
     } else if (rum.standing < -0.1) {
@@ -282,7 +315,7 @@ export class DialogueSession {
     return (this.lastResult = { text, tone: 'neutral' });
   }
 
-  _doNeed(want) {
+  _doNeed(want?: { commodity: string; qty: number }): DialogueResult {
     if (!want) return (this.lastResult = { text: `"I've got what I need, thanks."`, tone: 'neutral' });
     const a = /^[aeiou]/i.test(want.commodity) ? 'an' : 'a';
     const text = want.qty > 1
@@ -291,8 +324,8 @@ export class DialogueSession {
     return (this.lastResult = { text, tone: 'neutral' });
   }
 
-  _doOffer() {
-    const o = this.npc.openOffer;
+  _doOffer(): DialogueResult {
+    const o = this.npc.openOffer as OpenOffer | undefined;
     if (!o) return (this.lastResult = { text: `"No, nothing like that."`, tone: 'neutral' });
     // hand the offer to whoever wired openOffer (quest board, etc.)
     if (typeof o.onAccept === 'function') o.onAccept(this.player, this.npc, this.sim);
@@ -304,24 +337,25 @@ export class DialogueSession {
   // feels about the player (standing) and how dangerous it is (threat). Success
   // warms (persuade) or — via fear — sours-but-complies (intimidate) the NPC's
   // standing toward the player. Both write back into the NPC's belief store.
-  _doCheck(kind) {
+  _doCheck(kind: 'persuade' | 'intimidate'): DialogueResult {
     const b = this._beliefOfPlayer();
     const standing = b ? b.standing : 0;
     const skill = playerSkill(this.player, kind);
 
     // difficulty: persuading a hostile NPC is hard; intimidating a fearless
     // (high-threat) NPC is hard. Both centre ~0.5 and clamp to [0.1, 0.9].
-    let dc;
+    let dc: number;
     if (kind === 'persuade') dc = clamp(0.5 - standing * 0.4, 0.1, 0.9);
     else                     dc = clamp(0.45 + (this.npc.threat || 0.3) * 0.3 - standing * 0.1, 0.1, 0.9);
 
     const roll = clamp(skill * 0.6 + rand(0, 0.55), 0, 1.2);
     const success = roll >= dc;
 
-    const pid = this.player ? this.player.id : null;
-    if (pid != null && this.npc.beliefs) {
+    const player = this.player;
+    const pid: EntityId | null = player ? player.id : null;
+    if (player && pid != null && this.npc.beliefs) {
       const belief = this.npc.beliefs.get(pid) || this.npc.beliefs.plant(pid, {
-        faction: this.player.faction, pos: this.player.pos, tick: this.sim ? this.sim.time : 0,
+        faction: player.faction, pos: player.pos, tick: this.sim ? this.sim.time : 0,
       });
       if (kind === 'persuade') {
         belief.standing = clamp(belief.standing + (success ? 0.22 : -0.12), -1, 1);
@@ -339,7 +373,7 @@ export class DialogueSession {
       }
     }
 
-    let text;
+    let text: string;
     if (kind === 'persuade') {
       text = success ? `${this.npc.name} softens. "…Alright. You make a fair point."`
                      : `${this.npc.name} shakes their head. "Save your breath."`;

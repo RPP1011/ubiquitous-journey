@@ -3,8 +3,18 @@
 // by reusing the Inspector's renderer — so you can read any agent's mind without
 // physically hunting them down. Cycle with [ and ] (works under pointer-lock).
 
+import type { Agent, EntityId } from '../../types/sim.js';
+import type { Inspector } from './inspector.js';
+
 export class MindBrowser {
-  constructor(listEl, detailEl, inspector) {
+  listEl: HTMLElement;
+  detailEl: HTMLElement;
+  inspector: Inspector;
+  agents: Agent[];
+  selId: EntityId | null;
+  _sig: string;
+
+  constructor(listEl: HTMLElement, detailEl: HTMLElement, inspector: Inspector) {
     this.listEl = listEl;
     this.detailEl = detailEl;
     this.inspector = inspector;
@@ -13,25 +23,26 @@ export class MindBrowser {
     this._sig = '';
 
     // click a row to select
-    this.listEl.addEventListener('click', (e) => {
-      const m = e.target.closest('.m');
-      if (m) this.selId = +m.dataset.id;
+    this.listEl.addEventListener('click', (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      const m = target ? target.closest<HTMLElement>('.m') : null;
+      if (m && m.dataset.id != null) this.selId = +m.dataset.id;
     });
     // cycle selection by keyboard (usable while the cursor is locked)
-    window.addEventListener('keydown', (e) => {
+    window.addEventListener('keydown', (e: KeyboardEvent) => {
       if (e.code === 'BracketLeft') this.cycle(-1);
       else if (e.code === 'BracketRight') this.cycle(1);
     });
   }
 
-  setAgents(agents) {
+  setAgents(agents: Agent[] | null): void {
     this.agents = agents || [];
     const first = this.agents.find((a) => !a.controlled);
     this.selId = first ? first.id : (this.agents[0]?.id ?? null);
     this._sig = '';
   }
 
-  cycle(dir) {
+  cycle(dir: number): void {
     if (!this.agents.length) return;
     let i = this.agents.findIndex((a) => a.id === this.selId);
     if (i < 0) i = 0;
@@ -39,7 +50,7 @@ export class MindBrowser {
     this.selId = this.agents[i].id;
   }
 
-  update() {
+  update(): void {
     if (!this.agents.length) return;
     if (this.selId == null || !this.agents.some((a) => a.id === this.selId)) {
       const first = this.agents.find((a) => !a.controlled);

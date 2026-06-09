@@ -9,8 +9,17 @@ import { BEAT } from '../sim/chronicle.js';
 
 const PANEL_ID = 'chroniclePanel';
 
+// simulation.js / chronicle.js are later clusters — typed as the minimal read
+// surface used here (recent()/legends() return the runtime beat rows below).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Sim = any; /* Simulation — ported in a later cluster */
+interface ChronBeat {
+  id: number; t: number; kind: string; text: string;
+  arcId?: string | null; arcTitle?: string | null;
+}
+
 // colour + short label per beat kind (the legend the feed reads against).
-const KIND = {
+const KIND: Record<string, { col: string; tag: string }> = {
   [BEAT.DEATH]:    { col: '#e06a6a', tag: 'fallen'   },
   [BEAT.KILL]:     { col: '#e0894e', tag: 'slain'    },
   [BEAT.VENDETTA]: { col: '#d36bd0', tag: 'vendetta' },
@@ -29,7 +38,14 @@ const KIND = {
 const DEFAULT_KIND = { col: '#9aa6b2', tag: 'event' };
 
 export class ChroniclePanel {
-  constructor(getSim) {
+  getSim: () => Sim | null;
+  visible: boolean;
+  mode: 'feed' | 'saga';
+  _sig: string;
+  el!: HTMLElement;
+  _erred?: boolean;
+
+  constructor(getSim: (() => Sim | null) | null) {
     this.getSim = getSim || (() => null);
     this.visible = false;
     this.mode = 'feed';            // 'feed' = live chronicle · 'saga' = the town's legends
@@ -38,17 +54,17 @@ export class ChroniclePanel {
     this._build();
   }
 
-  toggle() { this.visible ? this.hide() : this.show(); }
-  show() { this.visible = true; this.el.style.display = 'block'; this._sig = ''; this.render(); }
-  hide() { this.visible = false; this.el.style.display = 'none'; }
+  toggle(): void { this.visible ? this.hide() : this.show(); }
+  show(): void { this.visible = true; this.el.style.display = 'block'; this._sig = ''; this.render(); }
+  hide(): void { this.visible = false; this.el.style.display = 'none'; }
 
-  _build() {
+  _build(): void {
     let el = document.getElementById(PANEL_ID);
     if (!el) { el = document.createElement('div'); el.id = PANEL_ID; document.body.appendChild(el); }
     this.el = el; this.el.style.display = 'none';
     // delegated click: the header chip flips between the live feed and the saga.
-    this.el.addEventListener('click', (e) => {
-      const t = e.target;
+    this.el.addEventListener('click', (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
       if (t && t.classList && t.classList.contains('c-mode')) {
         this.mode = this.mode === 'feed' ? 'saga' : 'feed';
         this._sig = ''; this.render();
@@ -56,7 +72,7 @@ export class ChroniclePanel {
     });
   }
 
-  _injectStyles() {
+  _injectStyles(): void {
     if (document.getElementById('chroniclePanelStyles')) return;
     const s = document.createElement('style');
     s.id = 'chroniclePanelStyles';
@@ -91,13 +107,13 @@ export class ChroniclePanel {
     document.head.appendChild(s);
   }
 
-  render() {
+  render(): void {
     if (!this.visible) return;
     try {
       const sim = this.getSim();
       const chron = sim && sim.chronicle;
       const saga = this.mode === 'saga';
-      const beats = chron ? (saga ? chron.legends(80) : chron.recent(60)) : [];   // already newest-first
+      const beats: ChronBeat[] = chron ? (saga ? chron.legends(80) : chron.recent(60)) : [];   // already newest-first
 
       // signature: redraw only when the newest beat id, the count, or the mode changed.
       const sig = (beats.length ? `${beats[0].id}:${beats.length}` : '0') + ':' + this.mode;
@@ -133,7 +149,7 @@ export class ChroniclePanel {
 
   // beat text is built from agent names (data, not user input) but escape anyway
   // so a stray '<' in a future phrasing can never inject markup.
-  _esc(s) {
+  _esc(s: string): string {
     return String(s).replace(/[&<>]/g, (c) => (c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'));
   }
 }

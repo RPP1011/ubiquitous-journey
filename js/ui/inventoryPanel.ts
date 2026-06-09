@@ -7,8 +7,11 @@
 // reaches into combat/economy logic itself; it stays a read-mostly view.
 
 import { COMMODITIES, BASE_PRICE } from '../sim/simconfig.js';
+import type { Agent } from '../../types/sim.js';
 
 const PANEL_ID = 'inventory';
+
+type UseHandler = (commodity: string, player: Agent) => void;
 
 // presentation-only metadata: a glyph + one-line flavour per commodity. Anything
 // not listed still renders with a neutral glyph, so adding a commodity to
@@ -24,7 +27,13 @@ const ITEM_META = {
 const USABLE = new Set(['potion']);
 
 export class InventoryPanel {
-  constructor(player) {
+  player: Agent | null;
+  onUse: UseHandler | null;
+  visible: boolean;
+  _sig: string;
+  el!: HTMLElement;
+
+  constructor(player?: Agent | null) {
     this.player = player || null;
     this.onUse = null;          // (commodity, player) => void; wired by main.js
     this.visible = false;
@@ -33,15 +42,15 @@ export class InventoryPanel {
     this._build();
   }
 
-  setPlayer(p) { this.player = p; this._sig = ''; }
-  setUseHandler(fn) { this.onUse = fn; }
+  setPlayer(p: Agent | null): void { this.player = p; this._sig = ''; }
+  setUseHandler(fn: UseHandler | null): void { this.onUse = fn; }
 
-  toggle() { this.visible ? this.hide() : this.show(); }
-  show() { this.visible = true; this.el.style.display = 'block'; this._sig = ''; this.render(); }
-  hide() { this.visible = false; this.el.style.display = 'none'; }
+  toggle(): void { this.visible ? this.hide() : this.show(); }
+  show(): void { this.visible = true; this.el.style.display = 'block'; this._sig = ''; this.render(); }
+  hide(): void { this.visible = false; this.el.style.display = 'none'; }
 
   // ---- DOM scaffold --------------------------------------------------------
-  _build() {
+  _build(): void {
     let el = document.getElementById(PANEL_ID);
     if (!el) {
       el = document.createElement('div');
@@ -51,18 +60,21 @@ export class InventoryPanel {
     this.el = el;
     this.el.style.display = 'none';
     // click a usable slot to consume it; hand off to the wired callback
-    this.el.addEventListener('click', (e) => {
-      const cell = e.target.closest('.i-slot.use');
+    this.el.addEventListener('click', (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      const cell = target ? target.closest<HTMLElement>('.i-slot.use') : null;
       if (!cell || !this.onUse) return;
       const player = this.player;
       if (!player) return;
-      this.onUse(cell.dataset.item, player);
+      const item = cell.dataset.item;
+      if (item == null) return;
+      this.onUse(item, player);
       this._sig = '';            // force a redraw next frame after the count drops
       this.render();
     });
   }
 
-  _injectStyles() {
+  _injectStyles(): void {
     if (document.getElementById('inventoryStyles')) return;
     const s = document.createElement('style');
     s.id = 'inventoryStyles';
@@ -108,37 +120,41 @@ export class InventoryPanel {
   }
 
   // ---- render --------------------------------------------------------------
-  render() {
+  render(): void {
     if (!this.visible) return;
     const p = this.player;
     if (!p) { this.el.innerHTML = `<div class="i-head"><span>Inventory</span><span class="hot">B</span></div>
       <div class="i-grid"><div class="i-slot empty"></div></div>`; return; }
 
+    // relics is a running count at runtime (number); the shared Agent type carries
+    // it loosely, so read it as a number locally for the purse line.
+    const relics = ((p.relics as number | undefined) || 0) | 0;
+
     // signature so we don't thrash innerHTML every frame (also preserves hover)
     const sig = COMMODITIES.map((c) => this._count(p, c)).join(',') +
-      `|${Math.round(p.gold)}|${p.relics | 0}`;
+      `|${Math.round(p.gold)}|${relics}`;
     if (sig === this._sig) return;
     this._sig = sig;
 
     let packValue = 0;
     const slots = COMMODITIES.map((c) => {
       const qty = this._count(p, c);
-      const meta = ITEM_META[c] || { icon: '❔', desc: '' };
+      const meta = ITEM_META[c as keyof typeof ITEM_META] || { icon: '❔', desc: '' };
       const usable = USABLE.has(c) && qty > 0;
-      const value = (BASE_PRICE[c] || 0) * qty;
-      packValue += value;
+      const price = BASE_PRICE[c as keyof typeof BASE_PRICE] || 0;
+      packValue += price * qty;
       const cls = `i-slot${qty <= 0 ? ' empty' : ''}${usable ? ' use' : ''}`;
-      const title = `${c} — ${meta.desc}${BASE_PRICE[c] ? ` (~${BASE_PRICE[c]}g each)` : ''}`;
+      const title = `${c} — ${meta.desc}${price ? ` (~${price}g each)` : ''}`;
       return `<div class="${cls}" data-item="${c}" title="${title}">
-        <span class="val">${BASE_PRICE[c] ? BASE_PRICE[c] + 'g' : ''}</span>
+        <span class="val">${price ? price + 'g' : ''}</span>
         <span class="glyph">${meta.icon}</span>
         <span class="name">${c}</span>
         <span class="qty">${qty > 0 ? qty : ''}</span>
       </div>`;
     }).join('');
 
-    const relic = (p.relics | 0) > 0
-      ? `<span class="p relic">Relics <b>${p.relics | 0}</b></span>` : '';
+    const relic = relics > 0
+      ? `<span class="p relic">Relics <b>${relics}</b></span>` : '';
 
     this.el.innerHTML = `
       <div class="i-head"><span>Inventory</span><span class="hot">B</span></div>
@@ -148,7 +164,7 @@ export class InventoryPanel {
   }
 
   // food is tracked as a float (partial rations); everything else is whole units
-  _count(p, c) {
+  _count(p: Agent, c: string): number {
     const raw = p.inventory ? (p.inventory[c] || 0) : 0;
     return Math.floor(raw);
   }

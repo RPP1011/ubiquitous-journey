@@ -209,6 +209,7 @@ export interface Agent {
   totalWealth(): number;
   drainNeeds(dt: number): void;
   considerHostile(b: BeliefState): boolean;
+  profColor(): number;          // packed RGB for the agent's profession/faction tint (UI)
 
   // INTAKE passes (FULL ctx — the sanctioned truth→belief bridge)
   perceive(ctx: FullCtx): void;

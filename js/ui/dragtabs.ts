@@ -4,19 +4,19 @@
 // anywhere (the others reflow). A header press that doesn't move is a click and
 // toggles the panel's collapsed state (replacing the old click handler).
 
-export function makeTabsDraggable(rootSel = '#tabs') {
+export function makeTabsDraggable(rootSel = '#tabs'): void {
   const root = document.querySelector(rootSel);
   if (!root) return;
   for (const tab of root.querySelectorAll('.tab')) {
     const head = tab.querySelector('.tab-head');
-    if (head) wireOne(tab, head);
+    if (head) wireOne(tab as HTMLElement, head as HTMLElement);
   }
 }
 
-function wireOne(tab, head) {
+function wireOne(tab: HTMLElement, head: HTMLElement): void {
   let startX = 0, startY = 0, baseX = 0, baseY = 0, baseW = 0, moved = false, dragging = false;
 
-  const onMove = (e) => {
+  const onMove = (e: MouseEvent): void => {
     if (!dragging) return;
     const dx = e.clientX - startX, dy = e.clientY - startY;
     if (!moved && Math.hypot(dx, dy) < 4) return;          // below threshold -> still a click
@@ -33,14 +33,14 @@ function wireOne(tab, head) {
     tab.style.top = Math.max(0, Math.min(innerHeight - h, baseY + dy)) + 'px';
   };
 
-  const onUp = () => {
+  const onUp = (): void => {
     dragging = false;
     window.removeEventListener('mousemove', onMove);
     window.removeEventListener('mouseup', onUp);
     if (!moved) tab.classList.toggle('collapsed');         // a click (no drag): toggle collapse
   };
 
-  head.addEventListener('mousedown', (e) => {
+  head.addEventListener('mousedown', (e: MouseEvent) => {
     if (e.button !== 0) return;
     const r = tab.getBoundingClientRect();
     startX = e.clientX; startY = e.clientY; baseX = r.left; baseY = r.top; baseW = r.width;
