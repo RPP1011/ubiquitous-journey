@@ -20,6 +20,13 @@ import { proceduralAbilityTest } from './suites/abilities.mjs';
 import { plannerSelfTest } from './suites/planner.mjs';
 import { obligationsTest } from './suites/obligations.mjs';
 import { executionTest } from './suites/execution.mjs';
+// Action-grammar EXECUTION suites (docs/architecture/10) — one per feature worktree, pre-registered
+// so each fills its own file with zero shared edits. Stubs are no-ops until filled.
+import { urchinTest } from './suites/urchin.mjs';
+import { learningTest } from './suites/learning.mjs';
+import { recruitTest } from './suites/recruit.mjs';
+import { affectTest } from './suites/affect.mjs';
+import { ledgerLiveTest } from './suites/ledger.mjs';
 import { memoryGoalTest, npcCastTest } from './suites/memoryGoals.mjs';
 import { perceptTest } from './suites/percept.mjs';
 import { schemasTest } from './suites/schemas.mjs';
@@ -50,6 +57,12 @@ proceduralAbilityTest(ok);
 plannerSelfTest(ok, helpers);
 // Action-grammar Phase 5: the obligation ledger (commitments + recurrence), the one new store.
 obligationsTest(ok);
+// Action-grammar EXECUTION feature suites (filled per worktree; no-op stubs until then).
+urchinTest(ok, helpers);
+learningTest(ok, helpers);
+recruitTest(ok, helpers);
+affectTest(ok, helpers);
+ledgerLiveTest(ok, helpers);
 executionTest(ok, helpers);
 memoryGoalTest(ok, helpers);
 npcCastTest(ok, helpers);

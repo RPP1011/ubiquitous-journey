@@ -18,6 +18,7 @@ import { awardGoalClosureXP } from '../motivation.js';
 import { stepTargetPos, stepEffectHolds } from '../planner.js';
 import { goTo, groundY } from './movement.js';
 import { steer, STEER_FILLS } from './steer.js';
+import { registerExecutor, runExecutor } from '../exec/registry.js';
 import { masteryMul } from './occupation.js';
 import { collideWalls } from '../walls.js';
 import type {
@@ -556,70 +557,62 @@ export function execPlanStep(a: Agent, dt: number, ctx: CognitionCtx): void {
   } catch { a.fighter.setMoving(0); }
 }
 
+// Run a plan step's verb (VERBS ARE DATA): dispatch through the executor REGISTRY — the verb tag
+// is data, the executor is the code it binds to (docs/architecture/10). An unregistered verb idles
+// (exactly the old switch `default`). Feature modules register their own verbs from their own file.
 export function execPrimitive(a: Agent, step: PlanStep, dt: number, ctx: CognitionCtx): void {
-  const b = step.bind || {};
-  switch (step.exec ? step.exec.verb : step.prim) {
-    case 'goto': {
-      // plan-step locomotion: a single-attractor steer to the believed/static step target
-      // (walk). Null target -> idle, exactly as the old goTo-or-setMoving(0) guard did.
-      const tp = stepTargetPos(a, ctx, b.place);
-      if (tp) steer(a, { attractors: [{ pos: tp }] }, dt); else a.fighter.setMoving(0);
-      break;
-    }
-    case 'attack': {
-      // BELIEF-GATED: a confident belief about the target routes to combatStep (itself
-      // fully belief-gated — closes on lastPos / inferred destination, re-acquires by
-      // sight, casts on a vision-confirmed body). No belief / faded -> march to the last
-      // believed spot. No roster read; the quarry may be a moved foe, a corpse, a scarecrow.
-      const bel = b.target != null ? a.beliefs.get(b.target) : null;
-      if (bel && bel.confidence >= SIM.actOnBeliefMin) { a.goal!.targetId = b.target; combatStep(a, dt, ctx); }
-      else {
-        // no/faded belief: march (walk) to the last believed spot via a single-attractor
-        // steer. combatStep itself stays special (not migrated). Null target -> idle.
-        const tp = stepTargetPos(a, ctx, { subjectId: b.target });
-        if (tp) steer(a, { attractors: [{ pos: tp }] }, dt); else a.fighter.setMoving(0);
-      }
-      break;
-    }
-    case 'produce': produce(a, dt); break;
-    case 'consume': {
-      const item = b.item;
-      if (item && (a.inventory[item] || 0) >= 1 && a.needs.hunger < 1) {
-        const amt = ECON.eatRate * dt;
-        a.needs.hunger = clamp01(a.needs.hunger + amt);
-        a.inventory[item] = Math.max(0, a.inventory[item] - amt);
-      }
-      a.fighter.setMoving(0);
-      break;
-    }
-    case 'gather': {
-      // gather a raw good at its node: move to the node, then accrue a unit.
-      const good = b.good;
-      if (!good || !b.site) { a.fighter.setMoving(0); break; }
-      if ((a.inventory[good] || 0) >= (b.n || 1)) { a.fighter.setMoving(0); break; }
-      const node = ctx.world && ctx.world.nearest(b.site, a.pos);
-      if (node && goTo(a, node.pos, dt)) {
-        a.inventory[good] = (a.inventory[good] || 0) + (b.n || 1);
-      }
-      break;
-    }
-    case 'buy': case 'sell': marketStep(a, step, dt, ctx); break;
-    case 'give': giveStep(a, b, dt, ctx); break;
-    case 'pay':  payStep(a, b, dt, ctx); break;
-    case 'hold': {
-      // WAIT (Phase 4): hold at the safe/hidden spot; the plan advances (execPlanStep's
-      // stepEffectHolds) when the waited-for condition becomes believed-true. Walk to the safe
-      // place if not yet there, else wait in place. Abandonment lives elsewhere: the goal
-      // deadline (expiresAt) drops a window that never opens, and a believed threat fires the
-      // reactive flee that PREEMPTS the held step (decide scores flee over the plan candidate).
-      const tp = stepTargetPos(a, ctx, b.place);
-      if (tp && a.pos.distanceTo(tp) > (SIM.arriveDist || 1.5)) steer(a, { attractors: [{ pos: tp }] }, dt);
-      else a.fighter.setMoving(0);
-      break;
-    }
-    default: a.fighter.setMoving(0);
-  }
+  const verb = step.exec ? step.exec.verb : step.prim;
+  if (!runExecutor(verb, a, step, dt, ctx)) a.fighter.setMoving(0);
 }
+
+// --- base verb registrations (the rows the planner's core actions dispatch to) ---------------
+// Registered as DATA into the executor registry at module load, so there is no hand-grown switch.
+// Each closure is the world-interaction the verb performs on arrival; behaviour is verbatim the
+// old switch arms. The referenced helpers (produce/marketStep/giveStep/payStep/combatStep) are
+// hoisted function declarations, so registering here (below execPrimitive) is safe.
+registerExecutor('goto', (a, step, dt, ctx) => {
+  // single-attractor steer to the believed/static step target (walk); null target → idle.
+  const tp = stepTargetPos(a, ctx, (step.bind || {}).place);
+  if (tp) steer(a, { attractors: [{ pos: tp }] }, dt); else a.fighter.setMoving(0);
+});
+registerExecutor('attack', (a, step, dt, ctx) => {
+  // BELIEF-GATED: a confident belief routes to combatStep (belief-gated); else march to the last
+  // believed spot. No roster read — the quarry may be a moved foe, a corpse, a scarecrow.
+  const b = step.bind || {};
+  const bel = b.target != null ? a.beliefs.get(b.target) : null;
+  if (bel && bel.confidence >= SIM.actOnBeliefMin) { a.goal!.targetId = b.target; combatStep(a, dt, ctx); }
+  else { const tp = stepTargetPos(a, ctx, { subjectId: b.target }); if (tp) steer(a, { attractors: [{ pos: tp }] }, dt); else a.fighter.setMoving(0); }
+});
+registerExecutor('produce', (a, _step, dt) => { produce(a, dt); });
+registerExecutor('consume', (a, step, dt) => {
+  const item = (step.bind || {}).item;
+  if (item && (a.inventory[item] || 0) >= 1 && a.needs.hunger < 1) {
+    const amt = ECON.eatRate * dt;
+    a.needs.hunger = clamp01(a.needs.hunger + amt);
+    a.inventory[item] = Math.max(0, a.inventory[item] - amt);
+  }
+  a.fighter.setMoving(0);
+});
+registerExecutor('gather', (a, step, dt, ctx) => {
+  // gather a raw good at its node: move to the node, then accrue a unit.
+  const b = step.bind || {}; const good = b.good;
+  if (!good || !b.site) { a.fighter.setMoving(0); return; }
+  if ((a.inventory[good] || 0) >= (b.n || 1)) { a.fighter.setMoving(0); return; }
+  const node = ctx.world && ctx.world.nearest(b.site, a.pos);
+  if (node && goTo(a, node.pos, dt)) a.inventory[good] = (a.inventory[good] || 0) + (b.n || 1);
+});
+const marketExec: (a: Agent, step: PlanStep, dt: number, ctx: CognitionCtx) => void = (a, step, dt, ctx) => marketStep(a, step, dt, ctx);
+registerExecutor('buy', marketExec);
+registerExecutor('sell', marketExec);
+registerExecutor('give', (a, step, dt, ctx) => giveStep(a, step.bind || {}, dt, ctx));
+registerExecutor('pay', (a, step, dt, ctx) => payStep(a, step.bind || {}, dt, ctx));
+registerExecutor('hold', (a, step, dt, ctx) => {
+  // WAIT (Phase 4): hold at the safe/hidden spot; the plan advances (stepEffectHolds) when the
+  // waited-for condition becomes believed-true. Walk to cover if not there yet, else wait.
+  const tp = stepTargetPos(a, ctx, (step.bind || {}).place);
+  if (tp && a.pos.distanceTo(tp) > (SIM.arriveDist || 1.5)) steer(a, { attractors: [{ pos: tp }] }, dt);
+  else a.fighter.setMoving(0);
+});
 
 // walk to the market, then trade ONE unit of the bind good against a willing townsperson
 // there — the conserved clearing is performed by the EXECUTION resolver (marketClear),

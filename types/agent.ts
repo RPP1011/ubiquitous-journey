@@ -204,6 +204,9 @@ export interface Agent {
   _secretBelief?: Map<EntityId, { conf: number }>;                  // Secret(subject) topic home
   _theyBelieve?: Map<string, { conf: number }>;                     // Believes(subject,topic), one level (key `subj:topicKey`)
   _obligations?: Obligation[];                                      // the commitment ledger (Phase 5)
+  _held?: boolean;                                                  // a captive's believed-held state (free flips it)
+  _freedBy?: EntityId;                                              // who cut this agent's bonds (Affect: free)
+  _wrecked?: boolean;                                               // a target sabotaged (Affect: wreck)
 
   // ───── OPTIONAL transient role/visual state ─────
   reporterTarget?: Vector3 | null;    // the gazetteer's current subject position

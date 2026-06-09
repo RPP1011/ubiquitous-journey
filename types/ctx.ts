@@ -37,6 +37,11 @@ export interface ResolverFacade {
   isLiveAgent(subjectId: EntityId): boolean;
   marketClear(a: Agent, good: string, buying: boolean): boolean;
   deliverTo(from: Agent, toId: EntityId, payload: { item?: string; n?: number; gold?: number }): boolean;
+  // Action-grammar execution (docs/architecture/10, Phase 5): conserved theft (burgle/rob), and the
+  // Affect flag-flips (free a captive / wreck a target). Callers gate location; these do the effect.
+  pilfer(thief: Agent, markId: EntityId, amount: number): number;
+  cutBonds(freer: Agent, captiveId: EntityId): boolean;
+  sabotage(wrecker: Agent, targetId: EntityId): boolean;
   buildSite: BuildSiteFacade;
 }
 

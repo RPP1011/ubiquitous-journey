@@ -13,6 +13,7 @@
 import { MOTIVE, SIM } from './simconfig.js';
 import { RPG } from '../rpg/rpgconfig.js';
 import { goalAvenge, goalSeekFortune, goalRepay, goalGrieve, goalDelve } from './planner.js';
+import { runDerivers } from './exec/registry.js';
 import { STAGE, REASON } from './trace.js';
 import type { Agent, CognitionCtx, Goal, Personality, AmbitionSnapshot, EntityId, Stage, Reason } from '../../types/sim.js';
 
@@ -191,6 +192,11 @@ export function ambitionWantsFight(a: Agent): boolean {
 export function deriveGoals(a: Agent, ctx: CognitionCtx | null): void {
   if (!a || a.controlled || !a.memory || typeof a.pushGoal !== 'function') return;
   if (a.faction === 'monster') return;              // monsters carry no grudge-goals
+  // FEATURE DERIVERS (docs/architecture/10): run every registered goal-deriver as a DATA row —
+  // each feature adds its derivation from its own file, not a branch hand-added here. Each is
+  // independently guarded inside runDerivers, so one feature's fault never blocks another. Empty
+  // until a feature registers, so this is a no-op (byte-stable) on the base sim.
+  runDerivers(a, ctx);
   let salient;
   try { salient = a.memory.salient(); } catch { return; }
   if (!Array.isArray(salient)) return;

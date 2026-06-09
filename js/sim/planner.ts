@@ -21,6 +21,7 @@ import * as THREE from 'three';
 import { PROFESSIONS, COMMODITIES, ECON, SIM, URCHIN, QUANTITY, KNOW, ROB, HOLD, RECRUIT, AFFECT } from './simconfig.js';
 import { POI_KIND } from './world.js';
 import { STAGE, REASON } from './trace.js';
+import { effectHolds } from './exec/registry.js';
 import type { Agent, CognitionCtx, Goal, Plan, PlanStep, EntityId, Atom as AtomT, KnowTopic, Stage, Reason } from '../../types/sim.js';
 
 // STAGE/REASON are runtime constants in the (still-JS) trace.js — allowJs widens their
@@ -1229,6 +1230,10 @@ export function stepPrecondsHold(agent: Agent, ctx: CognitionCtx, step: PlanStep
 export function stepEffectHolds(agent: Agent, ctx: CognitionCtx, step: PlanStep): boolean {
   if (!agent || !step) return false;
   const bind = step.bind as Bind;
+  // FEATURE VERBS (docs/architecture/10): a registered effect-landed predicate advances a feature's
+  // own multi-step plan from its own file (verbs-are-data) — consulted before the base switch.
+  const reg = effectHolds(step.prim, agent, ctx, step);
+  if (reg !== undefined) return reg;
   // `_repaid` is the give/pay executor's received-flag map (own-state, set by act()).
   const repaid = agent._repaid as Record<string, boolean> | undefined;
   try {

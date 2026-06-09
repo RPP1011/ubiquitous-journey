@@ -23,6 +23,7 @@ import { Patrician } from './patrician.js';
 import { Surveyor } from './surveyor.js';
 import { Cities } from './cities.js';
 import { BuildSites } from './construction.js';
+import './features/index.js';   // load the action-grammar features (each self-registers its verbs)
 import { seedNarratives } from './seeding.js';
 import { Lineage } from './lineage.js';
 import { Chronicle } from './chronicle.js';
@@ -822,6 +823,51 @@ export class Simulation {
           } else return false;
           // receiver warms toward the giver via ITS OWN belief store.
           if (to.beliefs) { const rel = to.beliefs.get(from.id); if (rel) rel.standing = Math.min(1, rel.standing + 0.15); }
+          return true;
+        } catch { return false; }
+      },
+      // CONSERVED THEFT (docs/architecture/10, Phase 5 execution): move up to `amount` gold from a
+      // mark's purse to the `thief` — the closed-loop transfer behind burgle (from a stash) and rob
+      // (by force). The CALLER (the executor) gates location (at the stash / on the mark); this just
+      // moves the gold (debits the mark, credits the thief — no minting) and, IF the mark is right
+      // there to SEE it (witnessed theft), sours the mark toward the thief through the mark's OWN
+      // belief store (suspicion up, hostile, standing down). Returns the gold actually taken. Guarded.
+      pilfer(thief, markId, amount) {
+        try {
+          const mark = sim.agentsById.get(markId);
+          if (!mark || !mark.alive || !thief) return 0;
+          const take = Math.min(Math.max(0, amount || 0), mark.gold || 0);
+          if (take <= 0) return 0;
+          mark.gold -= take;
+          thief.gold = (thief.gold || 0) + take;
+          // WITNESSED THEFT — only if the mark can actually see the thief (epistemic: the loss is
+          // felt as a wrong only by a mark that perceives it). Writes the MARK's own belief.
+          if (mark.beliefs && mark.pos.distanceTo(thief.pos) <= SIM.visionRange) {
+            const rel = mark.beliefs.get(thief.id) || mark.beliefs.observe(thief.id, thief.faction, thief.pos, sim.time, true);
+            if (rel) { rel.standing = Math.max(-1, (rel.standing || 0) - 0.4); rel.suspicion = Math.min(1, (rel.suspicion || 0) + 0.5); rel.hostile = true; }
+          }
+          return take;
+        } catch { return 0; }
+      },
+      // FREE A CAPTIVE (Affect row): cut the bonds — flip the captive's believed-held state. The
+      // caller gates location (be at the captive). Conserved-safe (no gold/goods move). Stamps
+      // `_freedBy` so the freed agent's own logic can react (e.g. follow its rescuer). Returns true
+      // on a landed free. Guarded; minimal until a richer captivity mechanic lands.
+      cutBonds(freer, captiveId) {
+        try {
+          const cap = sim.agentsById.get(captiveId);
+          if (!cap || !cap.alive || !freer) return false;
+          cap._held = false; cap._freedBy = freer.id;
+          return true;
+        } catch { return false; }
+      },
+      // SABOTAGE (Affect row): wreck a target's intact state. The caller gates location. Conserved-
+      // safe (no gold/goods). Marks `_wrecked` so the world/UI can reflect it. Returns true. Guarded.
+      sabotage(wrecker, targetId) {
+        try {
+          const t = sim.agentsById.get(targetId);
+          if (!t || !wrecker) return false;
+          t._wrecked = true;
           return true;
         } catch { return false; }
       },
