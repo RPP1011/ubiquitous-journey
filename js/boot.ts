@@ -58,14 +58,17 @@ export function boot(): BootResult {
   document.body.appendChild(renderer.domElement);
 
   const scene = new T3.Scene();
-  buildArena(scene);
+  // vendored-three boundary: scene/camera are real THREE objects, but boot and the
+  // combat-path (arena/camera/commander) each model the untyped `three` with their own
+  // local views, which don't structurally align — cast across the seam.
+  buildArena(scene as unknown as Parameters<typeof buildArena>[0]);
 
   const camera = new T3.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 200);
   camera.position.set(0, 4, 8);
 
-  const orbitCam = new OrbitCamera(camera);
+  const orbitCam = new OrbitCamera(camera as unknown as ConstructorParameters<typeof OrbitCamera>[0]);
   const input = new Input(renderer.domElement);
-  const commander = new Commander(renderer.domElement, camera, orbitCam);   // point-and-click control
+  const commander = new Commander(renderer.domElement, camera as unknown as ConstructorParameters<typeof Commander>[1], orbitCam);   // point-and-click control
   scene.add(commander.marker);
 
   return { renderer, scene, camera, orbitCam, input, commander };

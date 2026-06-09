@@ -19,6 +19,9 @@
 
 import * as THREE from 'three';
 import { pickAgent } from './util/pick.js';
+import type { Agent, Fighter, EntityId } from '../types/sim.js';
+import type { CognitionCtx } from '../types/sim.js';
+import type { OrbitCamera } from './camera.js';
 
 const _ray = new THREE.Raycaster();
 const _ndc = new THREE.Vector2();
@@ -26,8 +29,32 @@ const _plane = new THREE.Plane();
 const _hit = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
 
+// The minimal Simulation surface the Commander reads (the roster + id index). The
+// owning Simulation is in another cluster; this structural view is all that's used.
+interface SimLike {
+  agents: Agent[];
+  agentsById: Map<EntityId, Agent>;
+}
+// A marker mesh's transform + material surface (getter-installed on vendored JS).
+interface MarkerMesh {
+  position: { set(x: number, y: number, z: number): void };
+  rotation: { x: number };
+  renderOrder: number;
+  material: { opacity: number };
+}
+
 export class Commander {
-  constructor(canvas, camera, orbitCam) {
+  canvas: HTMLCanvasElement;
+  camera: THREE.Camera;
+  cam: OrbitCamera;
+  agent: Agent | null;
+  sim: SimLike | null;
+  enabled: boolean;
+  mouseNDC: { x: number; y: number };
+  targetFighter: Fighter | null;
+  marker: MarkerMesh;
+
+  constructor(canvas: HTMLCanvasElement, camera: THREE.Camera, orbitCam: OrbitCamera) {
     this.canvas = canvas;
     this.camera = camera;
     this.cam = orbitCam;
@@ -40,39 +67,41 @@ export class Commander {
     this._bind();
   }
 
-  attach(agent, sim) {
+  attach(agent: Agent | null, sim: SimLike | null): void {
     this.agent = agent;
     this.sim = sim;
     if (agent) agent.goal = { kind: 'idle' };
   }
 
   // a ground decal that pings where you ordered a move, then fades
-  _buildMarker() {
+  _buildMarker(): MarkerMesh {
     const m = new THREE.Mesh(
       new THREE.RingGeometry(0.35, 0.5, 20),
       new THREE.MeshBasicMaterial({ color: 0xffe9b0, transparent: true, opacity: 0,
         side: THREE.DoubleSide, depthTest: false }),
     );
-    m.rotation.x = -Math.PI / 2;
-    m.renderOrder = 999;
-    return m;
+    // Mesh transform members are getter-installed on the vendored JS (tsc can't see them).
+    const mm = m as unknown as MarkerMesh;
+    mm.rotation.x = -Math.PI / 2;
+    mm.renderOrder = 999;
+    return mm;
   }
 
-  _bind() {
+  _bind(): void {
     const c = this.canvas;
-    c.addEventListener('mousemove', (e) => this._trackMouse(e));
-    c.addEventListener('mousedown', (e) => {
+    c.addEventListener('mousemove', (e: MouseEvent) => this._trackMouse(e));
+    c.addEventListener('mousedown', (e: MouseEvent) => {
       if (!this.enabled || !this.agent || !this.agent.alive) return;
       this._trackMouse(e);
       if (e.button === 0) this._primary();
       else if (e.button === 2) this._forceAttack();
     });
-    c.addEventListener('contextmenu', (e) => e.preventDefault());
-    c.addEventListener('wheel', (e) => { this.cam.zoom(e.deltaY > 0 ? 1 : -1); e.preventDefault(); },
+    c.addEventListener('contextmenu', (e: Event) => e.preventDefault());
+    c.addEventListener('wheel', (e: WheelEvent) => { this.cam.zoom(e.deltaY > 0 ? 1 : -1); e.preventDefault(); },
       { passive: false });
   }
 
-  _trackMouse(e) {
+  _trackMouse(e: MouseEvent): void {
     this.mouseNDC.x = (e.clientX / innerWidth) * 2 - 1;
     this.mouseNDC.y = -(e.clientY / innerHeight) * 2 + 1;
   }
@@ -80,18 +109,20 @@ export class Commander {
   // left-click: ALWAYS move to the point under the cursor — even when it's on a
   // unit — so you can position anywhere without ever starting a fight by accident.
   // Attacking is the deliberate right-click. (Talk to a neighbour with E.)
-  _primary() {
+  _primary(): void {
     this._moveToGround(false);
   }
 
   // right-click: attack whoever is under the cursor; bare ground -> run there
-  _forceAttack() {
-    const npc = pickAgent(this.camera, this.mouseNDC, this.sim.agents);
+  _forceAttack(): void {
+    if (!this.agent || !this.sim) return;
+    const npc = pickAgent(this.camera, this.mouseNDC, this.sim.agents as Parameters<typeof pickAgent>[2]);
     if (npc) { this.agent.goal = { kind: 'fight', targetId: npc.id }; return; }
     this._moveToGround(true);
   }
 
-  _moveToGround(run) {
+  _moveToGround(run: boolean): void {
+    if (!this.agent) return;
     if (!this._ground(_hit)) return;
     this.agent.goal = { kind: 'goto', target: _hit.clone(), run };
     this.marker.position.set(_hit.x, _hit.y + 0.05, _hit.z);
@@ -100,19 +131,20 @@ export class Commander {
 
   // raycast the cursor onto the horizontal plane through the agent's current Y —
   // works in the overworld AND down in the dungeon (which sits at y ≈ -400).
-  _ground(out) {
+  _ground(out: THREE.Vector3): boolean {
+    if (!this.agent) return false;
     _ray.setFromCamera(_ndc.set(this.mouseNDC.x, this.mouseNDC.y), this.camera);
     _plane.setFromNormalAndCoplanarPoint(_up, this.agent.pos);
     return !!_ray.ray.intersectPlane(_plane, out);
   }
 
-  update(dt, ctx) {
+  update(dt: number, ctx: CognitionCtx): void {
     const a = this.agent;
     if (!a) { this.targetFighter = null; return; }
     if (this.enabled && a.alive) a.actControlled(dt, ctx);
     // expose the live attack target so resolveCombat can let the player's swing
     // connect (peaceful NPCs are otherwise friendly-fire pass-through)
-    this.targetFighter = (a.goal && a.goal.kind === 'fight' && this.sim)
+    this.targetFighter = (a.goal && a.goal.kind === 'fight' && this.sim && a.goal.targetId != null)
       ? (this.sim.agentsById.get(a.goal.targetId)?.fighter || null)
       : null;
     if (this.marker.material.opacity > 0)

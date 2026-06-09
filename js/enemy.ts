@@ -4,12 +4,20 @@
 
 import { DIR, TUNE, ENEMY } from './constants.js';
 import { ARENA_RADIUS } from './arena.js';
+import type { Fighter, FighterDir } from '../types/sim.js';
 
-const DIRS = [DIR.UP, DIR.DOWN, DIR.LEFT, DIR.RIGHT];
-const randDir = () => DIRS[(Math.random() * 4) | 0];
+const DIRS: FighterDir[] = [DIR.UP, DIR.DOWN, DIR.LEFT, DIR.RIGHT];
+const randDir = (): FighterDir => DIRS[(Math.random() * 4) | 0];
 
 export class Enemy {
-  constructor(fighter, angle) {
+  fighter: Fighter;
+  angle: number;
+  cooldown: number;
+  releaseTimer: number;
+  blockHold: number;
+  _prevPlayerReady: boolean;
+
+  constructor(fighter: Fighter, angle: number) {
     this.fighter = fighter;
     this.angle = angle;                 // preferred slot around the player
     this.cooldown = Math.random() * ENEMY.attackCooldownMax;
@@ -18,7 +26,7 @@ export class Enemy {
     this._prevPlayerReady = false;
   }
 
-  update(dt, player) {
+  update(dt: number, player: Fighter): void {
     const f = this.fighter;
     if (!f.alive) return;
     this.cooldown -= dt;

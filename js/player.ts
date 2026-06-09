@@ -5,19 +5,26 @@ import * as THREE from 'three';
 import { TUNE } from './constants.js';
 import { ARENA_RADIUS } from './arena.js';
 import { collideWalls } from './sim/walls.js';
+import type { Fighter } from '../types/sim.js';
+import type { OrbitCamera } from './camera.js';
+import type { Input } from './input.js';
 
 const _fwd = new THREE.Vector3();
 const _right = new THREE.Vector3();
 const _move = new THREE.Vector3();
 
 export class Player {
-  constructor(fighter, orbitCam, input) {
+  fighter: Fighter;
+  cam: OrbitCamera;
+  input: Input;
+
+  constructor(fighter: Fighter, orbitCam: OrbitCamera, input: Input) {
     this.fighter = fighter;
     this.cam = orbitCam;
     this.input = input;
   }
 
-  update(dt) {
+  update(dt: number): void {
     const f = this.fighter;
     if (!f.alive) return;
 

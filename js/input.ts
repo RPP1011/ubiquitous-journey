@@ -2,11 +2,24 @@
 // "flick the mouse to choose a swing direction while a combat button is held".
 
 import { DIR } from './constants.js';
+import type { Dir } from './constants.js';
 
 const PICK_THRESHOLD = 7;     // px of accumulated movement before a direction sticks
 
 export class Input {
-  constructor(canvas) {
+  canvas: HTMLCanvasElement;
+  keys: Set<string>;
+  locked: boolean;
+  lmb: boolean;
+  rmb: boolean;
+  lookDX: number;
+  lookDY: number;
+  _accX: number;
+  _accY: number;
+  dir: Dir;
+  onLockChange: ((locked: boolean) => void) | null;
+
+  constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.keys = new Set();
     this.locked = false;
@@ -26,9 +39,9 @@ export class Input {
     this._bind();
   }
 
-  get anyCombat() { return this.lmb || this.rmb; }
+  get anyCombat(): boolean { return this.lmb || this.rmb; }
 
-  _bind() {
+  _bind(): void {
     const c = this.canvas;
 
     // NOTE: pointer-lock is intentionally NOT requested here anymore. The game is
@@ -44,7 +57,7 @@ export class Input {
       if (this.onLockChange) this.onLockChange(this.locked);
     });
 
-    document.addEventListener('mousemove', (e) => {
+    document.addEventListener('mousemove', (e: MouseEvent) => {
       if (!this.locked) return;
       const dx = e.movementX || 0, dy = e.movementY || 0;
       if (this.anyCombat) {
@@ -55,29 +68,29 @@ export class Input {
       }
     });
 
-    c.addEventListener('mousedown', (e) => {
+    c.addEventListener('mousedown', (e: MouseEvent) => {
       if (!this.locked) return;
       if (e.button === 0) { this.lmb = true; this._resetPick(); }
       else if (e.button === 2) { this.rmb = true; this._resetPick(); }
     });
 
-    window.addEventListener('mouseup', (e) => {
+    window.addEventListener('mouseup', (e: MouseEvent) => {
       if (e.button === 0) this.lmb = false;
       else if (e.button === 2) this.rmb = false;
     });
 
-    c.addEventListener('contextmenu', (e) => e.preventDefault());
+    c.addEventListener('contextmenu', (e: Event) => e.preventDefault());
 
-    window.addEventListener('keydown', (e) => {
+    window.addEventListener('keydown', (e: KeyboardEvent) => {
       this.keys.add(e.code);
       if (e.code === 'Tab') e.preventDefault();
     });
-    window.addEventListener('keyup', (e) => this.keys.delete(e.code));
+    window.addEventListener('keyup', (e: KeyboardEvent) => this.keys.delete(e.code));
   }
 
-  _resetPick() { this._accX = 0; this._accY = 0; }
+  _resetPick(): void { this._accX = 0; this._accY = 0; }
 
-  _recomputeDir() {
+  _recomputeDir(): void {
     if (Math.abs(this._accX) < PICK_THRESHOLD && Math.abs(this._accY) < PICK_THRESHOLD) return;
     // Swing follows the drag direction: the blade comes from the side you pull
     // toward, so the chosen direction is the negated mouse-delta axis.
@@ -88,16 +101,16 @@ export class Input {
     }
   }
 
-  consumeLook() {
+  consumeLook(): { dx: number; dy: number } {
     const d = { dx: this.lookDX, dy: this.lookDY };
     this.lookDX = 0; this.lookDY = 0;
     return d;
   }
 
-  has(code) { return this.keys.has(code); }
+  has(code: string): boolean { return this.keys.has(code); }
 
   // movement axis in camera space: x = strafe (A/D), z = forward (W/S)
-  moveAxis() {
+  moveAxis(): { x: number; z: number } {
     let x = 0, z = 0;
     if (this.has('KeyW')) z -= 1;
     if (this.has('KeyS')) z += 1;
@@ -106,5 +119,5 @@ export class Input {
     return { x, z };
   }
 
-  get running() { return this.has('ShiftLeft') || this.has('ShiftRight'); }
+  get running(): boolean { return this.has('ShiftLeft') || this.has('ShiftRight'); }
 }

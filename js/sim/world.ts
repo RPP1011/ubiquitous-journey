@@ -59,7 +59,7 @@ export class World implements IWorld {
   // matching good, so ore clusters in the Ironhills, food in the Goldfurrows,
   // etc. WHERE an agent works then shapes its wealth + risk. Deterministic-safe
   // (uses the same Math.random the rest of placement does — never at module eval).
-  _scatter(kind: string, biome: unknown, count: number, minR: number, maxR: number, make: () => Obj3D, good?: string) {
+  _scatter(kind: string, biome: string, count: number, minR: number, maxR: number, make: () => Obj3D, good?: string) {
     for (let i = 0; i < count; i++) {
       let best: THREE.Vector3 | null = null, bestW = -Infinity;
       for (let t = 0; t < 4; t++) {

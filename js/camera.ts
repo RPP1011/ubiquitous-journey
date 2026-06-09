@@ -3,12 +3,29 @@
 
 import * as THREE from 'three';
 
+// The vendored three.module.js is un-typed JS, so tsc cannot see Object3D's
+// getter-installed `position`/`lookAt`. This minimal view recovers exactly the
+// camera surface this follow-cam touches. Adds nothing at runtime.
+interface CameraLike {
+  position: THREE.Vector3;
+  lookAt(v: THREE.Vector3): void;
+}
+
 const LOOK_SENS = 0.0026;
 const PITCH_MIN = -0.55;
 const PITCH_MAX = 0.9;
 
 export class OrbitCamera {
-  constructor(camera) {
+  camera: CameraLike;
+  yaw: number;
+  pitch: number;
+  distance: number;
+  height: number;
+  target: THREE.Vector3;
+  _desired: THREE.Vector3;
+  _look: THREE.Vector3;
+
+  constructor(camera: CameraLike) {
     this.camera = camera;
     this.yaw = 0;
     this.pitch = 0.25;
@@ -19,19 +36,19 @@ export class OrbitCamera {
     this._look = new THREE.Vector3();
   }
 
-  applyLook(dx, dy) {
+  applyLook(dx: number, dy: number): void {
     this.yaw -= dx * LOOK_SENS;
     this.pitch += dy * LOOK_SENS;
     this.pitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, this.pitch));
   }
 
   // mouse-wheel zoom for the overhead follow view (dir: +1 out, -1 in)
-  zoom(dir) {
+  zoom(dir: number): void {
     this.distance = Math.max(5, Math.min(20, this.distance + dir * 1.3));
   }
 
   // follow target (Vector3 at feet), smoothing position.
-  update(targetPos, dt) {
+  update(targetPos: THREE.Vector3, dt: number): void {
     this._look.copy(targetPos);
     this._look.y += this.height;
 

@@ -5,16 +5,25 @@
 import * as THREE from 'three';
 import { TUNE } from './constants.js';
 import { EFFECTS } from './rpg/abilities/effects.js';
+import type { Fighter, CombatEvent } from '../types/sim.js';
+import type { CastCtx } from '../types/sim.js';
 
 const _torso = new THREE.Vector3();
 const _p = new THREE.Vector3();
 const BLADE_SAMPLES = 4;
 
+/** A swing-time hostility gate: true if the attacker's blow should connect with target. */
+export type HostileGate = (attacker: Fighter, target: Fighter) => boolean;
+
 // Returns an array of events: { type:'hit'|'blocked'|'dead', attacker, target, point }
 // isHostile(attacker, target) optionally gates damage so a swing passes
 // harmlessly through allies and only connects with believed enemies.
-export function resolveCombat(fighters, isHostile = null, ctx = null) {
-  const events = [];
+export function resolveCombat(
+  fighters: Fighter[],
+  isHostile: HostileGate | null = null,
+  ctx: CastCtx | null = null,
+): CombatEvent[] {
+  const events: CombatEvent[] = [];
   const hitR2 = TUNE.hitRadius * TUNE.hitRadius;
 
   for (const attacker of fighters) {

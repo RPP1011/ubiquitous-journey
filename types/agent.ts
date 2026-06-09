@@ -217,6 +217,7 @@ export interface Agent {
   // COGNITION passes (RESTRICTED ctx — beliefs only)
   decide(ctx: CognitionCtx): void;
   act(dt: number, ctx: CognitionCtx): void;
+  actControlled(dt: number, ctx: CognitionCtx): void;   // player-driven body (commander.js)
   chooseOccupation(ctx: CognitionCtx): void;
 
   // trade interface (used by the market)

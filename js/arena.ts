@@ -5,12 +5,39 @@
 
 import * as THREE from 'three';
 
+// The vendored three.module.js is un-typed JS; tsc cannot see Object3D's
+// getter-installed transform/scene members. These minimal views cover exactly
+// what the scene-building helpers below touch. Add nothing at runtime.
+interface SceneLike {
+  background: THREE.Color;
+  fog: THREE.Fog;
+  add(o: object): void;
+}
+// A scene-graph node's transform/render surface (the getter-installed members tsc
+// can't see on the vendored JS classes). xf() recovers it for the build helpers below.
+interface Node3D {
+  position: { set(x: number, y: number, z: number): void; x: number; y: number; z: number };
+  rotation: { x: number; y: number; z: number };
+  renderOrder: number;
+  castShadow: boolean;
+  receiveShadow: boolean;
+  frustumCulled: boolean;
+}
+const xf = (o: object): Node3D => o as unknown as Node3D;
+// A BufferAttribute's accessors (get/set per index) — same getter-gap as above.
+interface PosAttr { count: number; getX(i: number): number; getZ(i: number): number; setY(i: number, v: number): void; }
+// The vendored Mesh ctor defaults `material = new MeshBasicMaterial()`, so tsc narrows
+// the param to MeshBasicMaterial and rejects a MeshStandardMaterial. This thin wrapper
+// widens the material param back to the Material base it actually accepts.
+const mesh = (g: THREE.BufferGeometry, m: THREE.Material): THREE.Mesh =>
+  new THREE.Mesh(g, m as THREE.MeshBasicMaterial);
+
 export const ARENA_RADIUS = 320;           // playable world radius (open world: holds several towns + frontier)
 const GROUND = ARENA_RADIUS + 16;          // ground half-extent (past the edge)
 
 export const BIOME = { VILLAGE: 'village', PLAINS: 'plains', FOREST: 'forest', HILLS: 'hills', WILDS: 'wilds' };
 
-const BIOME_COLOR = {
+const BIOME_COLOR: Record<string, number> = {
   village: 0x7c8a58,
   plains:  0x6f8050,
   forest:  0x445f39,
@@ -19,14 +46,14 @@ const BIOME_COLOR = {
 };
 
 // deterministic smooth pseudo-noise in roughly [-2, 2]
-function noise(x, z) {
+function noise(x: number, z: number): number {
   return Math.sin(x * 0.055) * Math.cos(z * 0.061)
        + 0.6 * Math.sin((x + z) * 0.033)
        + 0.5 * Math.cos((x - z) * 0.047);
 }
 
 // What biome is at world (x,z)? Stable across rebuilds.
-export function biomeAt(x, z) {
+export function biomeAt(x: number, z: number): string {
   const r = Math.hypot(x, z);
   if (r < 16) return BIOME.VILLAGE;                 // central clearing = the town
   if (r > ARENA_RADIUS * 0.74) return BIOME.WILDS;  // dangerous frontier
@@ -36,7 +63,7 @@ export function biomeAt(x, z) {
   return BIOME.PLAINS;
 }
 
-export function biomeColor(b) { return BIOME_COLOR[b] ?? 0x6f8050; }
+export function biomeColor(b: string): number { return BIOME_COLOR[b] ?? 0x6f8050; }
 
 // ===========================================================================
 // PHASE 3 — terrain that is CONSEQUENTIAL (geography hooks into the sim).
@@ -50,7 +77,7 @@ export function biomeColor(b) { return BIOME_COLOR[b] ?? 0x6f8050; }
 // is the single source of truth: the 3D mesh, agent y, perception (high ground
 // sees farther) and movement cost (cliffs slow) all sample it.
 const RIDGE_X = ARENA_RADIUS * 0.55, RIDGE_Z = -ARENA_RADIUS * 0.45;  // the great ridge
-export function terrainHeight(x, z) {
+export function terrainHeight(x: number, z: number): number {
   const r = Math.hypot(x, z);
   if (r < 16) return 0;                              // flat village basin
   // base swell that grows toward the frontier, plus rolling noise
@@ -71,7 +98,7 @@ export function terrainHeight(x, z) {
 // land-bridges) — emergent chokepoints + ambush sites from pure geometry.
 // Cheap: a handful of trig/hypot ops, fully deterministic.
 const FORD_X = -8;                                   // the village ford (a gap in the river)
-export function barrierAt(x, z) {
+export function barrierAt(x: number, z: number): number {
   // the river: a sinuous band at a roughly-constant signed distance from centre.
   // channel = how far z sits from the river's winding centreline at this x.
   const riverZ = ARENA_RADIUS * 0.32 + Math.sin(x * 0.04) * 22;
@@ -96,7 +123,7 @@ export function barrierAt(x, z) {
 // BOTH the seer's vantage and the seen agent's cover into effective vision, so
 // high ground sees far and a quarry in deep wood / a vale is hard to spot — the
 // substrate for ambush + the spy/disguise belief-asymmetry layer.
-export function concealmentAt(x, z) {
+export function concealmentAt(x: number, z: number): number {
   const b = biomeAt(x, z);
   let c = 0;
   if (b === BIOME.FOREST) c += 0.45;
@@ -119,13 +146,14 @@ export const REGION = {
   THORNWILDS:  'thornwilds',  // the dangerous frontier: scarce but lucrative, monster-ridden
 };
 // region table: human label + which GOOD sites are favoured there + danger 0..1
-export const REGIONS = {
+interface RegionInfo { label: string; rich: Record<string, number>; danger: number; }
+export const REGIONS: Record<string, RegionInfo> = {
   hearth:      { label: 'The Hearth',       rich: { food: 1.2, herb: 1.1 },           danger: 0.0 },
   goldfurrows: { label: 'The Goldfurrows',  rich: { food: 1.6, herb: 1.4 },           danger: 0.1 },
   ironhills:   { label: 'The Ironhills',    rich: { ore: 1.7, wood: 1.3, mine: 1.7 }, danger: 0.35 },
   thornwilds:  { label: 'The Thornwilds',   rich: { ore: 1.2, wood: 1.2 },            danger: 1.0 },
 };
-export function regionAt(x, z) {
+export function regionAt(x: number, z: number): string {
   const r = Math.hypot(x, z);
   if (r < 22) return REGION.HEARTH;
   if (r > ARENA_RADIUS * 0.74) return REGION.THORNWILDS;
@@ -138,15 +166,16 @@ export function regionAt(x, z) {
 // --- named landmarks (places agents/players can reference) -----------------
 // A handful of fixed, named places. nearestLandmark gives the closest within a
 // radius for "near Highcairn", region/biography flavour, and (browser) markers.
-export const LANDMARKS = [
+export interface Landmark { name: string; x: number; z: number; kind: string; }
+export const LANDMARKS: Landmark[] = [
   { name: 'Highcairn',    x: RIDGE_X, z: RIDGE_Z,                                  kind: 'peak'  },
   { name: 'The Old Ford', x: FORD_X,  z: ARENA_RADIUS * 0.32 + Math.sin(FORD_X * 0.04) * 22, kind: 'ford' },
   { name: 'Wraithmere',   x: -ARENA_RADIUS * 0.5, z: -ARENA_RADIUS * 0.5,         kind: 'vale'  },
   { name: 'Marketwell',   x: 0,       z: 0,                                       kind: 'town'  },
   { name: 'The Thorngate', x: ARENA_RADIUS * 0.82, z: 0,                          kind: 'gate'  },
 ];
-export function nearestLandmark(x, z, maxR = Infinity) {
-  let best = null, bd = maxR * maxR;
+export function nearestLandmark(x: number, z: number, maxR = Infinity): Landmark | null {
+  let best: Landmark | null = null, bd = maxR * maxR;
   for (const l of LANDMARKS) {
     const d = (l.x - x) * (l.x - x) + (l.z - z) * (l.z - z);
     if (d < bd) { bd = d; best = l; }
@@ -155,7 +184,7 @@ export function nearestLandmark(x, z, maxR = Infinity) {
 }
 
 // Find a random spot in a given biome within a radius band (or null if none).
-export function findBiomeSpot(biome, minR, maxR, tries = 40) {
+export function findBiomeSpot(biome: string, minR: number, maxR: number, tries = 40): THREE.Vector3 | null {
   for (let i = 0; i < tries; i++) {
     const a = Math.random() * Math.PI * 2;
     const r = minR + Math.random() * (maxR - minR);
@@ -171,7 +200,7 @@ const _q = new THREE.Quaternion();
 const _s = new THREE.Vector3();
 const _p = new THREE.Vector3();
 
-export function buildArena(scene) {
+export function buildArena(scene: SceneLike): void {
   scene.background = new THREE.Color(0x9ec4e0);
   scene.fog = new THREE.Fog(0x9ec4e0, 70, 220);
 
@@ -182,7 +211,7 @@ export function buildArena(scene) {
   const seg = 160;
   const geo = new THREE.PlaneGeometry(GROUND * 2, GROUND * 2, seg, seg);
   geo.rotateX(-Math.PI / 2);
-  const pos = geo.attributes.position;
+  const pos = (geo.attributes as Record<string, unknown>).position as unknown as PosAttr;
   const colors = new Float32Array(pos.count * 3);
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), z = pos.getZ(i);
@@ -196,45 +225,57 @@ export function buildArena(scene) {
   }
   geo.computeVertexNormals();
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  const ground = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
-  ground.receiveShadow = true;
+  const ground = mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
+  xf(ground).receiveShadow = true;
   scene.add(ground);
 
   // a translucent water plane sitting just below the village basin, so the river
   // channels read as water (the displaced ground dips; this catches the light).
-  const water = new THREE.Mesh(
+  const water = mesh(
     new THREE.PlaneGeometry(GROUND * 2, GROUND * 2, 1, 1),
     new THREE.MeshStandardMaterial({ color: 0x3a6f96, transparent: true, opacity: 0.5, roughness: 0.3, metalness: 0.1 }));
-  water.rotation.x = -Math.PI / 2; water.position.y = -0.6; water.renderOrder = -1;
+  const waterX = xf(water); waterX.rotation.x = -Math.PI / 2; waterX.position.y = -0.6; waterX.renderOrder = -1;
   scene.add(water);
 
   // --- scattered terrain props (instanced for cheapness) ---------------------
   buildProps(scene);
 
   // faint boundary ring at the world edge
-  const ring = new THREE.Mesh(
+  const ring = mesh(
     new THREE.RingGeometry(ARENA_RADIUS, ARENA_RADIUS + 0.6, 160),
     new THREE.MeshBasicMaterial({ color: 0x2c361f, side: THREE.DoubleSide, transparent: true, opacity: 0.5 }));
-  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.02;
+  const ringX = xf(ring); ringX.rotation.x = -Math.PI / 2; ringX.position.y = 0.02;
   scene.add(ring);
 
   // --- lighting --------------------------------------------------------------
   scene.add(new THREE.HemisphereLight(0xcfe3ff, 0x46402f, 0.9));
   const sun = new THREE.DirectionalLight(0xfff1d6, 1.55);
-  sun.position.set(40, 70, 28);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  // A directional light's transform + shadow surface (getter-installed; tsc can't see it).
+  const sunX = sun as unknown as {
+    position: { set(x: number, y: number, z: number): void };
+    castShadow: boolean;
+    target: object;
+    shadow: {
+      bias: number;
+      mapSize: { set(w: number, h: number): void };
+      camera: { left: number; right: number; top: number; bottom: number; near: number; far: number };
+    };
+  };
+  sunX.position.set(40, 70, 28);
+  sunX.castShadow = true;
+  sunX.shadow.mapSize.set(2048, 2048);
   const s = 48;                       // shadow covers the area around the town
-  sun.shadow.camera.left = -s; sun.shadow.camera.right = s;
-  sun.shadow.camera.top = s; sun.shadow.camera.bottom = -s;
-  sun.shadow.camera.near = 1; sun.shadow.camera.far = 200;
-  sun.shadow.bias = -0.0004;
-  scene.add(sun); scene.add(sun.target);
+  sunX.shadow.camera.left = -s; sunX.shadow.camera.right = s;
+  sunX.shadow.camera.top = s; sunX.shadow.camera.bottom = -s;
+  sunX.shadow.camera.near = 1; sunX.shadow.camera.far = 200;
+  sunX.shadow.bias = -0.0004;
+  scene.add(sun); scene.add(sunX.target);
 }
 
 // place ambient trees (forest) + rocks (hills) + grass (plains) via InstancedMesh
-function buildProps(scene) {
-  const trunkM = [], crownM = [], rockM = [], grassM = [];
+interface Prop { x: number; z: number; scale: number; rot: number; y: number; }
+function buildProps(scene: SceneLike): void {
+  const trunkM: Prop[] = [], crownM: Prop[] = [], rockM: Prop[] = [], grassM: Prop[] = [];
   const step = 4.5;   // wider scatter step on the 2x map keeps prop instance counts ~constant
   for (let x = -ARENA_RADIUS; x <= ARENA_RADIUS; x += step) {
     for (let z = -ARENA_RADIUS; z <= ARENA_RADIUS; z += step) {
@@ -259,22 +300,28 @@ function buildProps(scene) {
     new THREE.MeshStandardMaterial({ color: 0x8aa056, roughness: 1 }), grassM, 0.35, false);
 }
 
-function spot(x, z, scale, rand = false) {
+function spot(x: number, z: number, scale: number, rand = false): Prop {
   return { x, z, scale, rot: rand ? Math.random() * Math.PI : 0, y: terrainHeight(x, z) };
 }
 
-function addInstanced(scene, geo, mat, list, yBase, shadow) {
+function addInstanced(
+  scene: SceneLike,
+  geo: THREE.BufferGeometry,
+  mat: THREE.Material,
+  list: Prop[],
+  yBase: number,
+  shadow: boolean,
+): void {
   if (!list.length) return;
-  const mesh = new THREE.InstancedMesh(geo, mat, list.length);
+  const im = new THREE.InstancedMesh(geo, mat as THREE.MeshBasicMaterial, list.length);
   for (let i = 0; i < list.length; i++) {
     const o = list[i];
     _p.set(o.x, (o.y || 0) + yBase * o.scale, o.z);
     _q.setFromEuler(new THREE.Euler(0, o.rot, 0));
     _s.set(o.scale, o.scale, o.scale);
     _m.compose(_p, _q, _s);
-    mesh.setMatrixAt(i, _m);
+    im.setMatrixAt(i, _m);
   }
-  mesh.castShadow = shadow; mesh.receiveShadow = false;
-  mesh.frustumCulled = true;
-  scene.add(mesh);
+  const imX = xf(im); imX.castShadow = shadow; imX.receiveShadow = false; imX.frustumCulled = true;
+  scene.add(im);
 }
