@@ -2,10 +2,8 @@
 
 > **Status: design, not yet implemented.** This describes the vocabulary the planner builds plans
 > from — the *actions*, the *effects* they produce, how *quantities and time* enter a plan, and how
-> an agent's *knowledge* is stored. It is meant to be read on its own. It is the deliberative-tier
-> companion to [09 — the reasoning layer](09-reasoning-layer.md), which covers how planning runs each
-> tick; links to other docs here are background, not required reading. Today's planner
-> (`js/sim/planner.js`) implements a hand-written subset of what follows.
+> an agent's *knowledge* is stored. It is self-contained: everything needed to understand the design
+> is here. Today's planner (`js/sim/planner.js`) implements a hand-written subset of what follows.
 
 ## What the planner does
 
@@ -18,10 +16,9 @@ it.
 
 Everything the planner reasons about is a belief, never the world directly. An agent reads and writes
 only its own picture of things, and reaches other agents only by acting where they can perceive it —
-cognition runs on beliefs; only perception and the physical resolver touch the truth. (This is the
-simulation's central rule; [02](02-epistemic-split.md) covers it in full.) It is what lets an agent
-be **wrong** — walk to a cache that has been moved, haul goods to a town whose prices have already
-shifted.
+cognition runs on beliefs; only perception and the physical resolver touch the truth. This is the
+simulation's central rule, and it is what lets an agent be **wrong** — walk to a cache that has been
+moved, haul goods to a town whose prices have already shifted.
 
 ## A worked plan
 
@@ -174,9 +171,8 @@ move*.
 The same step covers the social plays that act-then-wait: show weakness then hold until the foe
 closes; make an offer then hold until it is taken — each abandoned if nobody bites. Goals carry an
 optional deadline for this — a time by which the waited-for condition must hold, after which the goal
-is dropped. The simulation already records when each belief was last updated and fades it over time
-(see [The knowledge model](#the-knowledge-model)), so "has the window opened?" and "has this gone
-stale?" are ordinary belief reads.
+is dropped. Beliefs already carry when they were last seen and fade as they age, so "has the window
+opened?" and "has this gone stale?" are ordinary belief reads.
 
 What stays outside a plan is **recurrence**. A plan is a one-shot ordered list with, at most, a
 deadline. A thing that *repeats* — a debt due every season, a nightly patrol, "they always raid at
@@ -284,7 +280,9 @@ exists at runtime is:
 - a flat set of actions (the rows above),
 - a set of small rules that turn an agent's needs and beliefs into goals,
 - one generic planner (a few hundred lines) that knows nothing about any specific situation,
-- a flat set of reactive rules (the interaction schemas; [09](09-reasoning-layer.md)).
+- a flat set of reactive rules — a condition that, when an agent comes to believe it, fires an
+  immediate response (flee a believed threat, hide from a hunter), checked each tick alongside the
+  planner and separate from it.
 
 The plan for a heist or a rescue is *built when needed*, for one agent, from that agent's beliefs, and
 thrown away — a short, bounded search. The situations this doc keeps naming are not entries in the
@@ -341,8 +339,9 @@ never noticed.
 
 ## What this covers
 
-Working through the situation catalogue, nearly every situation is expressible with these actions and
-topics plus, at most, a new row or a new topic — data, not new machinery. The narrow exceptions are
+Across the range of situations a believable town wants — trade and arbitrage, theft and blackmail,
+courtship and reconciliation, scouting and rescue, and the rest — nearly every one is expressible with
+these actions and topics plus, at most, a new row or a new topic: data, not new machinery. The narrow exceptions are
 *recurrence* (anything on a repeating schedule, which is re-derived from memory rather than planned —
 see [Waiting and deadlines](#waiting-and-deadlines)) and *sub-combat tactics* like a feint, which
 belong to the fighter, below the planner. Single waits and deadlines, by contrast, are first-class.
@@ -359,7 +358,7 @@ believable rather than omniscient.
 The planner's search gains one capability and otherwise stays as it is: composing several actions
 toward a **numeric threshold** (summing believed yields past a target, for gold, stockpiles, and
 graded needs), since that underpins the very first example. The actions then become rows generated
-from the tables above, the way the interaction schemas and abilities are already data rather than code.
+from the tables above — defined as data rather than written as code.
 
 A sensible order — each step leaving the tests green, and any new behaviour switched off by default so
 the long-running soak is unchanged:
