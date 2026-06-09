@@ -1,9 +1,24 @@
 # 10 — The action grammar & the knowledge model
 
-> **Status: design, not yet implemented.** This describes the vocabulary the planner builds plans
-> from — the *actions*, the *effects* they produce, how *quantities and time* enter a plan, and how
-> an agent's *knowledge* is stored. It is self-contained: everything needed to understand the design
-> is here. Today's planner (`js/sim/planner.js`) implements a hand-written subset of what follows.
+> **Status: vocabulary implemented, day-one OFF.** This describes the vocabulary the planner builds
+> plans from — the *actions*, the *effects* they produce, how *quantities and time* enter a plan, and
+> how an agent's *knowledge* is stored. It is self-contained: everything needed to understand the
+> design is here. The "Building it" roadmap below is now implemented in `js/sim/planner.js` (+ the
+> obligation ledger in `js/sim/obligations.js`), each phase behind a config flag that ships **false**
+> so the planner stays byte-identical and the soak is unchanged until a breadth step turns it on:
+>
+> | phase | what landed | flag (`js/sim/simconfig.js`) |
+> | --- | --- | --- |
+> | 1 — Quantities | greedy threshold composition + widen/satisfice/cooldown + graded needs | `QUANTITY` |
+> | 2 — Knowledge | `Know(topic)` + observe/ask/study + confidence-into-cost | `KNOW` |
+> | 3 — Resources | the `ACQUIRE` table (made/moved conservation) + the `rob` row | `ROB` |
+> | 4 — Waiting | the hold-until step (+ deadlines, reactive preemption) | `HOLD` |
+> | 5 — The rest | `recruit`/believed-force/`Believes` (one level) + Strength/Secret topics; `wreck`/`free`; the obligation ledger | `RECRUIT`, `AFFECT`, `LEDGER` |
+>
+> What remains is the *live wiring* — turning the flags on, the executors for the new verbs
+> (observe/ask/study/recruit/rob/free/wreck/hold), live goal-derivation for the new goals, and the
+> follower-side motivation — none of which the gated planner vocabulary needs in order to be correct.
+> Each phase is covered by gated tests in `test/suites/planner.mjs` (and `obligations.mjs`).
 
 ## What the planner does
 
