@@ -207,6 +207,43 @@ deadline. A thing that *repeats* — a debt due every season, a nightly patrol, 
 dusk" — is not placed in the plan; it is re-derived from memory each time it comes due. A single wait
 or deadline is first-class; a schedule is not.
 
+## What an agent can sense
+
+Every belief an agent holds entered through one of a few narrow channels, and those channels are the
+whole of its contact with the world. There are four.
+
+**Sight.** An agent sees what is within range of it — other agents, and the fixed things of the world
+(houses, market stalls, a camp). It is the richest channel and the one the truth-into-belief bridge runs
+on: from it an agent reads where something is, what it *appears* to be (its faction, which a disguise can
+fake), and what it is *doing* — moving, striking, blocking, trading. It does not read what a thing *is*
+beneath the appearance, nor anything off its surface: not another's gold, not their intent, not what they
+know. And sight is range-limited, so most of the world is, at any moment, simply unseen — there is no
+overhead view of the town, only what each agent makes out from where it stands. (That same range limit
+is what keeps the whole thing affordable: an agent that cannot see the roster cannot reason over it.)
+
+**Hearsay.** Agents near one another pass on what they believe — gossip. A belief received this way
+arrives weaker than a thing seen first-hand and carries its provenance (how many mouths it came through),
+so a rumour is held more loosely than a sighting and hedged accordingly. Hearsay is how a fact travels
+past the range of any one pair of eyes: the urchin can be *told* where a cache is, the town can *hear*
+that a master has died. It is also how false belief spreads — a planted rumour is hearsay with a lie in
+it.
+
+**The news.** The town has a published channel — the gazette — that agents read: prices, bounties, the
+notable deaths and deeds. It is institutional hearsay, town-wide and slower, with its own credibility and
+its own staleness (a printed price is already a little old). An agent weighs it like any belief, by how
+much it trusts the source and how fresh it is.
+
+**Being acted upon.** An agent directly experiences what is done to it — struck, blocked, given to,
+traded with — and that writes belief without inference: who hit me, who helped me, who I dealt with. It
+is the one channel that cannot be faked at a distance, and so the ground of an agent's most certain
+beliefs about others.
+
+Everything else an agent seems to "know" is *inferred* from these four. It never senses a mark's wealth,
+a camp's true numbers, where a quarry is heading, or what a rival knows; it senses the cues — a fat trade
+seen, a guarded house, a rumour, a glimpsed crowd — and estimates the rest (see
+[acting under uncertainty](#acting-under-uncertainty)). The senses are deliberately poor, and that
+poverty is the point: an agent that could see everything would have nothing to be wrong about.
+
 ## The knowledge model
 
 `Know(topic)` appears in plans as routinely as `Have` or `At`, so knowledge needs a representation as
