@@ -179,6 +179,21 @@ export const WEALTH = {
   minPurse: 8,                // never bank below this — an agent must keep coin to trade
 };
 
+// --- the urchin: covert epistemic acquisition (Phase 4, Ex.5) -----------------
+// The adversarial flagship. An empty-pursed agent backward-chains a heist through an
+// EPISTEMIC ATOM: `shadow` (surveil) the mark to CONSOLIDATE a believed stash location
+// (an `assoc` belief), then `approach` + `burgle` it. `shadow` IS the epistemic `gather`.
+// Day-one OFF (SCARECROW pattern) — the new planner primitives early-return so the soak
+// is byte-stable; flips on only once the urchin schema + executors land.
+export const URCHIN = {
+  enabled: false,
+  shadowCost: 4,             // planner cost of the slow/safe surveil (the epistemic gather)
+  consolidateAfter: 4,       // surveil sightings before the loose tally becomes an `assoc` belief
+  sightGain: 0.3,            // confidence added to `assoc` per surveil sighting (capped 1)
+  surveilBudget: 18,         // sim-seconds the surveil step runs before goal-expiry drains it
+  standoffRange: 14,         // surveil holds OUTSIDE the mark's modelled sight (2nd-order ToM v1)
+};
+
 // MULTIPLE TOWNS (open world): the world holds several dense town cores with
 // wilderness + trade roads between them, rather than one town spread thin (a
 // bigger map with the SAME townsfolk thins the social drama — measured; more

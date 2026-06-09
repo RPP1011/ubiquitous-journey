@@ -5,7 +5,8 @@
 
 import { World } from '../../js/sim/world.js';
 import { Agent } from '../../js/sim/agent.js';
-import { plan, goalRepay, goalSeekFortune, goalAvenge } from '../../js/sim/planner.js';
+import { plan, goalRepay, goalSeekFortune, goalAvenge, goalSteal } from '../../js/sim/planner.js';
+import { URCHIN } from '../../js/sim/simconfig.js';
 
 export function plannerSelfTest(ok, { makeFighter, stubScene }) {
   const P = () => ({ risk_tolerance: 0.5, social_drive: 0.5, ambition: 0.5, altruism: 0.5, curiosity: 0.5 });
@@ -61,6 +62,31 @@ export function plannerSelfTest(ok, { makeFighter, stubScene }) {
   const sigF = names(pFarmer).join('>'), sigM = names(pMerch).join('>'), sigL = names(pLab).join('>');
   ok(sigF !== sigM && sigM !== sigL && sigF !== sigL,
     `planner: emergence — distinct plans per means [${sigF}] [${sigM}] [${sigL}]`);
+
+  // URCHIN — epistemic atoms (Phase 4, Ex.5): the heist backward-chains through know_assoc.
+  // `shadow` is the epistemic `gather` (acquire the stash belief); a gossiped stash collapses
+  // the plan — a tip is literally plan-cost saved. Forced ON (day-one OFF), restored after.
+  {
+    const prevUrchin = URCHIN.enabled;
+    URCHIN.enabled = true;
+    try {
+      const mark = mk('Mark'); mark.pos.set(20, 0, 20);
+      // an urchin who has SEEN the mark (a belief) but does NOT know where he stashes.
+      const pip = debtor('Pip', () => {});
+      pip.beliefs.observe(mark.id, mark.faction, mark.pos, ctx.time, false);
+      const pNoAssoc = plan(pip, goalSteal(mark.id, 5), ctx);
+      ok(pNoAssoc && names(pNoAssoc).join('->') === 'shadow->approach->burgle',
+        `planner urchin: stash unknown -> case it first (${names(pNoAssoc).join('->') || 'NULL'})`);
+
+      // the SAME goal, but gossip already supplied the stash: the plan COLLAPSES to approach+burgle.
+      const pip2 = debtor('Pip2', () => {});
+      const b = pip2.beliefs.observe(mark.id, mark.faction, mark.pos, ctx.time, false);
+      b.assoc = { placeKind: 'stash', pos: { x: 22, z: 22 }, conf: 0.8 };
+      const pAssoc = plan(pip2, goalSteal(mark.id, 5), ctx);
+      ok(pAssoc && names(pAssoc).join('->') === 'approach->burgle',
+        `planner urchin: stash gossiped -> plan collapses, a tip is cost saved (${names(pAssoc).join('->') || 'NULL'})`);
+    } finally { URCHIN.enabled = prevUrchin; }
+  }
 
   // B1 — well-formed: every step's precondition is satisfiable by prior steps'
   // effects from believed state (last step targets X). Re-check the farmer chain.

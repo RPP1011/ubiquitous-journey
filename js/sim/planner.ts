@@ -17,7 +17,8 @@
 // FREEZE LESSON: pure data, no throws, depth + frontier bounded. Phase 1 keeps
 // this module standalone — it is NOT wired into decide() yet.
 
-import { PROFESSIONS, COMMODITIES, ECON, SIM } from './simconfig.js';
+import * as THREE from 'three';
+import { PROFESSIONS, COMMODITIES, ECON, SIM, URCHIN } from './simconfig.js';
 import { POI_KIND } from './world.js';
 import { STAGE, REASON } from './trace.js';
 import type { Agent, CognitionCtx, Goal, Plan, PlanStep, EntityId, Atom as AtomT, Stage, Reason } from '../../types/sim.js';
@@ -33,7 +34,7 @@ const RS = REASON as Record<string, Reason>;
 // a {subjectId}-place form, the 'sated' subgoal, and corpseId/item/value fields),
 // so these widen the shared shapes rather than reinventing them. A `place` is a
 // POI-kind string OR a {subjectId} target descriptor resolved via belief.
-type PlannerPlace = string | { subjectId?: EntityId };
+type PlannerPlace = string | { subjectId?: EntityId; assoc?: string };
 // One subgoal atom the solver chases (the public Atom widened with the extra preds).
 interface SubAtom {
   pred: string;
@@ -69,6 +70,7 @@ interface SimState {
   gold: number;
   at: PlannerPlace | null;
   received: Record<string, boolean>;
+  knownAssoc: Record<string, boolean>;   // subjectIds whose `assoc` an earlier shadow/ask step arranged
 }
 // One authored primitive (effectMatches/precondition/cost + executor metadata).
 interface Primitive {
@@ -152,10 +154,16 @@ function believedDead(agent: Agent | null, subjectId: EntityId): boolean {
 function believedPos(agent: Agent, ctx: CognitionCtx, place: PlannerPlace | null | undefined): import('three').Vector3 | null {
   if (!place) return null;
   if (typeof place === 'object' && place.subjectId != null) {
+    const b = agent.beliefs && agent.beliefs.get(place.subjectId);
+    if (place.assoc) {
+      // a subject↔place ASSOCIATION (the believed stash) — resolve to the assoc pos, NOT the
+      // mark's body. Unknown until consolidated (`shadow`) or gossiped → null (unreachable).
+      if (b && b.assoc && b.assoc.placeKind === place.assoc) return new THREE.Vector3(b.assoc.pos.x, 0, b.assoc.pos.z);
+      return null;
+    }
     // BELIEF-ONLY: navigate toward where I BELIEVE the subject is (its last sighting),
     // never its true position. No confident belief -> unknown place (null). The pursuit
     // model (combatStep) handles re-acquisition + the inferred destination separately.
-    const b = agent.beliefs && agent.beliefs.get(place.subjectId);
     if (b && b.confidence > 0) return b.lastPos;
     return null;
   }
@@ -209,6 +217,12 @@ export const Atom = {
   received: (subjectId: EntityId, value: number, kind = 'any'): SubAtom => ({ pred: 'received', subjectId, value, kind }),
   dead: (subjectId: EntityId): SubAtom => ({ pred: 'dead', subjectId }),
   inReach: (subjectId: EntityId): SubAtom => ({ pred: 'in_reach', subjectId }),
+  // EPISTEMIC ATOM (Phase 4): I hold a believed subject↔place association (where the mark
+  // stashes). Satisfied by an `assoc` belief — surveilled (`shadow`) or gossiped. Own-state.
+  knowAssoc: (subjectId: EntityId): SubAtom => ({ pred: 'know_assoc', subjectId }),
+  // gold_ge flavoured with the MARK to burgle (routes the burgle primitive); plain gold_ge
+  // (no subjectId) is the honest seek_fortune target satisfied by sell/loot.
+  stealGold: (amt: number, subjectId: EntityId): SubAtom => ({ pred: 'gold_ge', amt, subjectId }),
 };
 
 function atomHolds(atom: SubAtom, agent: Agent, ctx: CognitionCtx): boolean {
@@ -238,6 +252,12 @@ function atomHolds(atom: SubAtom, agent: Agent, ctx: CognitionCtx): boolean {
       if (!tp) return false;
       return Math.hypot(tp.x - agent.pos.x, tp.z - agent.pos.z) <= 2.2;
     }
+    case 'know_assoc': {
+      // EPISTEMIC: do I hold a consolidated association (the mark's believed stash)? Own
+      // belief only — surveilled or gossiped. If gossip pre-supplied it, the plan collapses.
+      const b = atom.subjectId != null && agent.beliefs ? agent.beliefs.get(atom.subjectId) : null;
+      return !!(b && b.assoc);
+    }
     default:
       return false;
   }
@@ -259,6 +279,9 @@ export const PRIMITIVES: Primitive[] = [
     name: 'goto',
     effectMatches(sg) {
       if (sg.pred !== 'at') return null;
+      // assoc-places (the believed stash) are reached by `approach` (pre: know_assoc), not a
+      // bare goto — so a missing association inserts surveil/ask rather than a dead-end goto.
+      if (sg.place && typeof sg.place === 'object' && sg.place.assoc) return null;
       return { name: 'goto', place: sg.place };
     },
     precondition() { return []; },     // movement has no believed precondition
@@ -429,6 +452,59 @@ export const PRIMITIVES: Primitive[] = [
     cost() { return PLAN.actBase; },
     exec: { verb: 'loot' },
   },
+
+  // ── EPISTEMIC primitives (Phase 4, the urchin). Gated by URCHIN.enabled: every
+  // effectMatches early-returns null when off, so the planner emits none and the soak is
+  // byte-stable. The tri+ slot into the SAME backward-chainer as gather/produce. ───────────
+
+  // shadow(mark): the epistemic GATHER — surveil to ACQUIRE know_assoc. pre: — (the executor
+  // does the slow follow-at-standoff). `shadow` is to know_assoc what `gather` is to have.
+  {
+    name: 'shadow',
+    effectMatches(sg) {
+      if (!URCHIN.enabled || sg.pred !== 'know_assoc' || sg.subjectId == null) return null;
+      return { name: 'shadow', target: sg.subjectId };
+    },
+    precondition() { return []; },                 // the surveil itself is the acquisition
+    cost() { return URCHIN.shadowCost; },           // slow but safe
+    exec: { verb: 'surveil' },
+  },
+
+  // approach(stash): reach the believed stash. pre: know_assoc (so an unknown stash inserts
+  // shadow BEFORE moving — distinct from a bare goto, which can't reach an assoc-place).
+  {
+    name: 'approach',
+    effectMatches(sg) {
+      if (!URCHIN.enabled || sg.pred !== 'at') return null;
+      const pl = sg.place;
+      if (!(pl && typeof pl === 'object' && pl.assoc)) return null;
+      return { name: 'approach', place: pl, target: pl.subjectId };
+    },
+    precondition(agent, ctx, bind) { return [Atom.knowAssoc(bind.target as EntityId)]; },
+    cost(agent, ctx, bind) {
+      const c = travelCost(agent, ctx, bind.place);
+      if (Number.isFinite(c)) return c;
+      // stash not localized YET (planning the surveil that will reveal it) — estimate via the
+      // mark's believed position; the exact assoc pos resolves once `shadow` has run.
+      const c2 = travelCost(agent, ctx, { subjectId: bind.target });
+      return Number.isFinite(c2) ? c2 : PLAN.actBase * 4;
+    },
+    exec: { verb: 'approach' },
+  },
+
+  // burgle(mark): effect have(gold) from the mark's believed stash. pre: know_assoc + at(stash).
+  // Only matches a MARK-flavoured gold_ge (subjectId set) — plain seek_fortune gold_ge is
+  // untouched (sell/loot). The believedFar/no-witness SAFETY gates land with the counter-schema.
+  {
+    name: 'burgle',
+    effectMatches(sg) {
+      if (!URCHIN.enabled || sg.pred !== 'gold_ge' || sg.subjectId == null) return null;
+      return { name: 'burgle', target: sg.subjectId, place: { subjectId: sg.subjectId, assoc: 'stash' }, amt: sg.amt };
+    },
+    precondition(agent, ctx, bind) { return [Atom.knowAssoc(bind.target as EntityId), Atom.at(bind.place as PlannerPlace)]; },
+    cost() { return PLAN.actBase; },
+    exec: { verb: 'burgle' },
+  },
 ];
 
 const byName = (n: string): Primitive | null => PRIMITIVES.find((p) => p.name === n) || null;
@@ -506,10 +582,10 @@ function solveAll(agent: Agent, ctx: CognitionCtx, atoms: SubAtom[], depth: numb
 function initState(agent: Agent): SimState {
   const inv: Record<string, number> = {};
   for (const c of COMMODITIES) inv[c] = (agent.inventory && agent.inventory[c]) || 0;
-  return { inv, gold: agent.gold || 0, at: null, received: {} };
+  return { inv, gold: agent.gold || 0, at: null, received: {}, knownAssoc: {} };
 }
 function cloneState(s: SimState): SimState {
-  return { inv: { ...s.inv }, gold: s.gold, at: s.at, received: { ...s.received } };
+  return { inv: { ...s.inv }, gold: s.gold, at: s.at, received: { ...s.received }, knownAssoc: { ...s.knownAssoc } };
 }
 function applyEffect(prim: Primitive, bind: Bind, agent: Agent, s: SimState): void {
   switch (prim.name) {
@@ -526,6 +602,11 @@ function applyEffect(prim: Primitive, bind: Bind, agent: Agent, s: SimState): vo
     case 'consume': s.inv[bind.item!] = Math.max(0, (s.inv[bind.item!] || 0) - 1); break;
     case 'loot':    s.gold += 1; break;
     case 'attack':  break;
+    // epistemic (urchin): shadow/ask ARRANGE the association; approach moves to it; burgle
+    // converts the believed stash into gold (the believed amount, like loot raises gold).
+    case 'shadow':   s.knownAssoc[String(bind.target)] = true; break;
+    case 'approach': s.at = bind.place ?? null; break;
+    case 'burgle':   s.gold += (bind.amt || 0); break;
   }
 }
 function applyStepsForward(agent: Agent, s: SimState, steps: PlanStep[]): SimState {
@@ -549,6 +630,8 @@ function atomSatisfied(atom: SubAtom, agent: Agent, ctx: CognitionCtx, s: SimSta
       return (s.gold || 0) >= (atom.amt || 0);
     case 'received':
       return !!s.received[String(atom.subjectId)];
+    case 'know_assoc':
+      return !!s.knownAssoc[String(atom.subjectId)] || atomHolds(atom, agent, ctx);
     default:
       return atomHolds(atom, agent, ctx);
   }
@@ -567,11 +650,15 @@ function effectAdvances(prim: Primitive, atom: SubAtom, bind: Bind, agent: Agent
     case 'gold_ge': {
       // only useful if we don't already have the gold and the step raises it
       if ((s.gold || 0) >= (atom.amt || 0)) return false;
-      return prim.name === 'sell' || prim.name === 'loot';
+      return prim.name === 'sell' || prim.name === 'loot' || prim.name === 'burgle';
     }
-    case 'at':     return prim.name === 'goto';
+    case 'at':     return prim.name === 'goto' || prim.name === 'approach';
     case 'received': return prim.name === 'give' || prim.name === 'pay';
     case 'dead':   return prim.name === 'attack';
+    case 'know_assoc': {
+      if (atomHolds(atom, agent, ctx)) return false;   // gossip already supplied it → no step
+      return prim.name === 'shadow';                    // (ask added later as the noisy alt)
+    }
     default:       return true;
   }
 }
@@ -684,6 +771,19 @@ export function goalSeekFortune(place: string, target: number): Goal {
   return {
     kind: 'seek_fortune', place, target: amt,
     atoms: [Atom.goldGe(amt)] as AtomT[],
+    predicate(agent: unknown) { return ((agent as Agent).gold || 0) >= amt; },
+  };
+}
+
+// steal(mark, target): hold gold >= target by BURGLING the mark's believed stash. The
+// gold_ge atom carries the mark so the burgle primitive routes to it; the same gold target
+// as seek_fortune, but the gold arrives via a heist (shadow → approach → burgle) — and if
+// the urchin has no `assoc` belief yet, the chainer prepends the epistemic gather (surveil).
+export function goalSteal(subjectId: EntityId, target: number): Goal {
+  const amt = Math.max(1, target || 0);
+  return {
+    kind: 'steal', subjectId, target: amt,
+    atoms: [Atom.stealGold(amt, subjectId)] as AtomT[],
     predicate(agent: unknown) { return ((agent as Agent).gold || 0) >= amt; },
   };
 }
