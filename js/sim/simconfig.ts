@@ -374,6 +374,25 @@ export const QUANTITY = {
   needMeal: 0.34,        // believed need-level a single `consume` raises (graded-needs composition)
 };
 
+// --- KNOWLEDGE: Know(topic) + the observe/ask/study channels (docs/architecture/10, Phase 2) ---
+// Knowledge is a requirement like any other: `Know(topic)` reads a topic's HOME (a field on
+// the belief table for facts about others — assoc=Loc, lastPos=Whereabouts, priceBeliefs=Price
+// — or own-state for a Recipe) and reports it known only if present AND confident enough. The
+// three write channels differ in cost, in how trustworthy the result is, and in side-effects:
+// `observe` (first-hand, slow, trusted — the generalised `shadow`), `ask` (cheap, vaguer, tips
+// the subject off), `study` (taught, trusted, costs tuition). And confidence FOLDS INTO COST —
+// an action leaning on a shaky belief costs more, so an agent scouts before a high-stakes bet.
+// Day-one OFF (the observe/ask/study rows early-return when disabled), so byte-stable.
+export const KNOW = {
+  enabled: false,
+  minConf: 0.45,         // a topic must be at least this confident to satisfy a Know() requirement
+  observeCost: 4,        // first-hand watching: slow but trusted (subsumes the urchin's `shadow`)
+  askCost: 1.5,          // being told: cheap and quick, but vaguer + tips the subject off
+  studyTuition: 6,       // taught: gold paid for trusted instruction (recipes)
+  confCostScale: 8,      // how hard a LOW-confidence belief inflates the cost of acting on it —
+                         //   cost-includes-confidence, so agents scout before they commit
+};
+
 // --- episodic memory (three-tier ring buffers) ------------------------------
 // Salient life-events flow STM -> MTM -> LTM by consolidation; medium fades over
 // minutes, long-term sticks. Feeds the inspector biography and (later) goals.

@@ -5,8 +5,8 @@
 
 import { World } from '../../js/sim/world.js';
 import { Agent } from '../../js/sim/agent.js';
-import { plan, goalRepay, goalSeekFortune, goalAvenge, goalSteal, goalSate } from '../../js/sim/planner.js';
-import { URCHIN, QUANTITY } from '../../js/sim/simconfig.js';
+import { plan, goalRepay, goalSeekFortune, goalAvenge, goalSteal, goalSate, goalLearn } from '../../js/sim/planner.js';
+import { URCHIN, QUANTITY, KNOW } from '../../js/sim/simconfig.js';
 
 export function plannerSelfTest(ok, { makeFighter, stubScene }) {
   const P = () => ({ risk_tolerance: 0.5, social_drive: 0.5, ambition: 0.5, altruism: 0.5, curiosity: 0.5 });
@@ -187,6 +187,57 @@ export function plannerSelfTest(ok, { makeFighter, stubScene }) {
       const meals = pSate ? pSate.steps.filter((s) => s.prim === 'consume').length : 0;
       ok(pSate && meals >= 2, `planner Q5: a graded need composes several meals (${meals} consume steps)`);
     } finally { QUANTITY.enabled = prevQ; }
+  }
+
+  // KNOW — the knowledge model (docs/architecture/10, Phase 2). Forced ON (day-one OFF),
+  // restored after. Proves: Know(topic) sits in a plan like any requirement, satisfied by an
+  // observe/ask/study channel; a topic already held confidently is supplied FOR FREE (the step
+  // drops out); and CONFIDENCE FOLDS INTO COST — a heist on a shaky stash belief costs more.
+  {
+    const prevKnow = KNOW.enabled;
+    KNOW.enabled = true;
+    try {
+      // KNOW(recipe) — an agent that does NOT know a craft must LEARN it (observe/ask/study).
+      const learner = debtor('Learner', () => {});
+      learner.recipes = new Set();   // forget every craft → the recipe is a real requirement
+      const pLearn = plan(learner, goalLearn({ kind: 'recipe', good: 'tool' }), ctx);
+      const LEARN_CH = new Set(['observe', 'ask', 'study']);
+      ok(pLearn && names(pLearn).some((n) => LEARN_CH.has(n)),
+        `planner K1: Know(recipe) plans a learn channel (${names(pLearn).join('->') || 'NULL'})`);
+
+      // KNOW(loc) — the cheap `ask` channel is reached for a location (vaguer than observe but
+      // quicker), so an agent with no stash belief asks around for it.
+      const scout = debtor('Scout', () => {});
+      const markK = mk('MarkK'); markK.pos.set(30, 0, 30);
+      scout.beliefs.observe(markK.id, markK.faction, markK.pos, ctx.time, false);
+      const pAsk = plan(scout, goalLearn({ kind: 'loc', subjectId: markK.id, place: 'stash' }), ctx);
+      ok(pAsk && names(pAsk).some((n) => LEARN_CH.has(n)),
+        `planner K2: Know(loc) plans a learn channel (${names(pAsk).join('->') || 'NULL'})`);
+
+      // KNOWLEDGE SUPPLIED FOR FREE — an agent that already holds the recipe needs no plan at
+      // all (the requirement is already true), so the learn step drops out and plan() is null.
+      const adept = debtor('Adept', (a) => { a.recipes = new Set(['tool']); });
+      const pKnown = plan(adept, goalLearn({ kind: 'recipe', good: 'tool' }), ctx);
+      ok(pKnown === null, 'planner K3: a topic already known confidently needs no plan (free)');
+
+      // CONFIDENCE-INTO-COST — the SAME heist costs MORE when the stash belief is shaky, so the
+      // planner would scout again before betting. Two urchins, identical but for assoc confidence.
+      const prevUrchin = URCHIN.enabled;
+      URCHIN.enabled = true;
+      try {
+        const markC = mk('MarkC'); markC.pos.set(18, 0, 18);
+        const sure = debtor('Sure', () => {});
+        const bS = sure.beliefs.observe(markC.id, markC.faction, markC.pos, ctx.time, false);
+        bS.assoc = { placeKind: 'stash', pos: { x: 20, z: 20 }, conf: 0.95 };
+        const unsure = debtor('Unsure', () => {});
+        const bU = unsure.beliefs.observe(markC.id, markC.faction, markC.pos, ctx.time, false);
+        bU.assoc = { placeKind: 'stash', pos: { x: 20, z: 20 }, conf: 0.5 };
+        const pSure = plan(sure, goalSteal(markC.id, 5), ctx);
+        const pUnsure = plan(unsure, goalSteal(markC.id, 5), ctx);
+        ok(pSure && pUnsure && pUnsure.cost > pSure.cost + 1e-3,
+          `planner K4: confidence folds into cost — shaky stash costs more (${pSure?.cost.toFixed(2)} < ${pUnsure?.cost.toFixed(2)})`);
+      } finally { URCHIN.enabled = prevUrchin; }
+    } finally { KNOW.enabled = prevKnow; }
   }
 
   // never throws on the tick path even for a junk goal

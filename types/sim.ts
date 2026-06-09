@@ -29,7 +29,7 @@ export type {
 } from './memory.js';
 
 export type {
-  GoalKind, Goal, PlanStep, PlanBind, Plan, Atom, Ambition, AmbitionSnapshot,
+  GoalKind, Goal, PlanStep, PlanBind, Plan, Atom, KnowTopic, Ambition, AmbitionSnapshot,
 } from './goals.js';
 
 export type {

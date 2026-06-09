@@ -18,10 +18,10 @@
 // this module standalone — it is NOT wired into decide() yet.
 
 import * as THREE from 'three';
-import { PROFESSIONS, COMMODITIES, ECON, SIM, URCHIN, QUANTITY } from './simconfig.js';
+import { PROFESSIONS, COMMODITIES, ECON, SIM, URCHIN, QUANTITY, KNOW } from './simconfig.js';
 import { POI_KIND } from './world.js';
 import { STAGE, REASON } from './trace.js';
-import type { Agent, CognitionCtx, Goal, Plan, PlanStep, EntityId, Atom as AtomT, Stage, Reason } from '../../types/sim.js';
+import type { Agent, CognitionCtx, Goal, Plan, PlanStep, EntityId, Atom as AtomT, KnowTopic, Stage, Reason } from '../../types/sim.js';
 
 // STAGE/REASON are runtime constants in the (still-JS) trace.js — allowJs widens their
 // members to `string`, but Trace.note wants the narrow Stage/Reason literal unions. These
@@ -49,6 +49,7 @@ interface SubAtom {
   corpseId?: EntityId;
   need?: string;        // need_ge: which need the graded threshold is on
   level?: number;       // need_ge: the believed need-level to reach (0..1)
+  topic?: KnowTopic;    // know: the proposition to be known (Phase 2 knowledge model)
 }
 // The concrete params a primitive's effectMatches chose (one loose bind per primitive).
 interface Bind {
@@ -65,6 +66,7 @@ interface Bind {
   target?: EntityId;
   corpse?: EntityId;
   fromStock?: boolean;
+  topic?: KnowTopic;
 }
 // The simulated believed-state the solver threads forward (inventory/gold/at/received).
 interface SimState {
@@ -74,6 +76,7 @@ interface SimState {
   received: Record<string, boolean>;
   knownAssoc: Record<string, boolean>;   // subjectIds whose `assoc` an earlier shadow/ask step arranged
   need: Record<string, number>;          // believed need-levels the plan raises (graded-needs composition)
+  known: Record<string, boolean>;        // topic-keys an earlier observe/ask/study step learned (Phase 2)
 }
 // One authored primitive (effectMatches/precondition/cost + executor metadata).
 interface Primitive {
@@ -236,7 +239,66 @@ export const Atom = {
   // GRADED NEED (Phase 1): a need raised to AT LEAST `level` (0..1) — a threshold, not a
   // flag, so eating twice when one meal is short is an ordinary composed plan.
   needGe: (need: string, level: number): SubAtom => ({ pred: 'need_ge', need, level }),
+  // KNOWLEDGE (Phase 2): a topic held confidently enough to act on (docs/architecture/10).
+  // `Know(topic)` sits in a plan next to `Have`/`At`, satisfied by observe/ask/study.
+  know: (topic: KnowTopic): SubAtom => ({ pred: 'know', topic }),
 };
+
+// ---------------------------------------------------------------------------
+// PHASE 2 — the knowledge model (docs/architecture/10). A topic's HOME is a field on the
+// belief table (facts about others) or own-state (a recipe). `knowTopic` reads that home and
+// reports the believed value's confidence; `Know(topic)` is satisfied when it is present AND
+// confident enough (KNOW.minConf). Confidence FOLDS INTO COST elsewhere, so a shaky fact makes
+// the acts that depend on it expensive — agents scout before they commit.
+// ---------------------------------------------------------------------------
+
+// A stable string key for a topic, so the simulated `known` map + dedup can index it.
+function topicKey(t: KnowTopic | null | undefined): string {
+  if (!t) return '';
+  return `${t.kind}:${t.subjectId ?? ''}:${t.place ?? ''}:${t.good ?? ''}`;
+}
+
+// Read the believed confidence in a topic from its HOME (0 when unknown). Own state only —
+// the belief table for facts about others, agent.recipes/priceBeliefs for own knowledge.
+function topicConfidence(agent: Agent, t: KnowTopic | null | undefined): number {
+  if (!agent || !t) return 0;
+  switch (t.kind) {
+    case 'loc': {
+      // where a subject keeps something (the stash) — the urchin's `assoc`, generalised.
+      const b = t.subjectId != null && agent.beliefs ? agent.beliefs.get(t.subjectId) : null;
+      return b && b.assoc ? (b.assoc.conf || 0) : 0;
+    }
+    case 'whereabouts': {
+      const b = t.subjectId != null && agent.beliefs ? agent.beliefs.get(t.subjectId) : null;
+      return b ? (b.confidence || 0) : 0;
+    }
+    case 'price':
+      // a believed price is held as a flat number (no per-good confidence yet) — present ⇒ sure.
+      return (t.good && agent.priceBeliefs && (agent.priceBeliefs[t.good] || 0) > 0) ? 1 : 0;
+    case 'recipe':
+      // own-state craft knowledge: today binary (known or not); present ⇒ fully confident.
+      return (t.good && agent.recipes && agent.recipes.has(t.good)) ? 1 : 0;
+    case 'strength':
+      // a believed force at a place — no home yet (lands with the strength topic, Phase 5).
+      return 0;
+    default:
+      return 0;
+  }
+}
+
+// Do I KNOW the topic — present AND confident enough to act on (KNOW.minConf)? Own state only.
+function knowsTopic(agent: Agent, t: KnowTopic | null | undefined): boolean {
+  return topicConfidence(agent, t) >= KNOW.minConf;
+}
+
+// COST-INCLUDES-CONFIDENCE (Phase 2): how much a LOW-confidence belief inflates the cost of an
+// act that leans on it — the one place the knowledge model's confidence feeds back into what an
+// agent decides to do. 0 when KNOW is off (dependent costs stay flat → byte-stable) or the fact
+// is sure; up to KNOW.confCostScale when it is a pure guess, so the planner scouts before betting.
+function confidenceSurcharge(agent: Agent, t: KnowTopic): number {
+  if (!KNOW.enabled) return 0;
+  return Math.max(0, 1 - topicConfidence(agent, t)) * KNOW.confCostScale;
+}
 
 function atomHolds(atom: SubAtom, agent: Agent, ctx: CognitionCtx): boolean {
   switch (atom.pred) {
@@ -274,6 +336,9 @@ function atomHolds(atom: SubAtom, agent: Agent, ctx: CognitionCtx): boolean {
     case 'need_ge':
       // GRADED NEED (Phase 1): is the need already at/above the threshold level? Own state.
       return ((atom.need ? agent.needs?.[atom.need] : 0) || 0) >= (atom.level || 0);
+    case 'know':
+      // KNOWLEDGE (Phase 2): do I hold this topic confidently enough to act on it? Own state.
+      return knowsTopic(agent, atom.topic);
     default:
       return false;
   }
@@ -518,8 +583,57 @@ export const PRIMITIVES: Primitive[] = [
       return { name: 'burgle', target: sg.subjectId, place: { subjectId: sg.subjectId, assoc: 'stash' }, amt: sg.amt };
     },
     precondition(agent, ctx, bind) { return [Atom.knowAssoc(bind.target as EntityId), Atom.at(bind.place as PlannerPlace)]; },
-    cost() { return PLAN.actBase; },
+    // COST-INCLUDES-CONFIDENCE (Phase 2): a raid on a SHAKY stash belief is likely a wasted,
+    // dangerous trip, so it costs more — which pushes the planner to `observe` again first
+    // (re-confirm the stash) before committing. Off (KNOW disabled) → flat, byte-identical.
+    cost(agent, ctx, bind) { return PLAN.actBase + confidenceSurcharge(agent, { kind: 'loc', subjectId: bind.target as EntityId, place: 'stash' }); },
     exec: { verb: 'burgle' },
+  },
+
+  // ── KNOWLEDGE channels (Phase 2, the generalised epistemic GATHERs). Gated by KNOW.enabled:
+  // every effectMatches early-returns null when off, so the planner emits none and the soak is
+  // byte-stable. `observe` subsumes the urchin's `shadow` — first-hand watching of ANY topic. ──
+
+  // observe(topic): the trusted-but-slow first-hand channel. Watches the world directly until
+  // confident — no precondition (the surveil/watch IS the acquisition). Serves any topic.
+  {
+    name: 'observe',
+    effectMatches(sg) {
+      if (!KNOW.enabled || sg.pred !== 'know' || !sg.topic) return null;
+      return { name: 'observe', topic: sg.topic };
+    },
+    precondition() { return []; },
+    cost() { return KNOW.observeCost; },
+    exec: { verb: 'observe' },
+  },
+
+  // ask(topic): the cheap-but-vaguer channel — be told. Serves the topics gossip carries (a
+  // location, a whereabouts, a price); it also tips the subject off (a side-effect the executor
+  // owns). Cheaper than observe, so the planner reaches for it when speed matters / stakes are low.
+  {
+    name: 'ask',
+    effectMatches(sg) {
+      if (!KNOW.enabled || sg.pred !== 'know' || !sg.topic) return null;
+      const k = sg.topic.kind;
+      if (k !== 'loc' && k !== 'whereabouts' && k !== 'price') return null;
+      return { name: 'ask', topic: sg.topic };
+    },
+    precondition() { return []; },
+    cost() { return KNOW.askCost; },
+    exec: { verb: 'ask' },
+  },
+
+  // study(topic): the taught channel — trusted instruction that costs tuition. Serves a recipe
+  // (an apprentice studies a master); precondition is the coin + being where teaching happens.
+  {
+    name: 'study',
+    effectMatches(sg) {
+      if (!KNOW.enabled || sg.pred !== 'know' || !sg.topic || sg.topic.kind !== 'recipe') return null;
+      return { name: 'study', topic: sg.topic };
+    },
+    precondition() { return [Atom.goldGe(KNOW.studyTuition), Atom.at(POI_KIND.MARKET)]; },
+    cost() { return KNOW.studyTuition; },
+    exec: { verb: 'study' },
   },
 ];
 
@@ -696,10 +810,10 @@ function solveAll(agent: Agent, ctx: CognitionCtx, atoms: SubAtom[], depth: numb
 function initState(agent: Agent): SimState {
   const inv: Record<string, number> = {};
   for (const c of COMMODITIES) inv[c] = (agent.inventory && agent.inventory[c]) || 0;
-  return { inv, gold: agent.gold || 0, at: null, received: {}, knownAssoc: {}, need: { ...(agent.needs || {}) } };
+  return { inv, gold: agent.gold || 0, at: null, received: {}, knownAssoc: {}, need: { ...(agent.needs || {}) }, known: {} };
 }
 function cloneState(s: SimState): SimState {
-  return { inv: { ...s.inv }, gold: s.gold, at: s.at, received: { ...s.received }, knownAssoc: { ...s.knownAssoc }, need: { ...s.need } };
+  return { inv: { ...s.inv }, gold: s.gold, at: s.at, received: { ...s.received }, knownAssoc: { ...s.knownAssoc }, need: { ...s.need }, known: { ...s.known } };
 }
 function applyEffect(prim: Primitive, bind: Bind, agent: Agent, s: SimState): void {
   switch (prim.name) {
@@ -721,6 +835,9 @@ function applyEffect(prim: Primitive, bind: Bind, agent: Agent, s: SimState): vo
     case 'shadow':   s.knownAssoc[String(bind.target)] = true; break;
     case 'approach': s.at = bind.place ?? null; break;
     case 'burgle':   s.gold += (bind.amt || 0); break;
+    // KNOWLEDGE (Phase 2): observe/ask/study all ARRANGE the topic (the channels differ in
+    // cost + believed quality, not in what the plan tracks — that it is now known).
+    case 'observe': case 'ask': case 'study': s.known[topicKey(bind.topic)] = true; break;
   }
 }
 function applyStepsForward(agent: Agent, s: SimState, steps: PlanStep[]): SimState {
@@ -748,6 +865,8 @@ function atomSatisfied(atom: SubAtom, agent: Agent, ctx: CognitionCtx, s: SimSta
       return !!s.knownAssoc[String(atom.subjectId)] || atomHolds(atom, agent, ctx);
     case 'need_ge':
       return ((atom.need ? s.need[atom.need] : 0) || 0) >= (atom.level || 0);
+    case 'know':
+      return !!s.known[topicKey(atom.topic)] || atomHolds(atom, agent, ctx);
     default:
       return atomHolds(atom, agent, ctx);
   }
@@ -774,6 +893,10 @@ function effectAdvances(prim: Primitive, atom: SubAtom, bind: Bind, agent: Agent
     case 'know_assoc': {
       if (atomHolds(atom, agent, ctx)) return false;   // gossip already supplied it → no step
       return prim.name === 'shadow';                    // (ask added later as the noisy alt)
+    }
+    case 'know': {
+      if (atomHolds(atom, agent, ctx)) return false;   // already known confidently → no step
+      return prim.name === 'observe' || prim.name === 'ask' || prim.name === 'study';
     }
     default:       return true;
   }
@@ -914,6 +1037,18 @@ export function goalSate(need: string, level: number): Goal {
     kind: 'sate', need, target: lv,
     atoms: [Atom.needGe(need, lv)] as AtomT[],
     predicate(agent: unknown) { const n = (agent as Agent).needs; return !!(n && (n[need] || 0) >= lv); },
+  };
+}
+
+// learn(topic): hold a topic confidently enough to act on (Phase 2). The teaching/scouting goal
+// — the apprentice who must Know(recipe), the spy who must Know(loc). Satisfied by observe / ask
+// / study (whichever is cheapest given beliefs). Gated by KNOW at the planner seam (the channel
+// rows emit nothing when off). predicate reads OWN knowledge only — never the roster.
+export function goalLearn(topic: KnowTopic): Goal {
+  return {
+    kind: 'learn', topic,
+    atoms: [Atom.know(topic)] as AtomT[],
+    predicate(agent: unknown) { return knowsTopic(agent as Agent, topic); },
   };
 }
 

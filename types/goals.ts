@@ -15,7 +15,7 @@ export type GoalKind =
 
 /** One world-state predicate atom the planner satisfies (js/sim/planner.js Atom). */
 export interface Atom {
-  pred: 'at' | 'have' | 'gold_ge' | 'received' | 'dead' | 'in_reach' | 'know_assoc' | 'need_ge';
+  pred: 'at' | 'have' | 'gold_ge' | 'received' | 'dead' | 'in_reach' | 'know_assoc' | 'need_ge' | 'know';
   place?: string;
   good?: string;
   n?: number;
@@ -25,6 +25,16 @@ export interface Atom {
   kind?: string;
   need?: string;     // need_ge: which need (hunger/energy/…) the threshold is on
   level?: number;    // need_ge: the believed need-level to reach (graded, 0..1)
+  topic?: KnowTopic; // know: the proposition to be known (docs/architecture/10 knowledge model)
+}
+
+/** A `topic` an agent can Know — a specific proposition with a HOME (a belief-table field for
+ *  facts about others, or own-state for a recipe). docs/architecture/10 "The knowledge model". */
+export interface KnowTopic {
+  kind: 'loc' | 'whereabouts' | 'price' | 'recipe' | 'strength';
+  subjectId?: EntityId;   // loc / whereabouts: which person
+  place?: string;         // loc role ('stash') / strength: which place
+  good?: string;          // price / recipe: which good
 }
 
 /** The concrete parameters a primitive chose when its effect unified with a subgoal. */
