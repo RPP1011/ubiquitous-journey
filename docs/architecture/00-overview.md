@@ -32,6 +32,7 @@ beliefs about you too. No build step — ES modules served over HTTP, Three.js v
 | 07 | [UI & input](07-ui.md) | the read-only HUD panels, dialogue, the keymap |
 | 08 | [Testing & headless runtime](08-testing.md) | `bun test/headless.mjs`, the headless seam, what still needs a browser |
 | 09 | [The reasoning layer](09-reasoning-layer.md) | **target architecture** — belief-gated cognition at scale: the 3-tier execution hierarchy, the steering/potential-field composition, the `InteractionSchema` IR, destination-intent ToM, GOAP worked examples, and build-time enforcement that cognition cannot read truth |
+| 10 | [The action grammar & knowledge model](10-action-grammar.md) | **design** — the composable grammar for the deliberative tier: effects ⟂ actions ⟂ executors (verbs as sugar over data rows), the knowledge model (`Know(topic)` over unified value/confidence/provenance/decay), why it is *not* a behaviour tree, the 35-scenario coverage, and the knowledge-axis-first refactor plan |
 
 Design/feature docs (the *why we built it this way*, deeper than this reference) live
 beside these in `docs/`: `goal-system.md`, `drama-plan.md`, `director-levers.md`,
