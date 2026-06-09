@@ -393,6 +393,16 @@ export const KNOW = {
                          //   cost-includes-confidence, so agents scout before they commit
 };
 
+// --- ROB: the take-from-a-person acquire row (docs/architecture/10, Phase 3) -----------
+// The acquire table's `person` row — taking gold from a mark by FORCE (robbery; tax/alms are
+// the same moved-shape with a different social trace). MOVED, so the executor debits the mark
+// as it credits the robber (closed money loop), exactly like loot/burgle. Day-one OFF, so the
+// row emits nothing and the steal goal still routes through the urchin's cache `burgle`.
+export const ROB = {
+  enabled: false,
+  amount: 5,             // believed gold taken (a fixed estimate until wealth-cue inference lands)
+};
+
 // --- episodic memory (three-tier ring buffers) ------------------------------
 // Salient life-events flow STM -> MTM -> LTM by consolidation; medium fades over
 // minutes, long-term sticks. Feeds the inspector biography and (later) goals.

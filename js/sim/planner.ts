@@ -18,7 +18,7 @@
 // this module standalone — it is NOT wired into decide() yet.
 
 import * as THREE from 'three';
-import { PROFESSIONS, COMMODITIES, ECON, SIM, URCHIN, QUANTITY, KNOW } from './simconfig.js';
+import { PROFESSIONS, COMMODITIES, ECON, SIM, URCHIN, QUANTITY, KNOW, ROB } from './simconfig.js';
 import { POI_KIND } from './world.js';
 import { STAGE, REASON } from './trace.js';
 import type { Agent, CognitionCtx, Goal, Plan, PlanStep, EntityId, Atom as AtomT, KnowTopic, Stage, Reason } from '../../types/sim.js';
@@ -300,6 +300,33 @@ function confidenceSurcharge(agent: Agent, t: KnowTopic): number {
   return Math.max(0, 1 - topicConfidence(agent, t)) * KNOW.confCostScale;
 }
 
+// ---------------------------------------------------------------------------
+// PHASE 3 — the ACQUIRE table (docs/architecture/10 "Actions come from tables"). Each row is one
+// way to bring a resource into the agent's OWN holdings, differing only in SOURCE, whether the
+// good is MADE (drawn new from the world + a recipe) or MOVED (relocated from a source that is
+// debited), and the SOCIAL TRACE the deed leaves. Made-vs-moved is a conservation RULE, not a
+// label: a made row CREATES; a moved row's believed yield comes from the source's holdings and its
+// executor DEBITS the source as it credits the agent, so the money supply stays closed. Any future
+// moved row inherits this — a made row and a moved row therefore cannot be merged into one. The
+// acquire primitives below carry their row's classification into `exec` (the single source of it).
+// ---------------------------------------------------------------------------
+interface AcquireRow { verb: string; source: string; made: boolean; socialTrace: string; }
+export const ACQUIRE: AcquireRow[] = [
+  { verb: 'gather',  source: 'node',     made: true,  socialTrace: 'honest_labour' }, // a raw good from a field/mine
+  { verb: 'produce', source: 'workshop', made: true,  socialTrace: 'craft' },          // a good from a recipe
+  { verb: 'buy',     source: 'market',   made: false, socialTrace: 'paid_trade' },      // a paid trade
+  { verb: 'loot',    source: 'corpse',   made: false, socialTrace: 'none' },            // from a corpse
+  { verb: 'burgle',  source: 'cache',    made: false, socialTrace: 'theft' },           // from a stash (urchin)
+  { verb: 'rob',     source: 'person',   made: false, socialTrace: 'robbery' },         // by force from a mark
+];
+const ACQUIRE_BY_VERB: Record<string, AcquireRow> = Object.fromEntries(ACQUIRE.map((r) => [r.verb, r]));
+// Build an acquire primitive's exec metadata FROM its table row — so the conservation class
+// (made/moved) and the social trace are read off the table, never hand-duplicated per primitive.
+function acquireExec(verb: string): { verb: string; made: boolean; socialTrace: string } {
+  const r = ACQUIRE_BY_VERB[verb];
+  return { verb, made: r ? r.made : true, socialTrace: r ? r.socialTrace : 'none' };
+}
+
 function atomHolds(atom: SubAtom, agent: Agent, ctx: CognitionCtx): boolean {
   switch (atom.pred) {
     case 'at': {
@@ -385,7 +412,7 @@ export const PRIMITIVES: Primitive[] = [
       const own = agent.profession && PROFS[agent.profession]?.output === bind.good;
       return PLAN.actBase * (own ? 1 : 2) * (bind.n || 1);
     },
-    exec: { verb: 'gather' },
+    exec: acquireExec('gather'),
   },
 
   // produce: effect have(output)+1 ; precond at(site) + profession + inputs
@@ -403,7 +430,7 @@ export const PRIMITIVES: Primitive[] = [
       return pre;
     },
     cost() { return PLAN.actBase * 2; },
-    exec: { verb: 'produce' },
+    exec: acquireExec('produce'),
   },
 
   // buy(good): effect have(good)+1 ; precond at(market) + gold >= price
@@ -419,7 +446,7 @@ export const PRIMITIVES: Primitive[] = [
       return [Atom.at(POI_KIND.MARKET), Atom.goldGe((bind.price || 0) * (bind.n || 1))];
     },
     cost(agent, ctx, bind) { return (bind.price || 0) * (bind.n || 1); },
-    exec: { verb: 'buy' },
+    exec: acquireExec('buy'),
   },
 
   // sell(good): effect gold += price ; precond at(market) + have(good)
@@ -531,7 +558,7 @@ export const PRIMITIVES: Primitive[] = [
     },
     precondition(agent, ctx, bind) { return [Atom.at({ subjectId: bind.corpse as EntityId })]; },
     cost() { return PLAN.actBase; },
-    exec: { verb: 'loot' },
+    exec: acquireExec('loot'),
   },
 
   // ── EPISTEMIC primitives (Phase 4, the urchin). Gated by URCHIN.enabled: every
@@ -587,7 +614,28 @@ export const PRIMITIVES: Primitive[] = [
     // dangerous trip, so it costs more — which pushes the planner to `observe` again first
     // (re-confirm the stash) before committing. Off (KNOW disabled) → flat, byte-identical.
     cost(agent, ctx, bind) { return PLAN.actBase + confidenceSurcharge(agent, { kind: 'loc', subjectId: bind.target as EntityId, place: 'stash' }); },
-    exec: { verb: 'burgle' },
+    exec: acquireExec('burgle'),
+  },
+
+  // ── rob(mark): the acquire table's `person` row — take gold from a mark by FORCE. MOVED, so
+  // the executor debits the mark as it credits the robber (the closed loop, like loot/burgle).
+  // Gated by ROB.enabled: off → effectMatches returns null, the steal goal routes through the
+  // urchin's cache `burgle`, and the soak is byte-stable. Precondition is reaching the mark (no
+  // cache to locate — you take it off their person), so the plan is [goto(mark) → rob]. ──
+  {
+    name: 'rob',
+    effectMatches(sg) {
+      if (!ROB.enabled || sg.pred !== 'gold_ge' || sg.subjectId == null) return null;
+      return { name: 'rob', target: sg.subjectId, amt: sg.amt ?? ROB.amount };
+    },
+    precondition(agent, ctx, bind) { return [Atom.inReach(bind.target as EntityId)]; },
+    cost(agent, ctx, bind) {
+      // distance to the believed mark + the danger of a forceful taking (riskier than a quiet cache)
+      const tp = believedPos(agent, ctx, { subjectId: bind.target as EntityId });
+      const d = tp ? Math.hypot(tp.x - agent.pos.x, tp.z - agent.pos.z) : 40;
+      return d * PLAN.travelPerMetre + PLAN.actBase * 2;
+    },
+    exec: acquireExec('rob'),
   },
 
   // ── KNOWLEDGE channels (Phase 2, the generalised epistemic GATHERs). Gated by KNOW.enabled:
@@ -835,6 +883,7 @@ function applyEffect(prim: Primitive, bind: Bind, agent: Agent, s: SimState): vo
     case 'shadow':   s.knownAssoc[String(bind.target)] = true; break;
     case 'approach': s.at = bind.place ?? null; break;
     case 'burgle':   s.gold += (bind.amt || 0); break;
+    case 'rob':      s.gold += (bind.amt || 0); break;   // MOVED from the mark's purse (conserved at exec)
     // KNOWLEDGE (Phase 2): observe/ask/study all ARRANGE the topic (the channels differ in
     // cost + believed quality, not in what the plan tracks — that it is now known).
     case 'observe': case 'ask': case 'study': s.known[topicKey(bind.topic)] = true; break;
@@ -885,7 +934,7 @@ function effectAdvances(prim: Primitive, atom: SubAtom, bind: Bind, agent: Agent
     case 'gold_ge': {
       // only useful if we don't already have the gold and the step raises it
       if ((s.gold || 0) >= (atom.amt || 0)) return false;
-      return prim.name === 'sell' || prim.name === 'loot' || prim.name === 'burgle';
+      return prim.name === 'sell' || prim.name === 'loot' || prim.name === 'burgle' || prim.name === 'rob';
     }
     case 'at':     return prim.name === 'goto' || prim.name === 'approach';
     case 'received': return prim.name === 'give' || prim.name === 'pay';

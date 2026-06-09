@@ -5,8 +5,8 @@
 
 import { World } from '../../js/sim/world.js';
 import { Agent } from '../../js/sim/agent.js';
-import { plan, goalRepay, goalSeekFortune, goalAvenge, goalSteal, goalSate, goalLearn } from '../../js/sim/planner.js';
-import { URCHIN, QUANTITY, KNOW } from '../../js/sim/simconfig.js';
+import { plan, goalRepay, goalSeekFortune, goalAvenge, goalSteal, goalSate, goalLearn, ACQUIRE } from '../../js/sim/planner.js';
+import { URCHIN, QUANTITY, KNOW, ROB } from '../../js/sim/simconfig.js';
 
 export function plannerSelfTest(ok, { makeFighter, stubScene }) {
   const P = () => ({ risk_tolerance: 0.5, social_drive: 0.5, ambition: 0.5, altruism: 0.5, curiosity: 0.5 });
@@ -238,6 +238,43 @@ export function plannerSelfTest(ok, { makeFighter, stubScene }) {
           `planner K4: confidence folds into cost — shaky stash costs more (${pSure?.cost.toFixed(2)} < ${pUnsure?.cost.toFixed(2)})`);
       } finally { URCHIN.enabled = prevUrchin; }
     } finally { KNOW.enabled = prevKnow; }
+  }
+
+  // ACQUIRE — the resource table (docs/architecture/10, Phase 3). The acquire actions are rows
+  // of one table carrying the conservation rule: made rows (gather/produce) bring goods into
+  // being; moved rows (buy/loot/burgle/rob) relocate existing gold/goods and are debited at the
+  // source. Each acquire primitive carries its row's class + social trace into exec.
+  {
+    const made = new Set(ACQUIRE.filter((r) => r.made).map((r) => r.verb));
+    const moved = new Set(ACQUIRE.filter((r) => !r.made).map((r) => r.verb));
+    ok(made.has('gather') && made.has('produce') && made.size === 2,
+      `planner R1: the MADE rows are exactly gather/produce ([${[...made].join(',')}])`);
+    ok(moved.has('buy') && moved.has('loot') && moved.has('burgle') && moved.has('rob'),
+      `planner R1: the MOVED rows include buy/loot/burgle/rob ([${[...moved].join(',')}])`);
+    ok(ACQUIRE.every((r) => typeof r.socialTrace === 'string' && r.socialTrace.length > 0),
+      'planner R1: every acquire row carries a social trace');
+
+    // a made-row step carries its conservation class + trace in exec (the single source of it):
+    // an agent with no stock/gold/price GATHERS the good to repay, and the gather step is `made`.
+    const tiller = debtor('Tiller', () => {});
+    const pGather = plan(tiller, goalRepay(X.id, 1, 'food'), ctx);
+    const gStep = pGather && pGather.steps.find((s) => s.prim === 'gather');
+    ok(gStep && gStep.exec.made === true && gStep.exec.socialTrace === 'honest_labour',
+      `planner R2: a gather step carries made + honest_labour from its row (${gStep ? gStep.exec.socialTrace : 'NO GATHER'})`);
+
+    // ROB — the `person` row, taking gold by force. Gated ON (day-one OFF), restored after. The
+    // steal goal now routes through `rob` (reach the mark, take the purse), a MOVED/conserved row.
+    const prevRob = ROB.enabled;
+    ROB.enabled = true;
+    try {
+      const markR = mk('MarkR'); markR.pos.set(15, 0, 15);
+      const thug = debtor('Thug', () => {});
+      thug.beliefs.observe(markR.id, markR.faction, markR.pos, ctx.time, false);
+      const pRob = plan(thug, goalSteal(markR.id, 5), ctx);
+      const rStep = pRob && pRob.steps.find((s) => s.prim === 'rob');
+      ok(rStep && rStep.exec.made === false && rStep.exec.socialTrace === 'robbery',
+        `planner R3: ROB generates a moved/robbery acquire (${names(pRob).join('->') || 'NULL'})`);
+    } finally { ROB.enabled = prevRob; }
   }
 
   // never throws on the tick path even for a junk goal
