@@ -1,343 +1,283 @@
 # 10 — The action grammar & the knowledge model
 
-> **Status: DESIGN — not yet implemented.** This is the target form of the reasoning layer's
-> **deliberative tier** (`planner.js` actions + the propositions they read/write). It supersedes
-> the concrete Phase-4 Step-2 primitives (`shadow`/`approach`/`know_assoc`), which are a first,
-> hand-coded instance of what this generalises. The reasoning-layer overview is
-> [09](09-reasoning-layer.md); the locomotion counterpart (one `steer()` + `STEER_FILLS`) is
-> [09 §Composition](09-reasoning-layer.md#composition-finite-primitives-open-behaviours). Read
-> those first — this doc is the world-interaction half of "finite primitives, open behaviours,"
-> plus the knowledge substrate it reads.
+> **Status: design, not yet implemented.** This describes the vocabulary the planner builds plans
+> from — the *actions*, the *effects* they produce, and how an agent's *knowledge* is stored. It is
+> the deliberative-tier companion to [09 — the reasoning layer](09-reasoning-layer.md), which covers
+> how planning runs each tick; this doc defines what the planner has to work with. Today's planner
+> (`js/sim/planner.js`) implements a hand-written subset; this is the form it is moving toward.
 
----
+## What the planner does
 
-## 1. The problem: a grammar that couples verb with purpose
+A **goal** is a belief-state the agent wants to be true (for example, *I have 50 gold*). The
+planner works backwards from the goal: it finds an **action** whose result would make the goal
+true, then treats that action's requirements as new sub-goals, and repeats, until every requirement
+is already true in the agent's **beliefs** — its own private picture of the world. The output is an
+ordered list of actions; the agent then carries them out one at a time, and re-plans if its beliefs
+change underneath it.
 
-The naïve way to add behaviours is one primitive per situation: `buy`, `loot`, `burgle`, `coerce`,
-`tax`, `beg` — six primitives that are all *acquire a resource*, reached six ways. Or `shadow`
-welded to "learn where a mark stashes," when the *same* surveil should also learn a recipe, or a
-camp's strength. Each primitive fuses four independent things:
+Everything the planner reasons about is a belief, never the real world. That is what lets an agent
+be wrong — act on a stash that has been moved, a price that has already shifted — and is the subject
+of [02 — the epistemic split](02-epistemic-split.md). This doc defines the two things the planner
+manipulates: the actions, and the beliefs (knowledge) they read and write.
+
+## A worked plan
+
+Pip is broke and believes a merchant, Olen, is wealthy. Pip does not know where Olen keeps his
+money. Pip's goal is *have gold*. The planner produces:
 
 ```
-burgle  =  VERB(seize) ⊗ SOURCE(stash) ⊗ THEME(gold) ⊗ EFFECT(have gold)
+observe Olen   →   go to the cache   →   take the cache
 ```
 
-That couples `verb × object × method × framing`, and the product is what explodes — *later*, once
-the catalogue grows past a dozen situations. The whole point of [09 Ex. 7](09-reasoning-layer.md)
-("the catalogue *composes*, no new behaviour code") is to never pay that product. This doc is the
-grammar that makes it true.
+Three actions. Reading them back to front:
 
----
+- **take the cache** produces *have gold*. It requires being *at* the cache and *knowing where the
+  cache is*.
+- **go to the cache** produces *being at the cache*. It also requires *knowing where the cache is* —
+  you cannot walk to a place you cannot locate.
+- **observe Olen** produces *knowing where the cache is*. It requires nothing; you simply follow him
+  until you have seen enough to be confident.
 
-## 2. Two levels: effects ⟂ actions (the verbs are neither)
+So the plan is built entirely from requirements chaining into earlier actions. The interesting link
+is that **knowledge is a requirement like any other** — "know where the cache is" sits in the chain
+next to "be at the cache," and an action (`observe`) exists to satisfy it.
 
-There are exactly two levels, and the named verbs are **sugar over them**:
+If a rumour had already told Pip where the cache is, the first action drops out and the plan is just
+`go → take`. The knowledge was supplied for free, so the plan is cheaper. That is the same machinery
+turning a tip into a shortcut.
 
-- **Effects** — *what changes*; the planner's **parameterized goal-currency**. A small, fixed
-  vocabulary the backward-chainer reasons in: `Have(R)`, `At(place)`, `NeedMet(need)`,
-  `Know(topic)`, `Believes(subj, topic)`, `Dead/Freed/Intact(entity)`. The parameter is a typed
-  term, so one effect family spans many situations.
-- **Actions** — *what the agent does*; each declares the effect it produces. The planner chains on
-  effects and **selects actions by cost**.
+## Effects — the units a plan is made of
 
-**Actions are surface labels over `(effect + parameter-row)`.** `burgle ≡ (Have(gold),
-source=stash, transfer, covert→theft)`. The planner never refers to "burgle"; it chains on
-`Have(gold)` and picks the cheapest feasible row. The **irreducible grammar is the effects + the
-dimension-values** (`source`, `conserves?`, `consent`, `channel`, …); `buy`/`loot`/`burgle` are
-nicknames for points in that space, so a new action is a new **row (data)**, not new code.
+An **effect** is a change to believed state. The planner reasons only in effects; it is the small,
+fixed vocabulary every action is described in:
 
-> This is Schank's Conceptual Dependency: every surface verb = a primitive act + modifiers.
-> `Transfer` is **ATRANS** (transfer of possession), `Learn`/`Inform` are **MTRANS** (transfer of
-> mental info), `Move` is **PTRANS** (physical transfer of location). `buy` and `steal` differ only
-> in the consent modifier; `tell` and `teach` are both MTRANS. The grammar is that decomposition.
+| effect | meaning |
+| --- | --- |
+| `Have(resource)` | I possess a good or gold |
+| `At(place)` | I am at a place |
+| `NeedMet(need)` | a need of mine is satisfied (fed, rested, healed) |
+| `Know(topic)` | I hold a piece of knowledge (see [The knowledge model](#the-knowledge-model)) |
+| `Believes(subject, topic)` | I believe that *another agent* believes something |
+| `Dead / Freed / Intact(entity)` | another entity's physical state |
 
----
+Each takes a parameter — `Have(gold)`, `Know(where Olen's cache is)`, `Dead(the bandit)` — so one
+effect covers many concrete situations.
 
-## 3. The effect vocabulary — and why the blank cells are the invariants
+## Actions — how effects are produced
 
-Every action changes *some* state. The producible effects partition cleanly by **(whose? × which
-aspect?)**:
+An **action** is described by four things:
 
-| aspect | self | another entity |
+- the one **effect** it produces,
+- its **requirements** (effects that must hold first — the planner turns each into a sub-goal),
+- a **cost** (computed from the agent's beliefs — distance, risk, price),
+- a **verb** — the world-interaction it performs when the agent arrives (the swing, the hand-off,
+  the unbinding of a captive).
+
+The planner usually has **several actions for the same effect**, and chooses between them by cost.
+To get gold, an agent might `sell` goods it holds, `loot` a corpse, or `take` from a stash it has
+located; whichever is cheapest given its beliefs wins. This is why two agents with the same actions
+behave differently: the choice falls out of each one's beliefs and circumstances, not from anything
+authored per agent.
+
+Many actions share a shape — *go to a source, take a resource, leave a social trace* — and differ
+only in details. Rather than write each as its own action, they are generated from a table whose
+rows fill in the differences:
+
+```
+acquire a resource — rows:
+  source     made or moved   social trace
+  node       made            honest labour        (gather a raw good from a field/mine)
+  workshop   made            craft                (produce a good from a recipe)
+  market     moved           a paid trade         (buy)
+  corpse     moved           none                 (loot)
+  cache      moved           theft, if witnessed  (take from a stash)
+  a person   moved           robbery / tax / alms (by force / authority / charity)
+```
+
+"Made vs moved" matters: gathering and crafting *create* a good from the environment, while buying,
+looting, and stealing *move* gold or goods that already exist. The simulation's money supply is
+closed (no minting), so a row that mints and a row that transfers cannot be merged — they are
+genuinely different and stay separate rows. Adding a new way to acquire a resource is adding a row,
+not writing a new action.
+
+The other effects have their own small tables in the same style:
+
+- **Knowledge** is acquired three ways: `observe` (watch first-hand), `ask` (be told), `study` (be
+  taught). They differ in cost, in how trustworthy the result is, and in side-effects (asking around
+  can tip off your target). The *topic* — what you are learning — is a parameter, so the same
+  `observe` learns a cache location, a recipe, or the strength of a camp.
+- **Changing another's belief** (`Inform`) is done by `disguise`, `demonstrate`, `rumour`,
+  `command`, or `teach` — see [the boundary below](#which-states-an-action-can-change).
+- **Physical state** (`Affect`) is changed by `strike` (→ dead), `free` (→ freed), `wreck` (→ not
+  intact).
+- **Needs** (`Tend`) are met by `eat`, `rest`, `heal`, `socialise`.
+
+## Which states an action can change
+
+An action changes exactly one of these:
+
+- **your own** location, possessions, condition, or knowledge, or
+- **another entity's** physical state — you can kill it, free it, or damage it (combat already
+  resolves this kind of change), or
+- **your model of another agent's mind** — what you believe they believe.
+
+It cannot change another agent's location, possessions, or decisions: other agents move, hold, and
+decide for themselves. And it cannot reach into another agent's mind and set a belief there. The
+closest you can do is act in a way the other agent *perceives* — show a disguise, plant a rumour,
+issue a command — after which that agent updates *its own* beliefs through ordinary perception and
+gossip. You may be wrong about whether it worked.
+
+This is the same boundary as everywhere else in the simulation ([the epistemic split](02-epistemic-split.md)):
+an agent reads and writes its own world-model; it touches other minds only through perception and
+gossip. Influence and deception live entirely inside the acting agent's own model — the agent holds
+a belief about what the target now believes, acts to shift it, and finds out later whether the bet
+paid off. Coordination works the same way: a leader estimates from its own beliefs how likely others
+are to obey, issues a command, and the others each decide for themselves. None of this needs a
+co-planner or a way to write a foreign mind; it is the ordinary act-then-perceive loop.
+
+## The knowledge model
+
+`Know(topic)` appears in plans as routinely as `Have` or `At`, so knowledge needs a representation
+as solid as inventory or position. This section defines it.
+
+### A topic is a proposition
+
+A **topic** is a specific thing an agent can know. The ones the situation catalogue
+([09 — the situation library](09-reasoning-layer.md#the-situation-library-the-design-bar-for-the-catalogue))
+needs:
+
+| topic | what it is | about |
 | --- | --- | --- |
-| location | **Move** → `At` | ∅ — they move themselves (no-roster) |
-| possessions | **Transfer** → `Have` / `Received` | only as a *side-effect* of Transfer (give/seize), never my direct reach |
-| condition | **Tend** → `NeedMet` | ∅ |
-| knowledge | **Learn** → `Know` | — |
-| a mind | — | **Inform** → `Believes` (*my* model) → perception/gossip bridge (optimistic, may not land) |
-| physical world-state | — | **Affect** → `Dead/Freed/Intact` |
+| `Loc(subject, role)` | where a subject keeps something (a stash, a home, a workshop) | a person |
+| `Whereabouts(subject)` | where a subject is now | a person |
+| `Strength(place)` | how strong a force is at a place (≈ how many) | a place |
+| `State(place, attribute)` | a place is depleted / infected / closed / sheltered | a place |
+| `Price(good, place)` | what a good costs at a place | a market |
+| `Recipe(good)` | how to make a good | the wider world |
+| `Secret(subject)` | a fact a subject would pay to keep hidden | a person |
+| `Owns(subject, place)` | a subject owns a place | a person and a place |
+| `StandingToMe(subject)` | how a subject regards me | a person |
+| `Believes(subject, topic)` | a subject believes some topic | a person |
 
-Six reachable cells, six effect-producers. **The blank cells are the founding constraints made
-visible**: I cannot directly move, feed, or decide *for* another agent (they act for themselves —
-the no-roster rule), and a foreign *mind* is writable only *through* `Inform`'s bridge (the
-epistemic split). The grammar's empty cells are not gaps; they are the invariants.
+Most topics are *about a specific person or place*. An agent already keeps a record about each
+person and place it knows — its **belief table** — so these topics live there, as fields on the
+relevant record. `Recipe` is the exception: a recipe is a piece of craft knowledge that belongs to
+no one in particular, so it lives in the agent's own state.
 
-A note on `Tend` vs `Transfer`: `Have(food)` is *possessing* food; `NeedMet(hunger)` is having
-*eaten* it. `consume` bridges one to the other (`pre: have(food); eff: NeedMet(hunger)`), so
-condition is a distinct effect class, not a sub-case of possession.
+### Every piece of knowledge carries the same four things
 
----
+Whatever the topic, a known fact carries:
 
-## 4. The action tables (the rows that stamp out the verbs)
+- a **value** (the position, the number, the recipe),
+- a **confidence**, 0 to 1,
+- a **provenance** — how it was learned (seen first-hand, heard, taught) and how many retellings deep,
+- a **last-updated time**, so it can fade.
 
-Each effect's actions are a table whose **columns are the genuine differences**. The combinatorial
-product collapses to *rows + dimension-values*, not enumerated primitives.
+These four are what make knowledge behave like knowledge rather than a fact sheet: confidence and
+fading let a fact go **stale** (Pip raids a cache that was moved); provenance lets a fact **spread**
+through gossip while getting vaguer; and all of it lets a fact be **wrong**. The belief table already
+records these four for everything in it. The one piece that does not is the recipe set, which is
+currently just "you know it or you don't"; giving recipes the same four turns them into graded
+knowledge — a recipe can be half-learned from a poor teacher, picked up as an unreliable rumour, or
+forgotten when the last person who knew it dies. That last case is how a craft can drop out of the
+economy, which is a behaviour the simulation wants.
 
-```
-Transfer → Have      columns: source-kind × conserves? × consent→deed
-   gather (node,   MINT,     —→labour)        produce (self+recipe, MINT, craft)
-   buy    (market, transfer, consent)         loot    (corpse,       transfer, ownerless)
-   filch  (stash,  transfer, covert→theft)    seize   (holder,       transfer, force→robbery)
-   levy   (holder, transfer, authority→tax)   beg     (holder,       transfer, charity→alms)
-   give/pay (self→other, transfer, consent→received)         # Transfer is bidirectional
+So knowledge keeps its natural homes — facts about others on the belief table, recipes in own state —
+and the four fields are what is shared across all of them. `Know(topic)` is a small accessor that
+reads the right home for a given topic.
 
-Learn → Know         columns: channel  ( = the provenance tiers )
-   observe (first-hand → source:witnessed)    ask (testimony → source:talked, hops+1)
-   study   (instruction → source:taught)      # topic is a PARAMETER — see §5
+### Reading, writing, spreading, fading
 
-Inform → Believes    columns: channel × veracity
-   disguise (show-false)  demonstrate (show-true)  rumor (tell-gossip)
-   command  (tell-imperative, +authority pre)   teach (tell-true-instruction)
+- **Reading** (`Know(topic)`): look up the topic's home and report it known if it is present and
+  confident enough. A vague rumour does not satisfy a requirement a heist depends on; a confident,
+  first-hand sighting does.
+- **Writing** (`observe` / `ask` / `study`): each adds evidence toward a topic and, once there is
+  enough, records it with a confidence and provenance set by the channel — first-hand observation is
+  trusted and slow, being told is cheap and vaguer, being taught is trusted and costs tuition.
+- **Spreading**: gossip already carries facts between nearby agents, lowering confidence and noting
+  the extra retelling. Topics spread the same way, which is why a tip can hand you a cache location
+  you never saw.
+- **Fading**: the existing decay lowers confidence over time. A fact nobody refreshes drifts back
+  toward unknown.
 
-Affect → state       columns: target-state
-   strike → Dead      free → Freed      wreck → ¬Intact
+### Some lifecycles
 
-Tend → NeedMet        columns: need
-   eat   rest   heal   socialize
-```
+- **A recipe through the generations.** A master knows a recipe confidently and crafts with it. She
+  teaches an apprentice, who comes away a little less sure. Across generations, lines that are never
+  taught fade. When the last confident holder dies, the recipe is effectively gone, the good
+  disappears from the market, its price climbs, and the newspaper notices.
+- **A price going stale.** A trader hears a good is dear in the next town and hauls a cartload over —
+  but everyone heard the same rumour, the price has already converged, and the trip barely breaks
+  even. The belief was true when learned and stale when used.
+- **A secret as leverage.** Watching a target long enough turns up something shameful — a `Secret`
+  with a confidence. If the watching was thin and the conclusion wrong, the target calls the bluff.
+- **Believing what others believe.** Seeing a town treat me with suspicion, I come to believe they
+  believe me guilty. That is a `Believes` topic, a field with the same four parts as any other, and a
+  reactive rule can act on it (flee, or petition the peace-keeper).
 
-`conserves?` is **load-bearing**: `gather`/`produce` *mint* a good from a node/recipe (production
-from the environment); the rest *transfer* existing wealth — the closed money loop. Collapsing a
-mint row with a transfer row would break conservation, so they stay distinct rows.
+## Where each action's real code lives
 
----
+An action is small — an effect, requirements, a cost, a verb. The actual work happens in the
+**executor** the verb runs when the agent arrives, and executors vary a lot: a strike runs the
+combat state-machine, taking a cache runs a conserved gold transfer, freeing a captive flips a held
+flag, observing accrues evidence into the right knowledge field. Freeing a captive looks like a
+special case but is not: like taking a cache, it is a trivial final act (cut the bonds) gated by a
+hard requirement (be there, unopposed), and the requirement decomposes into ordinary scouting and
+movement. The variety lives in the executors; the actions above them stay uniform.
 
-## 5. The knowledge model
+## At runtime there is no big shared structure
 
-`Know(topic)` is the part the grammar most depends on and the part that needs real design: the
-planner's covert and cooperative families (urchin, teacher, scout, blackmailer, framer) are all
-"acquire/act-on a belief." Knowledge in the codebase today is **scattered across stores with
-inconsistent metadata** — relational facts on the belief table (with confidence/provenance/decay),
-but `recipes` a bare `Set`, `priceBeliefs` a bare map, second-order a one-off scalar (`notoriety`).
-This section unifies them.
+It is natural to picture all this behaviour as a giant decision tree every agent walks. It is the
+opposite. What exists at runtime is:
 
-### 5.1 A topic is a proposition
+- a flat set of actions (the rows above),
+- a set of small rules that turn an agent's needs and beliefs into goals,
+- one generic planner (a few hundred lines) that knows nothing about any specific situation,
+- a flat set of reactive rules ([the interaction schemas](09-reasoning-layer.md)).
 
-A `topic` is a proposition an agent can hold, of the form `Relation(args)`. The catalogue the 35
-[situation-library](09-reasoning-layer.md#the-situation-library-the-design-bar-for-the-catalogue)
-scenarios require:
+The plan for a heist or a rescue is *built when needed*, for one agent, from that agent's beliefs,
+and thrown away — a short search, a handful of steps. The situations this doc keeps mentioning are
+not entries in the code; they are paths the planner happens to find through the same flat set of
+actions under different beliefs. The maintained code grows with the *vocabulary* (the actions and
+topics), and the behaviours are what emerge from it. All agents share that vocabulary the way
+speakers share a language and still say different sentences; the differences come from the beliefs,
+which are per-agent.
 
-| topic | meaning | value | about | scenarios |
-| --- | --- | --- | --- | --- |
-| `Loc(subj, role)` | where subj keeps its *role* place (stash/home/workshop) | position | a subject | urchin, espionage |
-| `Whereabouts(subj)` | where subj is now | position | a subject | dead-vendor, pursuit |
-| `Strength(place)` | aggregate force/occupancy at a place | number ≈N | a place-percept | camp rescue, siege |
-| `State(place, attr)` | place is depleted / infected / closed / sheltered | enum/bool | a place-percept | famine, plague, curfew, homecoming |
-| `Recipe(good)` | how to make a good | grade 0..1 | **a good (world)** | teacher, espionage |
-| `Price(good, place)` | what a good clears at, where | number | a (good × place-percept) | arbitrage |
-| `Secret(subj)` | subj has a shameful fact (leverage) | bool + tag | a subject | blackmail |
-| `Owns(subj, place)` | subj owns a place | bool | a subject↔place | eviction, inheritance |
-| `StandingToMe(subj)` | how subj regards me | number | a subject (2nd-order) | courtship, rep-laundering |
-| `Believes(subj, topic)` | subj believes *topic* | nested topic | a subject (2nd-order) | framing, deception, command |
+Planning is not free, but it is occasional (on a new goal or a forced re-plan), bounded (a small
+depth and step limit), and thinned for distant or idle agents, so the cost per agent per tick stays
+flat as the population grows — the budget [09 / Phase 3](09-reasoning-layer.md) measures.
 
-**Almost every topic is *relational*** — a fact about an entity already in the belief table (agents
-*and* place-percepts, since [places are percepts](09-reasoning-layer.md)). `Recipe(good)` is the
-lone genuinely *world* topic (a craft skill, owned by no one). `Price` is relational-on-a-market.
+## What this covers
 
-### 5.2 The metadata invariant (the engine of wrong / gossip / forget)
+Working through the situation catalogue, nearly every situation is expressible with these actions and
+topics plus, at most, a new row or a new topic — data, not new machinery. The exceptions are narrow:
+anything genuinely *scheduled* (a debt due every season, rationing, a recurring patrol) has no clock
+in a plan and needs handling outside it; and sub-combat tactics like a feint belong to the fighter,
+below the planner. Tracing the harder situations through the real planner also shows that a "plan" is
+often richer than a straight line: economic plans emerge only when the cheap local options run out;
+social plans (bait, threaten, court, command) act to shift the odds and then wait, expiring if the
+other party never bites; and operations like a rescue are *refuse, scout, wait for the moment, then
+move* rather than a single sweep. In every case the plan can only form once the relevant belief has
+been gathered — which is what makes the behaviour believable rather than omniscient.
 
-> **Every knowable carries `{ value, confidence ∈ [0,1], provenance (source tag + hops), lastTick }`.**
+## Building it
 
-This is the non-negotiable. It is *already* true for belief-table fields, and it is exactly what
-lets a fact be **wrong** (acted on falsely → the urchin's stale stash), **spread** (gossiped with
-fading confidence + provenance), and **forgotten** (decayed). That triad is the engine behind *all*
-of deception, staleness, and learning. Knowledge that lacks it — today's `recipes` Set, `priceBeliefs`
-map — cannot participate: a recipe can't be imperfectly taught, mis-learned from a fraud, or lost
-when the last apothecary dies. **Unifying the metadata, not the storage, is the design.**
+The planner's search does not change. The actions become rows generated from the tables above, the
+way interaction schemas and abilities are already data rather than code. Knowledge gets the small
+accessor and the four shared fields, and recipes move from a plain set to the same shape.
 
-### 5.3 Storage: extend the belief table, don't replace it
+A sensible order, each step leaving the tests green and any new behaviour switched off by default so
+the long-running soak is unchanged:
 
-The belief table is *already* the knowledge substrate with the right metadata. So:
+1. **Knowledge first.** Build `Know(topic)` and the `observe` / `ask` / `study` actions over the
+   knowledge model. Generalise the current single-purpose `shadow` (which only learns a cache) into
+   `observe` over any topic, and fold the current `approach` into ordinary movement toward a place
+   you have located. This is what the covert and teaching behaviours both need, and it lets a teacher
+   reuse the same machinery a spy uses.
+2. **Resources.** Turn `buy` / `gather` / `produce` / `loot` / `take` into rows of the acquire table.
+3. **The rest**, as breadth requires — each a row or a field: the remaining acquire rows, the
+   `Believes` effect, wrecking and freeing, and the place-state, strength, secret, and price topics.
 
-- **Relational topics → fields on the `(observer → entity)` BeliefState.** `Whereabouts` is the
-  existing `lastPos`+`confidence`; `Loc` is the Step-2 `assoc`; `Strength`/`State` are fields on the
-  entity's place-percept belief; `Secret`/`Owns`/`StandingToMe`/`Believes` are new belief fields.
-  These ride the existing gossip + decay machinery for free.
-- **The world topic `Recipe(good)` → an own-state map that gains the *same metadata shape*:**
-  `recipes: Map<good, { grade, conf, source, lastTick }>` (replacing the bare `Set`). It is *not*
-  forced onto the belief table (a good is not an entity), but it carries value+confidence+provenance+
-  decay so the *same* operations apply.
-- **`Know(topic)` is a typed accessor** that dispatches by `topic` to the right store. The
-  uniformity lives in the **metadata + the accessor interface**, not in one monolithic store.
-
-> Rejected alternative: a single monolithic knowledge store subsuming beliefs + recipes + prices.
-> Cleaner on paper, but a high-risk re-home of the working N² belief table for no behavioural gain.
-> Extend, don't replace.
-
-### 5.4 The accessors
-
-- **`Know(topic)` (read — `atomHolds`):** dispatch by topic kind. Relational → read the entity's
-  belief field, satisfied when present **and `confidence ≥ τ`** (a confidence floor, so a vague
-  rumour doesn't satisfy a precondition a heist depends on). `Recipe` → read the own-state recipe
-  map, satisfied when `grade·conf ≥ craftThreshold`.
-- **`Learn{channel}(topic)` (write — the actions):** all three accrue *evidence* toward a topic and
-  consolidate it (the Step-2 `recordAssocSighting` generalised to `recordEvidence(topic, gain)`):
-  - `observe(target, topic)` — first-hand surveil; high consolidation confidence; `source:witnessed`.
-  - `ask(informant, topic)` — testimony; written at gossip-confidence; `source:talked, hops+1`;
-    cheaper but noisier (and may alert the subject).
-  - `study(teacher, topic)` — instruction; high trust; `source:taught`; `pre: near(teacher) ∧
-    gold≥tuition`. (The *teacher's* side is `Inform{teach}` — §4.)
-- **Gossip** propagates a topic exactly like any belief — `gossipBeliefs` already does this for
-  hostility/whereabouts; it extends to `Loc`/`Recipe`-rumour/`Price`/`Strength` with the standard
-  confidence-cap + `hops`. A *tip* is plan-cost saved (the chain collapses when gossip pre-supplies
-  the topic).
-- **Decay** fades confidence on the shared schedule (`beliefs.decay`); world topics decay via the
-  same metadata — an unused, untaught recipe fades toward *lost*.
-
-### 5.5 Worked lifecycles (the model expressing real knowledge)
-
-1. **Recipe scarcity through turnover** — a master holds `Recipe(potion)` at `conf 0.9, source:taught`
-   → `produce` (conf gates craft quality/failure) → `Inform{teach}` to an apprentice whose `study`
-   writes `conf 0.7` → over generations, untaught lines **decay** → the last knower dies → town-wide
-   `Recipe(potion).conf → 0` → potions vanish → scarcity → price spike → a Gazette story. The spec's
-   economy story, now mechanical, *because recipes carry the metadata*.
-2. **Arbitrage bust** — `Price(good, townB)` held at conf, **gossiped** (everyone reads the same
-   number) → I plan the haul → on arrival the real clearing < believed (herding already priced it) →
-   my `Price` belief was *stale* → bust + replan. Identical staleness machinery to a stale
-   `Whereabouts`.
-3. **Blackmail** — `observe(mark)` accrues `Secret(mark)` evidence → consolidates at conf →
-   `Know(Secret)` satisfied → `coerce`. If the secret-belief was a **false** low-evidence
-   consolidation, the mark calls the bluff (and now holds a hostile belief about me).
-4. **Framing (second-order)** — I hold `Believes(townsfolk, I'm-guilty)` at conf — itself acquired by
-   `observe`-ing their accusatory behaviour toward me — and a schema fires flee/petition. The
-   second-order topic is just another belief field with the same metadata.
-
----
-
-## 6. Grammar ⟂ executor — nothing is a grammar one-off
-
-Every action is `(effect, parameterized row, terminal verb)`. The idiosyncrasy lives **one layer
-down**, in the **executor** the terminal verb fires on arrival (dispatched off `exec.verb` in
-`act.js`, already separate from the planner):
-
-| action | terminal verb | executor (where the real, varied code is) |
-| --- | --- | --- |
-| `strike` | a blow | the combat state-machine (repeat, block, hp accrual) |
-| `filch`/`burgle` | take | conserved gold transfer (`deliverTo`-style) |
-| `free` | unbind | flip the captive's `held` flag, truth-side (like combat resolves hp) |
-| `observe` | watch | evidence-accrual into the topic's store (§5.4) |
-
-`free` looks bespoke but **factors exactly like `burgle`** — a trivial terminal act gated by hard
-preconditions (`at(captive) ∧ unopposed`), where `unopposed` decomposes through
-`Learn{observe}(Strength)` + the scouted window + `Move`. So **"one-off" means a one-off *executor*,
-never a one-off grammar entry.** The grammar stays uniform; executors are where idiosyncrasy is
-allowed and expected.
-
----
-
-## 7. The collapses (the minimality proof)
-
-Demanding that every verb justify a distinct effect-cell or dimension-point deletes four would-be
-primitives — proof the basis is minimal, not arbitrary:
-
-- **`Standing`/`Influence` as an effect → dropped.** "Raise subj's regard for me" is `Transfer(give)`
-  to the subject, whose bridged consequence is a standing shift, tracked as the actor's second-order
-  `Believes(subj, StandingToMe↑)`. Courtship = give-gifts + watch the belief.
-- **`Produce` as a top-level verb → dropped.** It is a `Transfer{mint}` row.
-- **`approach` → dropped.** It is `Move` to a **know-gated place** (resolves via `Know(Loc)`; if
-  unknown, `Move`'s precondition *is* `Know(Loc)`, which inserts `Learn{observe}`). **This deletes
-  the `approach` primitive added in Phase-4 Step 2.**
-- **`shadow`'s triplication** (a vocab response, a steer-fill, a planner primitive) → one
-  `Learn{observe}` whose locomotion *is* the shared steer-fill.
-
----
-
-## 8. Runtime shape: this is *not* a behaviour tree
-
-The opposite — and that opposition is why GOAP was chosen. A behaviour tree is an *authored*
-control-flow graph that grows with the number of behaviours and is walked by every agent. Here there
-is no such structure. The runtime is **four flat sets + one generic searcher, none of which knows
-what "arbitrage" or "blackmail" is**:
-
-1. a flat set of ~30 **action rows** (`PRIMITIVES`, mostly generated from the §4 tables) — no action
-   references another; a dictionary, not a graph;
-2. a flat set of **goal-generators** (`motivation.deriveGoals`) reading an agent's *own*
-   needs/beliefs/memory;
-3. one generic **backward-chainer** (`plan()`, ~150 fixed lines) with **zero scenario knowledge**;
-4. a flat set of reactive **schema rows** ([the InteractionSchema catalogue](09-reasoning-layer.md#the-interactionschema-ir-landed-phase-2a)).
-
-```
-authored & shared (small, fixed):          per-agent & derived (transient, discarded):
-  ~30 action rows ─────────────┐
-  ~N goal-generators           ├──►  plan(A, goalA) → A's 4-step heist
-  plan()  (~150 lines)         │     plan(B, goalB) → B's 2-step trade
-  ~M reactive schema rows ─────┘     reason(C)      → C flees
-```
-
-The "behaviour tree" for camp-rescue is **built on demand, per-agent, per-tick, from that agent's
-beliefs — a transient ~8-node search tree — and thrown away.** The 35 scenarios are not 35 things in
-the code; they are emergent *paths* through the same ~30 rows under different belief-states. **Code
-grows with the basis (~rows); behaviours are the emergent compositions.** Agents share the *grammar*
-(a dictionary + syntax), never a behaviour — like speakers of one language producing different
-sentences; the variation lives in the N² belief table, not in shared control flow.
-
-Cost: planning runs only on a goal change or replan trigger, is hard-bounded (`maxDepth 5`,
-`maxFrontier 64`, `maxPlan 8`), and is amortised by [Phase-3 LOD](09-reasoning-layer.md) — the
-sub-linear *reasoning-cost-per-agent-per-tick* the depth harness gates.
-
----
-
-## 9. What the grammar expresses (coverage + the real control-structures)
-
-All 35 situation-library scenarios are expressible: **~29 fully in-paradigm** (needing only *data* —
-the §5.1 topics, the §4 rows, a `sanctuary` affordance, a `group-outmatchedBy` predicate, one
-pool/institution percept); **5 have a temporal component** (debt/tax cadence, child-provisioning,
-siege rationing, periodic conscription) whose *actions* are supported but whose *recurrence/deadline*
-is the one genuine partial gap (softenable: a deadline is a place-state that flips, a cadence is a
-memory-triggered re-derivation); **1 is a deliberate tier-boundary** (a combat feint — fighter SM).
-
-Tracing the hard ones through the *real* planner (not the one-line caricature) surfaces three control
-structures the grammar must — and does — support, all on existing machinery:
-
-- **Cost-min ≠ profit-max.** Economic plans (arbitrage, cornering) *emerge* when local options are
-  exhausted; the planner finds the cheapest feasible path and replans when a shared price-belief
-  proves stale (the bust). It never "chases profit."
-- **Social actions are optimistic + reactive + budgeted, not chains.** `feign`/`coerce`/`bribe`/
-  `command`/`court` are `Inform` → own second-order belief, *arm a reaction*, and **expire** (the D4
-  goal-expiry) if the other doesn't play along — with a real downside (exposure, a hostile belief
-  planted in the mark). "A plan" here is *act to shift the odds, arm a reaction, expire if the bet
-  fails.*
-- **Operations are multi-phase: refuse-gate + event-window.** Camp-rescue/siege are *refuse → scout →
-  detect window → exploit*, gated on aggregate beliefs (`Strength`, group-`outmatchedBy`), with a
-  knowledge-blind control that **provably loses** (the win must *be* the knowledge).
-
-The tax across all of them: **the belief a plan reads must first be *populated*** — prices by gossip,
-`Strength` by a scout, a `Secret` by surveillance. The plan can't form until the world-model carries
-the fact, which is exactly what makes the behaviour *believable* (act on stale/absent info → wasted
-trip, called bluff, missed window) rather than omniscient.
-
----
-
-## 10. Implementation & sequencing
-
-**Form.** The backward-chainer is unchanged; the actions are **generated from the §4 dimension
-rows** (`PRIMITIVES = [...CORE, ...TRANSFER.map(makeRow), ...LEARN.map(makeRow)]`) — the codebase's
-own IR-as-data idiom (*a behaviour is a row, not a branch*, identical to the schema catalogue and the
-ability DSL). The knowledge model (§5) lands as: the topic accessors (`Know`/`recordEvidence`), the
-belief-field extensions, and `recipes` re-homed from `Set` to the metadata map.
-
-**Sequencing** (each step behaviour-preserving, gated by `bunx tsc --noEmit` + `bun test/headless.mjs`
-+ `bun test/depth.mjs`; new features day-one OFF behind config flags, byte-stable soak):
-
-1. **Knowledge axis first** — the §5 model + `Know(topic)` + `Learn{observe/ask/study}`. Generalise
-   Step-2's `know_assoc → Know(topic)`, fold `shadow → observe(Loc)`, **delete `approach`** (→ `Move`
-   to a know-gated place). This is where Phase-4 lives, and it makes the **teacher fall out as
-   `Learn{study}(Recipe)`** reusing one machine.
-2. **Resource axis** — fold `buy`/`gather`/`produce`/`loot`/`burgle` into the generated
-   `Transfer{method}` table.
-3. **The rest of the §4 rows + §5.1 topics**, as Phase-5 breadth demands them — each a row/field, not
-   new code: `Transfer{filch/seize/levy/beg}`, the `Believes` effect (the highest ToM lever),
-   `Affect{wreck/free}`, the place-state/`Strength`/`Secret`/`Price` topics.
-
-The [Phase-5 gap shortlist](09-reasoning-layer.md#probe-backed-gap-analysis-the-phase-5-priority-order)
-is, in these terms, almost entirely **rows / fields / topics — data, not code.**
+The Phase-5 shortlist
+([09](09-reasoning-layer.md#probe-backed-gap-analysis-the-phase-5-priority-order)) is, in these
+terms, almost all rows, fields, and topics rather than code.

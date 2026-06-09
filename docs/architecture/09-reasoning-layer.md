@@ -257,17 +257,15 @@ response ops in `vocab.js`).
 
 ### The action grammar (the world-interaction half) → [10](10-action-grammar.md)
 
-The steer-fills above compose **locomotion**. The symmetric story for **world-interactions** — the
-planner's actions and their verbs — is a composable grammar of **effects ⟂ actions ⟂ executors**:
-the planner chains on a small, parameterized **effect** vocabulary (`Have`, `At`, `Know(topic)`,
-`Believes`, `NeedMet`, `Dead/Freed/Intact`), and the named verbs (`buy`/`burgle`/`observe`/…) are
-**surface labels over `(effect + dimension-row)`** — sugar, generated from data tables, never an
-authored tree. Its effect vocabulary partitions by *(whose × aspect)*, and **the blank cells are
-the invariants** (no-roster + the epistemic split). It carries the **knowledge model** —
-`Know(topic)` over a unified `{value, confidence, provenance, decay}` metadata so every fact can be
-wrong, gossiped, and forgotten. **Full design (grammar + knowledge model + runtime + the 35-scenario
-coverage + sequencing): [10 — the action grammar & knowledge model](10-action-grammar.md).** It is
-the target form; today's planner has these as concrete primitives, refactored knowledge-axis-first.
+The steer-fills above compose locomotion. World-interactions — the planner's actions — compose the
+same way. The planner reasons in a small set of **effects** (`Have`, `At`, `Know(topic)`,
+`Believes`, `NeedMet`, `Dead/Freed/Intact`); the named verbs (`buy`, `burgle`, `observe`, …) are
+**actions** that produce them, generated from data tables, with several actions per effect and the
+planner choosing by cost. It includes the **knowledge model**: `Know(topic)` over facts that each
+carry a value, a confidence, how they were learned, and when — so knowledge can go stale, spread by
+gossip, and be wrong. Today's planner implements a hand-written subset. **Full design (the action
+vocabulary, the knowledge model, the runtime shape, coverage, and the build order):
+[10 — the action grammar & knowledge model](10-action-grammar.md).**
 
 ---
 
