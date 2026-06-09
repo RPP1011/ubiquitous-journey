@@ -10,9 +10,64 @@ import { bus, makeEvent } from './rpg/events.js';
 import { pickAgent } from './util/pick.js';
 import { DialogueSession } from './dialogue/dialogue.js';
 
+// The shared mutable game-state object main.js owns. `sim`/`world` are separate
+// clusters (still being ported), so they're typed loosely here — this module only
+// ever reaches through them dynamically.
+interface Game {
+  state: string;
+  // sim/world belong to still-.js clusters (Simulation, World); typed `any` so
+  // this input module can reach through them dynamically until they're ported.
+  sim: any;   /* Simulation */ // eslint-disable-line @typescript-eslint/no-explicit-any
+  world: any; /* World */      // eslint-disable-line @typescript-eslint/no-explicit-any
+  player?: unknown;
+  playerFighter?: unknown;
+}
+
+// The Hud facade (js/ui/hud.js — a separate, still-.js cluster). We touch only
+// these members; type it structurally so the wiring is checked without depending
+// on the un-ported Hud shape.
+interface HudFacade {
+  dialogueView: { onClose: (() => void) | null; open(session: unknown): void };
+  questLog: { toggle(): void };
+  inventory: { toggle(): void };
+  classCodex: { toggle(): void };
+  abilityIndex: { toggle(): void };
+  chronicle: { toggle(): void };
+  gazette: { toggle(): void };
+  toggleTab(n: number): void;
+}
+
+// A dungeon manager handle (js/world/dungeonManager.js — separate cluster). Only
+// tryPortal is reached from here; loose handle, accessed dynamically.
+interface DungeonMgrLike { tryPortal(player: unknown): boolean; }
+
+// The point-and-click commander (js/commander.js, un-typed .js). We read its
+// cursor NDC and steer its controlled agent's goal.
+interface CommanderLike {
+  mouseNDC: { x: number; y: number };
+  agent: { goal: unknown } | null;
+}
+
+// Minimal input reader (js/input.js, un-typed .js): held-key membership test.
+interface InputLike { has(code: string): boolean; }
+
+// Whatever the camera cluster hands us — only forwarded to pickAgent.
+type CameraLike = Parameters<typeof pickAgent>[0];
+
+interface PlayerControlsOpts {
+  game: Game;
+  input: InputLike;
+  camera: CameraLike;
+  commander: CommanderLike;
+  hud: HudFacade;
+  getDungeonMgr: () => DungeonMgrLike | null | undefined;
+  togglePause: () => void;
+  restart: () => void;
+}
+
 // player gather: which commodity each resource-node kind yields + its XP tags
-const GATHER = { field: 'food', forest: 'wood', mine: 'ore', meadow: 'herb' };
-const GATHER_TAGS = {
+const GATHER: Record<string, string> = { field: 'food', forest: 'wood', mine: 'ore', meadow: 'herb' };
+const GATHER_TAGS: Record<string, string[]> = {
   food: ['FARMING', 'ENDURANCE'], wood: ['WOODCUT', 'ENDURANCE'],
   ore: ['MINING', 'ENDURANCE'], herb: ['FORAGE', 'ENDURANCE'],
 };
@@ -21,11 +76,22 @@ const GATHER_TAGS = {
 const CAST_CODES = ['Digit1', 'Digit2', 'Digit3', 'Digit4'];
 
 export class PlayerControls {
+  game: Game;
+  input: InputLike;
+  camera: CameraLike;
+  commander: CommanderLike;
+  hud: HudFacade;
+  _getDungeonMgr: () => DungeonMgrLike | null | undefined;
+  _togglePause: () => void;
+  _restart: () => void;
+  _castHeld: Set<string>;
+  _gatherCd: number;
+
   // game: shared { state, sim, world, playerFighter } state object.
   // hud: the Hud facade (dialogueView, toggleTab).  getDungeonMgr/getWorld:
   // accessors that survive world rebuilds.  togglePause/restart: main's
   // game-state callbacks.
-  constructor({ game, input, camera, commander, hud, getDungeonMgr, togglePause, restart }) {
+  constructor({ game, input, camera, commander, hud, getDungeonMgr, togglePause, restart }: PlayerControlsOpts) {
     this.game = game;
     this.input = input;
     this.camera = camera;
@@ -62,7 +128,8 @@ export class PlayerControls {
     }
     if (!npc || !npc.alive || npc === me) return;
     if (me.pos.distanceTo(npc.pos) > SIM.talkRange) {
-      this.commander.agent.goal = { kind: 'approach', targetId: npc.id };   // walk over first
+      // commander.agent is the player's controlled agent during play (always set here)
+      if (this.commander.agent) this.commander.agent.goal = { kind: 'approach', targetId: npc.id };   // walk over first
       return;
     }
     const session = new DialogueSession(npc, me, game.sim);
@@ -90,12 +157,12 @@ export class PlayerControls {
   }
 
   // gather (G) from a nearby resource node
-  pollGather(dt) {
+  pollGather(dt: number) {
     const game = this.game;
     this._gatherCd -= dt;
     if (this._gatherCd > 0 || !this.input.has('KeyG') || !game.sim || !game.sim.player || !game.world) return;
     const p = game.sim.player;
-    let best = null, bd = 9;             // gather within ~3m of a resource node
+    let best: string | null = null, bd = 9;             // gather within ~3m of a resource node
     for (const poi of game.world.pois) {
       const c = GATHER[poi.kind]; if (!c) continue;
       const d = p.pos.distanceToSquared(poi.pos);
@@ -110,8 +177,8 @@ export class PlayerControls {
 
   // Consume a usable item. Shared by the H hotkey and clicking a slot in the
   // inventory panel, so there's one place that knows what each consumable does.
-  useItem = (commodity, player) => {
-    const p = player || (this.game.sim && this.game.sim.player); if (!p) return;
+  useItem = (commodity: string, player?: unknown) => {
+    const p: any = player || (this.game.sim && this.game.sim.player); if (!p) return; // eslint-disable-line @typescript-eslint/no-explicit-any -- player Agent reached dynamically (sim cluster un-ported)
     if (commodity === 'potion') {
       if ((p.inventory.potion || 0) >= 1 && p.fighter.health < TUNE.maxHealth) {
         p.inventory.potion -= 1;
