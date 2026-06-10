@@ -14,7 +14,8 @@
 
 import { STATUS, RAGS, OUTLAW } from './simconfig.js';
 import { BEAT } from './chronicle.js';
-import { sampleGold, goldTrend, lossReasonShare, snubsFelt } from './signals.js';
+import { sampleGold, goldTrend, lossReasonShare, snubsFelt,
+  sampleStanding, sampleDisplacement, accrueBand } from './signals.js';
 import { feltSurcharge } from './experience.js';
 import type { Agent } from '../../types/sim.js';
 
@@ -81,6 +82,12 @@ export function statusSensor(a: Agent, sim: Sim, now: number): void {
 
     // ── SHUNNED: the BEAT fires off the true mean (narrator); the MEMORY needs perceivable evidence ──
     const mean = rosterMeanStanding(sim, a);
+    // §13 second slice — SAMPLE the observer-pass trajectory signals here, off the mean this pass
+    // already computed (no new scan): the standing EWMAs + fortuneReversals, the home-displacement
+    // EWMA, and the gold/notoriety band accumulators. All own-state-or-mean writes; guarded inside.
+    sampleStanding(a, mean, now);
+    sampleDisplacement(a, now);
+    accrueBand(a, now);
     if (mean <= STATUS.shunStanding && !aa._shunnedBeat) {
       aa._shunnedBeat = true;
       note(sim, BEAT.SHUNNED, a.id, `${a.name} finds the town has turned cold.`);

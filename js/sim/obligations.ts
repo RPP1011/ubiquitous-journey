@@ -15,6 +15,7 @@
 // (ALWAYS-LIVE on the mainline).
 
 import { LEDGER } from './simconfig.js';
+import { foldObligationDefault } from './signals.js';
 import type { Agent, Obligation } from '../../types/sim.js';
 
 // A stable identity for an obligation (so adds dedup + perception can match a fired trigger).
@@ -58,7 +59,9 @@ export function settleObligations(agent: Agent, firedTriggers: Set<string> | nul
       // COMMITMENT: a perceived event satisfies the armed trigger ("you delivered" → I pay).
       if (firedTriggers && firedTriggers.has(triggerKey(o))) { fired.push(o); return false; }
       // LAPSE: the window passed without the trigger ever firing — drop it (the promise expired).
-      if (now >= o.expiry) return false;
+      // §13 D.creditLoad: a lapsed obligation is a DEFAULT — fold a per-agent default tally (own-state;
+      // the town aggregate reads these in the observer pass). Only a real obligation (pay/repay) defaults.
+      if (now >= o.expiry) { if (o.action === 'pay' || o.action === 'repay') foldObligationDefault(agent, 1); return false; }
       return true;
     });
   } catch { /* never throw on the tick */ }

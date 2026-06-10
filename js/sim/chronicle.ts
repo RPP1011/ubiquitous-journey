@@ -15,6 +15,7 @@
 
 import { bus } from '../rpg/events.js';
 import { CHRONICLE, MONSTER } from './simconfig.js';
+import { noteBeat } from './signals.js';
 import type { ActionEvent } from '../../types/sim.js';
 
 // `sim` is the owning Simulation (a separate, wave-2 cluster still in .js); typed opaquely
@@ -130,6 +131,9 @@ export class Chronicle {
       const last = this._dedupe.get(key);
       if (last != null && (t - last) < (CHRONICLE.dedupeSecs || 0)) return;
       this._dedupe.set(key, t);
+      // §13 F.quietIndex — stamp this subject's last-beat time (the forgotten-man clock resets when an
+      // agent appears in the feed). Town-level on the sim; guarded inside; observer-only.
+      noteBeat(this.sim, subjectId, t);
       // arc binding: a beat that belongs to a tracked story carries its id + title so
       // the UI can thread the chapters together (set-up → escalation → climax).
       const arcId = (arc && arc.id) || null;

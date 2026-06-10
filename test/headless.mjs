@@ -21,7 +21,7 @@ import { plannerSelfTest } from './suites/planner.mjs';
 import { obligationsTest } from './suites/obligations.mjs';
 import { seedingTest, romanceTest } from './suites/seeding.mjs';
 import { arcsTest, arcsE2ETest } from './suites/arcs.mjs';
-import { signalsTest, wealthTest, outlawTest, whitelistTest, catalogTest } from './suites/signals.mjs';
+import { signalsTest, wealthTest, outlawTest, whitelistTest, catalogTest, catalogTailTest } from './suites/signals.mjs';
 import { executionTest } from './suites/execution.mjs';
 // Action-grammar EXECUTION suites (docs/architecture/10) — one per feature worktree, pre-registered
 // so each fills its own file with zero shared edits. Stubs are no-ops until filled.
@@ -72,6 +72,7 @@ wealthTest(ok);
 outlawTest(ok, helpers);
 whitelistTest(ok);
 catalogTest(ok);
+catalogTailTest(ok);
 seedingTest(ok, helpers);
 romanceTest(ok, helpers);
 // Action-grammar EXECUTION feature suites (filled per worktree; no-op stubs until then).

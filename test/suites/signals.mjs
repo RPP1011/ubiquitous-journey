@@ -12,7 +12,11 @@ import { foldLoss, noteSnub, lossReasonShare, snubsFelt, goldTrend, sampleGold,
   foldScarcity, scarcityMean, foldGrievance, grievanceOf, isOneSided,
   esteemTruthGap, doomedVenture, misallocatedSuspicion,
   foldStreak, streakOf, foldPeril, perilsSurvived, firstDeedAt, debtBetween,
-  wealthGini, suspicionClimate, arcLoad } from '../../js/sim/signals.js';
+  wealthGini, suspicionClimate, arcLoad,
+  sampleStanding, standingTrend, fortuneReversals, sampleDisplacement, displacement,
+  accrueBand, timeInBand, regardGap, dependence, foldObligationDefault, defaultsOf, creditLoad,
+  cohesion, presumedDead, loversCrossed, rumourDepth, noteBeat, quietIndex,
+  noteWitness, witnessSet, triangleHints } from '../../js/sim/signals.js';
 import { statusSensor } from '../../js/sim/statusSensor.js';
 import { SagaStore } from '../../js/sim/arcs.js';
 import { BeliefState } from '../../js/sim/beliefs.js';
@@ -248,6 +252,137 @@ export function catalogTest(ok) {
     sim.sagas.openArc({ kind: 'vendetta', key: 'v', principals: [1, 2] });
     sim.sagas.openArc({ kind: 'rescue', key: 'r', principals: [1, 9] });
     ok(arcLoad(sim, { id: 1 }) === 2 && arcLoad(sim, { id: 2 }) === 1, 'catalog arcLoad: counts open arcs by principal (protagonist pressure)');
+  }
+}
+
+// ---- the doc-13 SECOND SLICE: the catalog tail folded on existing seams --------------------------
+// standingFast/Slow + fortuneReversals + displacement + timeInBand (A); regardGap + dependence +
+// triangleHints (B); presumedDead + loversCrossed (C); creditLoad + cohesion (D); rumourDepth +
+// quietIndex + witnessSet (F). Driven directly for determinism (same house pattern).
+function vec(x, z) { return { x, z, distanceTo(p) { return Math.hypot((p.x || 0) - x, (p.z || 0) - z); } }; }
+
+export function catalogTailTest(ok) {
+  // A.standingFast/Slow — two EWMAs of the roster mean; a sharp social drop pulls fast below slow.
+  {
+    const a = { id: 1, gold: 100 };
+    sampleStanding(a, 0.5, 0); sampleStanding(a, 0.5, 600);   // settle both EWMAs near +0.5
+    sampleStanding(a, -0.5, 720);                              // a sharp cooling — fast moves first
+    const tr = standingTrend(a);
+    ok(tr.fast < tr.slow, `tail standing: a sharp social cooling pulls standingFast below standingSlow (${tr.fast.toFixed(2)} < ${tr.slow.toFixed(2)})`);
+  }
+  // A.fortuneReversals — a (goldFast−goldSlow) sign flip past the gate increments the counter.
+  {
+    const a = { id: 1, gold: 100 };
+    sampleGold(a, 0); sampleGold(a, 600);            // settle fast/slow near 100 (gap ~0)
+    a.gold = 0; sampleGold(a, 700); sampleStanding(a, 0, 700);   // fast dives below slow → negative gap
+    a.gold = 200; sampleGold(a, 1500); sampleStanding(a, 0, 1500); // fast climbs above slow → SIGN FLIP
+    const r = fortuneReversals(a);
+    ok(r.count >= 1, `tail fortuneReversals: a fast/slow sign flip past the gate is counted (${r.count})`);
+  }
+  // A.displacement — EWMA of distance from the believed home; a far-from-home agent reads high.
+  {
+    const home = { lastPos: vec(0, 0) };
+    const a = { id: 1, gold: 50, pos: vec(30, 40), homeBelief() { return home; } };   // 50m from home
+    sampleDisplacement(a, 0); sampleDisplacement(a, 600);
+    ok(displacement(a) > 20, `tail displacement: an agent far from its believed home reads high displacement (${displacement(a).toFixed(0)})`);
+    const b = { id: 2, gold: 50, pos: vec(0, 0), homeBelief() { return home; } };       // at home
+    sampleDisplacement(b, 0); sampleDisplacement(b, 600);
+    ok(displacement(b) < 1, `tail displacement: an agent at home reads ~0 (${displacement(b).toFixed(1)})`);
+  }
+  // A.timeInBand — sim-time accrues in the POVERTY band while gold stays low.
+  {
+    const a = { id: 1, gold: 3 };   // below poorBand
+    accrueBand(a, 0); accrueBand(a, 100); accrueBand(a, 250);
+    ok(timeInBand(a, 'poor') === 250 && timeInBand(a, 'rich') === 0, `tail timeInBand: poverty time accrues ("the long winter") (${timeInBand(a, 'poor')})`);
+  }
+  // B.regardGap — standing(a→b) − standing(b→a): unrequited regard (romance/betrayal fuel).
+  {
+    const a = { id: 1, beliefs: new Map([[2, { standing: 0.8 }]]) };
+    const b = { id: 2, beliefs: new Map([[1, { standing: 0.1 }]]) };
+    ok(Math.abs(regardGap(a, b) - 0.7) < 1e-6, `tail regardGap: a one-sided regard reads the gap (${regardGap(a, b).toFixed(2)})`);
+  }
+  // B.dependence — the share of a's positive-standing mass on ONE other (the pre-cast mourner).
+  {
+    const a = { id: 1, beliefs: { all: () => [{ subjectId: 2, standing: 0.9 }, { subjectId: 3, standing: 0.1 }, { subjectId: 4, standing: -0.5 }] } };
+    const d = dependence(a);
+    ok(d.share > 0.85 && d.onId === 2, `tail dependence: everything rides on one person (share ${d.share.toFixed(2)} on #${d.onId})`);
+  }
+  // B.triangleHints — a third party shared across two open arcs (a staged collision).
+  {
+    const sim = { time: 0, agentsById: new Map(), chronicle: { note() {} } };
+    sim.sagas = new SagaStore(sim);
+    sim.sagas.openArc({ kind: 'rivalry', key: 'r1', principals: [1, 9] });   // 9 is in both
+    sim.sagas.openArc({ kind: 'rivalry', key: 'r2', principals: [2, 9] });
+    const hints = triangleHints(sim);
+    ok(hints.some((h) => h.thirdId === 9 && h.arcs === 2), 'tail triangleHints: a third party shared by two arcs is a collision hint');
+  }
+  // C.presumedDead — k agents hold a decayed (presumed-gone) belief about a LIVE agent.
+  {
+    const a = { id: 1, alive: true };
+    const o1 = { id: 2, alive: true, controlled: false, beliefs: new Map([[1, { confidence: 0.01 }]]) };
+    const o2 = { id: 3, alive: true, controlled: false, beliefs: new Map([[1, { confidence: 0.9 }]]) };
+    const sim = { agents: [a, o1, o2] };
+    ok(presumedDead(sim, a) === 1, 'tail presumedDead: one stale belief about a living agent reads k=1 (return-of-the-presumed-dead)');
+  }
+  // C.loversCrossed — a courting pair where one believes the other gone (the Romeo misinformation).
+  {
+    const a = { id: 1, alive: true, beliefs: new Map([[2, { confidence: 0.01 }]]) };   // a thinks b gone
+    const b = { id: 2, alive: true, beliefs: new Map([[1, { confidence: 0.9 }]]) };
+    ok(loversCrossed(a, b) === true, 'tail loversCrossed: a courting pair, one believing the other departed, is flagged');
+    const c = { id: 3, alive: true, beliefs: new Map([[2, { confidence: 0.9 }]]) };
+    const d = { id: 2, alive: true, beliefs: new Map([[3, { confidence: 0.9 }]]) };   // each sees the other clearly
+    ok(loversCrossed(c, d) === false, 'tail loversCrossed: a pair who both see each other clearly is NOT crossed');
+  }
+  // D.creditLoad — actives counted; a lapsed obligation folds a default (the credit-crisis arc).
+  {
+    const a = { id: 1, alive: true, _obligations: [{ action: 'pay', counterparty: 7, amount: 5 }] };
+    const b = { id: 2, alive: true };
+    foldObligationDefault(b, 2);
+    const cl = creditLoad({ agents: [a, b] });
+    ok(cl.actives === 1 && cl.defaults === 2 && defaultsOf(b) === 2, `tail creditLoad: actives + defaults tally (a=${cl.actives} d=${cl.defaults})`);
+    ok(cl.defaultRate > 0.6, `tail creditLoad: a high default rate reads as crisis (${cl.defaultRate.toFixed(2)})`);
+  }
+  // D.cohesion — the town warm in-group but cold toward outsiders (factionalisation).
+  {
+    const t1 = { id: 1, alive: true, controlled: false, faction: 'townsfolk', beliefs: { all: () => [{ subjectId: 2, standing: 0.6 }, { subjectId: 9, standing: -0.7 }] } };
+    const sim = { agents: [t1], agentsById: new Map([[2, { faction: 'townsfolk' }], [9, { faction: 'bandit' }]]) };
+    const c = cohesion(sim);
+    ok(c.inTown > 0 && c.outsider < 0 && c.split > 1, `tail cohesion: a town warm within, cold to outsiders, splits (${c.split.toFixed(2)})`);
+  }
+  // F.rumourDepth — max provenance hops over the roster (the distortion index).
+  {
+    const sim = { agents: [
+      { id: 2, alive: true, controlled: false, beliefs: new Map([[9, { hops: 1 }]]) },
+      { id: 3, alive: true, controlled: false, beliefs: new Map([[9, { hops: 3 }]]) },
+    ] };
+    ok(rumourDepth(sim, 9) === 3, 'tail rumourDepth: the deepest provenance chain reads as the distortion index');
+  }
+  // F.quietIndex — sim-time since an agent last appeared in a beat; resets on noteBeat.
+  {
+    const sim = {};
+    ok(quietIndex(sim, { id: 1 }, 500) === 500, 'tail quietIndex: an agent never in a beat is maximally quiet');
+    noteBeat(sim, 1, 100);
+    ok(quietIndex(sim, { id: 1 }, 130) === 30, 'tail quietIndex: the forgotten-man clock counts since the last beat');
+  }
+  // F.witnessSet — who saw a keyed dramatic event (the casting probe), de-duped + bounded.
+  {
+    const sim = {};
+    noteWitness(sim, 'A:rob:5', 2, 5); noteWitness(sim, 'A:rob:5', 3, 5); noteWitness(sim, 'A:rob:5', 2, 5);   // 2 deduped
+    const ws = witnessSet(sim, 'A:rob:5');
+    ok(ws.length === 2 && ws.includes(2) && ws.includes(3), `tail witnessSet: the witnesses of a deed are retained, de-duped (${ws.length})`);
+    ok(witnessSet(sim, 'nope').length === 0, 'tail witnessSet: an unseen deed has an empty witness set');
+  }
+  // never throws on malformed/missing inputs (the freeze lesson).
+  {
+    let threw = false;
+    try {
+      sampleStanding(null, 0, 0); sampleDisplacement({ id: 7 }, 0); accrueBand({ id: 7 }, 0);
+      regardGap(null, null); dependence({ id: 7 }); creditLoad({ agents: [null] }); cohesion({ agents: [null] });
+      presumedDead({ agents: [] }, { id: 7, alive: true }); loversCrossed(null, null);
+      rumourDepth({ agents: [null] }, 1); noteBeat({}, null, 0); quietIndex({}, null, 0);
+      noteWitness({}, '', null, 0); witnessSet({}, 'x'); triangleHints({});
+    } catch { threw = true; }
+    ok(!threw, 'tail catalog: malformed/missing inputs never throw (the freeze lesson)');
   }
 }
 

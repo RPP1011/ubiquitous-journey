@@ -28,7 +28,7 @@ import { seedNarratives } from './seeding.js';
 import { Lineage } from './lineage.js';
 import { Chronicle } from './chronicle.js';
 import { SagaStore } from './arcs.js';
-import { foldLoss, foldDeed, foldScarcity } from './signals.js';
+import { foldLoss, foldDeed, foldScarcity, noteWitness } from './signals.js';
 import { runStatusSensor } from './statusSensor.js';
 import { Gazette } from './gazette.js';
 import { Reporter } from './reporter.js';
@@ -928,6 +928,10 @@ export class Simulation {
             }
           }
           foldDeed(actor, kind === 'rob' ? 'theft' : kind, sim.time);   // §13 E.deedLedger (truth side of witnessDeed)
+          // §13 F.witnessSet — key this dramatic event (actor:kind:second) so the casting probe can read
+          // WHO saw it (the confidant, the lone witness). A short-retention ring; witnesses noted below.
+          const deedKey = actor.id + ':' + kind + ':' + Math.floor(sim.time);
+          if (victim && victim.alive && !victim.controlled && victim.pos.distanceTo(actor.pos) <= SIM.visionRange) noteWitness(sim, deedKey, victim.id, sim.time);
           // bystanders who see it: most grow suspicious — but a DESPERATE witness admires a robber of
           // the RICH (the Robin Hood mirror, docs/architecture/12 §9.2). FOUR conjuncts (review 5):
           // larcenous/bold AND poor AND NOT allied to the victim AND believes the victim wealthy.
@@ -938,6 +942,7 @@ export class Simulation {
             if (w.pos.distanceTo(actor.pos) > SIM.visionRange) continue;
             const wb = w.beliefs.get(actor.id) || w.beliefs.observe(actor.id, actor.faction, actor.pos, sim.time, false);
             if (!wb) continue;
+            noteWitness(sim, deedKey, w.id, sim.time);   // §13 F.witnessSet — a bystander who saw the deed
             const P = w.personality || {};
             const vb = victimId != null ? w.beliefs.get(victimId) : null;
             const admires = kind === 'rob' &&

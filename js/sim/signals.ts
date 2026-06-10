@@ -12,13 +12,18 @@
 // bounded ring, lazy time-decay (no per-tick pass), every function guarded (never throws on the tick).
 
 import { SIGNALS } from './simconfig.js';
-import type { Agent } from '../../types/sim.js';
+import type { Agent, EntityId } from '../../types/sim.js';
 
 interface LossStep { t: number; reason: string; amt: number; }
 export interface SignalState {
   gFast: number; gSlow: number; gT: number;   // gold EWMAs + last-sample time
   loss: LossStep[];                            // bounded ring of tagged downward gold steps
   snubs: number; snubT: number;                // snubsFelt counter + last-update (for lazy decay)
+  // SECOND SLICE — observer-sampled trajectory fields (lazy; undefined until first sampled):
+  sFast?: number; sSlow?: number; stT?: number;        // standing EWMAs + last-sample time (Family A)
+  revN?: number; revT?: number; lastSign?: number;     // fortuneReversals: count, last-t, last (fast−slow) sign
+  disp?: number; dispT?: number;                       // displacement EWMA + last-sample time (Family A)
+  band?: { poor: number; rich: number; outlaw: number }; bandT?: number;   // timeInBand accumulators (Family A)
 }
 
 function st(a: Agent): SignalState {
@@ -348,3 +353,265 @@ export function misallocatedSuspicion(sim: Sim, a: Agent): number {
     return mass;
   } catch { return 0; }
 }
+
+// ============================================================================
+// SECOND SLICE (docs/architecture/13) — the catalog rows that fold on an existing seam beyond the
+// priority cut. Each names its probe; each folds on a real event (never a per-tick scan). The
+// observer-pass samples (standing EWMAs, displacement, time-in-band, the town aggregates) are
+// SAMPLED from runStatusSensor (the already-budgeted §5 walk), not from a new scan.
+// ============================================================================
+
+// ── Family A: standingFast/Slow — two EWMAs of the ROSTER MEAN standing toward an agent, mirroring
+// sampleGold (a time-anchored exponential average). SAMPLED in the observer pass, which already
+// computes the mean. Fall-from-Grace's social half; the Ruinous-Rumor slope. Guarded.
+export function sampleStanding(a: Agent, mean: number, now: number): void {
+  if (!a) return;
+  try {
+    const s = st(a);
+    if (s.stT === undefined) { s.sFast = mean; s.sSlow = mean; s.stT = 0; s.revN = 0; s.revT = 0; s.lastSign = 0; }
+    const dt = Math.max(0, now - (s.stT || 0));
+    s.sFast = mean + ((s.sFast ?? mean) - mean) * Math.pow(0.5, dt / (SIGNALS.standHalfFast || 120));
+    s.sSlow = mean + ((s.sSlow ?? mean) - mean) * Math.pow(0.5, dt / (SIGNALS.standHalfSlow || 600));
+    s.stT = now;
+    // ── Family A: fortuneReversals — count + last-t of (gold fast−slow) SIGN FLIPS past a magnitude
+    // gate. "The agent whose life keeps turning" (protagonist pressure; rags↔ruin chaining). Derived
+    // HERE, in the same observer sample, when the flip is noticed (no separate scan).
+    const gap = s.gFast - s.gSlow;
+    if (Math.abs(gap) >= (SIGNALS.reversalGate || 15)) {
+      const sign = gap > 0 ? 1 : -1;
+      if (s.lastSign && sign !== s.lastSign) { s.revN = (s.revN || 0) + 1; s.revT = now; }
+      s.lastSign = sign;
+    }
+  } catch { /* never throw on the tick */ }
+}
+export function standingTrend(a: Agent): { fast: number; slow: number } {
+  const s = peek(a); return s && s.stT !== undefined ? { fast: s.sFast || 0, slow: s.sSlow || 0 } : { fast: 0, slow: 0 };
+}
+export function fortuneReversals(a: Agent): { count: number; lastAt: number } {
+  const s = peek(a); return s ? { count: s.revN || 0, lastAt: s.revT || 0 } : { count: 0, lastAt: 0 };
+}
+
+// ── Family A: displacement — an EWMA of distance from the agent's believed home/claimed bed. Exile
+// detection (high displacement + low standing); the wanderer; homecoming beats. SAMPLED in the
+// observer pass off the agent's OWN homeBelief pos vs current pos (own-state truth, observer-read).
+export function sampleDisplacement(a: Agent, now: number): void {
+  if (!a) return;
+  try {
+    const hb = typeof a.homeBelief === 'function' ? a.homeBelief() : null;
+    const home = hb && (hb as { lastPos?: { distanceTo(p: unknown): number } }).lastPos;
+    if (!home || !a.pos || typeof home.distanceTo !== 'function') return;    // no home anchor yet → nothing to sample
+    const d = home.distanceTo(a.pos);
+    const s = st(a);
+    const dt = Math.max(0, now - (s.dispT || 0));
+    s.disp = d + ((s.disp || d) - d) * Math.pow(0.5, dt / (SIGNALS.dispHalf || 300));
+    s.dispT = now;
+  } catch { /* never throw */ }
+}
+export function displacement(a: Agent): number { const s = peek(a); return s ? (s.disp || 0) : 0; }
+
+// ── Family A: timeInBand — sim-time SPENT in a poverty / wealth / outlaw band (endurance stories:
+// "the long winter"; rags arcs need DURATION, not just crossings). Accumulated in the observer pass
+// off the agent's OWN gold band — the band edges checked at the same sample (no separate scan).
+export function accrueBand(a: Agent, now: number): void {
+  if (!a) return;
+  try {
+    const s = st(a);
+    const dt = s.bandT === undefined ? 0 : Math.max(0, now - s.bandT);
+    s.bandT = now;
+    if (!s.band) s.band = { poor: 0, rich: 0, outlaw: 0 };
+    const g = a.gold || 0;
+    if (g <= (SIGNALS.poorBand || 8)) s.band.poor += dt;
+    else if (g >= (SIGNALS.richBand || 120)) s.band.rich += dt;
+    const noto = (a as Agent & { notoriety?: number }).notoriety || 0;
+    if (noto >= (SIGNALS.outlawBand || 0.3)) s.band.outlaw += dt;
+  } catch { /* never throw */ }
+}
+export function timeInBand(a: Agent, band: 'poor' | 'rich' | 'outlaw'): number {
+  const s = peek(a); return s && s.band ? (s.band[band] || 0) : 0;
+}
+
+// ── Family B: regardGap(a,b) — standing(a→b) − standing(b→a) for an interacting pair. Unrequited
+// regard: romance fuel and betrayal fuel are the same number with different signs. A pure read over
+// each side's OWN belief store (sparse by construction — only computed for a named pair). Observer-only.
+export function regardGap(a: Agent, b: Agent): number {
+  try {
+    if (!a || !b || !a.beliefs || !b.beliefs) return 0;
+    const ab = a.beliefs.get(b.id), ba = b.beliefs.get(a.id);
+    return ((ab && ab.standing) || 0) - ((ba && ba.standing) || 0);
+  } catch { return 0; }
+}
+
+// ── Family B: dependence(a) — the share of a's POSITIVE-standing mass concentrated on ONE other
+// agent (top-1 over a's own beliefs). "Everything rides on one person" — grief/devastation setup
+// when that one dies (the probe pre-casts the mourner). A pure read over a's OWN beliefs. Observer-only.
+export function dependence(a: Agent): { share: number; onId: unknown } {
+  try {
+    if (!a || !a.beliefs || !a.beliefs.all) return { share: 0, onId: null };
+    let total = 0, top = 0; let onId: unknown = null;
+    for (const b of a.beliefs.all()) {
+      const s = b && b.standing > 0 ? b.standing : 0;
+      if (s <= 0) continue;
+      total += s;
+      if (s > top) { top = s; onId = b.subjectId; }
+    }
+    return total > 0 ? { share: top / total, onId } : { share: 0, onId: null };
+  } catch { return { share: 0, onId: null }; }
+}
+
+// ── Family D: creditLoad — the town's active-obligations count + a DEFAULT-RATE EWMA (a credit-crisis
+// arc; the moneylender protagonist). A lapsed obligation = a DEFAULT, folded at the settle site
+// (settleObligations stores the per-agent default tally; the town count aggregates in the observer pass).
+// foldObligationDefault is OWN-STATE (a tally on the agent); creditLoad reads the roster (observer-only).
+export function foldObligationDefault(a: Agent, n: number): void {
+  if (!a || !(n > 0)) return;
+  try { const aa = a as Agent & { _defaults?: number }; aa._defaults = (aa._defaults || 0) + n; } catch { /* never throw */ }
+}
+export function defaultsOf(a: Agent): number { return (a as Agent & { _defaults?: number })._defaults || 0; }
+export function creditLoad(sim: Sim): { actives: number; defaults: number; defaultRate: number } {
+  try {
+    let actives = 0, defaults = 0;
+    for (const o of (sim.agents as Agent[])) {
+      if (!o || !o.alive) continue;
+      const obs = (o as Agent & { _obligations?: unknown[] })._obligations;
+      if (Array.isArray(obs)) actives += obs.length;
+      defaults += defaultsOf(o);
+    }
+    return { actives, defaults, defaultRate: actives + defaults > 0 ? defaults / (actives + defaults) : 0 };
+  } catch { return { actives: 0, defaults: 0, defaultRate: 0 }; }
+}
+
+// ── Family D: cohesion — the town's mean IN-TOWN standing vs its mean standing toward OUTSIDERS.
+// Factionalisation: when the in-group warms while the out-group cools, the civil-strife arc opens
+// itself. An observer-pass aggregate over the roster (pure read; truth-side; bounded by the walk).
+export function cohesion(sim: Sim): { inTown: number; outsider: number; split: number } {
+  try {
+    let inSum = 0, inN = 0, outSum = 0, outN = 0;
+    for (const o of (sim.agents as Agent[])) {
+      if (!o || !o.alive || o.controlled || o.faction !== 'townsfolk' || !o.beliefs || !o.beliefs.all) continue;
+      for (const b of o.beliefs.all()) {
+        if (!b || typeof b.standing !== 'number') continue;
+        const subj = sim.agentsById && sim.agentsById.get(b.subjectId);
+        if (!subj || subj.faction === undefined) continue;
+        if (subj.faction === 'townsfolk') { inSum += b.standing; inN++; }
+        else if (subj.faction !== 'monster') { outSum += b.standing; outN++; }
+      }
+    }
+    const inTown = inN ? inSum / inN : 0, outsider = outN ? outSum / outN : 0;
+    return { inTown, outsider, split: inTown - outsider };
+  } catch { return { inTown: 0, outsider: 0, split: 0 }; }
+}
+
+// ── Family C: presumedDead(a) — k agents believe `a` dead/gone (a stale whereabouts belief: its
+// confidence has decayed past a floor) while a LIVES. Return-of-the-presumed-dead; the inheritance
+// dispute that shouldn't have started. Reads the roster's beliefs (truth-side, observer-only); bounded.
+export function presumedDead(sim: Sim, a: Agent): number {
+  try {
+    if (!a || !a.alive) return 0;                                            // only the irony of a LIVE agent presumed gone
+    let k = 0;
+    for (const o of (sim.agents as Agent[])) {
+      if (!o || o === a || !o.alive || o.controlled || !o.beliefs) continue;
+      const b = o.beliefs.get(a.id);
+      if (b && (b.confidence || 0) <= (SIGNALS.presumedDeadConf || 0.05)) k++;   // long unseen → believed gone
+    }
+    return k;
+  } catch { return 0; }
+}
+
+// ── Family C: loversCrossed(a,b) — each of a COURTING pair believes something false about the other
+// (dead/departed: a stale, decayed whereabouts belief while the partner lives). The Romeo-misinformation
+// beat — the narrator knows the tragedy is avoidable. Reads each side's belief vs the other's truth.
+export function loversCrossed(a: Agent, b: Agent): boolean {
+  try {
+    if (!a || !b || !a.beliefs || !b.beliefs) return false;
+    const ab = a.beliefs.get(b.id), ba = b.beliefs.get(a.id);
+    const aBlind = b.alive && (!ab || (ab.confidence || 0) <= (SIGNALS.presumedDeadConf || 0.05));
+    const bBlind = a.alive && (!ba || (ba.confidence || 0) <= (SIGNALS.presumedDeadConf || 0.05));
+    return aBlind || bBlind;                                                 // either believes the other gone
+  } catch { return false; }
+}
+
+// ── Family F: rumourDepth(subject) — the provenance-chain length (max hops) of a spreading rumour
+// about a subject across the roster. Distortion index — "by the third telling, the theft was a murder";
+// Ruinous-Rumor's mechanism made visible. BeliefState.hops already exists; this exposes the max read.
+export function rumourDepth(sim: Sim, subjectId: unknown): number {
+  try {
+    let maxH = 0;
+    for (const o of (sim.agents as Agent[])) {
+      if (!o || !o.alive || o.controlled || !o.beliefs) continue;
+      const b = o.beliefs.get(subjectId as EntityId);
+      if (b && (b.hops || 0) > maxH) maxH = b.hops || 0;
+    }
+    return maxH;
+  } catch { return 0; }
+}
+
+// ── Family F: quietIndex(a) — sim-time since `a` last appeared in ANY chronicle beat. The forgotten
+// man; fresh-protagonist casting so the spotlight rotates. Folded on the chronicle WRITE (noteBeat
+// stamps the subject's last-beat time on the sim); quietIndex reads the elapsed since. Town-level map.
+export function noteBeat(sim: Sim, subjectId: unknown, now: number): void {
+  if (subjectId == null) return;
+  try {
+    const m = sim as Sim & { _lastBeat?: Map<unknown, number> };
+    const store = m._lastBeat || (m._lastBeat = new Map());
+    store.set(subjectId, now);
+    while (store.size > (SIGNALS.quietMax || 256)) { const k = store.keys().next().value; store.delete(k); }   // bounded
+  } catch { /* never throw */ }
+}
+export function quietIndex(sim: Sim, a: Agent, now: number): number {
+  try {
+    const m = (sim as Sim & { _lastBeat?: Map<unknown, number> })._lastBeat;
+    const t = m && a ? m.get(a.id) : undefined;
+    return t == null ? now : Math.max(0, now - t);                          // never seen in a beat → maximally quiet
+  } catch { return 0; }
+}
+
+// ── Family F: witnessSet(event) — who SAW each dramatic event (a short-retention ring keyed by deed).
+// Casting: the confidant, the lone witness, the unreliable narrator. witnessDeed already iterates the
+// witnesses; this retains a brief ring of (deedKey → witnessIds + t), LRU-evicted. Observer-only.
+interface WitnessRecord { ids: unknown[]; t: number; }
+export function noteWitness(sim: Sim, deedKey: string, witnessId: unknown, now: number): void {
+  if (!deedKey || witnessId == null) return;
+  try {
+    const m = sim as Sim & { _witnessSets?: Map<string, WitnessRecord> };
+    const store = m._witnessSets || (m._witnessSets = new Map());
+    let rec = store.get(deedKey);
+    if (!rec) { rec = { ids: [], t: now }; store.set(deedKey, rec); }
+    if (rec.ids.indexOf(witnessId) === -1 && rec.ids.length < (SIGNALS.witnessMax || 12)) rec.ids.push(witnessId);
+    rec.t = now;
+    while (store.size > (SIGNALS.witnessRing || 32)) { const k = store.keys().next().value; store.delete(k); }   // LRU-ish ring
+  } catch { /* never throw */ }
+}
+export function witnessSet(sim: Sim, deedKey: string): unknown[] {
+  try { const m = (sim as Sim & { _witnessSets?: Map<string, WitnessRecord> })._witnessSets; const r = m && m.get(deedKey); return r ? r.ids.slice() : []; }
+  catch { return []; }
+}
+
+// ── Family B: triangle hints — shared third parties across the principals of OPEN arcs (+ each
+// principal's `_courtingId`). Two suitors, two avengers, master-and-two-students — staged-collision
+// probes. Computed over sagas._open only (tiny sets), at the observer pass / arc open. Returns the
+// third-party ids each shared by >= 2 distinct arcs (the collision candidates). Observer-only.
+export function triangleHints(sim: Sim): Array<{ thirdId: unknown; arcs: number }> {
+  try {
+    const open = sim.sagas && sim.sagas._open; if (!open) return [];
+    const seen = new Map<unknown, number>();
+    let arcs = 0;
+    for (const arc of open.values()) {
+      if (++arcs > (SIGNALS.triangleArcCap || 64)) break;                   // bounded — never the whole history
+      const ps = arc.principals; if (!Array.isArray(ps)) continue;
+      const here = new Set<unknown>(ps);
+      for (const id of ps) {                                                // a principal's courting target is a third party
+        const ag = sim.agentsById && sim.agentsById.get(id);
+        const cid = ag && (ag as Agent & { _courtingId?: unknown })._courtingId;
+        if (cid != null) here.add(cid);
+      }
+      for (const id of here) seen.set(id, (seen.get(id) || 0) + 1);
+    }
+    const out: Array<{ thirdId: unknown; arcs: number }> = [];
+    for (const [id, n] of seen) if (n >= 2) out.push({ thirdId: id, arcs: n });   // shared by >= 2 arcs = a collision hint
+    return out;
+  } catch { return []; }
+}
+
+// NOT BUILT — these wait for a feature that does not exist yet (noted per the build brief):
+//   · secretExposure(a, deed) — needs a `Secret` topic kind in the belief/gossip model (unbuilt).
+//   · outOfCharacterActs(a)   — needs the conscience-cost / disposition-gate-crossing feature (unbuilt).

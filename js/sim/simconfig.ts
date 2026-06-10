@@ -570,6 +570,19 @@ export const SIGNALS = {
   scarcityHalf: 1200,    // long-run price EWMA half-life per good (the scarcity baseline)
   grievanceMax: 64,      // LRU cap on the sparse pairwise grievance map (rule 5 — never an N² matrix)
   grievanceMinRounds: 3, // a grievance with at least this many blows is "a feud" (escalation/one-sidedness read)
+  // SECOND SLICE (the catalog tail) — orderings, not measurements; the harness takes the numbers.
+  standHalfFast: 120,    // fast roster-mean-standing EWMA half-life (sim-s) — Fall-from-Grace's social half
+  standHalfSlow: 600,    // slow standing EWMA half-life (~5× the fast — the long social baseline)
+  reversalGate: 15,      // a (goldFast−goldSlow) sign flip counts as a fortuneReversal only past this gap
+  dispHalf: 300,         // displacement EWMA half-life — distance from the believed home/bed (the wanderer)
+  poorBand: 8,           // gold at/below this is the POVERTY band (timeInBand: "the long winter")
+  richBand: 120,         // gold at/above this is the WEALTH band
+  outlawBand: 0.3,       // notoriety at/above this is the OUTLAW band
+  presumedDeadConf: 0.05,// a belief whose confidence decayed to/below this reads as "presumed gone" (Family C)
+  quietMax: 256,         // bound on the per-subject last-beat map (quietIndex — the forgotten man)
+  witnessMax: 12,        // cap on the witness ids retained per dramatic event (witnessSet — casting)
+  witnessRing: 32,       // cap on the witness-set ring (how many recent events keep a witness list)
+  triangleArcCap: 64,    // bound on open arcs scanned for shared-third-party collision hints (Family B)
 };
 
 // --- STATUS: the status-delta / failure sensor (docs/architecture/12 §5 — fall-from-grace) --------
