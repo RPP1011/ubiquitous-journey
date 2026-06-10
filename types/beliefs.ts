@@ -45,6 +45,7 @@ export interface BeliefState {
   animacyTally: AnimacyTally | null;
   placeKind: string | null;         // 'building'|'home'|'tavern' — null for a person-belief
   sheltered: boolean | null;        // believed shelter state of a place-belief
+  captive: boolean;                 // believed-held: perception sets it from a seen _held subject (CAPTIVE → free deriver)
   inertEvidence: number;            // higher-order reasoning scalar (schema #6)
   inert: boolean;                   // revised "proven harmless" (overrides hostile + faction prior)
   assoc: AssocBelief | null;        // subject↔place association (the urchin's stash belief); null = none

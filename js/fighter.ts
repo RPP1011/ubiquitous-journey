@@ -248,6 +248,21 @@ export class Fighter implements IFighter {
     if (this.healthBar) this.healthBar.visible = false;
   }
 
+  // CAPTIVE (the rescue arc): un-kill a just-defeated body — used when a lethal blow is converted
+  // to a CAPTURE (combatEvents) instead of a death. Restore liveness + a clamped health, stop the
+  // death animation, and resume idle locomotion. Mirrors headlessFighter.revive on the visual side.
+  revive(health: number): void {
+    this.alive = true;
+    this.state = 'idle';
+    this.health = Math.max(1, Math.min(TUNE.maxHealth, health || TUNE.maxHealth));
+    this.staggerTimer = 0; this.recoverTimer = 0; this.hasHit = false;
+    this.moveSpeed = 0;
+    const d = this._action(CLIP.death);
+    if (d) d.fadeOut(0.1);
+    this._playLoop(CLIP.idle, 0.1);
+    if (this.healthBar) this.healthBar.visible = true;
+  }
+
   // --- hit sampling ---------------------------------------------------------
   isHitActive(): boolean {
     if (this.state !== 'attack' || this.hasHit || !this.attackAction) return false;

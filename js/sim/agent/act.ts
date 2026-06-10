@@ -49,6 +49,10 @@ const randDir = (): FighterDir => DIRS[(Math.random() * 4) | 0];
 // --- act ---------------------------------------------------------------------
 export function act(a: Agent, dt: number, ctx: CognitionCtx): void {
   if (!a.alive || a.controlled) return;
+  // CAPTIVE (the rescue arc): a held captive does not act — it stands fast where its captor left
+  // it (no work, no wander, no flight). Only `free` (its bonds cut) lifts `_held`. `_held` is set
+  // ONLY when CAPTIVE.enabled, so this is byte-stable with the flag off (never set → never taken).
+  if (a._held) { a.fighter.setMoving(0); a._updateLabel(); return; }
   a.priceGossip(ctx, dt);
   // drink a remedy when badly hurt — keeps a recurring demand for potions
   if (a.fighter.health < TUNE.maxHealth * 0.5 && (a.inventory.potion || 0) >= 1) {
@@ -64,7 +68,11 @@ export function act(a: Agent, dt: number, ctx: CognitionCtx): void {
   // verbs — the doc's hard caution). The genuinely-special executors (plan/fight/spy/
   // build, the multi-tick state machines, and the not-yet-migrated locomotion kinds)
   // stay dispatched, not table-filled, and fall through to the shared epilogue below.
-  const goal = a.goal!;
+  // a null goal (e.g. a captive whose decide deferred this tick, then was freed mid-frame so the
+  // _held standstill above no longer caught it) idles — never dispatch on a missing goal (freeze
+  // lesson). The next cognition tick re-derives a real goal.
+  const goal = a.goal;
+  if (!goal) { a.fighter.setMoving(0); a._updateLabel(); return; }
   const k = goal.kind;
   if (k === 'plan') execPlanStep(a, dt, ctx);
   else if (k === 'fight') combatStep(a, dt, ctx);

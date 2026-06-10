@@ -36,6 +36,7 @@ interface PerceivedThing {
   ownerId?: EntityId;
   buildKind?: string;
   benefitKind?: string;
+  _held?: boolean;             // CAPTIVE: ground-truth held state — perception bridges it to a belief
 }
 const asThing = (o: Perceivable): PerceivedThing => o as unknown as PerceivedThing;
 
@@ -103,6 +104,13 @@ export function perceive(a: Agent, ctx: FullCtx): void {
     // rather than a live player handle. An NPC who never saw the player holds no belief
     // and so feels no dread. Truth-in / belief-out — the sanctioned bridge.
     if (o.controlled) b.notoriety = o.notoriety || 0;
+    // believed CAPTIVITY (CAPTIVE, the rescue arc): seeing a subject whose ground-truth `_held` is
+    // set records it on my belief — truth-in / belief-out, the same sanctioned bridge as notoriety.
+    // The affect deriver reads ONLY this belief (never `_held`), so the rescue DECISION stays in
+    // belief-space. Re-confirmed each sighting; cleared when I see it freed (a freed captive idles
+    // beside its rescuer, so its onlookers re-perceive it and drop the flag). `_held` is set only
+    // when CAPTIVE.enabled, so off → always undefined → b.captive stays false → byte-stable.
+    b.captive = !!o._held;
   }
   // DESTINATION-INTENT: any tracked subject I am NO LONGER seeing — but still hold a
   // confident, freshly-stale belief about (just dropped below a full-confidence sighting)

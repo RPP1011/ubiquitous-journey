@@ -39,6 +39,7 @@ export interface Fighter {
   startBlock(dir: FighterDir): void;
   stopBlock(): void;
   takeHit(damage: number, attackDir: FighterDir): 'blocked' | 'hit' | 'dead';
+  revive(health: number): void;     // CAPTIVE: un-kill a defeated body when a kill becomes a capture
   isHitActive(): boolean;
   weaponPoints(): [Vector3, Vector3];
   torsoCenter(out: Vector3): Vector3;

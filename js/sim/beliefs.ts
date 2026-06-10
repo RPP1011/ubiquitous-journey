@@ -59,6 +59,7 @@ export class BeliefState implements IBeliefState {
   animacyTally: AnimacyTally | null;
   placeKind: string | null;
   sheltered: boolean | null;
+  captive: boolean;
   inertEvidence: number;
   inert: boolean;
   assoc: AssocBelief | null;
@@ -100,6 +101,10 @@ export class BeliefState implements IBeliefState {
     // placeKind: 'building'|'home'|'tavern'; sheltered: believed shelter state (true/false).
     this.placeKind = null;
     this.sheltered = null;
+    // CAPTIVE (the rescue arc): believed-held — perception sets it true when I SEE a subject whose
+    // ground-truth `_held` is set (a captive), false otherwise. The affect deriver reads ONLY this
+    // belief (never `_held`) to form a goalFree, preserving the epistemic split. Off by default.
+    this.captive = false;
     // higher-order reasoning scalars the schema layer accrues (e.g. inertEvidence).
     this.inertEvidence = 0;
     // REVISED-INERT flag: schema #6 sets this once inertEvidence crosses its threshold —

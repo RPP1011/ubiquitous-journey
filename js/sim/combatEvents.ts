@@ -10,7 +10,7 @@
 import { bus, makeEvent as makeEventRaw } from '../rpg/events.js';
 import { RPG } from '../rpg/rpgconfig.js';
 import { TUNE } from '../constants.js';
-import { SIM, MONSTER, EPITHETS, DIRECTOR, AVENGER, GRATEFUL, LEGEND, factionHostile } from './simconfig.js';
+import { SIM, MONSTER, EPITHETS, DIRECTOR, AVENGER, GRATEFUL, LEGEND, CAPTIVE, factionHostile } from './simconfig.js';
 import { setHouseFeud, areHousesFeuding } from './houses.js';
 import { buildObituary, obituaryWorthy } from './gazette.js';
 import type { Agent, CombatEvent, ActionEvent, ActionEventSpec } from '../../types/sim.js';
@@ -85,6 +85,28 @@ export function onCombatEvents(sim: Sim, events: CombatEv[]): void {
     }
 
     if (!A || !T) continue;
+
+    // CAPTURE-ON-DEFEAT (docs/architecture/10-lld §19 item 3 — the rescue arc TRIGGER). EXECUTION:
+    // reads ground truth, that's fine. When a captor-faction combatant (raider/rival/beast) lands a
+    // LETHAL blow on a non-combatant townsperson, with a chance the victim is CAPTURED instead of
+    // killed — revived at low HP, `_held`, anchored (it idles in decide while held). We convert the
+    // death by reviving T BEFORE any death machinery runs (stampSlain/vendetta/obituary), then
+    // `continue` so this event neither kills nor emits a KILL deed. Day-one OFF (CAPTIVE.enabled),
+    // so the branch never fires and the soak is byte-identical. Guarded; never throws on the tick.
+    if (ev.type === 'dead' && CAPTIVE.enabled && !T._held &&
+        T.faction === 'townsfolk' && !T.combatant && !T.controlled &&
+        (CAPTIVE.captorFactions || []).indexOf(A.faction) !== -1 &&
+        Math.random() < (CAPTIVE.captureChance || 0)) {
+      try {
+        const maxHp = (TUNE && TUNE.maxHealth) || 100;
+        if (T.fighter && (T.fighter as { revive?: (h: number) => void }).revive) {
+          (T.fighter as { revive: (h: number) => void }).revive(maxHp * (CAPTIVE.reviveHpFrac || 0.35));
+        }
+        T._held = true; T._captorId = A.id;
+        if (sim.chronicle && sim.chronicle.note) sim.chronicle.note('vendetta', A.id, `${A.name} took ${T.name} captive.`);
+      } catch { /* never throw on the tick */ }
+      continue;   // not a death — skip all the death folding for this event
+    }
 
     // RPG combat deeds (classes/XP). A landed/lethal blow is a MELEE (+RISK,
     // +KILL if lethal) deed for the attacker; a block is a DEFENSE deed for the
