@@ -16,7 +16,7 @@
 // SAFETY (the freeze lesson): every dispatch is guarded and never throws; an unknown verb is a
 // no-op (the caller idles). Registration is idempotent-ish (last writer wins per verb).
 
-import type { Agent, CognitionCtx, PlanStep } from '../../../types/sim.js';
+import type { Agent, CognitionCtx, PlanStep, Goal } from '../../../types/sim.js';
 
 /** A verb's executor: the world-interaction run on arrival. Reads ground truth (act layer). */
 export type Executor = (a: Agent, step: PlanStep, dt: number, ctx: CognitionCtx) => void;
@@ -24,10 +24,21 @@ export type Executor = (a: Agent, step: PlanStep, dt: number, ctx: CognitionCtx)
 export type Deriver = (a: Agent, ctx: CognitionCtx | null) => void;
 /** "Has this step's effect landed?" — when true the plan advances to the next step. Belief-grounded. */
 export type EffectHolds = (a: Agent, ctx: CognitionCtx, step: PlanStep) => boolean;
+/** OUTCOME-CONDITIONED CAUTION (docs/architecture/11): the resolution a WATCHED act emits. */
+export interface OutcomeEvt {
+  status: 'shortfall' | 'neutral' | 'windfall' | 'peril' | 'waste';
+  step: PlanStep;            // the watched step this resolution is about (carries bind + _conf)
+  expected?: number;          // believed yield at plan time
+  realized?: number;          // experienced own-state delta over the step
+  goal?: Goal;                // present on 'waste' (the goal-layer emit)
+}
+/** A plan-outcome handler — fired when a watched act resolves (caution.ts registers the one). */
+export type PlanOutcome = (a: Agent, ctx: CognitionCtx, evt: OutcomeEvt) => void;
 
 const EXECUTORS: Record<string, Executor> = Object.create(null);
 const DERIVERS: Deriver[] = [];
 const EFFECT_HOLDS: Record<string, EffectHolds> = Object.create(null);
+const PLAN_OUTCOME: PlanOutcome[] = [];
 
 // Register a verb's executor (data row into the dispatch map). Feature modules call this from
 // their own file, so no shared switch is edited. Guarded against a bad arg.
@@ -67,4 +78,16 @@ export function effectHolds(verb: string, a: Agent, ctx: CognitionCtx, step: Pla
   const fn = EFFECT_HOLDS[verb];
   if (!fn) return undefined;
   try { return fn(a, ctx, step); } catch { return false; }
+}
+
+// Register a plan-outcome handler (data row), fired when a watched act resolves (doc 11). Same shape
+// as the other registries — a feature adds its row, no shared switch. Dedups; independently guarded.
+export function registerPlanOutcome(fn: PlanOutcome): void {
+  if (typeof fn === 'function' && !PLAN_OUTCOME.includes(fn)) PLAN_OUTCOME.push(fn);
+}
+
+// Fire every plan-outcome handler for one resolution. Each independently guarded (a faulting handler
+// never blocks another or freezes the tick). A no-op when no handler is registered (caution off).
+export function runPlanOutcome(a: Agent, ctx: CognitionCtx, evt: OutcomeEvt): void {
+  for (const h of PLAN_OUTCOME) { try { h(a, ctx, evt); } catch { /* never throw on the tick */ } }
 }

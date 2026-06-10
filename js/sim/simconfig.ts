@@ -559,6 +559,32 @@ export const LEDGER = {
   commitExpiry: 300,     // sim-seconds an armed commitment persists before it lapses unkept
 };
 
+// --- CAUTION: outcome-conditioned caution (docs/architecture/11-outcome-conditioned-caution-lld) ---
+// The burned-hand half of regret: a per-agent, per-STRATEGY signed surcharge — written when a watched
+// theft-shaped act's realized yield falls short of its believed yield, when the venture dies on the
+// road (waste), or when it nearly kills you (peril); eroded by time and by genuine success — added to
+// that strategy's `cost` the same way confidenceSurcharge is. NATURE stays fixed (never mutates
+// personality); experience is nurture — a decaying, bounded, belief-shaped record decaying toward 0.
+// Day-one OFF: disabled ⇒ no field writes, feltSurcharge 0, no emits ⇒ the soak is byte-identical.
+// Every number is a STARTING POINT with a stated ORDERING (the harness tunes; this paragraph doesn't):
+// partialCooldown(12) ≪ halfLife; |windfall| < burn.shortfall < burn.peril; cap ~ routeRisk(6).
+export const CAUTION = {
+  enabled: false,
+  watched: ['burgle', 'rob', 'loot'],   // the three theft-shaped rows: a bet yield + a substitute row + a clean exec walk
+  halfLife: 72,           // = 6·PLAN.partialCooldown(12): a goal is retried several times within one
+                          //   strategy memory, and retirement arcs are observable in the ~150s eval window
+  cap: 8,                 // |s| burn clamp — reads like one extra believed hostile on the route (routeRisk=6):
+                          //   strongly dissuasive, NEVER infeasible (the no-timidity-lock guarantee, C8/C12)
+  capDiscount: 2,         // = cap/4: emboldening (negative s) is real but shallow — keen, not invincible
+  shortfallRatio: 0.5,    // realized < ratio·expected ⇒ shortfall; ratio·exp ≤ realized < exp ⇒ neutral (NO write); ≥ exp ⇒ windfall
+  burn: { shortfall: 2.0, waste: 1.5, peril: 4.0 } as Record<string, number>,
+  windfall: -0.75,        // |windfall| ≪ burns (loss-averse on purpose); diminishing in n
+  luckDiscount: 0.7,      // attribution: burn *= (1 − plantimeConf · luckDiscount) — confident-and-wrong ⇒ small burn
+  rtRelief: 0.6,          // felt = s · (1 − risk_tolerance · rtRelief), POSITIVE side only (the bold shrug)
+  perilFear: 0.5,         // mood.fear at/above which a watched act in progress counts as peril (own-state signal)
+  maxKeys: 12,            // bounded store (oldest-t evicted); sized for the qualified-key follow-up
+};
+
 // --- episodic memory (three-tier ring buffers) ------------------------------
 // Salient life-events flow STM -> MTM -> LTM by consolidation; medium fades over
 // minutes, long-term sticks. Feeds the inspector biography and (later) goals.

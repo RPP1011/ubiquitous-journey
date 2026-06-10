@@ -18,9 +18,10 @@
 // this module standalone — it is NOT wired into decide() yet.
 
 import * as THREE from 'three';
-import { PROFESSIONS, COMMODITIES, ECON, SIM, URCHIN, QUANTITY, KNOW, ROB, HOLD, RECRUIT, AFFECT, ESTIMATE } from './simconfig.js';
+import { PROFESSIONS, COMMODITIES, ECON, SIM, URCHIN, QUANTITY, KNOW, ROB, HOLD, RECRUIT, AFFECT, ESTIMATE, CAUTION } from './simconfig.js';
 import { POI_KIND } from './world.js';
 import { recipeConf } from './recipeKnow.js';
+import { feltSurcharge, relevantConfidence } from './experience.js';
 import { STAGE, REASON } from './trace.js';
 import { effectHolds } from './exec/registry.js';
 import type { Agent, CognitionCtx, Goal, Plan, PlanStep, EntityId, Atom as AtomT, KnowTopic, Stage, Reason } from '../../types/sim.js';
@@ -73,6 +74,7 @@ interface Bind {
   topic?: KnowTopic;
   cond?: SubAtom;       // hold: the believed condition the wait advances on
   deadline?: number;    // hold: when to abandon the wait
+  _conf?: number;       // CAUTION (doc 11 §5): plan-time confidence the watched bet leans on
 }
 // The simulated believed-state the solver threads forward (inventory/gold/at/received).
 interface SimState {
@@ -1041,8 +1043,16 @@ function solveAtom(agent: Agent, ctx: CognitionCtx, atom: SubAtom, depth: number
     const sub = solveAll(agent, ctx, pre, depth + 1, frontier, next);
     if (!sub) continue;
 
-    const stepCost = prim.cost(agent, ctx, bind);
+    let stepCost = prim.cost(agent, ctx, bind);
     if (!Number.isFinite(stepCost)) continue;      // unreachable place / unknown price
+    // CAUTION (doc 11): the outcome-conditioned surcharge — a strategy that has burned THIS agent
+    // before is priced dearer (one that has paid, cheaper), beside confidenceSurcharge. Capped (never
+    // infeasible), 0/no-op when off. Also snapshot the plan-time confidence the watched bet leans on
+    // (§5 attribution), so a knowing gamble that fails burns harder than a confident one that does.
+    if (CAUTION.enabled) {
+      stepCost += feltSurcharge(agent, prim.name, bind as unknown as PlanStep['bind'], ctx.time);
+      if (CAUTION.watched.indexOf(prim.name) >= 0) bind._conf = relevantConfidence(agent, prim.name, bind as unknown as PlanStep['bind']);
+    }
     const cost = stepCost + sub.cost;
     if (!Number.isFinite(cost)) continue;
     // bind carries the planner's wider place form ({subjectId}); the PlanStep boundary

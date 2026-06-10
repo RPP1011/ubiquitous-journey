@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { DIR, TUNE } from '../../constants.js';
 import { ARENA_RADIUS } from '../../arena.js';
 import { POI_KIND } from '../world.js';
-import { GOODS, ECON, SIM, SOCIAL, BAND, BUILD, COMFORT, NOVELTY, RECIPES } from '../simconfig.js';
+import { GOODS, ECON, SIM, SOCIAL, BAND, BUILD, COMFORT, NOVELTY, RECIPES, CAUTION } from '../simconfig.js';
 import { castSpec, onCooldown } from '../../rpg/abilities/interpreter.js';
 import { isMelee } from '../../rpg/abilities/ir.js';
 import { bus, makeEvent } from '../../rpg/events.js';
@@ -18,12 +18,15 @@ import { awardGoalClosureXP } from '../motivation.js';
 import { stepTargetPos, stepEffectHolds } from '../planner.js';
 import { goTo, groundY } from './movement.js';
 import { steer, STEER_FILLS } from './steer.js';
-import { registerExecutor, runExecutor } from '../exec/registry.js';
+import { registerExecutor, runExecutor, runPlanOutcome } from '../exec/registry.js';
+import { classifyYield } from '../experience.js';
 import { masteryMul } from './occupation.js';
 import { collideWalls } from '../walls.js';
 import type {
-  Agent, CognitionCtx, PlanStep, PlanBind, AbilitySpec, FighterDir, ActionEventSpec, ActionEvent,
+  Agent, CognitionCtx, PlanStep, PlanBind, Goal, EntityId, AbilitySpec, FighterDir, ActionEventSpec, ActionEvent,
 } from '../../../types/sim.js';
+
+type OutcomeStatus = 'shortfall' | 'neutral' | 'windfall' | 'peril' | 'waste';
 
 // events.js infers makeEvent's `tags=[]` default as never[]; retype to its real spec.
 const mkEvent = makeEvent as (spec: ActionEventSpec) => ActionEvent;
@@ -530,6 +533,75 @@ export function offensivePower(spec: AbilitySpec): number {
   return p;
 }
 
+// --- CAUTION emit sites (docs/architecture/11) ----------------------------------------------
+// The execution-side bookkeeping that lets outcomes price strategies. A WATCHED step (burgle/rob/
+// loot) is snapshotted at its start (own gold), marked `_acted` when the payoff site is reached
+// (every watched executor is arrival-gated, so reach ⇒ the verb ran), then classified: shortfall/
+// neutral/windfall by realized-vs-believed yield, or peril if the agent is frightened mid-act. A
+// dropped watched step that was acted (interrupted before it landed) classifies too; one that was
+// never reached costs nothing (re-planning is the engine's normal operation, never punished). All
+// gated by CAUTION.enabled at the call site (off ⇒ never invoked ⇒ byte-identical soak).
+
+const cautionTouched = (step: PlanStep | undefined): boolean => !!step && CAUTION.watched.indexOf(step.prim) >= 0;
+const threatened = (a: Agent): boolean => ((a.mood && a.mood.fear) || 0) >= (CAUTION.perilFear || 1);
+
+// the believed payoff position of a watched act (stash place / mark / corpse).
+function cautionTargetPos(a: Agent, ctx: CognitionCtx, step: PlanStep): THREE.Vector3 | null {
+  const b = step.bind || {};
+  if (b.place != null) return stepTargetPos(a, ctx, b.place);
+  const id = (b.target != null ? b.target : (b.corpse != null ? b.corpse : null)) as EntityId | null;
+  return id != null ? stepTargetPos(a, ctx, { subjectId: id }) : null;
+}
+
+const expectedYield = (step: PlanStep): number => {
+  if (step.prim === 'loot') return 1;
+  const amt = (step.bind || {}).amt;
+  return (typeof amt === 'number' && amt > 0) ? amt : 0;     // burgle/rob: the believed haul
+};
+
+// fire the handlers, mark the step resolved (de-dup) + close the goal's caution trail.
+function cautionEmit(a: Agent, ctx: CognitionCtx, step: PlanStep, goal: Goal | null | undefined, status: OutcomeStatus, expected?: number, realized?: number): void {
+  step._emitted = true;
+  if (goal && goal._cautionTrail && goal._cautionTrail.step === step) goal._cautionTrail.resolved = true;
+  a._cautionStep = null; a._cautionGoal = null;
+  runPlanOutcome(a, ctx, { status, step, expected, realized });
+}
+
+// pre-exec: a watched step that JUST stopped being current (re-plan/preemption) is resolved if it had
+// been acted (peril when threatened, else an interrupted-heist shortfall); an unreached one costs
+// nothing. Then snapshot the current watched step (own gold = the realized-delta anchor).
+function cautionPre(a: Agent, ctx: CognitionCtx, goal: Goal, step: PlanStep): void {
+  const prev = a._cautionStep;
+  if (prev && prev !== step && !prev._emitted) {
+    if (prev._acted) cautionEmit(a, ctx, prev, a._cautionGoal, threatened(a) ? 'peril' : 'shortfall');
+    a._cautionStep = null; a._cautionGoal = null;
+  }
+  if (!cautionTouched(step)) return;
+  if (goal._cautionTrail && goal._cautionTrail.resolved) { step._emitted = true; return; }   // venture already settled
+  if (!step._snap) {
+    step._snap = { gold: a.gold || 0, t0: ctx.time };
+    step._acted = false; step._emitted = false;
+    goal._cautionTrail = { step, acted: false, resolved: false };
+  }
+  a._cautionStep = step; a._cautionGoal = goal;
+}
+
+// post-exec (the executor ran this tick): mark reached, then resolve. Peril pre-empts a yield read
+// (the night nearly cost you); else reaching the site ⇒ the act ran ⇒ classify its realized yield.
+function cautionPost(a: Agent, ctx: CognitionCtx, goal: Goal, step: PlanStep): void {
+  if (!cautionTouched(step) || !step._snap || step._emitted) return;
+  const tp = cautionTargetPos(a, ctx, step);
+  if (tp && a.pos.distanceTo(tp) <= (SIM.arriveDist || 1.5) + 0.5) {
+    step._acted = true;
+    if (goal._cautionTrail && goal._cautionTrail.step === step) goal._cautionTrail.acted = true;
+  }
+  if (threatened(a)) { cautionEmit(a, ctx, step, goal, 'peril'); return; }
+  if (!step._acted) return;                                  // still travelling — nothing resolved yet
+  const expected = expectedYield(step);
+  const realized = (a.gold || 0) - step._snap.gold;
+  cautionEmit(a, ctx, step, goal, classifyYield(expected, realized), expected, realized);
+}
+
 // --- plan-step execution (Phase 2) ------------------------------------------
 // Run the current primitive of the top goal. Reuses the existing movement /
 // produce / combat primitives and adds the genuinely-new give/pay TRANSFERS
@@ -543,7 +615,9 @@ export function execPlanStep(a: Agent, dt: number, ctx: CognitionCtx): void {
   const step = a.goal!.step as PlanStep | undefined;
   if (!goal || !step) { a.fighter.setMoving(0); return; }
   try {
+    if (CAUTION.enabled) cautionPre(a, ctx, goal, step);   // snapshot watched step / classify a dropped one
     execPrimitive(a, step, dt, ctx);
+    if (CAUTION.enabled) cautionPost(a, ctx, goal, step);  // reached & acted ⇒ classify yield; threatened ⇒ peril
     // advance when this step's effect has landed in believed state
     if (stepEffectHolds(a, ctx, step) && goal.plan) {
       if (goal.step === undefined) goal.step = 0;

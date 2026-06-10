@@ -10,10 +10,10 @@
 // omniscient world truth). Progress is measured from lightweight per-agent
 // counters (agent.life) plus the gold/level the agent genuinely holds.
 
-import { MOTIVE, SIM } from './simconfig.js';
+import { MOTIVE, SIM, CAUTION } from './simconfig.js';
 import { RPG } from '../rpg/rpgconfig.js';
 import { goalAvenge, goalSeekFortune, goalRepay, goalGrieve, goalDelve } from './planner.js';
-import { runDerivers } from './exec/registry.js';
+import { runDerivers, runPlanOutcome } from './exec/registry.js';
 import { STAGE, REASON } from './trace.js';
 import type { Agent, CognitionCtx, Goal, Personality, AmbitionSnapshot, EntityId, Stage, Reason } from '../../types/sim.js';
 
@@ -287,12 +287,25 @@ export function awardGoalClosureXP(a: Agent, goal: Goal, now: number, salience =
 // drop goals whose subject/place is gone, whose predicate is satisfied, or which
 // timed out. Kept here (sibling of updateAmbition) so all goal-stack policy lives
 // in motivation.js. Returns nothing; mutates a.goals in place. Bounded + guarded.
+// CAUTION (doc 11 §4.4) — the WASTE emit: a goal that DIED ON THE ROAD (set out, travelled toward a
+// watched act, never reached it, gave up) prices the strategy. Emitted ONLY where a goal ends by
+// expiry/unreachable — never on a predicate-satisfied pop (satisfied-by-other-means costs nothing),
+// never on a plan swap (re-planning is free). Own-state; gated; guarded.
+function cautionWaste(a: Agent, ctx: CognitionCtx | null, g: Goal): void {
+  if (!CAUTION.enabled || !ctx) return;
+  const tr = g._cautionTrail;
+  if (tr && tr.step && !tr.acted && !tr.resolved) {
+    tr.resolved = true;
+    try { runPlanOutcome(a, ctx, { status: 'waste', step: tr.step, goal: g }); } catch { /* never throw */ }
+  }
+}
+
 export function pruneGoals(a: Agent, ctx: CognitionCtx | null): void {
   if (!a || !Array.isArray(a.goals) || !a.goals.length) return;
   const now = ctx ? ctx.time : 0;
   a.goals = a.goals.filter((g: Goal) => {
     if (!g) return false;
-    if (g.expiresAt != null && now >= g.expiresAt) return false;
+    if (g.expiresAt != null && now >= g.expiresAt) { cautionWaste(a, ctx, g); return false; }
     if (typeof g.predicate === 'function') {
       try {
         if (g.predicate(a, ctx)) {
@@ -319,7 +332,7 @@ export function pruneGoals(a: Agent, ctx: CognitionCtx | null): void {
         }
       } catch { /* keep on error */ }
     }
-    if (g._unreachable) return false;   // flagged by the planner as infeasible
+    if (g._unreachable) { cautionWaste(a, ctx, g); return false; }   // flagged by the planner as infeasible
     return true;
   });
 }

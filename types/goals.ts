@@ -55,6 +55,7 @@ export interface PlanBind {
   corpse?: EntityId;
   fromStock?: boolean;
   best?: string;
+  _conf?: number;               // CAUTION (doc 11 §5): plan-time confidence the watched bet leans on (attribution)
   [k: string]: unknown;
 }
 
@@ -64,6 +65,11 @@ export interface PlanStep {
   prim: string;                 // 'goto'|'gather'|'produce'|'buy'|'sell'|'give'|'pay'|…
   bind: PlanBind;
   exec?: { verb: string; [k: string]: unknown };
+  // CAUTION (doc 11 §4) — act.ts emit-site bookkeeping on a WATCHED step. Written only when
+  // CAUTION.enabled, so off ⇒ these stay undefined and the path is byte-identical.
+  _snap?: { gold: number; t0: number };   // own gold at the act's start (the realized-delta anchor)
+  _acted?: boolean;                        // reached the payoff site (⇒ the verb actually ran)
+  _emitted?: boolean;                      // this step already resolved an outcome (de-dup guard)
 }
 
 /** A cached plan on a goal: an ordered primitive list + total cost. `partial` marks a
@@ -103,6 +109,7 @@ export interface Goal {
   predicate?: (agent: unknown, ctx: unknown) => boolean;
   _unreachable?: boolean;
   _cooldownUntil?: number;      // sim-time before which an unreachable threshold goal won't re-plan
+  _cautionTrail?: { step: PlanStep; acted: boolean; resolved: boolean };  // CAUTION (doc 11 §4.4): the venture's life, for the waste emit at goal-end
   [k: string]: unknown;
 }
 

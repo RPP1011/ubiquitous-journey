@@ -9,5 +9,6 @@ import './learning.js';
 import './recruiter.js';
 import './affect.js';
 import './ledger.js';
+import './caution.js';
 
 export {};

@@ -212,6 +212,11 @@ export interface Agent {
   _wrecked?: boolean;                                               // a target sabotaged (Affect: wreck)
   _surveilAccum?: number;                                           // surveil dwell-time accumulator (urchin: throttles assoc sightings)
   _offers?: Record<EntityId, { from: EntityId; payoff: number; t: number }>;  // recruit offers this agent has perceived (follower side)
+  // OUTCOME-CONDITIONED CAUTION (docs/architecture/11) — the burned-hand strategy memory + the
+  // act.ts emit-site bookkeeping. Lazily created; written only when CAUTION.enabled (byte-stable off).
+  _actExperience?: Map<string, { s: number; t: number; n: number }>;  // per-strategy signed surcharge store
+  _cautionStep?: PlanStep | null;                                   // the watched plan step currently in progress (transition detect)
+  _cautionGoal?: Goal | null;                                       // the goal that step belongs to
 
   // ───── OPTIONAL transient role/visual state ─────
   reporterTarget?: Vector3 | null;    // the gazetteer's current subject position
