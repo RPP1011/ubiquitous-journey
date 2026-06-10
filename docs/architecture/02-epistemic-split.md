@@ -22,6 +22,30 @@ fooled** — act on a false belief — while reality still resolves correctly. A
 disguise is *believed* friendly (so no one attacks it on sight) but combat, if it
 ever happens, resolves on its *true* faction. That gap is the entire deception layer.
 
+### Scope: the split is a COGNITION boundary, not an OBSERVER boundary
+
+The rule constrains an **agent's cognition** — what an NPC reads to make its own *decision*.
+It does **not** constrain the **narrator**. The **omniscient observer layer** — the Director, the
+Chronicle, the Gazette/Reporter, the population/lineage and other society passes, and any future
+**detection probe** (e.g. a status-delta "X fell from grace" sensor, a narrative arc/saga registry)
+— is *not an NPC*. It reads **ground truth across the whole roster** and feeds *display / world
+history*, never an agent's decision. The Director already authors agent state this way (it plants
+beliefs, seeds grudges, spawns raids).
+
+So the test for whether a read is allowed is **"does it drive an agent's behaviour?"**, not "does it
+touch another agent's truth":
+- A read that feeds a **decision** (decide/plan/derive/act) must go through **belief**. A new field
+  that tilts how an agent *acts* — e.g. a `believedWealth` that makes NPCs esteem the prosperous —
+  is belief-scoped precisely because it changes behaviour.
+- A read that merely **records or narrates** a story is observer-layer and may read truth directly —
+  a probe that scans the roster to note an agent's true mean standing fell is fine; it's the narrator,
+  not a townsperson. (An observer probe legitimately sits *outside* the `FOREIGN_DEREF` static scan
+  below, which guards the cognition passes.)
+
+A probe **may** still author a first-person memory the victim then *acts* on — that is exactly how the
+Director already injects situations; the agent then decides via the normal cognition path on its own
+(now-authored) memory, so nothing an agent reads *to decide* gained a foreign-truth dereference.
+
 ## The two hostility predicates (do not conflate them)
 
 | Predicate | File | Reads | Used at |
