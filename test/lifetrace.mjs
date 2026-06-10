@@ -32,14 +32,17 @@ import {
   deedLedger, oaths, perilsSurvived, goldTrend, standingTrend, fortuneReversals,
   arcLoad, regardGap, dependence, esteemTruthGap, snubsFelt, quietIndex,
 } from '../js/sim/signals.js';
+import { runHealthChecks, runCohort } from './health.mjs';
 
 // ---- CLI parsing: --flag <value> pairs, plus a bare positional simSeconds (back-compat) ----------
 function parseArgs(argv) {
-  const out = { seed: undefined, duration: 1800, agent: undefined, digest: false };
+  const out = { seed: undefined, duration: 1800, agent: undefined, digest: false, health: false, cohort: 0 };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const t = argv[i];
     if (t === '--digest') out.digest = true;
+    else if (t === '--health-checks') out.health = true;
+    else if (t === '--cohort') out.cohort = Math.max(1, Number(argv[++i]) | 0 || 8);
     else if (t === '--seed') out.seed = Number(argv[++i]);
     else if (t === '--duration') out.duration = Number(argv[++i]);
     else if (t === '--agent') out.agent = argv[++i];
@@ -52,7 +55,7 @@ function parseArgs(argv) {
 
 const ARGS = parseArgs(process.argv.slice(2));
 if (ARGS.help) {
-  console.log('usage: bun test/lifetrace.mjs [--seed <n>] [--duration <simSeconds>] [--agent <name|id|most-eventful>] [--digest]');
+  console.log('usage: bun test/lifetrace.mjs [--seed <n>] [--duration <simSeconds>] [--agent <name|id|most-eventful>] [--digest] [--health-checks] [--cohort <N>]');
   process.exit(0);
 }
 const SIM_SECONDS = Number.isFinite(ARGS.duration) ? ARGS.duration : 1800;
@@ -174,15 +177,56 @@ const a = hero;
 const alive = !!(a && a.alive);
 
 // ============================================================================
+// --health-checks / --cohort : the BUILD STEP 3 diagnostic MODES (roster-wide, not per-hero). When
+// either is set the per-agent biography is skipped — these are the auto-flag / distribution layers
+// the tool surfaces for regression gating. Both are observer-layer / truth-side (display only).
+// ============================================================================
+if (ARGS.health || ARGS.cohort) {
+  if (ARGS.health) emitHealthChecks();
+  if (ARGS.cohort) emitCohort(ARGS.cohort);
+}
+// ============================================================================
 // --digest : assemble the existing substrate into a readable LIFE STORY.
 // ============================================================================
-if (ARGS.digest) {
+else if (ARGS.digest) {
   emitDigest();
 } else {
   emitRawBiography();
 }
 
 sim.dispose();
+
+// ---------------------------------------------------------------------------
+// ANOMALY HEALTH-CHECKS — print PASS/FLAG per check; each FLAG prints the offending number + threshold.
+function emitHealthChecks() {
+  console.log(`=============== ANOMALY HEALTH-CHECKS (whole run) ===============`);
+  console.log(`  (each check is a RATIO with an absolute-N FLOOR — scale-free, fires only once the world is big enough to mean it)\n`);
+  const checks = runHealthChecks(sim);
+  let flags = 0;
+  for (const c of checks) {
+    const tag = c.flagged ? 'FLAG' : (c.floorMet ? 'PASS' : 'pass*');     // pass* = floor not yet met (can't fire)
+    if (c.flagged) flags++;
+    console.log(`  [${tag}] ${c.name.padEnd(18)} ratio=${c.ratio}  vs ${c.threshold}  ${c.floorMet ? '' : '(floor not met)'}`);
+    console.log(`         detail: ${JSON.stringify(c.detail)}`);
+    if (c.flagged) console.log(`         WHY: ${c.why}`);
+  }
+  console.log(`\n  ${flags ? `${flags} CHECK(S) FLAGGED` : 'all checks PASS'} (pass* = absolute-N floor not yet met this run).\n`);
+}
+
+// COHORT MODE — print the four roster-wide distribution metrics over the living cohort.
+function emitCohort(n) {
+  const living = sim.agents.filter((x) => x && x.alive && !x.controlled).length;
+  console.log(`=============== COHORT METRICS (N=${n} requested · ${living} living traced) ===============`);
+  const metrics = runCohort(sim);
+  for (const m of metrics) {
+    if (m.shape === 'scalar') {
+      console.log(`  ${m.name.padEnd(20)} = ${m.value}   (${JSON.stringify({ ...m, name: undefined, shape: undefined, value: undefined })})`);
+    } else {
+      console.log(`  ${m.name.padEnd(20)} : ${JSON.stringify({ ...m, name: undefined, shape: undefined })}`);
+    }
+  }
+  console.log('');
+}
 
 // ---------------------------------------------------------------------------
 function emitDigest() {

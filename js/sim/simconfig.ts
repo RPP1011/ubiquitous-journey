@@ -1857,5 +1857,37 @@ export const INTRIGUE = {
 export const TRACE = {
   enabled: true,
   depth: 24,
+  // --- health: the lifetrace tool's ANOMALY HEALTH-CHECKS + COHORT thresholds (test/lifetrace.mjs).
+  // PURE OBSERVER-LAYER / display-side: read only by the tool + its regression asserts, NEVER by
+  // cognition (the trace's write-only rule extends — a health-check is read-only-on-the-side-channel).
+  // Every check is a RATIO (rate-per-X / share-of-total) so it is SCALE-FREE, gated by an absolute-N
+  // FLOOR so a tiny / early world can't false-fire (the single most important field). The defaults
+  // below are ORDERINGS, not measured constants — calibrate against a healthy soak (doc 13 §1 rule:
+  // orderings, not measurements). Tuning lives here, not in the tool's logic (CLAUDE.md convention).
+  health: {
+    // (a) signalChurn — per-agent event-rate implausibility. Per family rate CEILING (events/life);
+    //     FLAG when perAgentRate > ceiling AND total >= floor (so a 3-agent smoke run can't trip it).
+    signalRateCeiling: { oaths: 8, deeds: 40, gossip: 200, beats: 12, goals: 60 },
+    signalFloor: 200,
+    // (b) corpseBloat — dead >> alive. FLAG when dead > alive * ratio AND total (ever-spawned) >= floor.
+    bloatRatio: 2.0,
+    bloatFloor: 50,
+    // (c) salienceCollapse — memory decay-to-zero. FLAG when share of LTM/MTM entries at/below eps
+    //     >= collapseFrac (a DISTRIBUTION test, not the mean) OR meanSalience <= eps, AND sampled >= floor.
+    salienceEps: 0.02,
+    collapseFrac: 0.95,
+    salienceFloor: 100,
+    // (d) arcMonoculture — one arc-KIND (or one OUTCOME) dominates the closed-arc ring. FLAG when the
+    //     top share > monoFrac AND closedTotal >= floor.
+    monoFrac: 0.80,
+    arcFloor: 25,
+    // (e) behaviorCollapse — agents stuck in one goal. Per-agent dominantGoalFrac > stuckFrac; cohort
+    //     FLAG when the share of living agents that stuck itself exceeds collapsePopFrac AND living >= floor.
+    stuckFrac: 0.90,
+    collapsePopFrac: 0.25,
+    behaviorFloor: 20,
+    // cohort metric 2 (keptOathRatioDist) zero-bucket edge; the quantile set is fixed (p10/p50/p90).
+    keptOathZeroEps: 1e-9,
+  },
 };
 
