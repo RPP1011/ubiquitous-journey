@@ -18,8 +18,9 @@ import { foldLoss, noteSnub, lossReasonShare, snubsFelt, goldTrend, sampleGold,
   cohesion, presumedDead, loversCrossed, rumourDepth, noteBeat, quietIndex,
   noteWitness, witnessSet, triangleHints } from '../../js/sim/signals.js';
 import { statusSensor } from '../../js/sim/statusSensor.js';
+import { gossipBeliefs } from '../../js/sim/agent/perception.js';
 import { SagaStore } from '../../js/sim/arcs.js';
-import { BeliefState } from '../../js/sim/beliefs.js';
+import { BeliefState, BeliefStore } from '../../js/sim/beliefs.js';
 import { recognizeWealth } from '../../js/sim/agent/decide.js';
 import { World } from '../../js/sim/world.js';
 import { Simulation } from '../../js/sim/simulation.js';
@@ -101,6 +102,62 @@ export function signalsTest(ok) {
     try { sampleGold({ id: 7 }, 0); foldLoss(null, 'x', 1, 0); snubsFelt({ id: 7 }, 0); statusSensor({ id: 7 }, mkSim([]), 0); }
     catch { threw = true; }
     ok(!threw, 'signals: malformed/missing inputs never throw');
+  }
+}
+
+// ---- TASK A: gossip-about-self feeds snubsFelt (docs/architecture/13 §3 snubsFelt) --------------
+// When an agent PERCEIVES a chatting neighbour holding a NEGATIVE opinion of ITSELF (soured standing
+// and/or raised suspicion), it overhears them speaking ill of it — a perceivable snub that bumps
+// snubsFelt (the own-state input for `slandered`). Positive / neutral / other-subject gossip does NOT.
+// Driven through the real gossipBeliefs bridge with real BeliefStores for determinism.
+export function gossipSnubTest(ok) {
+  // a chatting agent `a` (the receiver/overhearer) beside a neighbour `o` (the teller). Place them
+  // within talkRange and give each a real BeliefStore so gossipBeliefs iterates them as in the sim.
+  const mk = (id) => {
+    const a = {
+      id, alive: true, controlled: false, faction: 'townsfolk',
+      pos: vec(0, 0), beliefs: new BeliefStore(id),
+    };
+    return a;
+  };
+  const ctx = { time: 10, agents: [] };
+  const run = (recv, teller) => { ctx.agents = [recv, teller]; gossipBeliefs(recv, ctx); };
+
+  // A1 — a teller who SOURED on me (standing well below the snub bar) ⇒ I feel a snub.
+  {
+    const a = mk(1), o = mk(2); o.pos = vec(1, 0);   // adjacent
+    const tb = o.beliefs._ensure(a.id); tb.standing = -0.6; tb.confidence = 0.9;
+    run(a, o);
+    ok(snubsFelt(a, 10) >= 1, `gossip A1: overhearing a neighbour who SOURED on me bumps snubsFelt (${snubsFelt(a, 10).toFixed(2)})`);
+  }
+  // A2 — a teller who merely SUSPECTS me (suspicion above the bar, standing neutral) ⇒ also a snub.
+  {
+    const a = mk(1), o = mk(2); o.pos = vec(1, 0);
+    const tb = o.beliefs._ensure(a.id); tb.standing = 0; tb.suspicion = 0.5; tb.confidence = 0.9;
+    run(a, o);
+    ok(snubsFelt(a, 10) >= 1, `gossip A2: overhearing a neighbour who SUSPECTS me bumps snubsFelt (${snubsFelt(a, 10).toFixed(2)})`);
+  }
+  // A3 — a teller who likes me (positive standing, no suspicion) ⇒ NO snub.
+  {
+    const a = mk(1), o = mk(2); o.pos = vec(1, 0);
+    const tb = o.beliefs._ensure(a.id); tb.standing = 0.5; tb.confidence = 0.9;
+    run(a, o);
+    ok(snubsFelt(a, 10) === 0, 'gossip A3: a neighbour who LIKES me produces no snub');
+  }
+  // A4 — a teller holding only OTHER-subject opinions (a sour view of #9, none of me) ⇒ NO snub.
+  {
+    const a = mk(1), o = mk(2); o.pos = vec(1, 0);
+    const ob = o.beliefs._ensure(9); ob.standing = -0.9; ob.confidence = 0.9;   // hates #9, not me
+    run(a, o);
+    ok(snubsFelt(a, 10) === 0, 'gossip A4: a teller souring on a THIRD party (not me) produces no snub');
+  }
+  // A5 — bounded: one ingest pass yields at most one snub (the `break` limits to one partner/tick).
+  {
+    const a = mk(1), o = mk(2); o.pos = vec(1, 0);
+    const tb = o.beliefs._ensure(a.id); tb.standing = -0.9; tb.confidence = 0.9;
+    run(a, o);
+    const after1 = snubsFelt(a, 10);
+    ok(after1 >= 1 && after1 < 2, `gossip A5: a single ingest pass yields at most one snub (${after1.toFixed(2)})`);
   }
 }
 

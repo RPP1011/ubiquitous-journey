@@ -570,6 +570,12 @@ export const SIGNALS = {
   lossRing: 8,           // bounded ring of recent downward gold steps (tagged robbed/spent/gifted/fined)
   lossMin: 1,            // a gold step smaller than this is noise — not ringed
   snubHalfLife: 180,     // snubsFelt decays toward 0 with this half-life (a cold shoulder fades)
+  // GOSSIP-ABOUT-SELF snub (docs/architecture/13 §3 snubsFelt): when an agent overhears a chatting
+  // neighbour HOLDING a negative opinion of IT (soured standing and/or raised suspicion), that is a
+  // PERCEIVED cold shoulder ("they speak ill of me") — own-state evidence that feeds the snub counter.
+  // At most ONE snub per gossip-ingest pass (the `break` already bounds it to one partner/tick).
+  snubGossipStanding: -0.2,  // a teller's standing toward me at/below this counts as ill-spoken
+  snubGossipSuspicion: 0.3,  // …or a teller's suspicion of me at/above this (a whispered doubt)
   scarcityHalf: 1200,    // long-run price EWMA half-life per good (the scarcity baseline)
   grievanceMax: 64,      // LRU cap on the sparse pairwise grievance map (rule 5 — never an N² matrix)
   grievanceMinRounds: 3, // a grievance with at least this many blows is "a feud" (escalation/one-sidedness read)
