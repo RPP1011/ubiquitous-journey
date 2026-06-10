@@ -6,10 +6,15 @@
 > experience/obligation pure-helper store pattern, the three registries).
 >
 > The three hard invariants of [10-LLD] apply unchanged, and this feature restates them in §10:
-> - **The epistemic split** ([02](02-epistemic-split.md)): any sensor that reads *another agent's*
->   prosperity / status goes through a **belief**, never ground truth. The one new belief field
->   (`believedWealth`) is written only by the same truth-in/belief-out bridges that already feed
->   `notoriety`/`captive` (perception of a visible cue), and read only in cognition.
+> - **The epistemic split** ([02](02-epistemic-split.md)) governs **NPC cognition** — what an agent
+>   reads to make a *decision*. It does **not** constrain the narrator. **Detection probes** (the arc
+>   registry, the status-delta sensor) belong to the **omniscient observer layer**, exactly like the
+>   Director — *the Director is not an NPC; it reads ground truth across the whole roster.* Probes
+>   need not live inside any agent: they observe the true world and feed the chronicle/Gazette
+>   (display), never an agent's decision. The split bites only on reads that **drive behaviour** — so
+>   the one new field that feeds NPC *esteem*, `believedWealth`, IS belief-scoped (written by a
+>   visible-cue bridge, read in cognition) precisely because it changes what agents do; the sensors
+>   that merely *record* a story do not.
 > - **Verbs are data** ([10-LLD §7](10-action-grammar-lld.md#7-verbs-are-data--the-three-registries)):
 >   the one new executor (`assault`) and the one new deriver (`romance`) register as registry rows
 >   from their own feature files; no shared `switch` is edited.
@@ -71,7 +76,7 @@ It is designed first and in the most depth.
 | `js/sim/simulation.ts` | execution | constructs `this.sagas = new SagaStore(this)` beside `this.chronicle`; exposes `ctx.openArc/appendBeat/closeArc` on the cognition+full ctx so any pass/feature can reach the registry; the `assault` and recognition executors live on `ctx.resolver`. |
 | `js/sim/chronicle.ts` | detect | new `BEAT.*` kinds (`RUIN`/`RETIRE`/`RISE`/`MUSTER`/`RESCUE`); `note(kind, subj, text, arc)` already threads an arc ref — arcs file their beats through it. The registry calls `chronicle.note` on open/close so the feed groups an emergent arc's chapters. |
 | `js/sim/gazette.ts` | detect | `gatherDispatches` reads `sim.sagas.recentClosed()` **in addition to** `sim.director._sagas` (one extra source loop, beside the existing `const sagas = (sim.director && sim.director._sagas)`); `sagaArticle` gains rows for the new emergent `sagaKind`s. |
-| `js/sim/motivation.ts` | detect | the **status-delta sensor** (`statusSensor`, a guarded own-state pass folded into `updateAmbition` or a sibling) emits `BEAT.RUIN`/`BEAT.RETIRE` + a `ruined`/`thwarted` memory episode on a downward gold/level/standing crossing or a repeatedly-failed watched pursuit. The avenge/repay/rescue derivers gain **`openArc`/`appendBeat`/`closeArc` hooks** at their derive/closure sites. |
+| `js/sim/motivation.ts` *(or a new observer pass)* | detect | the **status-delta sensor** (`statusSensor`, a guarded **omniscient observer pass** — sibling of the chronicle/Director tick, NOT agent cognition; reads ground truth incl. the true roster mean-standing) emits `BEAT.RUIN`/`BEAT.SHUNNED`/`BEAT.RETIRE` + a `ruined`/`slandered`/`thwarted` memory episode on a downward gold/level/standing crossing or a repeatedly-failed watched pursuit. The avenge/repay/rescue derivers gain **`openArc`/`appendBeat`/`closeArc` hooks** at their derive/closure sites. |
 | `js/sim/memory.ts` | detect | three new episode kinds (`ruined`/`thwarted`/`slandered`) + their `memoryPhrase` rows. |
 | `js/sim/beliefs.ts` | detect | the **`believedWealth`** field on `BeliefState` (value+conf, evidence-accrual) + `recordWealthCue` (the write path); read by the recognition channel. |
 | `js/sim/agent/perception.ts` | detect | the truth-in/belief-out **wealth-cue bridge**: a *visible* trade / carried tool nudges `believedWealth` (like the `notoriety`/`captive` bridges already there). |
@@ -311,33 +316,40 @@ The gap: the sim has no *downward*-crossing sensor. Ambition tracks upward progr
 Fall-from-Grace, Burned-Veteran, and the tragic Ruinous-Rumor ending are invisible — the victim has
 no first-person arc.
 
-**The addition: `statusSensor(a, ctx)`** — a guarded, own-state pass (folded into `updateAmbition`
-or a sibling in `motivation.ts`, after progress is computed). It tracks a small per-agent baseline
-(`a._statusHigh = { gold, level, standing }`, the running max) and fires on a **downward crossing**:
+**The addition: `statusSensor(a, ctx)`** — a guarded **observer-layer probe** (a world-tick pass in
+the omniscient layer, a sibling of the chronicle/Director pass — NOT agent cognition, so it reads
+**ground truth** freely). It tracks a small per-agent baseline (`a._statusHigh = { gold, level,
+standing }`, the running max) and fires on a **downward crossing**:
 
 ```
-statusSensor(a, ctx):                                // own-state only; guarded; never throws
+statusSensor(a, ctx):                                // OMNISCIENT probe; reads truth; guarded; never throws
   hi = a._statusHigh ??= snapshot(a)
   hi.gold = max(hi.gold, a.gold); hi.level = max(hi.level, totalLevel(a))
-  meanStanding = mean over a.beliefs.all() of how OTHERS-as-I-model-them regard me  ← see note
+  meanStanding = mean over the roster of how each OTHER agent's belief regards a  ← true average, fine
   // RUIN: gold or level fell a STATUS.ruinFrac below the running high
   if a.gold <= hi.gold * STATUS.ruinFrac and !a._ruined:
     a._ruined = true; memory.record({kind:'ruined', salience:0.7, valence:-1})
     chronicle.note(BEAT.RUIN, a.id, `${a.name} has fallen on hard times.`, arcRef)
     closeArc(sim.sagas, 'rags:'+a.id, 'ruined')      // a rags arc, if open, ends in ruin
+  // SLANDERED: the town's TRUE mean opinion of a crossed below STATUS.shunStanding
+  if meanStanding <= STATUS.shunStanding and !a._slandered:
+    a._slandered = true; memory.record({kind:'slandered', salience:0.7, valence:-1})
+    chronicle.note(BEAT.SHUNNED, a.id, `${a.name} finds the town has turned cold.`, arcRef)
   // RETIRE/RELAPSE: a watched pursuit (theft) repeatedly failed — read the experience store
   if feltSurcharge(a,'burgle',…) >= STATUS.retireSurcharge and !a._retired:
     a._retired = true; memory.record({kind:'thwarted', …}); chronicle.note(BEAT.RETIRE, …)
     openArc(sim.sagas, {kind:'burnedVeteran', key:'burned:'+a.id, principals:[a.id]})
 ```
 
-> **The mean-standing read stays epistemic.** An agent cannot read how the town *truly* regards it
-> (that would scan the roster). The honest proxy is **own-state**: a `slandered` crossing is detected
-> from the agent's OWN perception that suspicion/hostility around it rose (the schema layer already
-> accrues this; a `slandered` episode is recorded when the agent perceives multiple fresh hostiles it
-> did not earn). The "mean standing fell" signal is therefore a *believed-social* read (others I can
-> see now avoid me), not a god's-eye standing average. This is the one place the eval's wording
-> ("mean-standing crosses a downward threshold") had to be re-grounded — see §14.
+> **The probe is omniscient — read the true average directly.** A *detection* read of the town's mean
+> opinion of `a` is a plain roster scan; that is legitimate here because the sensor is the narrator,
+> not an NPC (the Director already reads the whole roster this way). An earlier draft contorted this
+> into an "agent perceives hostiles around it" own-state proxy out of a misplaced fear of the
+> epistemic split — unnecessary: the split constrains an agent's *decision* reads, not the observer's.
+> The one thing this probe still respects is the BEHAVIOUR boundary: it may author a first-person
+> memory (`ruined`/`slandered`) the victim then acts on — which is exactly how the Director already
+> injects situations into agents — and the agent then decides via the normal cognition path on its
+> own (now-authored) memory. Nothing an agent reads to *decide* gained a foreign-truth dereference.
 
 **New memory episode kinds** (`memory.ts:memoryPhrase`): `ruined` ("lost everything"), `thwarted`
 ("gave up the venture"), `slandered` ("found themselves shunned"). These feed `deriveGoals` like any
@@ -493,14 +505,17 @@ outlaw arc to the warband machinery.
 
 ## 10. Invariants restated for this feature
 
-- **Epistemic split.** Every prosperity/status sensor reads a **belief**, never ground truth:
-  `believedWealth` is written only by the visible-cue bridge (§6) and read in cognition; the
-  status-delta `slandered`/mean-standing read is the agent's OWN perception of hostiles around it,
-  not a roster average (§5, §14); the assault/rescue targets are **believed** positions/hostiles
-  (§7). The arc registry stores agent ids + text and never drives a decision — it's a read-only
-  detector (the chronicle/Gazette consume it). `test/suites/epistemic.mjs`'s `FOREIGN_DEREF` scan
-  must stay clean — no new `subject.gold` reads in cognition (the bridge reads a visible cue, in the
-  perception pass, which is the sanctioned truth-in side).
+- **Epistemic split = a COGNITION boundary, not an observer boundary.** Detection probes (the arc
+  registry, the status-delta sensor) are part of the **omniscient observer layer**, like the Director,
+  and read **ground truth** freely — the status sensor reads true gold/level and the true roster mean
+  standing (§5); the arc registry stores agent ids + text and never drives a decision (the
+  chronicle/Gazette consume it). The split bites only on reads that **drive an agent's behaviour**:
+  `believedWealth` is belief-scoped (written by the visible-cue bridge in the perception pass §6, read
+  in cognition) because it tilts esteem; the assault/rescue targets are **believed** positions/hostiles
+  (§7). `test/suites/epistemic.mjs`'s `FOREIGN_DEREF` scan covers the *cognition* passes (decide/act/
+  plan/derive); a probe in the observer pass legitimately reads truth and is outside that scan — so no
+  new `subject.gold` read appears in a cognition pass (the cue bridge reads a visible cue on the
+  sanctioned perception/truth-in side).
 - **Closed money loop.** The authoring layer's `pin(gold)` is a **conserved** set (debit/credit a
   sink, never `a.gold = n`); no sensor or arc mints gold; the assault resolves combat via the
   existing conserved seam.
@@ -508,8 +523,8 @@ outlaw arc to the warband machinery.
   (`recruiter.ts`/`romance.ts`); no shared `switch` is edited. The arc registry is a store, not a
   verb.
 - **Freeze lesson.** `arcs.ts` is bounded (`maxOpen`/`maxClosed`/`maxBeats`), lazily swept, every
-  call guarded; the status sensor and cue bridge are own-state, guarded, never throw; new derivers
-  are independently guarded by `runDerivers`.
+  call guarded; the status sensor (an observer pass) and the cue bridge (perception) are guarded and
+  never throw; new derivers are independently guarded by `runDerivers`.
 - **Guarded, self-throttled passes.** `sagas.sweep()` self-throttles like `chronicle.tick`.
 
 ---
@@ -519,7 +534,7 @@ outlaw arc to the warband machinery.
 | suite | gates |
 | --- | --- |
 | `test/suites/arcs.mjs` **(NEW)** | A1–A7 (§3.6): open idempotent, append/close lifecycle, keying dedup, lapsed sweep, the E2E emergent vendetta saga, Gazette consumption, the director `_recordSaga` fold. |
-| `memoryGoals.mjs` (+) | the status-delta sensor: a ruined agent records a `ruined` episode + `BEAT.RUIN` + closes any rags arc; a `slandered` crossing from perceived hostiles. |
+| `memoryGoals.mjs` (+) | the status-delta sensor (observer probe): a ruined agent records a `ruined` episode + `BEAT.RUIN` + closes any rags arc; a `slandered` crossing fires off the true roster mean-standing. |
 | `affect.mjs` (+) | the rescue clear-the-guards subgoal: a captor in reach is struck before `free`; the `rescue` arc opens on derive and closes `freed`. |
 | `recruit.mjs` (+) | the `assault` follow-through: a mustered NPC band marches the believed foe and the `warband` arc closes; an NPC's notoriety populates and tilts an offer. |
 | `urchin.mjs` (+) | `believedWealth` cue bridge nudges the belief from a visible trade; the recognition channel warms standing toward a believed-rich local; `estimateHaul` reads it. |
