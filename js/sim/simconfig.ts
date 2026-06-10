@@ -528,6 +528,7 @@ export const CAPTIVE = {
   rescueStanding: 0.3,           // believed standing above which a captive is worth rescuing (a friend)
   rescueRiskTol: 0.45,           // a rescuer must be at least this bold OR…
   rescueAltruism: 0.6,           // …this kind to attempt a rescue (disposition gate — not everyone)
+  guardReach: 4,                 // a believed-hostile within this of the captive is a GUARD to clear first (§7)
   gratitudeWarmth: 0.5,          // standing bump the freed captive feels toward its rescuer (its OWN belief)
 };
 

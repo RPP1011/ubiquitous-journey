@@ -4,6 +4,7 @@
 // steal, the freed/wrecked flags flip, and the reaction EMERGES (the theft is seen → the mark sours).
 import { FeatureStage } from './_stage.mjs';
 import { goalSteal, goalFree, goalWreck } from '../../js/sim/planner.js';
+import { deriveGoals } from '../../js/sim/motivation.js';
 import { CAPTIVE } from '../../js/sim/simconfig.js';
 
 export function affectTest(ok, helpers) {
@@ -52,6 +53,22 @@ export function affectTest(ok, helpers) {
       saboteur.pushGoal(goalWreck(target.id), st.ctx());
       st.run(() => target._wrecked === true, { maxFrames: 1500, pin: [[target, 5, 0]], refresh: [[saboteur, target]] });
       ok(target._wrecked === true, `affect WRECK: the target was sabotaged (_wrecked=${target._wrecked})`);
+      st.dispose();
+    }
+    // CLEAR-THE-GUARDS (docs/architecture/12 §7) — a rescuer that believes a HOSTILE sits beside the
+    // believed-captive prepends an avenge-shaped attack subgoal (fell the guard before the free step).
+    {
+      const st = new FeatureStage(helpers);
+      const rescuer = st.add('Bold', 0, 0, { personality: { risk_tolerance: 0.9, altruism: 0.8, social_drive: 0.4, ambition: 0.4, curiosity: 0.4 } });
+      const captive = st.add('Friend', 8, 0);
+      const guard = st.add('Brute', 8.5, 0, { faction: 'bandit' });
+      // the rescuer believes: a dear captive (b.captive + warm standing) AND a hostile guard beside it.
+      st.believe(rescuer, captive); const cb = rescuer.beliefs.get(captive.id); cb.captive = true; cb.standing = 0.6; cb.confidence = 1;
+      st.believe(rescuer, guard, true); const gb = rescuer.beliefs.get(guard.id); gb.confidence = 1;
+      deriveGoals(rescuer, st.sim._cognitionCtx());
+      ok(rescuer.goals.some((g) => g.kind === 'free' && g.subjectId === captive.id), 'affect GUARD: the rescue goal is derived');
+      ok(rescuer.goals.some((g) => g.kind === 'avenge' && g.subjectId === guard.id && g.from === 'rescue_guard'),
+        'affect GUARD: an avenge-shaped subgoal is prepended to clear the guard beside the captive');
       st.dispose();
     }
 

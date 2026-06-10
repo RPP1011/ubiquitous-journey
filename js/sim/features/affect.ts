@@ -12,7 +12,7 @@
 // `wreck` stays dormant (no enemy-owned structure entity to target — see 10-lld §19 item 3).
 
 import { registerExecutor, registerEffectHolds, registerDeriver } from '../exec/registry.js';
-import { stepTargetPos, goalFree } from '../planner.js';
+import { stepTargetPos, goalFree, goalAvenge } from '../planner.js';
 import { steer } from '../agent/steer.js';
 import type { Agent, CognitionCtx, PlanStep } from '../../../types/sim.js';
 import { ROB, CAPTIVE, SIM } from '../simconfig.js';
@@ -85,6 +85,26 @@ registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
     bestStanding = b.standing || 0; bestId = b.subjectId;           // rescue the dearest believed-captive
   }
   if (bestId == null) return;
+  // CLEAR-THE-GUARDS (docs/architecture/12 §7, review 6): if the rescuer BELIEVES a hostile sits
+  // beside the believed-captive, fell it FIRST — prepend an avenge-shaped attack subgoal (higher
+  // priority than the free step) so the rescue plan becomes goto→(attack the guard)→free. Own-belief
+  // only (the captor's believed pos + a believed-hostile), never the roster. The rescue justification
+  // INTENTIONALLY relaxes the aggression gate: a strong-enough bond pulls even a timid-but-kind
+  // rescuer past its threshold to cut its way in (decided on purpose, not an accident of executor).
+  const capB = a.beliefs.get(bestId);
+  if (capB) {
+    for (const hb of a.beliefs.all()) {
+      if (!hb || hb.subjectId === a.id || hb.subjectId === bestId) continue;
+      if (!(hb.hostile || (a.considerHostile && a.considerHostile(hb)))) continue;
+      if (hb.confidence < SIM.actOnBeliefMin) continue;
+      if (hb.lastPos.distanceTo(capB.lastPos) > (CAPTIVE.guardReach || 4)) continue;   // a guard BESIDE the captive
+      const ga = goalAvenge(hb.subjectId);
+      ga.priority = 0.8; ga.from = 'rescue_guard';                                     // above the free goal (0.7)
+      ga.expiresAt = (ctx ? ctx.time : 0) + 120;
+      a.pushGoal(ga, ctx);
+      break;                                                                           // one guard at a time
+    }
+  }
   const g = goalFree(bestId);
   // pop the goal when the captive is no longer BELIEVED held (perception-confirmed freed). Belief-
   // only; the planner's base predicate is `false` (an external confirm), so we supply the confirm.

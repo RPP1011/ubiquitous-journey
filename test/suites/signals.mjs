@@ -15,6 +15,7 @@ import { recognizeWealth } from '../../js/sim/agent/decide.js';
 import { World } from '../../js/sim/world.js';
 import { Simulation } from '../../js/sim/simulation.js';
 import { Agent } from '../../js/sim/agent.js';
+import { readFileSync } from 'node:fs';
 
 function mkAgent(id, gold, name = 'A' + id) {
   return {
@@ -133,6 +134,35 @@ export function wealthTest(ok) {
     recognizeWealth(a);
     ok(b.standing === 0, 'wealth W5: a believed-suspect rich local earns no deference (suspect gate)');
   }
+}
+
+// ---- the probe-authored-memory WHITELIST (docs/architecture/12 §10/§11 — review 1's enforcement) -
+// The observer pass may DISPLAY off truth (beats/arc-closes) but may AUTHOR a memory only off
+// own-state or a perceivable-evidence counter — NEVER a roster aggregate. Without this gate the
+// observer layer is a standing hole through which any future sensor could courier foreign truth into
+// cognition with a one-line memory.record. We scan the status-probe source and assert every episode
+// kind it AUTHORS is on the whitelist, and that `slandered` reads snubsFelt (not the mean).
+export function whitelistTest(ok) {
+  // own-state (own gold/inventory/experience) + perceivable-evidence counters only. A roster
+  // aggregate (mean standing) is NOT allowed as the read class behind a probe-authored memory.
+  const ALLOWED = new Set(['ruined', 'thwarted', 'slandered']);
+  const PROBE_FILES = ['js/sim/statusSensor.ts'];   // extend as new observer probes author episodes
+  for (const f of PROBE_FILES) {
+    let src = '';
+    try { src = readFileSync(f, 'utf8'); } catch { /* */ }
+    ok(src.length > 0, `whitelist: probe source ${f} is readable`);
+    // the episode kinds the probe AUTHORS — only the `record(a, { … kind: 'X' … })` calls (NOT arc
+    // `openArc({kind:…})`, which are arc kinds, not memory episodes).
+    const authored = [...new Set([...src.matchAll(/record\(\s*a\s*,\s*\{[^}]*?kind:\s*'([a-z_]+)'/g)].map((m) => m[1]))];
+    const offending = authored.filter((k) => !ALLOWED.has(k));
+    ok(offending.length === 0,
+      `whitelist: ${f} authors ONLY own-state/perceivable episode kinds (authored: [${authored.join(',')}]; offending: ${offending.join(',') || 'none'})`);
+  }
+  // and the load-bearing one: slandered must read snubsFelt, never the roster mean (review 1).
+  const ss = (() => { try { return readFileSync('js/sim/statusSensor.ts', 'utf8'); } catch { return ''; } })();
+  const slanderBlock = ss.slice(Math.max(0, ss.indexOf('snubsFelt(a, now)')), ss.indexOf("kind: 'slandered'") + 40);
+  ok(/snubsFelt/.test(ss) && /snubs\s*>=\s*STATUS\.snubThreshold[^]*?kind:\s*'slandered'/.test(ss),
+    'whitelist: the `slandered` memory is gated on snubsFelt (perceivable evidence), not the roster mean');
 }
 
 // ---- outlaw warming + NPC notoriety + the outlaw arc (docs/architecture/12 §9) ------------------
