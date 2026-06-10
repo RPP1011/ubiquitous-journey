@@ -1,16 +1,14 @@
 // ---- the Affect rows rob/free/wreck, live (docs/architecture/10 execution) ---------------
 // Drives rob (conserved theft by force), free (cut a captive's bonds), and wreck (sabotage) end-
-// to-end through the frame loop with ROB/AFFECT forced on in-test. Asserts gold CONSERVED on a rob,
-// the freed/wrecked flags flip, and the reaction EMERGES (a robbery is seen → the mark sours).
+// to-end through the frame loop (all always-live on the mainline). Asserts gold CONSERVED on a
+// steal, the freed/wrecked flags flip, and the reaction EMERGES (the theft is seen → the mark sours).
 import { FeatureStage } from './_stage.mjs';
 import { goalSteal, goalFree, goalWreck } from '../../js/sim/planner.js';
-import { ROB, AFFECT, URCHIN, CAPTIVE } from '../../js/sim/simconfig.js';
+import { CAPTIVE } from '../../js/sim/simconfig.js';
 
 export function affectTest(ok, helpers) {
-  const prevR = ROB.enabled, prevA = AFFECT.enabled, prevU = URCHIN.enabled;
-  ROB.enabled = true; AFFECT.enabled = true; URCHIN.enabled = false;   // URCHIN off → steal routes through `rob`
-  try {
-    // ROB — take by force off the mark's person (no cache). MOVED ⇒ conserved.
+  {
+    // ROB / STEAL — take off the mark (the planner picks the cheaper of rob/burgle). MOVED ⇒ conserved.
     {
       const st = new FeatureStage(helpers);
       const thug = st.add('Brak', 0, 0, { personality: { greed: 0.9 } });
@@ -54,8 +52,8 @@ export function affectTest(ok, helpers) {
     }
 
     // ── CAPTIVITY → RESCUE (the `free` arc trigger, docs/architecture/10-lld §19 item 3) ──────────
-    const prevC = CAPTIVE.enabled, prevChance = CAPTIVE.captureChance;
-    CAPTIVE.enabled = true; CAPTIVE.captureChance = 1;   // force capture on a qualifying lethal blow
+    const prevChance = CAPTIVE.captureChance;
+    CAPTIVE.captureChance = 1;   // force capture on a qualifying lethal blow (deterministic in-test)
     try {
       // CAPTURE-ON-DEFEAT (execution, ground truth): a bandit's lethal blow on a non-combatant
       // townsperson is converted to a CAPTURE — the victim is revived, _held, _captorId set.
@@ -112,6 +110,6 @@ export function affectTest(ok, helpers) {
         ok(!!cb && cb.standing > 0.2, `CAPTIVE RES3: the freed captive's gratitude EMERGED — it warmed toward its rescuer (standing=${cb && cb.standing.toFixed(2)})`);
         st.dispose();
       }
-    } finally { CAPTIVE.enabled = prevC; CAPTIVE.captureChance = prevChance; }
-  } finally { ROB.enabled = prevR; AFFECT.enabled = prevA; URCHIN.enabled = prevU; }
+    } finally { CAPTIVE.captureChance = prevChance; }
+  }
 }

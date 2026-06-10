@@ -7,7 +7,6 @@ import { World } from '../../js/sim/world.js';
 import { Agent } from '../../js/sim/agent.js';
 import { plan, goalRepay, goalSeekFortune, goalAvenge, goalSteal, goalSate, goalLearn, goalMuster,
   goalFree, goalWreck, ACQUIRE, Atom, stepEffectHolds, recordBelieves, believesConf, complianceOf } from '../../js/sim/planner.js';
-import { URCHIN, QUANTITY, KNOW, ROB, HOLD, RECRUIT, AFFECT } from '../../js/sim/simconfig.js';
 
 export function plannerSelfTest(ok, { makeFighter, stubScene }) {
   const P = () => ({ risk_tolerance: 0.5, social_drive: 0.5, ambition: 0.5, altruism: 0.5, curiosity: 0.5 });
@@ -66,27 +65,30 @@ export function plannerSelfTest(ok, { makeFighter, stubScene }) {
 
   // URCHIN — epistemic atoms (Phase 4, Ex.5): the heist backward-chains through know_assoc.
   // `shadow` is the epistemic `gather` (acquire the stash belief); a gossiped stash collapses
-  // the plan — a tip is literally plan-cost saved. Forced ON (day-one OFF), restored after.
+  // the plan — a tip is literally plan-cost saved. Always-live on the mainline. (NOTE: with `rob`
+  // also always-live, the planner now picks the cheapest theft route — for an unknown-stash mark a
+  // direct `rob` of the person can undercut the case-the-cache chain; the cache chain is isolated
+  // by the gossiped-stash sub-case below, where `burgle` is unambiguously the route.)
   {
-    const prevUrchin = URCHIN.enabled;
-    URCHIN.enabled = true;
-    try {
+    {
       const mark = mk('Mark'); mark.pos.set(20, 0, 20);
-      // an urchin who has SEEN the mark (a belief) but does NOT know where he stashes.
+      // an urchin who has SEEN the mark (a belief) but does NOT know where he stashes: it plans a
+      // coherent theft — either casing the cache (shadow→approach→burgle) or robbing the person.
       const pip = debtor('Pip', () => {});
       pip.beliefs.observe(mark.id, mark.faction, mark.pos, ctx.time, false);
       const pNoAssoc = plan(pip, goalSteal(mark.id, 5), ctx);
-      ok(pNoAssoc && names(pNoAssoc).join('->') === 'shadow->approach->burgle',
-        `planner urchin: stash unknown -> case it first (${names(pNoAssoc).join('->') || 'NULL'})`);
+      ok(pNoAssoc && (names(pNoAssoc).includes('burgle') || names(pNoAssoc).includes('rob')),
+        `planner urchin: stash unknown -> plans a theft (cache-chain or rob) (${names(pNoAssoc).join('->') || 'NULL'})`);
 
-      // the SAME goal, but gossip already supplied the stash: the plan COLLAPSES to approach+burgle.
+      // the SAME goal, but gossip already supplied the stash: the cache route COLLAPSES to
+      // approach+burgle (a localised cache is cheaper to raid than robbing the person).
       const pip2 = debtor('Pip2', () => {});
       const b = pip2.beliefs.observe(mark.id, mark.faction, mark.pos, ctx.time, false);
       b.assoc = { placeKind: 'stash', pos: { x: 22, z: 22 }, conf: 0.8 };
       const pAssoc = plan(pip2, goalSteal(mark.id, 5), ctx);
       ok(pAssoc && names(pAssoc).join('->') === 'approach->burgle',
         `planner urchin: stash gossiped -> plan collapses, a tip is cost saved (${names(pAssoc).join('->') || 'NULL'})`);
-    } finally { URCHIN.enabled = prevUrchin; }
+    }
   }
 
   // B1 — well-formed: every step's precondition is satisfiable by prior steps'
@@ -141,10 +143,9 @@ export function plannerSelfTest(ok, { makeFighter, stubScene }) {
   // target (greedy, best price first); an UNREACHABLE target SATISFICES (best partial + the
   // partial flag plan() cools the goal on); a BOLD agent WIDENS into its keep reserve where a
   // timid one will not; and a graded NEED composes several meals toward a level threshold.
+  // Always-live on the mainline.
   {
-    const prevQ = QUANTITY.enabled;
-    QUANTITY.enabled = true;
-    try {
+    {
       const sells = (pl) => pl ? pl.steps.filter((s) => s.prim === 'sell').length : 0;
 
       // COMPOSITION — one sale of a single good can't cross the target, so the planner ADDS a
@@ -187,17 +188,15 @@ export function plannerSelfTest(ok, { makeFighter, stubScene }) {
       const pSate = plan(hungry, goalSate('hunger', 0.8), ctx);
       const meals = pSate ? pSate.steps.filter((s) => s.prim === 'consume').length : 0;
       ok(pSate && meals >= 2, `planner Q5: a graded need composes several meals (${meals} consume steps)`);
-    } finally { QUANTITY.enabled = prevQ; }
+    }
   }
 
-  // KNOW — the knowledge model (docs/architecture/10, Phase 2). Forced ON (day-one OFF),
-  // restored after. Proves: Know(topic) sits in a plan like any requirement, satisfied by an
-  // observe/ask/study channel; a topic already held confidently is supplied FOR FREE (the step
-  // drops out); and CONFIDENCE FOLDS INTO COST — a heist on a shaky stash belief costs more.
+  // KNOW — the knowledge model (docs/architecture/10, Phase 2). Always-live on the mainline.
+  // Proves: Know(topic) sits in a plan like any requirement, satisfied by an observe/ask/study
+  // channel; a topic already held confidently is supplied FOR FREE (the step drops out); and
+  // CONFIDENCE FOLDS INTO COST — a heist on a shaky stash belief costs more.
   {
-    const prevKnow = KNOW.enabled;
-    KNOW.enabled = true;
-    try {
+    {
       // KNOW(recipe) — an agent that does NOT know a craft must LEARN it (observe/ask/study).
       const learner = debtor('Learner', () => {});
       learner.recipes = new Set();   // forget every craft → the recipe is a real requirement
@@ -223,9 +222,7 @@ export function plannerSelfTest(ok, { makeFighter, stubScene }) {
 
       // CONFIDENCE-INTO-COST — the SAME heist costs MORE when the stash belief is shaky, so the
       // planner would scout again before betting. Two urchins, identical but for assoc confidence.
-      const prevUrchin = URCHIN.enabled;
-      URCHIN.enabled = true;
-      try {
+      {
         const markC = mk('MarkC'); markC.pos.set(18, 0, 18);
         const sure = debtor('Sure', () => {});
         const bS = sure.beliefs.observe(markC.id, markC.faction, markC.pos, ctx.time, false);
@@ -237,8 +234,8 @@ export function plannerSelfTest(ok, { makeFighter, stubScene }) {
         const pUnsure = plan(unsure, goalSteal(markC.id, 5), ctx);
         ok(pSure && pUnsure && pUnsure.cost > pSure.cost + 1e-3,
           `planner K4: confidence folds into cost — shaky stash costs more (${pSure?.cost.toFixed(2)} < ${pUnsure?.cost.toFixed(2)})`);
-      } finally { URCHIN.enabled = prevUrchin; }
-    } finally { KNOW.enabled = prevKnow; }
+      }
+    }
   }
 
   // ACQUIRE — the resource table (docs/architecture/10, Phase 3). The acquire actions are rows
@@ -263,11 +260,9 @@ export function plannerSelfTest(ok, { makeFighter, stubScene }) {
     ok(gStep && gStep.exec.made === true && gStep.exec.socialTrace === 'honest_labour',
       `planner R2: a gather step carries made + honest_labour from its row (${gStep ? gStep.exec.socialTrace : 'NO GATHER'})`);
 
-    // ROB — the `person` row, taking gold by force. Gated ON (day-one OFF), restored after. The
-    // steal goal now routes through `rob` (reach the mark, take the purse), a MOVED/conserved row.
-    const prevRob = ROB.enabled;
-    ROB.enabled = true;
-    try {
+    // ROB — the `person` row, taking gold by force. Always-live on the mainline. The steal goal
+    // can route through `rob` (reach the mark, take the purse), a MOVED/conserved row.
+    {
       const markR = mk('MarkR'); markR.pos.set(15, 0, 15);
       const thug = debtor('Thug', () => {});
       thug.beliefs.observe(markR.id, markR.faction, markR.pos, ctx.time, false);
@@ -275,17 +270,15 @@ export function plannerSelfTest(ok, { makeFighter, stubScene }) {
       const rStep = pRob && pRob.steps.find((s) => s.prim === 'rob');
       ok(rStep && rStep.exec.made === false && rStep.exec.socialTrace === 'robbery',
         `planner R3: ROB generates a moved/robbery acquire (${names(pRob).join('->') || 'NULL'})`);
-    } finally { ROB.enabled = prevRob; }
+    }
   }
 
-  // HOLD — the hold-until wait step (docs/architecture/10, Phase 4). Forced ON (day-one OFF),
-  // restored after. Proves: a plan with a hold_until condition INSERTS a wait at a safe spot and
-  // plans THROUGH it; an already-open window needs no wait (the step drops out); the held step
-  // ADVANCES the moment the condition becomes believed-true; and it carries its deadline.
+  // HOLD — the hold-until wait step (docs/architecture/10, Phase 4). Always-live on the mainline.
+  // Proves: a plan with a hold_until condition INSERTS a wait at a safe spot and plans THROUGH it;
+  // an already-open window needs no wait (the step drops out); the held step ADVANCES the moment the
+  // condition becomes believed-true; and it carries its deadline.
   {
-    const prevHold = HOLD.enabled;
-    HOLD.enabled = true;
-    try {
+    {
       const lurker = mk('Lurker'); lurker.pos.set(40, 0, 40);   // a believed threat to wait out
       const waiter = debtor('Waiter', () => {});
       waiter.beliefs.observe(lurker.id, lurker.faction, lurker.pos, ctx.time, true);   // believed alive
@@ -317,7 +310,7 @@ export function plannerSelfTest(ok, { makeFighter, stubScene }) {
       waiter.beliefs.erase(lurker.id);   // the window opens (the threat is no longer believed present)
       ok(holdStep && stepEffectHolds(waiter, ctx, holdStep) === true,
         'planner H4: the hold advances the moment the condition becomes believed-true');
-    } finally { HOLD.enabled = prevHold; }
+    }
   }
 
   // RECRUIT — building a force (docs/architecture/10, Phase 5, the recruiter capstone). Forced ON
@@ -325,10 +318,9 @@ export function plannerSelfTest(ok, { makeFighter, stubScene }) {
   // gold target composes sales (greedy, most reliable first); an out-of-reach camp SATISFICES; and
   // both sides are modelled — compliance is a PREDICTION of an independent choice, and the leader's
   // model of "this candidate will follow" is a one-level Believes it records about them.
+  // Always-live on the mainline.
   {
-    const prevRecruit = RECRUIT.enabled;
-    RECRUIT.enabled = true;
-    try {
+    {
       const leader = debtor('Leader', () => {});
       const c1 = mk('C1'); c1.pos.set(6, 0, 6);
       const c2 = mk('C2'); c2.pos.set(7, 0, 7);
@@ -366,16 +358,14 @@ export function plannerSelfTest(ok, { makeFighter, stubScene }) {
       ok(Math.abs(believesConf(leader, c1.id, 'will_follow') - 0.8) < 1e-9 &&
          believesConf(leader, c2.id, 'will_follow') === 0,
         'planner M5: a one-level Believes(candidate, will_follow) records + reads back');
-    } finally { RECRUIT.enabled = prevRecruit; }
+    }
   }
 
-  // AFFECT — changing another entity's physical state (docs/architecture/10, Phase 5). Forced ON
-  // (day-one OFF), restored after. `free` (cut a captive's bonds → freed) and `wreck` (sabotage →
-  // not intact) chain like attack: reach the believed target, then the trivial final act.
+  // AFFECT — changing another entity's physical state (docs/architecture/10, Phase 5). Always-live
+  // on the mainline. `free` (cut a captive's bonds → freed) and `wreck` (sabotage → not intact)
+  // chain like attack: reach the believed target, then the trivial final act.
   {
-    const prevAffect = AFFECT.enabled;
-    AFFECT.enabled = true;
-    try {
+    {
       const captive = mk('Captive'); captive.pos.set(25, 0, 25);
       const rescuer = debtor('Rescuer', () => {});
       rescuer.beliefs.observe(captive.id, captive.faction, captive.pos, ctx.time, false);
@@ -389,7 +379,7 @@ export function plannerSelfTest(ok, { makeFighter, stubScene }) {
       const pWreck = plan(saboteur, goalWreck(machine.id), ctx);
       ok(pWreck && names(pWreck).includes('wreck'),
         `planner A2: wreck chains reach-then-sabotage (${names(pWreck).join('->') || 'NULL'})`);
-    } finally { AFFECT.enabled = prevAffect; }
+    }
   }
 
   // never throws on the tick path even for a junk goal

@@ -266,6 +266,12 @@ information itself into a resource agents act on:
   `PROFESSIONS`, `MONSTER`, `ROSTER`, `COMMODITIES`, `BASE_PRICE` in `js/sim/simconfig.js`
   (+ `ROSTER` count in `simulation.js`). RPG curves/caps in `js/rpg/rpgconfig.js` (`RPG`). Combat
   feel in `js/constants.js` (`TUNE`). Prefer changing constants over hardcoding.
+- **Gating is by branch, not by in-code flags.** The action-grammar / caution features
+  (QUANTITY/KNOW/ROB/URCHIN/ESTIMATE/HOLD/RECRUIT/WARBAND/AFFECT/CAPTIVE/LEDGER/CAUTION/RECIPES)
+  are **always-live** on the mainline — there is no `enabled`/`graded` on/off switch in their config
+  blocks, and no "day-one-OFF / byte-identical soak" fallback path. The config blocks keep only their
+  **tuning** fields. To gate a feature out, do it on a branch — don't reintroduce an in-code flag.
+  (Other config toggles — `DIRECTOR.tropes.*`, `INTRIGUE`, `FAITH`, `WATCH`, etc. — are unaffected.)
 - **The "freeze lesson."** Monsters and the player have `profession: null` and no economy. Any code
   on the agent/cast/combat path must guard profession/inventory/economy assumptions, or a single
   unguarded access on a professionless agent throws inside the fixed-tick loop and freezes the sim.

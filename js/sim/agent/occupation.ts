@@ -7,7 +7,7 @@
 // Agent methods. No cycles — imports config + pure helpers only.
 
 import { ARENA_RADIUS } from '../../arena.js';
-import { GOODS, RAW_OUTPUTS, BASE_PRICE, ECON, RECIPES } from '../simconfig.js';
+import { GOODS, RAW_OUTPUTS, BASE_PRICE, ECON } from '../simconfig.js';
 import type { Agent, BehaviorProfile, CognitionCtx } from '../../../types/sim.js';
 
 // One commodity definition (simconfig GOODS entry). Re-typed locally because simconfig.js
@@ -123,10 +123,10 @@ export function chooseOccupation(a: Agent, ctx: CognitionCtx): void {
     for (const good in GOODS_T) {
       const g = GOODS_T[good];
       // RECIPE GATE: a crafted good I don't KNOW the recipe for is unproducible — skip it
-      // (own-state read; master-gated; guarded so a recipe-less/professionless agent never
-      // throws). Raw goods (no inputs) are never gated. Inert on day one (every producer is
-      // seeded with every recipe), bites only when Phase 4 leaves a newcomer un-taught.
-      if (RECIPES.enabled && g.inputs && !(a.recipes && a.recipes.has(good))) continue;
+      // (own-state read; always-live; guarded so a recipe-less/professionless agent never
+      // throws). Raw goods (no inputs) are never gated. Inert while every producer is seeded
+      // with every recipe; bites only when a newcomer is left un-taught.
+      if (g.inputs && !(a.recipes && a.recipes.has(good))) continue;
       // opportunity gate: crafted goods need their inputs in hand
       if (!g.raw && g.inputs && !Object.keys(g.inputs).every((c) => (a.inventory[c] || 0) >= g.inputs![c]))
         continue;

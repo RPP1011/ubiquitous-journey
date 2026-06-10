@@ -1,18 +1,13 @@
-// Recipe-gating gate (Phase-4 economy prerequisite). Asserts the OWN-STATE recipe
-// gate: (a) a knowing producer still crafts (baseline-preserving), (b) a recipe-
-// stripped agent does NOT produce that good, (c) gold AND goods conserved (the gate
-// transfers/creates nothing — it only withholds production). Mirrors the SCARECROW
-// pattern: we flip RECIPES.enabled on a controlled sub-sim and drive produce()
-// directly, so the main soak (RECIPES.enabled:false) stays byte-identical.
+// Recipe-gating gate (the OWN-STATE recipe gate, always-live on the mainline). Asserts:
+// (a) a knowing producer still crafts, (b) a recipe-stripped agent does NOT produce that
+// good, (c) gold AND goods conserved (the gate transfers/creates nothing — it only withholds
+// production). Drives produce() directly on a controlled sub-sim.
 
 import { Agent } from '../../js/sim/agent.js';
-import { RECIPES } from '../../js/sim/simconfig.js';
 import { produce } from '../../js/sim/agent/act.js';   // already exported
 
 export function recipeTest(ok, { makeFighter, stubScene }) {
-  const prevEnabled = RECIPES.enabled;
-  RECIPES.enabled = true;                 // turn the gate ON for this isolated check
-  try {
+  {
     // build a minimal autonomous crafter committed to 'tool', with inputs in hand.
     const mk = (recipes) => {
       const f = makeFighter('knight', {}); stubScene.add(f.root);
@@ -46,7 +41,5 @@ export function recipeTest(ok, { makeFighter, stubScene }) {
     // (c) it also consumed NOTHING (no inputs touched, no gold moved — a silent no-op).
     ok(ignorant.inventory.wood === wBefore && ignorant.inventory.ore === oBefore,
        'recipes: a recipe-stripped no-op consumes no inputs (conservation: nothing created or destroyed)');
-  } finally {
-    RECIPES.enabled = prevEnabled;        // ALWAYS restore so later suites see the baseline
   }
 }

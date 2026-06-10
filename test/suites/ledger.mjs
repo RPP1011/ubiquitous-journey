@@ -1,16 +1,13 @@
 // ---- the obligation ledger, live (docs/architecture/10 execution) ------------------------
-// Drives the ledger's per-tick wiring through the frame loop with LEDGER forced on: a `succoured`
-// memory ARMS a repay-on-next-meeting commitment; perceiving the benefactor FIRES it; the deferred
-// action (a repay goal, marked from='obligation') is taken. (The pure-store unit checks live in
-// obligations.mjs.) Also checks a recurrence fires at its due time and an unfired commitment lapses.
+// Drives the ledger's per-tick wiring through the frame loop (always-live on the mainline): a
+// `succoured` memory ARMS a repay-on-next-meeting commitment; perceiving the benefactor FIRES it; the
+// deferred action (a repay goal, marked from='obligation') is taken. (The pure-store unit checks live
+// in obligations.mjs.) Also checks a recurrence fires at its due time and an unfired commitment lapses.
 import { FeatureStage } from './_stage.mjs';
 import { addObligation, settleObligations } from '../../js/sim/obligations.js';
-import { LEDGER } from '../../js/sim/simconfig.js';
 
 export function ledgerLiveTest(ok, helpers) {
-  const prev = LEDGER.enabled;
-  LEDGER.enabled = true;
-  try {
+  {
     // LIVE — a kindness received arms a commitment; meeting the benefactor fires the deferred repay.
     {
       const st = new FeatureStage(helpers);
@@ -43,5 +40,5 @@ export function ledgerLiveTest(ok, helpers) {
       ok((a._obligations || []).length === 0, 'ledger LAPSE: an unfired commitment lapsed at expiry');
       st.dispose();
     }
-  } finally { LEDGER.enabled = prev; }
+  }
 }

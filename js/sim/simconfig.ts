@@ -46,31 +46,26 @@ export const CRAFTED_OUTPUTS = (Object.keys(GOODS) as (keyof typeof GOODS)[]).fi
 // --- recipe knowledge (own-state craft gating; Phase-4 prerequisite) ---------
 // A crafted good is producible only by an agent that KNOWS its recipe (own-state
 // `agent.recipes`, read freely by cognition — no epistemic-split issue). Raw goods
-// (food/wood/ore/herb) need no recipe: anyone may gather them. Phase 4 makes recipe
-// knowledge transferable (teach/apprentice/shadow) and forgettable at generational
-// turnover; THIS commit only adds the gate + own-state field + baseline-identical
-// seeding, so the soak is byte-identical on day one (the SCARECROW.enabled pattern).
+// (food/wood/ore/herb) need no recipe: anyone may gather them. Recipe knowledge is
+// transferable (teach/apprentice/shadow) and forgettable at generational turnover.
+// ALWAYS-LIVE on the mainline: produce()/trade gate on `agent.recipes`, and recipe
+// knowledge is GRADED (per-recipe confidence backing the craftable Set).
 // ORDERING DEPENDENCY: `gated` reads CRAFTED_OUTPUTS above — keep this block BELOW it.
 export const RECIPES = {
-  enabled: false,            // MASTER GATE — off ⇒ produce() never checks recipes ⇒
-                             //   byte-identical baseline (proof commit; turned on with Phase 4).
   // Which crafted goods are recipe-gated. Derived from GOODS (every non-raw good),
   // pinned here so the gate set is config, not a logic scan.
   gated: CRAFTED_OUTPUTS.slice(),     // ['tool','potion']
   // DAY-1 SEEDING: which recipes a freshly-spawned current PRODUCER is born knowing.
   // 'all' ⇒ every gated recipe (so every working townsperson keeps crafting exactly
-  // as today). Phase 4 narrows this (children inherit a subset; newcomers learn).
+  // as today). Children inherit a subset; newcomers learn.
   seedKnown: 'all',
-  rediscoverPerSec: 0,       // self-rediscovery rate while stuck without a recipe
-                             //   (Phase-4 hook; 0 ⇒ stub never fires on day one).
-  // GRADED RECIPE KNOWLEDGE (docs/architecture/10-lld §6, §19 gap #1). SUB-GATE, day-one OFF:
-  // off ⇒ recipes stay a binary Set (add/has), byte-identical. On ⇒ each recipe carries a graded
+  rediscoverPerSec: 0,       // self-rediscovery rate while stuck without a recipe (stub; 0 ⇒ off).
+  // GRADED RECIPE KNOWLEDGE (docs/architecture/10-lld §6, §19 gap #1). Each recipe carries a graded
   // CONFIDENCE (the belief table's four fields, applied to own craft knowledge): half-learned from
   // a poor/brief teacher (below craftMinConf ⇒ in mind but not yet craftable), firmed by repeated
   // study/watching, and FORGOTTEN if not practised (use-it-or-lose-it) — so a craft dies out of a
   // town once its last practising holder stops (the "lost recipe"). A recipe is craftable (enters
   // the Set the produce/trade gates read) only at/above craftMinConf.
-  graded: false,
   craftMinConf: 0.45,        // graded confidence at/above which a recipe is "known" enough to craft
   studyGain: 0.34,           // confidence one TAUGHT study session adds (a few sessions, or a good teacher)
   forgetPerTick: 0.004,      // confidence a NON-practised recipe loses per cognition tick (slow fade)
@@ -196,10 +191,8 @@ export const WEALTH = {
 // The adversarial flagship. An empty-pursed agent backward-chains a heist through an
 // EPISTEMIC ATOM: `shadow` (surveil) the mark to CONSOLIDATE a believed stash location
 // (an `assoc` belief), then `approach` + `burgle` it. `shadow` IS the epistemic `gather`.
-// Day-one OFF (SCARECROW pattern) — the new planner primitives early-return so the soak
-// is byte-stable; flips on only once the urchin schema + executors land.
+// ALWAYS-LIVE on the mainline: the urchin planner primitives + heist deriver run.
 export const URCHIN = {
-  enabled: false,
   shadowCost: 4,             // planner cost of the slow/safe surveil (the epistemic gather)
   consolidateAfter: 4,       // surveil sightings before the loose tally becomes an `assoc` belief
   sightGain: 0.3,            // confidence added to `assoc` per surveil sighting (capped 1)
@@ -218,7 +211,7 @@ export const URCHIN = {
   // poverty is the circumstance, character is the choice, so only this corner of personality-space does.
   deriveAltruismMax: 0.4,    // altruism at/below which an agent is uncaring enough to steal
   deriveRiskMin: 0.55,       // risk_tolerance at/above which it is bold enough to try
-  deriveTarget: 16,          // believed gold the heist aims to lift (flat estimate until wealth-cue inference)
+  // (the believed haul the heist aims for is the wealth-cue estimate — see ESTIMATE / estimateHaul.)
   deriveExpiry: 110,         // sim-seconds a steal goal persists before it cools
   surveilDwell: 4.5,         // sim-seconds of holding at standoff per accrued surveil sighting (slow gather)
 };
@@ -393,10 +386,9 @@ export const MOTIVE = {
 // agent), it (1) WIDENS toward riskier sources scaled by how bold the agent is, (2)
 // SATISFICES — commits the best partial plan it CAN reach (earn the 50, not the 80) — and
 // (3) puts the goal on a brief COOLDOWN so the unreachable sum is not re-attempted every
-// tick (anti-livelock). The drive persists in motivation and rebuilds. Day-one OFF, so the
-// planner is byte-identical and the soak is unchanged until a breadth phase turns it on.
+// tick (anti-livelock). The drive persists in motivation and rebuilds. ALWAYS-LIVE on the
+// mainline: threshold composition (gold/need) runs at the solveAtom seam.
 export const QUANTITY = {
-  enabled: true,         // LIVE (docs/architecture/10 Phase 1 execution): threshold composition on
   partialCooldown: 12,   // sim-seconds an UNREACHABLE threshold goal rests before re-planning
   widenRiskTol: 0.6,     // risk_tolerance at/above which the failure search WIDENS (sells into
                          //   the keep reserve / acts on thinner leads) — the bold widen, the timid don't
@@ -411,9 +403,8 @@ export const QUANTITY = {
 // `observe` (first-hand, slow, trusted — the generalised `shadow`), `ask` (cheap, vaguer, tips
 // the subject off), `study` (taught, trusted, costs tuition). And confidence FOLDS INTO COST —
 // an action leaning on a shaky belief costs more, so an agent scouts before a high-stakes bet.
-// Day-one OFF (the observe/ask/study rows early-return when disabled), so byte-stable.
+// ALWAYS-LIVE on the mainline: the observe/ask/study rows + confidenceSurcharge.
 export const KNOW = {
-  enabled: false,
   minConf: 0.45,         // a topic must be at least this confident to satisfy a Know() requirement
   observeCost: 4,        // first-hand watching: slow but trusted (subsumes the urchin's `shadow`)
   askCost: 1.5,          // being told: cheap and quick, but vaguer + tips the subject off
@@ -427,11 +418,10 @@ export const KNOW = {
 // --- ROB: the take-from-a-person acquire row (docs/architecture/10, Phase 3) -----------
 // The acquire table's `person` row — taking gold from a mark by FORCE (robbery; tax/alms are
 // the same moved-shape with a different social trace). MOVED, so the executor debits the mark
-// as it credits the robber (closed money loop), exactly like loot/burgle. Day-one OFF, so the
-// row emits nothing and the steal goal still routes through the urchin's cache `burgle`.
+// as it credits the robber (closed money loop), exactly like loot/burgle. ALWAYS-LIVE on the
+// mainline: the `rob` acquire row is registered and plannable.
 export const ROB = {
-  enabled: false,
-  amount: 5,             // believed gold taken (the flat fallback when ESTIMATE wealth-cue inference is off)
+  amount: 5,             // believed gold taken (the fallback when a goal carries no explicit haul amount)
 };
 
 // --- ESTIMATE: the wealth-cue haul inference (docs/architecture/10-lld §15) -------------
@@ -442,10 +432,9 @@ export const ROB = {
 // anchored on a faction prior. Every input is itself a belief, so the estimate is WRONG precisely
 // when the cues mislead (a flashy-but-broke mark reads fat, yields little — and `take` is conserved,
 // so an empty mark simply gives up less). The confidence folds into the heist's COST (a hazy estimate
-// makes the raid expensive → the urchin cases it longer). Day-one OFF: disabled → the deriver keeps
-// the flat constant and the surcharge is 0, so URCHIN/ROB behave byte-identically to before.
+// makes the raid expensive → the urchin cases it longer). ALWAYS-LIVE on the mainline: the urchin
+// deriver targets the believed-richest mark and `haulSurcharge` folds the estimate into the cost.
 export const ESTIMATE = {
-  enabled: false,
   basePrior: 10,         // believed haul for a mark of unknown category (anchors a bare belief)
   priorConf: 0.12,       // confidence of the bare prior before any cue firms it (a pure guess)
   estCap: 60,            // ceiling on a believed haul — no runaway estimate from stacked cues
@@ -469,10 +458,9 @@ export const ESTIMATE = {
 // safe/hidden, re-checks a believed condition each tick, and advances when it becomes
 // believed-true. It abandons two ways, and they differ: the DEADLINE passes (the window never
 // opened — the goal's expiresAt drops it) or the spot stops being SAFE (discovered — the
-// reactive flee preempts the held step, the same flee any agent would). Day-one OFF (the hold
-// row emits nothing), so no live goal produces a hold step and the soak is byte-stable.
+// reactive flee preempts the held step, the same flee any agent would). ALWAYS-LIVE on the
+// mainline: the `hold` row is plannable.
 export const HOLD = {
-  enabled: false,
   cost: 1,               // planner cost of inserting a wait (cheap, but not free, vs. acting now)
 };
 
@@ -484,9 +472,9 @@ export const HOLD = {
 // loyal friend high, a wary stranger low, read off the candidate's standing). Believed force =
 // own strength + Σ each candidate's strength × compliance. The planner adds recruits greedily —
 // cheapest reliable force first — until the believed sum outmatches the camp. The follower side
-// is an ordinary goal (the reputation-gated party-join the sim already has). Day-one OFF.
+// is an ordinary goal (the reputation-gated party-join the sim already has). ALWAYS-LIVE on the
+// mainline: the `force_ge` composer + the `recruit` row run.
 export const RECRUIT = {
-  enabled: false,
   selfStrength: 1,       // a lone leader's own believed strength (the base of the muster)
   candidateStrength: 1,  // a candidate's believed strength before the compliance discount
   minStanding: -0.2,     // a candidate must be believed at least this well-disposed to approach
@@ -503,9 +491,8 @@ export const RECRUIT = {
 // then the SAME band machinery the player's Party uses flips the flags (inParty / bandLeaderId /
 // groupType:'warband' / partySlot / combatant) and the existing decide()/follow steer-fill march
 // it. No parallel system, no foreign-mind write: recruitment stays an Inform; the follower decides.
-// Day-one OFF — with this off NO NPC ever forms a recruited band, so the soak is byte-identical.
+// ALWAYS-LIVE on the mainline: a warmed candidate forms its own join decision and marches.
 export const WARBAND = {
-  enabled: false,
   joinStanding: 0.35,    // believed-standing toward the offerer at/above which a candidate will join
   minPayoff: 0,          // believed offer payoff at/above which the join is worth considering
   joinRiskTol: 0.45,     // risk_tolerance scale: the bolder accept a thinner offer (× this damps the bar)
@@ -518,9 +505,9 @@ export const WARBAND = {
 // (→ not intact — sabotage). Each is a trivial final act gated by a hard requirement (be there,
 // unopposed); combat already resolves the third (strike→dead). The plan reasons against a
 // BELIEVED physical state and is as exposed to being wrong as a raid on a moved cache — the
-// captives may have been moved by arrival. Day-one OFF (the rows emit nothing), so byte-stable.
+// captives may have been moved by arrival. ALWAYS-LIVE on the mainline: the free/wreck rows
+// are plannable (no tuning fields — the rows are trivial final acts).
 export const AFFECT = {
-  enabled: false,
 };
 
 // --- CAPTIVE: the captivity → rescue arc TRIGGER (docs/architecture/10-lld §19 item 3, §12) ----
@@ -531,11 +518,9 @@ export const AFFECT = {
 // combat path). Perception then writes a `captive` flag on the WITNESS's BELIEF about the captive
 // (the epistemic split), and the affect deriver — reading beliefs + own personality ONLY — forms a
 // goalFree for a sufficiently-liked believed-captive. The freed captive's gratitude EMERGES from it
-// perceiving `_freedBy` (a positive, per-perceiver warmth through its OWN belief). Gated by enabled +
-// AFFECT.enabled (the executor/goal). Day-one OFF, so NO capture ever happens and the soak is
-// byte-identical (no revive, no `captive` belief written, no deriver fires).
+// perceiving `_freedBy` (a positive, per-perceiver warmth through its OWN belief). ALWAYS-LIVE on
+// the mainline: capture-on-defeat + the `captive` belief + the `goalFree` rescue deriver run.
 export const CAPTIVE = {
-  enabled: false,
   captureChance: 0.25,           // P(capture instead of kill) on a qualifying lethal blow
   captorFactions: ['bandit', 'rival', 'monster'],  // who takes prisoners (raiders/rivals/beasts)
   reviveHpFrac: 0.35,            // health the captured victim is left at (alive but cowed)
@@ -551,10 +536,9 @@ export const CAPTIVE = {
 // one-shot plan: COMMITMENTS ("I'll pay you when you deliver") and RECURRENCE (a debt due each
 // season — a trigger that is a time). Structurally a little belief table with decay: a handful of
 // entries per agent, most empty. A ledger entry OUTLIVES every plan (unlike a hold-until, which
-// dies with its plan) — which is exactly why a commitment cannot just be a hold-until step. Gated
-// by LEDGER.enabled for any LIVE per-tick wiring (none yet), so the soak is byte-stable.
+// dies with its plan) — which is exactly why a commitment cannot just be a hold-until step.
+// ALWAYS-LIVE on the mainline: the per-tick obligation arm/settle/discharge wiring runs.
 export const LEDGER = {
-  enabled: false,
   max: 8,                // hard cap on outstanding obligations per agent (bounded, like the belief table)
   commitExpiry: 300,     // sim-seconds an armed commitment persists before it lapses unkept
 };
@@ -565,11 +549,10 @@ export const LEDGER = {
 // road (waste), or when it nearly kills you (peril); eroded by time and by genuine success — added to
 // that strategy's `cost` the same way confidenceSurcharge is. NATURE stays fixed (never mutates
 // personality); experience is nurture — a decaying, bounded, belief-shaped record decaying toward 0.
-// Day-one OFF: disabled ⇒ no field writes, feltSurcharge 0, no emits ⇒ the soak is byte-identical.
+// ALWAYS-LIVE on the mainline: the caution field writes, feltSurcharge, and emits run.
 // Every number is a STARTING POINT with a stated ORDERING (the harness tunes; this paragraph doesn't):
 // partialCooldown(12) ≪ halfLife; |windfall| < burn.shortfall < burn.peril; cap ~ routeRisk(6).
 export const CAUTION = {
-  enabled: false,
   watched: ['burgle', 'rob', 'loot'],   // the three theft-shaped rows: a bet yield + a substitute row + a clean exec walk
   halfLife: 72,           // = 6·PLAN.partialCooldown(12): a goal is retried several times within one
                           //   strategy memory, and retirement arcs are observable in the ~150s eval window

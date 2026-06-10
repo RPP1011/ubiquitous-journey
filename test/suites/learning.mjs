@@ -1,7 +1,8 @@
 // ---- the recipe-learning lifecycle, live (docs/architecture/10 execution) ----------------
-// Drives the knowledge channels end-to-end with KNOW forced on in-test: (D) a crafter that lacks a
+// Drives the knowledge channels end-to-end (always-live on the mainline): (D) a crafter that lacks a
 // recipe it wants DERIVES a Know(recipe) goal; (E) it executes a channel (observe/study) and comes
-// away holding the recipe — Know(topic) is satisfied. Conserved (knowledge writes touch no gold).
+// away holding the recipe — Know(topic) is satisfied. Conserved (knowledge writes touch no gold
+// beyond the study tuition transfer).
 import { FeatureStage } from './_stage.mjs';
 import { goalLearn, knowsTopic } from '../../js/sim/planner.js';
 import { deriveGoals } from '../../js/sim/motivation.js';
@@ -9,9 +10,7 @@ import { recipeConf, learnRecipe, forgetTick } from '../../js/sim/recipeKnow.js'
 import { KNOW, RECIPES } from '../../js/sim/simconfig.js';
 
 export function learningTest(ok, helpers) {
-  const prev = KNOW.enabled;
-  KNOW.enabled = true;
-  try {
+  {
     // (D) DERIVATION — a crafter whose trade is a good it does not know the recipe for.
     {
       const st = new FeatureStage(helpers);
@@ -39,11 +38,9 @@ export function learningTest(ok, helpers) {
     }
     // (G) GRADED RECIPE KNOWLEDGE (docs/architecture/10-lld §6, §19 gap #1) — recipes carry a
     // confidence: HALF-learned from one session, firmed by repeated study (paying a conserved
-    // tuition), and FORGOTTEN if not practised. Gated by RECIPES.graded (restored in finally so the
-    // soak stays binary / byte-identical).
+    // tuition), and FORGOTTEN if not practised. Always-live on the mainline.
     {
-      const prevG = RECIPES.graded; RECIPES.graded = true;
-      try {
+      {
         const topic = { kind: 'recipe', good: 'potion' };
         // G1: one taught session HALF-learns it — graded conf below the craft bar, not yet craftable.
         const st = new FeatureStage(helpers);
@@ -85,7 +82,7 @@ export function learningTest(ok, helpers) {
             `learning G4b: an UNPRACTISED recipe is forgotten out of the craftable set (potion conf=${recipeConf(maker, 'potion').toFixed(2)})`);
           st3.dispose();
         }
-      } finally { RECIPES.graded = prevG; }
+      }
     }
-  } finally { KNOW.enabled = prev; }
+  }
 }

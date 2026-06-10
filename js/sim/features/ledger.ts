@@ -2,8 +2,7 @@
 // commitment store (js/sim/obligations.ts) into the cognition tick as a DATA-row deriver: each tick
 // it (1) ARMS a commitment when a perceivable promise is made, (2) SETTLES the ledger against this
 // agent's OWN perception (discharge a fired commitment, fire a recurrence at its due time, lapse the
-// expired), and (3) turns each fired obligation into its deferred goal. Gated by LEDGER.enabled;
-// off → nothing live, soak byte-stable.
+// expired), and (3) turns each fired obligation into its deferred goal. ALWAYS-LIVE on the mainline.
 //
 // A commitment is armed for a SPECIFIC perceived event ("when I next meet my benefactor → repay")
 // and OUTLIVES every plan between promising and keeping — which is exactly why it lives here, not as
@@ -19,7 +18,6 @@ import { LEDGER, SIM } from '../simconfig.js';
 import type { Agent, CognitionCtx, EntityId } from '../../../types/sim.js';
 
 registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
-  if (!LEDGER.enabled) return;
   if (!a || a.controlled || a.faction === 'monster') return;
   const now = ctx ? ctx.time : 0;
 

@@ -10,7 +10,7 @@
 // omniscient world truth). Progress is measured from lightweight per-agent
 // counters (agent.life) plus the gold/level the agent genuinely holds.
 
-import { MOTIVE, SIM, CAUTION } from './simconfig.js';
+import { MOTIVE, SIM } from './simconfig.js';
 import { RPG } from '../rpg/rpgconfig.js';
 import { goalAvenge, goalSeekFortune, goalRepay, goalGrieve, goalDelve } from './planner.js';
 import { runDerivers, runPlanOutcome } from './exec/registry.js';
@@ -290,9 +290,9 @@ export function awardGoalClosureXP(a: Agent, goal: Goal, now: number, salience =
 // CAUTION (doc 11 §4.4) — the WASTE emit: a goal that DIED ON THE ROAD (set out, travelled toward a
 // watched act, never reached it, gave up) prices the strategy. Emitted ONLY where a goal ends by
 // expiry/unreachable — never on a predicate-satisfied pop (satisfied-by-other-means costs nothing),
-// never on a plan swap (re-planning is free). Own-state; gated; guarded.
+// never on a plan swap (re-planning is free). Own-state; always-live; guarded.
 function cautionWaste(a: Agent, ctx: CognitionCtx | null, g: Goal): void {
-  if (!CAUTION.enabled || !ctx) return;
+  if (!ctx) return;
   const tr = g._cautionTrail;
   if (tr && tr.step && !tr.acted && !tr.resolved) {
     tr.resolved = true;

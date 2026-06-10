@@ -91,9 +91,9 @@ export function onCombatEvents(sim: Sim, events: CombatEv[]): void {
     // LETHAL blow on a non-combatant townsperson, with a chance the victim is CAPTURED instead of
     // killed — revived at low HP, `_held`, anchored (it idles in decide while held). We convert the
     // death by reviving T BEFORE any death machinery runs (stampSlain/vendetta/obituary), then
-    // `continue` so this event neither kills nor emits a KILL deed. Day-one OFF (CAPTIVE.enabled),
-    // so the branch never fires and the soak is byte-identical. Guarded; never throws on the tick.
-    if (ev.type === 'dead' && CAPTIVE.enabled && !T._held &&
+    // `continue` so this event neither kills nor emits a KILL deed. ALWAYS-LIVE on the mainline.
+    // Guarded; never throws on the tick.
+    if (ev.type === 'dead' && !T._held &&
         T.faction === 'townsfolk' && !T.combatant && !T.controlled &&
         (CAPTIVE.captorFactions || []).indexOf(A.faction) !== -1 &&
         Math.random() < (CAPTIVE.captureChance || 0)) {

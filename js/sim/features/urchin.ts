@@ -2,7 +2,7 @@
 // feature's verbs (surveil / approach / burgle), its goal-deriver (a poor, larcenous agent forms a
 // steal goal against a believed-prosperous mark), and its effect-landed predicates — ALL from THIS
 // file, as DATA rows into the registries (verbs-are-data), so it stays disjoint from every other
-// feature. Gated by URCHIN.enabled; off → registers nothing live and the soak is byte-stable.
+// feature. ALWAYS-LIVE on the mainline (gating is by branch, not an in-code flag).
 //
 // The mechanic is GENERIC + conserved (resolver.take moves gold, never mints); the social
 // consequence (the mark + any witness souring) EMERGES from perception (resolver.witnessDeed,
@@ -11,7 +11,7 @@
 
 import { registerExecutor, registerDeriver, registerEffectHolds } from '../exec/registry.js';
 import { goalSteal, stepTargetPos, estimateHaul } from '../planner.js';
-import { URCHIN, SIM, ESTIMATE } from '../simconfig.js';
+import { URCHIN, SIM } from '../simconfig.js';
 import { steer } from '../agent/steer.js';
 import { goTo } from '../agent/movement.js';
 import type { Agent, CognitionCtx, PlanStep } from '../../../types/sim.js';
@@ -24,7 +24,6 @@ const REACH = 2.2;
 // mark idles (the goal re-plans / expires). The stash is modelled at where the mark is seen to keep
 // returning — its believed position — which is exactly the urchin's fallible read.
 registerExecutor('surveil', (a, step, dt, _ctx) => {
-  if (!URCHIN.enabled) { a.fighter.setMoving(0); return; }
   const markId = (step.bind || {}).target;
   if (markId == null || !a.beliefs) { a.fighter.setMoving(0); return; }
   const b = a.beliefs.get(markId);
@@ -45,7 +44,6 @@ registerExecutor('surveil', (a, step, dt, _ctx) => {
 // approach(stash): steer to the believed stash position (the assoc place). Reached via the planner's
 // `approach` primitive, whose precondition (know_assoc) guarantees the assoc exists by here.
 registerExecutor('approach', (a, step, dt, ctx) => {
-  if (!URCHIN.enabled) { a.fighter.setMoving(0); return; }
   const tp = stepTargetPos(a, ctx, (step.bind || {}).place);
   if (tp) steer(a, { attractors: [{ pos: tp }] }, dt); else a.fighter.setMoving(0);
 });
@@ -55,7 +53,6 @@ registerExecutor('approach', (a, step, dt, ctx) => {
 // EMERGE — resolver.witnessDeed folds the theft into the mark's + any witness's OWN beliefs,
 // witness-gated. NO hardcoded reaction. The believed haul is the goal's gold target (bind.amt).
 registerExecutor('burgle', (a, step, dt, ctx) => {
-  if (!URCHIN.enabled) { a.fighter.setMoving(0); return; }
   const b = step.bind || {};
   const markId = b.target;
   if (markId == null || !ctx.resolver) { a.fighter.setMoving(0); return; }
@@ -85,7 +82,6 @@ registerEffectHolds('burgle', () => true);                          // one-shot 
 // knows. The greed gate is the disposition lever the design names: poverty is circumstance,
 // character is the choice — so only the larcenous reach for it. Bounded: pushGoal dedups by kind.
 registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
-  if (!URCHIN.enabled) return;
   if (!a || !a.alive || a.controlled || a.faction === 'monster') return;
   if ((a.gold || 0) >= URCHIN.deriveBelowGold) return;               // only the poor consider it (circumstance)
   // DISPOSITION GATE: larcenous == uncaring (low altruism) AND bold (high risk_tolerance). The
@@ -94,21 +90,16 @@ registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
   if ((p.altruism ?? 1) > URCHIN.deriveAltruismMax) return;
   if ((p.risk_tolerance ?? 0) < URCHIN.deriveRiskMin) return;
   if (!a.beliefs) return;
-  let markId: number | string | null = null, best = 0, bestTarget = URCHIN.deriveTarget;
+  let markId: number | string | null = null, best = 0, bestTarget = 0;
   for (const b of a.beliefs.all()) {
     if (!b || b.subjectId === a.id) continue;
     if (b.confidence < SIM.actOnBeliefMin) continue;
     if (b.hostile || (a.considerHostile && a.considerHostile(b))) continue;   // foes are a combat matter
     // Pick the most APPEALING mark. With wealth-cue inference (§15) the urchin targets the
     // believed-RICHEST, weighting the estimate by its confidence so a wild guess can't win on its
-    // own; the goal then aims for that believed haul. Off → the prior behaviour (best-established).
-    let cue: number, target: number;
-    if (ESTIMATE.enabled) {
-      const e = estimateHaul(a, b.subjectId);
-      cue = e.value * e.confidence; target = Math.max(1, Math.round(e.value));
-    } else {
-      cue = b.confidence; target = URCHIN.deriveTarget;             // established-in-mind ≈ a settled local
-    }
+    // own; the goal then aims for that believed haul.
+    const e = estimateHaul(a, b.subjectId);
+    const cue = e.value * e.confidence, target = Math.max(1, Math.round(e.value));
     if (cue > best) { best = cue; markId = b.subjectId; bestTarget = target; }
   }
   if (markId == null) return;

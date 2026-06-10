@@ -1,22 +1,21 @@
 // FEATURE: the Affect rows — rob / free / wreck (docs/architecture/10 + 10-lld §8, §12, §13).
 // Registers those verbs and their effect-landed predicates — all from THIS file as DATA rows.
-// Gated by ROB.enabled (rob) and AFFECT.enabled (free/wreck); off → nothing live, soak byte-stable.
+// ALWAYS-LIVE on the mainline.
 //
 // Reuses the seam's GENERIC resolver mechanics, never a bespoke per-verb function: `take` (the
 // conserved value move — debits the mark as it credits the robber, never mints), `witnessDeed` (the
 // EMERGENT souring — per-perceiver, witness-gated), `affect` (the physical state change freed/
 // wrecked — the change only; the reaction emerges from perception, e.g. a freed captive's _freedBy).
 //
-// rob's GOAL is supplied by the urchin steal-deriver (goalSteal routes through `rob` when ROB is on
-// and `burgle` when URCHIN is on — the planner picks the cheaper). free/wreck have no captivity /
-// sabotage-target mechanic in the current sim, so they carry no live deriver yet (gap, 10-lld §19):
-// the executors + goals are correct and unit-tested; a breadth step adds the trigger.
+// rob's GOAL is supplied by the urchin steal-deriver (goalSteal routes through `rob` or `burgle` —
+// the planner picks the cheaper). `free` carries a LIVE rescue deriver (the captivity trigger);
+// `wreck` stays dormant (no enemy-owned structure entity to target — see 10-lld §19 item 3).
 
 import { registerExecutor, registerEffectHolds, registerDeriver } from '../exec/registry.js';
 import { stepTargetPos, goalFree } from '../planner.js';
 import { steer } from '../agent/steer.js';
 import type { Agent, CognitionCtx, PlanStep } from '../../../types/sim.js';
-import { ROB, AFFECT, CAPTIVE, SIM } from '../simconfig.js';
+import { ROB, CAPTIVE, SIM } from '../simconfig.js';
 
 const REACH = 2.2;
 
@@ -31,7 +30,7 @@ function reach(a: Agent, ctx: CognitionCtx, targetId: number | string, dt: numbe
 // rob(mark): take gold off the mark by force. MOVED (conserved); the reaction EMERGES (witnessDeed,
 // a heavier social trace than a quiet cache theft — robbery is seen).
 registerExecutor('rob', (a, step, dt, ctx) => {
-  if (!ROB.enabled || !ctx.resolver) { a.fighter.setMoving(0); return; }
+  if (!ctx.resolver) { a.fighter.setMoving(0); return; }
   const b = step.bind || {}; const markId = b.target;
   if (markId == null || !reach(a, ctx, markId, dt)) return;
   const took = ctx.resolver.take(a, markId, { gold: b.amt || ROB.amount || 0 });
@@ -41,7 +40,7 @@ registerExecutor('rob', (a, step, dt, ctx) => {
 // free(captive): cut the bonds. The PHYSICAL change only (resolver.affect) — the captive's
 // gratitude EMERGES from it perceiving _freedBy, not a baked response here.
 registerExecutor('free', (a, step, dt, ctx) => {
-  if (!AFFECT.enabled || !ctx.resolver) { a.fighter.setMoving(0); return; }
+  if (!ctx.resolver) { a.fighter.setMoving(0); return; }
   const targetId = (step.bind || {}).target;
   if (targetId == null || !reach(a, ctx, targetId, dt)) return;
   ctx.resolver.affect(a, targetId, 'freed');
@@ -49,7 +48,7 @@ registerExecutor('free', (a, step, dt, ctx) => {
 
 // wreck(target): sabotage. Physical change only; an owner's anger emerges from perception.
 registerExecutor('wreck', (a, step, dt, ctx) => {
-  if (!AFFECT.enabled || !ctx.resolver) { a.fighter.setMoving(0); return; }
+  if (!ctx.resolver) { a.fighter.setMoving(0); return; }
   const targetId = (step.bind || {}).target;
   if (targetId == null || !reach(a, ctx, targetId, dt)) return;
   if (ctx.resolver.affect(a, targetId, 'wrecked')) ctx.resolver.witnessDeed(a, targetId, 'sabotage', 0.5);
@@ -67,10 +66,8 @@ registerEffectHolds('wreck', () => true);
 // for it. Reads ONLY its own beliefs + personality — never the roster, never `_held`/`_captorId`
 // directly (that would be the forbidden truth-read in cognition). The free executor + the goal's
 // predicate (popped when the captive is no longer BELIEVED held — perception-confirmed) resolve it.
-// Gated by CAPTIVE.enabled + AFFECT.enabled (the `free` row/executor); off → no captive belief is
-// ever written, so this never fires and the soak is byte-identical.
+// ALWAYS-LIVE on the mainline (fires only when a captive belief is actually written).
 registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
-  if (!CAPTIVE.enabled || !AFFECT.enabled) return;
   if (!a || a.controlled || a._held || !a.beliefs || !a.personality) return;
   if (a.faction === 'monster') return;                              // beasts don't mount rescues
   const bold = a.personality.risk_tolerance || 0;
@@ -99,9 +96,9 @@ registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
 // the physical change). It EMERGES here, per-perceiver, on the FREED side: a captive that perceives
 // it was freed by X (its own `_freedBy`, set by the resolver) warms toward X through ITS OWN belief
 // — the positive mirror of witnessDeed's souring. Done once per freeing (the `_freedAck` de-dup),
-// so it's a one-off warmth, not a per-tick ramp. Own-state only; gated like the rest, byte-stable off.
+// so it's a one-off warmth, not a per-tick ramp. Own-state only; ALWAYS-LIVE on the mainline.
 registerDeriver((a: Agent, _ctx: CognitionCtx | null) => {
-  if (!CAPTIVE.enabled || !a || a._freedBy == null || a._freedAck === a._freedBy) return;
+  if (!a || a._freedBy == null || a._freedAck === a._freedBy) return;
   if (a.beliefs) {
     const rb = a.beliefs.get(a._freedBy);   // perception built this when the rescuer approached to free me
     if (rb) {

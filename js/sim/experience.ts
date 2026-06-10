@@ -72,10 +72,10 @@ export function recordWindfall(a: Agent, key: string, now: number): void {
 }
 
 // THE COGNITION READ — added to stepCost in solveAtom beside confidenceSurcharge. Own-state only;
-// 0 when off or unknown. May be NEGATIVE (emboldened). rtRelief shrinks the POSITIVE side only — the
+// 0 when unknown. May be NEGATIVE (emboldened). rtRelief shrinks the POSITIVE side only — the
 // bold shrug off burns but still enjoy streaks.
 export function feltSurcharge(a: Agent, primName: string, bind: PlanBind | null, now: number): number {
-  if (!CAUTION.enabled || !a || !a._actExperience) return 0;
+  if (!a || !a._actExperience) return 0;
   const e = a._actExperience.get(expKey(primName, bind));
   if (!e) return 0;
   let s = decayed(e, now);
