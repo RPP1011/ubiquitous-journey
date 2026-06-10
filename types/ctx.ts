@@ -49,6 +49,10 @@ export interface ResolverFacade {
   // foreign-mind write of a goal — the candidate decides for itself; this only makes the offer
   // perceivable. Co-location-gated by the caller. Returns true on a landed offer.
   makeOffer(leader: Agent, candidateId: EntityId, payoff: number): boolean;
+  // TEACH (graded recipes §6): move the student's tuition to a co-located teacher of `good` (a
+  // conserved transfer); returns true when a teacher taught, so study learns only from a real
+  // instructor. Execution-side (scans the roster); the caller gates being at the market.
+  teachRecipe(student: Agent, good: string): boolean;
   buildSite: BuildSiteFacade;
 }
 

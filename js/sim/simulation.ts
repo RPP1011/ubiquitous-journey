@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { Fighter } from '../fighter.js';
 import { Agent } from './agent.js';
-import { ROSTER, SIM, NAMES, MONSTER, MOTIVE, CAMPS, TOWNS, SCARECROW, BUILD, LOD, factionHostile } from './simconfig.js';
+import { ROSTER, SIM, NAMES, MONSTER, MOTIVE, CAMPS, TOWNS, SCARECROW, BUILD, LOD, KNOW, factionHostile } from './simconfig.js';
 import { assignHouse, founderHouse } from './houses.js';
 import { ARENA_RADIUS, BIOME, findBiomeSpot, regionAt, REGIONS, terrainHeight } from '../arena.js';
 import { resetXpStats } from '../rpg/xpstats.js';
@@ -918,6 +918,30 @@ export class Simulation {
           if (!c || !c.alive || !leader) return false;
           if (!c._offers) c._offers = {};
           c._offers[leader.id] = { from: leader.id, payoff: payoff || 0, t: sim.time };
+          return true;
+        } catch { return false; }
+      },
+      // TEACH A RECIPE (graded recipes, docs/architecture/10-lld §6, §19 gap #1) — the conserved
+      // tuition transfer. Find a co-located TEACHER (a living agent near the student that already
+      // holds the recipe) and move the student's tuition (KNOW.studyTuition) into the teacher's
+      // purse — gold moves, never minted (the closed loop). Returns true when a teacher taught, so
+      // the study executor only accrues learning against a real instructor (no free lunch). The
+      // roster scan is execution (ground truth, legitimately read here, never in cognition). Guarded.
+      teachRecipe(student, good) {
+        try {
+          if (!student || !good) return false;
+          let teacher = null;
+          for (const t of sim.agents) {
+            if (t === student || !t.alive) continue;
+            if (!(t.recipes && t.recipes.has(good))) continue;        // must actually know the craft
+            if (t.pos.distanceTo(student.pos) > SIM.visionRange) continue;   // co-located (both at the market)
+            teacher = t; break;
+          }
+          if (!teacher) return false;                                 // no instructor present ⇒ no taught session
+          const fee = KNOW.studyTuition || 0;
+          if (fee > 0 && (student.gold || 0) >= fee) {                // conserved: student → teacher
+            student.gold -= fee; teacher.gold = (teacher.gold || 0) + fee;
+          }
           return true;
         } catch { return false; }
       },

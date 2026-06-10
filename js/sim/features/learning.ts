@@ -11,18 +11,19 @@
 
 import { registerExecutor, registerDeriver, registerEffectHolds } from '../exec/registry.js';
 import { goalLearn, knowsTopic, stepTargetPos } from '../planner.js';
-import { KNOW, SIM } from '../simconfig.js';
+import { KNOW, SIM, RECIPES } from '../simconfig.js';
 import { POI_KIND } from '../world.js';
 import { steer } from '../agent/steer.js';
 import { goTo } from '../agent/movement.js';
+import { learnRecipe, forgetTick } from '../recipeKnow.js';
 import type { Agent, CognitionCtx, PlanStep, KnowTopic } from '../../../types/sim.js';
 
 // Accrue `gain` confidence into a topic's HOME (own-state). The one place knowledge is WRITTEN.
-function accrueTopic(a: Agent, topic: KnowTopic | undefined, gain: number): void {
+function accrueTopic(a: Agent, topic: KnowTopic | undefined, gain: number, now: number): void {
   if (!topic || !a) return;
   switch (topic.kind) {
     case 'recipe':
-      if (topic.good && a.recipes) a.recipes.add(topic.good);        // binary today (graded = a follow-up)
+      learnRecipe(a, topic.good, gain, 0, now);                      // graded conf (§6) ⇒ half-learned firms up; binary ⇒ Set.add
       break;
     case 'whereabouts': {
       const b = topic.subjectId != null && a.beliefs ? a.beliefs.get(topic.subjectId) : null;
@@ -67,26 +68,37 @@ registerExecutor('observe', (a, step, dt, ctx) => {
   const tp = observePos(a, ctx, topic);
   if (tp && a.pos.distanceTo(tp) > (SIM.arriveDist || 1.5) + 0.5) { steer(a, { attractors: [{ pos: tp }] }, dt); return; }
   a.fighter.setMoving(0);
-  accrueTopic(a, topic, (KNOW.observeGain || 0.18) * dt);
+  accrueTopic(a, topic, (KNOW.observeGain || 0.18) * dt, ctx.time);
 });
 
 // ask(topic): cheap, vaguer, one-shot. You ask whoever is around; a single nudge to the home (it
 // also tips the subject off — a richer side-effect left for later). No travel, no gold.
-registerExecutor('ask', (a, step, _dt, _ctx) => {
+registerExecutor('ask', (a, step, _dt, ctx) => {
   if (!KNOW.enabled) { a.fighter.setMoving(0); return; }
   const topic = (step.bind || {}).topic as KnowTopic | undefined;
-  accrueTopic(a, topic, KNOW.askGain || 0.3);
+  accrueTopic(a, topic, KNOW.askGain || 0.3, ctx.time);
   a.fighter.setMoving(0);
 });
 
 // study(topic=recipe): taught instruction. Walk to where teaching happens (the market), then learn
-// the recipe. (Tuition is a planning cost; the literal conserved transfer to a teacher is a gap.)
+// the recipe. With graded recipes (§6) the session pays TUITION to a co-located teacher (a conserved
+// transfer, resolver.teachRecipe) and adds graded confidence — so a recipe takes a few taught
+// sessions and there is no free lunch (no teacher present ⇒ no taught learning, the apprentice
+// waits / re-plans). Off (binary) ⇒ one visit teaches it outright, exactly as before (byte-stable).
 registerExecutor('study', (a, step, dt, ctx) => {
   if (!KNOW.enabled) { a.fighter.setMoving(0); return; }
+  const topic = (step.bind || {}).topic as KnowTopic | undefined;
   const tp = stepTargetPos(a, ctx, POI_KIND.MARKET);
   if (tp && !goTo(a, tp, dt)) return;                                // still travelling to tuition
   a.fighter.setMoving(0);
-  accrueTopic(a, (step.bind || {}).topic as KnowTopic | undefined, 1);
+  if (RECIPES.graded) {
+    const good = topic && topic.kind === 'recipe' ? topic.good : null;
+    if (good && ctx.resolver && ctx.resolver.teachRecipe && ctx.resolver.teachRecipe(a, good)) {
+      learnRecipe(a, good, RECIPES.studyGain || 0.34, 0, ctx.time);  // taught + tuition paid ⇒ firm it up
+    }
+  } else {
+    accrueTopic(a, topic, 1, ctx.time);                             // binary: one visit teaches it
+  }
 });
 
 // effect-landed: the topic is now held confidently enough to act on (the executor wrote evidence).
@@ -107,6 +119,15 @@ registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
   g.priority = 0.45; g.from = 'apprentice';
   g.expiresAt = (ctx ? ctx.time : 0) + 160;
   a.pushGoal(g, ctx);
+});
+
+// THE FORGET PASS (graded recipes, §6) — a per-cognition-tick maintenance hook (registered as a
+// deriver, the feature's per-agent tick, like the ledger settle): keep the agent's PRACTISED craft
+// sharp and let every OTHER recipe fade (use-it-or-lose-it), dropping a faded one out of the
+// craftable Set. Own-state only; gated by RECIPES.graded (off ⇒ no-op, byte-stable).
+registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
+  if (!KNOW.enabled || !RECIPES.graded || !a || !a.alive) return;
+  forgetTick(a, ctx ? ctx.time : 0, a._trade);
 });
 
 export {};

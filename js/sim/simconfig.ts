@@ -63,6 +63,19 @@ export const RECIPES = {
   seedKnown: 'all',
   rediscoverPerSec: 0,       // self-rediscovery rate while stuck without a recipe
                              //   (Phase-4 hook; 0 ⇒ stub never fires on day one).
+  // GRADED RECIPE KNOWLEDGE (docs/architecture/10-lld §6, §19 gap #1). SUB-GATE, day-one OFF:
+  // off ⇒ recipes stay a binary Set (add/has), byte-identical. On ⇒ each recipe carries a graded
+  // CONFIDENCE (the belief table's four fields, applied to own craft knowledge): half-learned from
+  // a poor/brief teacher (below craftMinConf ⇒ in mind but not yet craftable), firmed by repeated
+  // study/watching, and FORGOTTEN if not practised (use-it-or-lose-it) — so a craft dies out of a
+  // town once its last practising holder stops (the "lost recipe"). A recipe is craftable (enters
+  // the Set the produce/trade gates read) only at/above craftMinConf.
+  graded: false,
+  craftMinConf: 0.45,        // graded confidence at/above which a recipe is "known" enough to craft
+  studyGain: 0.34,           // confidence one TAUGHT study session adds (a few sessions, or a good teacher)
+  forgetPerTick: 0.004,      // confidence a NON-practised recipe loses per cognition tick (slow fade)
+  // (the per-session tuition is KNOW.studyTuition — the same coin the planner gates study on — moved
+  //  to a co-located teacher as a conserved transfer; see the study executor + resolver.teachRecipe.)
 };
 
 // who spawns: a town of GENERIC townsfolk (no birthright trade). Each gets a

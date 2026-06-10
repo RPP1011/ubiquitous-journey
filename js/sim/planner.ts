@@ -20,6 +20,7 @@
 import * as THREE from 'three';
 import { PROFESSIONS, COMMODITIES, ECON, SIM, URCHIN, QUANTITY, KNOW, ROB, HOLD, RECRUIT, AFFECT, ESTIMATE } from './simconfig.js';
 import { POI_KIND } from './world.js';
+import { recipeConf } from './recipeKnow.js';
 import { STAGE, REASON } from './trace.js';
 import { effectHolds } from './exec/registry.js';
 import type { Agent, CognitionCtx, Goal, Plan, PlanStep, EntityId, Atom as AtomT, KnowTopic, Stage, Reason } from '../../types/sim.js';
@@ -303,8 +304,9 @@ function topicConfidence(agent: Agent, t: KnowTopic | null | undefined): number 
       // a believed price is held as a flat number (no per-good confidence yet) — present ⇒ sure.
       return (t.good && agent.priceBeliefs && (agent.priceBeliefs[t.good] || 0) > 0) ? 1 : 0;
     case 'recipe':
-      // own-state craft knowledge: today binary (known or not); present ⇒ fully confident.
-      return (t.good && agent.recipes && agent.recipes.has(t.good)) ? 1 : 0;
+      // own-state craft knowledge — graded confidence when RECIPES.graded (half-learned reads <1),
+      // else binary (present-in-Set ⇒ fully sure). recipeKnow owns the read (§6).
+      return recipeConf(agent, t.good);
     case 'strength': {
       // a believed force at a place (the camp's numbers) — own-state, accrued from scouting.
       const e = t.place && agent._strengthBelief ? agent._strengthBelief.get(t.place) : null;

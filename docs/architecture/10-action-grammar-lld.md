@@ -481,11 +481,13 @@ study(topic):   cost KNOW.studyTuition   // taught; pre: gold>=tuition + at(mark
 ```
 
 > **The four fields every fact carries** — value, confidence, provenance (retelling-depth), and
-> last-updated time — already exist on the belief table for facts about others. The **recipe set is
-> the gap**: today it is a binary `Set`. Giving recipes the same four fields turns them into graded
-> knowledge (half-learned from a poor teacher, forgotten when the last holder dies). The `learning`
-> feature owns that upgrade. Reading/writing/spreading/fading otherwise reuse the existing belief
-> machinery (gossip lowers confidence + bumps retelling-depth; decay fades; re-observation pushes up).
+> last-updated time — already exist on the belief table for facts about others. The recipe set **was
+> the gap** (a binary `Set`); now **implemented** (`js/sim/recipeKnow.ts`, `RECIPES.graded`): a
+> per-recipe `{conf, hops, t}` map backs the Set so recipes are graded knowledge — half-learned from
+> a brief teacher, forgotten when not practised (so a craft dies out once its last practising holder
+> stops). The `learning` feature owns it. Reading/writing/fading reuse the same evidence-accrual
+> (study/observe push conf up via `learnRecipe`; `forgetTick` fades the unpractised; the Set is the
+> craftable view at `craftMinConf`).
 
 ### One-level `Believes` (Phase 5)
 
@@ -886,6 +888,7 @@ a breadth step turns it on. The discipline (see the `action-grammar-build-arc` m
 | `AFFECT.enabled` | 5 | false | the `free`/`wreck` rows |
 | `LEDGER.enabled` | 5 | false | any live per-tick ledger wiring |
 | `ESTIMATE.enabled` | 6 | false | the wealth-cue haul `estimateHaul` + `haulSurcharge` (else flat `deriveTarget`/`ROB.amount`) |
+| `RECIPES.graded` | 6 | false | graded recipe conf (`recipeKnow.ts`: half-learned/forget + `teachRecipe` tuition) — else binary Set |
 
 ---
 
@@ -939,9 +942,14 @@ never a foreign-mind write. One executor gotcha worth recording: **effect-holds 
 
 The **remaining gaps** (deliberately out of this pass; each a follow-up behind its flag):
 
-1. **Recipe knowledge is still binary.** `topicConfidence('recipe')` is 1/0 and `study` adds to a
-   `Set`; the four-field graded recipe (half-learned, forgotten when the last holder dies) and a
-   conserved tuition transfer to a teacher are unbuilt.
+1. ~~**Recipe knowledge is still binary.**~~ **DONE.** Graded recipes are wired (`js/sim/recipeKnow.ts`,
+   gated by `RECIPES.graded`, day-one OFF): `a._recipeKnow` holds per-recipe `{conf,hops,t}`, the
+   binary `a.recipes` Set is the *craftable* view (in iff conf ≥ `craftMinConf`), so a recipe is
+   **half-learned** below the bar, firmed by repeated study/watching, and **forgotten** if not
+   practised (`forgetTick` fades every recipe but the agent's `_trade` — a craft dies out of a town
+   once its last practising holder stops). `study` now pays a **conserved tuition** to a co-located
+   teacher (`resolver.teachRecipe`). `topicConfidence('recipe')` reads the graded conf. (Tests:
+   `learning G1–G4`.)
 2. ~~**Wealth-cue estimation is a flat constant**~~ — **DONE.** `estimateHaul` (§15) is wired and
    gated by `ESTIMATE.enabled` (day-one OFF): the urchin deriver targets the believed-richest mark
    and aims for the inferred haul, and `haulSurcharge` folds the estimate's confidence into the

@@ -202,6 +202,7 @@ export interface Agent {
   // Lazily created and read only when the feature flags are on, so off it is byte-stable.
   _strengthBelief?: Map<string, { value: number; conf: number }>;   // Strength(place) topic home
   _secretBelief?: Map<EntityId, { conf: number }>;                  // Secret(subject) topic home
+  _recipeKnow?: Map<string, { conf: number; hops: number; t: number }>;  // graded Recipe(good) home (§6; binary `recipes` Set is the craftable view)
   _theyBelieve?: Map<string, { conf: number }>;                     // Believes(subject,topic), one level (key `subj:topicKey`)
   _obligations?: Obligation[];                                      // the commitment ledger (Phase 5)
   _held?: boolean;                                                  // a captive's believed-held state (free flips it)
