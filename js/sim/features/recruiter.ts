@@ -104,6 +104,11 @@ registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
 registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
   if (!a || a.controlled || !a.canWork || a.faction === 'monster' || !a.beliefs) return;
   if (a.inParty || a.bandLeaderId != null) return;                   // a follower doesn't raise its own band
+  // IDEMPOTENT (life-trace finding): once this leader is already MARCHING (holds a goalAssault), the
+  // deriver MUST no-op — otherwise it re-opens + re-closes the warband arc 'marched' EVERY cognition
+  // tick, churning ~1000 spurious arcs over a soak. One muster → one march → one closed arc. (Mustering
+  // — a live goalMuster — still re-runs each tick to upgrade to the march; openArc is idempotent then.)
+  if (Array.isArray(a.goals) && a.goals.some((g) => g.kind === 'assault')) return;
   const bold = a.personality ? (a.personality.risk_tolerance || 0) : 0;
   if (bold < (RECRUIT.musterRiskTol || 0.6)) return;                 // only the bold try to raise a force
   let foe = null;

@@ -19,6 +19,38 @@ import { foldOathSworn, foldOathPop } from './signals.js';
 // narrative-weight goals tracked as OATHS (docs/architecture/13 Family E): swearing one + keeping vs
 // abandoning it is character measured as a quantity ("a man of his word" / "the faithless").
 const OATH_KINDS = new Set(['avenge', 'repay', 'free', 'court', 'rescue']);
+
+// DEDUP THE OATH COUNT (life-trace finding): an avenge goal is re-derived EVERY cognition tick off a
+// still-salient memory and pops "satisfied" instantly when its target is already dead — which would
+// inflate sworn/kept ~750× per agent (pure re-derivation churn). An oath is counted ONCE per distinct
+// (kind, target) until it RESOLVES: swearOath no-ops while the same oath is already active; resolveOath
+// counts the keep/abandon once and clears it (so a genuinely RE-sworn oath after resolution counts
+// again). Own-state (a tiny per-agent Set); guarded. Mirrors awardGoalClosureXP's once-per-goal guard.
+type OathRec = { resolved: boolean };
+function oathMap(a: Agent): Map<string, OathRec> {
+  const aa = a as Agent & { _oathState?: Map<string, OathRec> };
+  return aa._oathState || (aa._oathState = new Map());
+}
+function swearOath(a: Agent, kind: string, targetId: unknown): void {
+  if (targetId == null) return;
+  try {
+    const m = oathMap(a);
+    const k = kind + ':' + targetId;
+    if (m.has(k)) return;              // this exact oath was ALREADY counted — never re-count the churn
+    m.set(k, { resolved: false });
+    while (m.size > 32) { const oldest = m.keys().next().value; if (oldest === undefined) break; m.delete(oldest); }  // bounded
+    foldOathSworn(a, kind);
+  } catch { /* never throw on the tick */ }
+}
+function resolveOath(a: Agent, kind: string, targetId: unknown, reason: 'kept' | 'abandoned'): void {
+  if (targetId == null) return;
+  try {
+    const rec = oathMap(a).get(kind + ':' + targetId);
+    if (!rec || rec.resolved) return;  // not a live sworn oath — don't count a phantom (re-derivation) resolution
+    rec.resolved = true;
+    foldOathPop(a, kind, reason);
+  } catch { /* never throw on the tick */ }
+}
 import { runDerivers, runPlanOutcome } from './exec/registry.js';
 import { STAGE, REASON } from './trace.js';
 import type { Agent, CognitionCtx, Goal, Personality, AmbitionSnapshot, EntityId, Stage, Reason } from '../../types/sim.js';
@@ -234,7 +266,7 @@ export function deriveGoals(a: Agent, ctx: CognitionCtx | null): void {
         g.expiresAt = now + (MOTIVE.avengeExpiry || 120);
         traceDerived(a, ctx, g, a.pushGoal(g, ctx));
         openVendettaArc(a, ctx, ep.withId);   // narrative spine: the feud is now a tracked arc (§12 §3.5)
-        foldOathSworn(a, 'avenge');            // an oath sworn (§13 E.oaths)
+        swearOath(a, 'avenge', ep.withId);            // an oath sworn (§13 E.oaths)
       } else if (ep.kind === 'windfall') {
         const g = goalSeekFortune(ep.place || 'market', MOTIVE.fortuneTarget || 140);
         g.priority = 0.6; g.from = 'windfall';
@@ -249,7 +281,7 @@ export function deriveGoals(a: Agent, ctx: CognitionCtx | null): void {
         g.priority = 0.7; g.from = 'succoured';
         g.expiresAt = now + (MOTIVE.repayExpiry || 240);
         traceDerived(a, ctx, g, a.pushGoal(g, ctx));
-        foldOathSworn(a, 'repay');             // an oath sworn (§13 E.oaths)
+        swearOath(a, 'repay', ep.withId);             // an oath sworn (§13 E.oaths)
       } else if (ep.kind === 'witnessed_death' && ep.withId != null) {
         // saw a (liked) friend fall -> mourn them; if the killer is known (and I haven't
         // already slain it), carry a vendetta. The witnessed_death memory IS the evidence
@@ -266,7 +298,7 @@ export function deriveGoals(a: Agent, ctx: CognitionCtx | null): void {
           av.expiresAt = now + (MOTIVE.avengeExpiry || 120);
           traceDerived(a, ctx, av, a.pushGoal(av, ctx));
           openVendettaArc(a, ctx, ep.byId as EntityId);   // the blood-feud is now a tracked arc (§12 §3.5)
-          foldOathSworn(a, 'avenge');                      // an oath sworn (§13 E.oaths)
+          swearOath(a, 'avenge', ep.byId);                      // an oath sworn (§13 E.oaths)
         }
       } else if (ep.kind === 'relic') {
         // found / heard of a relic in a place -> delve there (aspirational for NPCs).
@@ -329,7 +361,7 @@ export function pruneGoals(a: Agent, ctx: CognitionCtx | null): void {
   const now = ctx ? ctx.time : 0;
   a.goals = a.goals.filter((g: Goal) => {
     if (!g) return false;
-    if (g.expiresAt != null && now >= g.expiresAt) { cautionWaste(a, ctx, g); if (OATH_KINDS.has(g.kind as string)) foldOathPop(a, g.kind as string, 'abandoned'); return false; }
+    if (g.expiresAt != null && now >= g.expiresAt) { cautionWaste(a, ctx, g); if (OATH_KINDS.has(g.kind as string)) resolveOath(a, g.kind as string, g.subjectId, 'abandoned'); return false; }
     if (typeof g.predicate === 'function') {
       try {
         if (g.predicate(a, ctx)) {
@@ -347,7 +379,7 @@ export function pruneGoals(a: Agent, ctx: CognitionCtx | null): void {
             } catch { /* never throw */ }
           }
           awardGoalClosureXP(a, g, now, 0.5);   // narrative-beat xp for the closure
-          if (OATH_KINDS.has(g.kind as string)) foldOathPop(a, g.kind as string, 'kept');   // an oath KEPT (§13 E.oaths)
+          if (OATH_KINDS.has(g.kind as string)) resolveOath(a, g.kind as string, g.subjectId, 'kept');   // an oath KEPT (§13 E.oaths)
           // TRACE (write-only): the goal's predicate became satisfied — it pops. Own-state.
           // note() is internally guarded (never throws); a.trace always exists on an Agent.
           a.trace.note(ST.GOAL, RS.GOAL_POPPED, {
@@ -357,7 +389,7 @@ export function pruneGoals(a: Agent, ctx: CognitionCtx | null): void {
         }
       } catch { /* keep on error */ }
     }
-    if (g._unreachable) { cautionWaste(a, ctx, g); if (OATH_KINDS.has(g.kind as string)) foldOathPop(a, g.kind as string, 'abandoned'); return false; }   // flagged by the planner as infeasible
+    if (g._unreachable) { cautionWaste(a, ctx, g); if (OATH_KINDS.has(g.kind as string)) resolveOath(a, g.kind as string, g.subjectId, 'abandoned'); return false; }   // flagged by the planner as infeasible
     return true;
   });
 }
