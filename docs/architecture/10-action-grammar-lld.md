@@ -887,6 +887,7 @@ a breadth step turns it on. The discipline (see the `action-grammar-build-arc` m
 | `RECRUIT.enabled` | 5 | false | the `force_ge` composer + `recruit` row |
 | `WARBAND.enabled` | 5 | false | the recruiter follow-through: a warmed candidate's own join-decision deriver + `resolver.joinBand` (NPC marching ally) |
 | `AFFECT.enabled` | 5 | false | the `free`/`wreck` rows |
+| `CAPTIVE.enabled` | 5 | false | the captivity → rescue TRIGGER: capture-on-defeat + the `captive` belief + the `goalFree` rescue deriver + emergent gratitude (the `free` arc's live payoff) |
 | `LEDGER.enabled` | 5 | false | any live per-tick ledger wiring |
 | `ESTIMATE.enabled` | 6 | false | the wealth-cue haul `estimateHaul` + `haulSurcharge` (else flat `deriveTarget`/`ROB.amount`) |
 | `RECIPES.graded` | 6 | false | graded recipe conf (`recipeKnow.ts`: half-learned/forget + `teachRecipe` tuition) — else binary Set |
@@ -925,7 +926,7 @@ feature suite) is green, and the action grammar runs end-to-end through the real
 | feature (file) | verbs wired | live deriver | flag |
 | --- | --- | --- | --- |
 | `urchin.ts` | surveil / approach / burgle | poor + larcenous → `goalSteal` (mark from belief cues) | `URCHIN` |
-| `affect.ts` | rob / free / wreck | (rob shares the steal deriver; free/wreck dormant — no captivity trigger yet) | `ROB` / `AFFECT` |
+| `affect.ts` | rob / free / wreck | rob shares the steal deriver; **free is LIVE** (a liked believed-captive + bold/kind → `goalFree`, via the `CAPTIVE` capture trigger); wreck dormant (no enemy structure entity to target) | `ROB` / `AFFECT` / `CAPTIVE` |
 | `learning.ts` | observe / ask / study | a crafter lacking its recipe → `goalLearn` | `KNOW` |
 | `recruiter.ts` | recruit | bold leader vs strong foe → `goalMuster`; follower warms from a perceived offer | `RECRUIT` |
 | `ledger.ts` | (no verb — a settle deriver) | a `succoured` memory arms a commitment; meeting the benefactor fires the deferred repay | `LEDGER` |
@@ -956,8 +957,20 @@ The **remaining gaps** (deliberately out of this pass; each a follow-up behind i
    and aims for the inferred haul, and `haulSurcharge` folds the estimate's confidence into the
    heist cost. A thief's expected haul is now a belief-cue inference, wrong exactly when the cues
    mislead. (Tests: `urchin W1–W4`.)
-3. **`free`/`wreck` carry no live deriver** — the sim has no captivity / sabotage-target mechanic to
-   trigger them, so their goals + executors are correct and unit-tested but dormant in the soak.
+3. ~~**`free`/`wreck` carry no live deriver**~~ — **`free` DONE** (the captivity → rescue arc). The
+   `CAPTIVE` block (day-one OFF) wires the missing trigger: on a captor-faction (bandit/rival/monster)
+   lethal blow against a non-combatant townsperson, the victim is CAPTURED instead of killed —
+   revived + `_held` + `_captorId` (EXECUTION, in `combatEvents.ts`); a held captive idles (decide/act
+   guards). Perception bridges a seen `_held` to a `captive` flag on the witness's BELIEF; the
+   `affect.ts` rescue deriver (belief + own-personality ONLY — a well-liked believed-captive +
+   bold/kind disposition) forms `goalFree`; the freed captive's gratitude EMERGES (a per-perceiver
+   warmth on its OWN belief about `_freedBy`, the positive mirror of `witnessDeed`). Gold is conserved
+   across capture (no death-loot), the captive never deadlocks the soak, and OFF is byte-identical.
+   (Tests: `affect CAPTIVE CAP1–2 / PER / RES1–3`.) **`wreck` stays dormant** by design: the resolver's
+   `affect('wrecked')` operates on `sim.agentsById` (agents), and there is no enemy-owned agent-or-
+   percept STRUCTURE carrying a believed position + hostility to target — watchtowers are bare
+   emplacements (no id/belief), buildings are non-hostile place-percepts — so a clean `wreck` deriver
+   would require inventing a structure-as-roster-entity subsystem (explicitly out of scope; not forced).
 4. **NPC war-party formation/following — BUILT** (gated `WARBAND.enabled`, day-one OFF). `recruit`'s
    belief half (offer, prediction, follower belief-shift) was already wired; the follow-through now
    turns a warmed candidate into a marching NPC ally **without a parallel system**. The seam:

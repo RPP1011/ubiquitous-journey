@@ -4,7 +4,7 @@
 // the freed/wrecked flags flip, and the reaction EMERGES (a robbery is seen → the mark sours).
 import { FeatureStage } from './_stage.mjs';
 import { goalSteal, goalFree, goalWreck } from '../../js/sim/planner.js';
-import { ROB, AFFECT, URCHIN } from '../../js/sim/simconfig.js';
+import { ROB, AFFECT, URCHIN, CAPTIVE } from '../../js/sim/simconfig.js';
 
 export function affectTest(ok, helpers) {
   const prevR = ROB.enabled, prevA = AFFECT.enabled, prevU = URCHIN.enabled;
@@ -52,5 +52,66 @@ export function affectTest(ok, helpers) {
       ok(target._wrecked === true, `affect WRECK: the target was sabotaged (_wrecked=${target._wrecked})`);
       st.dispose();
     }
+
+    // ── CAPTIVITY → RESCUE (the `free` arc trigger, docs/architecture/10-lld §19 item 3) ──────────
+    const prevC = CAPTIVE.enabled, prevChance = CAPTIVE.captureChance;
+    CAPTIVE.enabled = true; CAPTIVE.captureChance = 1;   // force capture on a qualifying lethal blow
+    try {
+      // CAPTURE-ON-DEFEAT (execution, ground truth): a bandit's lethal blow on a non-combatant
+      // townsperson is converted to a CAPTURE — the victim is revived, _held, _captorId set.
+      {
+        const st = new FeatureStage(helpers);
+        const bandit = st.add('Skar', 0, 0, { faction: 'bandit', combatant: true });
+        const victim = st.add('Pell', 2, 0);   // townsfolk, non-combatant
+        const before = st.totalGold();
+        // synthesise the lethal blow the same way the frame loop delivers it to onCombatEvents.
+        victim.fighter.takeHit(9999, victim.fighter.dir);            // drive HP to 0 → a real 'dead'
+        st.sim.onCombatEvents([{ type: 'dead', attacker: { agent: bandit }, target: { agent: victim } }]);
+        ok(victim._held === true && victim._captorId === bandit.id && victim.alive === true,
+          `CAPTIVE CAP1: a defeated townsperson was CAPTURED not killed (_held=${victim._held}, captor=${victim._captorId}, alive=${victim.alive})`);
+        ok(Math.abs(st.totalGold() - before) < 1e-6, `CAPTIVE CAP2: gold conserved across capture (${before} -> ${st.totalGold()})`);
+        st.dispose();
+      }
+      // PERCEIVE CAPTIVITY (perception writes belief): an onlooker who SEES a _held subject records
+      // b.captive on its OWN belief — the epistemic split (the deriver reads only the belief).
+      {
+        const st = new FeatureStage(helpers);
+        const onlooker = st.add('Wynn', 0, 0);
+        const captive = st.add('Pell', 3, 0);
+        captive._held = true; captive._captorId = 999;
+        st.run(() => { const b = onlooker.beliefs.get(captive.id); return !!(b && b.captive); },
+          { maxFrames: 400, pin: [[captive, 3, 0], [onlooker, 0, 0]] });
+        const b = onlooker.beliefs.get(captive.id);
+        ok(!!b && b.captive === true, `CAPTIVE PER: perception set b.captive on the onlooker's belief (captive=${b && b.captive})`);
+        st.dispose();
+      }
+      // RESCUE DERIVER + EXECUTOR + EMERGENT GRATITUDE (cognition belief-only → free → warmth).
+      {
+        const st = new FeatureStage(helpers);
+        const rescuer = st.add('Mara', 0, 0, { personality: { altruism: 0.9, risk_tolerance: 0.6 } });
+        const captive = st.add('Pell', 4, 0);
+        captive._held = true; captive._captorId = 999;
+        // the rescuer LIKES the captive (high standing) — the gate for a rescue.
+        const rel = rescuer.beliefs.observe(captive.id, captive.faction, captive.pos, st.sim.time, false);
+        rel.standing = 0.8; rel.confidence = 1;
+        // let perception write b.captive + the deriver form the goal, then drive it to completion.
+        const derived = st.run(() => rescuer.goals.some((g) => g && g.kind === 'free' && g.subjectId === captive.id),
+          { maxFrames: 600, pin: [[captive, 4, 0]], refresh: [[rescuer, captive]] });
+        ok(rescuer.goals.some((g) => g && g.kind === 'free' && g.subjectId === captive.id),
+          `CAPTIVE RES1: a liked believed-captive made the rescuer DERIVE goalFree (${derived}f)`);
+        // run it: the rescuer walks to the captive and cuts its bonds (the free executor).
+        st.run(() => captive._held === false,
+          { maxFrames: 2000, pin: [[captive, 4, 0]] });
+        ok(captive._held === false && captive._freedBy === rescuer.id,
+          `CAPTIVE RES2: the rescuer freed the captive (_held=${captive._held}, _freedBy=${captive._freedBy})`);
+        // emergent gratitude: the freed captive, perceiving _freedBy, warms toward its rescuer
+        // through its OWN belief (per-perceiver, not a baked reaction).
+        st.run(() => { const cb = captive.beliefs.get(rescuer.id); return !!(cb && cb.standing > 0.2); },
+          { maxFrames: 600, pin: [[rescuer, captive.fighter.root.position.x, captive.fighter.root.position.z]] });
+        const cb = captive.beliefs.get(rescuer.id);
+        ok(!!cb && cb.standing > 0.2, `CAPTIVE RES3: the freed captive's gratitude EMERGED — it warmed toward its rescuer (standing=${cb && cb.standing.toFixed(2)})`);
+        st.dispose();
+      }
+    } finally { CAPTIVE.enabled = prevC; CAPTIVE.captureChance = prevChance; }
   } finally { ROB.enabled = prevR; AFFECT.enabled = prevA; URCHIN.enabled = prevU; }
 }

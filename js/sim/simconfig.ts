@@ -523,6 +523,28 @@ export const AFFECT = {
   enabled: false,
 };
 
+// --- CAPTIVE: the captivity → rescue arc TRIGGER (docs/architecture/10-lld §19 item 3, §12) ----
+// The Affect `free` row is correct + unit-tested but DORMANT — nothing in the sim ever makes an
+// agent a captive, so no deriver fires it. This block wires the missing trigger: when a hostile
+// captor-faction combatant DEFEATS a non-combatant townsperson, with a small chance the victim is
+// CAPTURED instead of killed (revived, `_held`, anchored). That is EXECUTION (ground truth, on the
+// combat path). Perception then writes a `captive` flag on the WITNESS's BELIEF about the captive
+// (the epistemic split), and the affect deriver — reading beliefs + own personality ONLY — forms a
+// goalFree for a sufficiently-liked believed-captive. The freed captive's gratitude EMERGES from it
+// perceiving `_freedBy` (a positive, per-perceiver warmth through its OWN belief). Gated by enabled +
+// AFFECT.enabled (the executor/goal). Day-one OFF, so NO capture ever happens and the soak is
+// byte-identical (no revive, no `captive` belief written, no deriver fires).
+export const CAPTIVE = {
+  enabled: false,
+  captureChance: 0.25,           // P(capture instead of kill) on a qualifying lethal blow
+  captorFactions: ['bandit', 'rival', 'monster'],  // who takes prisoners (raiders/rivals/beasts)
+  reviveHpFrac: 0.35,            // health the captured victim is left at (alive but cowed)
+  rescueStanding: 0.3,           // believed standing above which a captive is worth rescuing (a friend)
+  rescueRiskTol: 0.45,           // a rescuer must be at least this bold OR…
+  rescueAltruism: 0.6,           // …this kind to attempt a rescue (disposition gate — not everyone)
+  gratitudeWarmth: 0.5,          // standing bump the freed captive feels toward its rescuer (its OWN belief)
+};
+
 // --- LEDGER: the obligation store (docs/architecture/10, Phase 5 — the one new machinery) ----
 // A small per-agent store of standing INTENTIONS, each a (trigger, deferred action, counterparty,
 // expiry), checked against perception each tick. It absorbs the two things pushed out of the

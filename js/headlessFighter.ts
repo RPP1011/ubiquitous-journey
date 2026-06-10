@@ -121,6 +121,16 @@ export class HeadlessFighter implements IFighter {
 
   _die(): void { this.alive = false; this.state = 'dead'; }
 
+  // CAPTIVE (the rescue arc): un-kill a just-defeated body — used when a lethal blow is converted
+  // to a CAPTURE (combatEvents) instead of a death. Restore liveness + a clamped health and idle.
+  revive(health: number): void {
+    this.alive = true;
+    this.state = 'idle';
+    this.health = Math.max(1, Math.min(TUNE.maxHealth, health || TUNE.maxHealth));
+    this.staggerTimer = 0; this.recoverTimer = 0; this.hasHit = false;
+    this.moveSpeed = 0;
+  }
+
   // --- hit sampling ---------------------------------------------------------
   isHitActive(): boolean {
     if (this.state !== 'attack' || this.hasHit) return false;
