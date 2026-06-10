@@ -8,7 +8,7 @@
 
 import { terrainHeight, concealmentAt } from '../../arena.js';
 import { inferDestination } from '../beliefs.js';
-import { SIM, SOURCE, BAND, COMMODITIES, ECON, MAP, factionHostile } from '../simconfig.js';
+import { SIM, SOURCE, BAND, COMMODITIES, ECON, MAP, ESTEEM as WEALTHCUE, factionHostile } from '../simconfig.js';
 import { PERCEPT_KIND } from '../percept.js';
 import { STAGE, REASON } from '../trace.js';
 import type { Agent, FullCtx, Perceivable } from '../../../types/sim.js';
@@ -37,6 +37,7 @@ interface PerceivedThing {
   buildKind?: string;
   benefitKind?: string;
   _held?: boolean;             // CAPTIVE: ground-truth held state — perception bridges it to a belief
+  inventory?: Record<string, number>;   // the VISIBLE carried pack — the prosperity cue (§6 wealth bridge)
 }
 const asThing = (o: Perceivable): PerceivedThing => o as unknown as PerceivedThing;
 
@@ -103,13 +104,28 @@ export function perceive(a: Agent, ctx: FullCtx): void {
     // notoriety into my belief, so the fear gate (decide.js) reads a believed scalar
     // rather than a live player handle. An NPC who never saw the player holds no belief
     // and so feels no dread. Truth-in / belief-out — the sanctioned bridge.
-    if (o.controlled) b.notoriety = o.notoriety || 0;
+    // GENERALISED (docs/architecture/12 §9): record ANY visible agent's notoriety, not just the
+    // player's — so an NPC outlaw accrues a town-read infamy the same way. Still witness-gated belief
+    // (a secret robbery breeds none); RECRUIT/the outlaw arc read this believed scalar.
+    if (o.notoriety) b.notoriety = o.notoriety || 0;
     // believed CAPTIVITY (CAPTIVE, the rescue arc): seeing a subject whose ground-truth `_held` is
     // set records it on my belief — truth-in / belief-out, the same sanctioned bridge as notoriety.
     // The affect deriver reads ONLY this belief (never `_held`), so the rescue DECISION stays in
     // belief-space. Re-confirmed each sighting; cleared when I see it freed (a freed captive idles
     // beside its rescuer, so its onlookers re-perceive it and drop the flag).
     b.captive = !!o._held;
+    // believed WEALTH (docs/architecture/12 §6): a VISIBLE prosperity cue — a full pack / fine gear,
+    // the carried proxy for prosperity — nudges my estimate. Truth-in (a visible surface on o, NEVER
+    // o.gold) / belief-out, the same sanctioned bridge as notoriety. The recognition channel (decide)
+    // reads ONLY this belief; estimateHaul uses it as its prior. Re-confirmed each sighting, faded by
+    // decay. A flashy hauler reads rich, an empty-handed miser reads poor — wrong exactly when the
+    // cues mislead, the same epistemic honesty the rest of the sim runs on.
+    if (o.inventory) {
+      let goods = 0; const tools = o.inventory.tool || 0;
+      for (const k in o.inventory) goods += o.inventory[k] || 0;
+      const implies = Math.max(0, Math.min(1, tools * 0.25 + goods * 0.03));
+      if (implies > 0.02) b.recordWealthCue(implies, WEALTHCUE.sightWeight);
+    }
   }
   // DESTINATION-INTENT: any tracked subject I am NO LONGER seeing — but still hold a
   // confident, freshly-stale belief about (just dropped below a full-confidence sighting)

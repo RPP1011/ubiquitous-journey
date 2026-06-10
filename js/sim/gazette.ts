@@ -409,7 +409,80 @@ function sagaArticle(b: BriefView): ArticleProse {
       body: `Blood follows the traveller, and not the blood of monsters. Too many of our own have fallen to that hand, witnessed by too many eyes — and the realm has rendered its verdict: a villain, a butcher, a name spoken with a shudder. The fearful bar their doors at dusk, and the bold sharpen their own steel.`,
     };
   }
+  // EMERGENT arcs (docs/architecture/12 §3) — vendettas the agents ran themselves, rescues, musters,
+  // climbs. The arc was synthesised into this saga view by emergentSaga(); names off its principals.
+  if (s.sagaKind === 'vendetta') {
+    if (s.outcome === 'fulfilled') return {
+      headline: cap(`A Feud Settled in Blood: ${s.a} and ${s.b}`),
+      body: `What began with a single blow hardened, over ${s.rounds || 'several'} bloody exchanges, into open vendetta — until ${s.a} ran ${s.b} to ground at last and paid the grudge in full. So ends a quarrel that steel alone could close.`,
+    };
+    return {
+      headline: cap(`An Old Grudge Burns Out: ${s.a} and ${s.b}`),
+      body: `For a season ${s.a} and ${s.b} traded blows and threats, but the heat went out of it before either drew the last. The feud is cold now — unsettled, but quiet. Some quarrels end not with a reckoning but with weariness.`,
+    };
+  }
+  if (s.sagaKind === 'rescue') {
+    if (s.outcome === 'freed') return {
+      headline: cap(`A Captive Freed: ${s.a} Cuts ${s.b} Loose`),
+      body: `Held against their will, ${s.b} might have been lost for good — but ${s.a} marched on the place, cut down the guard, and brought them out alive. A debt was paid in the only coin that counts: deeds.`,
+    };
+    return {
+      headline: cap(`A Rescue Comes Too Late: ${s.b} Lost`),
+      body: `${cap(s.a)} set out to free ${s.b} from captivity, but the road was long and the guard close. ${cap(s.b)} did not live to be freed. Let it be remembered who tried.`,
+    };
+  }
+  if (s.sagaKind === 'warband') {
+    if (s.outcome === 'marched') return {
+      headline: cap(`The Banner Rises: ${s.a} Marches a War-Band`),
+      body: `${cap(s.a)} gathered followers to their banner — ${s.rounds || 'a'} strong by the end — and led them against the foe they had named. The town has not seen such a muster in a long while.`,
+    };
+    return {
+      headline: cap(`A War-Band Scattered: ${s.a}'s Muster Breaks`),
+      body: `${cap(s.a)} called followers to a banner and marched — but the foe proved the stronger, and the band broke and scattered. Ambition, it seems, musters faster than it conquers.`,
+    };
+  }
+  if (s.sagaKind === 'ragsToRiches') {
+    if (s.outcome === 'celebrated') return {
+      headline: cap(`From Nothing to Note: ${s.a} Rises`),
+      body: `Not long ago ${s.a} had little to their name. No longer — the town now reckons them among the prosperous, and folk who once looked past them tip their caps. A purse, well filled, opens more doors than a sword.`,
+    };
+    return {
+      headline: cap(`A Fortune Undone: ${s.a} Falls on Hard Times`),
+      body: `${cap(s.a)} had climbed within reach of comfort, but it slipped away as fast as it came. The town watches another would-be fortune turn to dust.`,
+    };
+  }
+  if (s.sagaKind === 'outlaw') {
+    if (s.outcome === 'celebrated') return {
+      headline: cap(`The Bold Robber: ${s.a} a Legend Among the Desperate`),
+      body: `${cap(s.a)} has robbed and gone unbroken long enough that the desperate speak their name with a grin. To the comfortable a menace; to the poor, very nearly a hero. Such is the making of an outlaw legend.`,
+    };
+    return {
+      headline: cap(`The Outlaw Brought Down: ${s.a} Answers for It`),
+      body: `${cap(s.a)}'s career of robbery has ended the way most do — run down at last and brought to account. The bold die young; the cautious merely die.`,
+    };
+  }
+  if (s.sagaKind === 'burnedVeteran') {
+    if (s.outcome === 'relapsed') return {
+      headline: cap(`Back to the Old Trade: ${s.a} Cannot Leave It`),
+      body: `${cap(s.a)} had seemed done with the thieving life after one burn too many — but old habits run deep, and they have gone back to it. Some lessons never quite take.`,
+    };
+    return {
+      headline: cap(`A Thief Hangs It Up: ${s.a} Gives Up the Game`),
+      body: `Burned once too often, ${s.a} has quietly given up the trade that nearly undid them. A rare thing: a hard lesson, learned and kept.`,
+    };
+  }
   return { headline: 'A Tale of the Town', body: 'The full account is told in the chronicle.' };
+}
+
+// Map an EMERGENT closed arc (vendetta/rescue/muster/rags/outlaw/…) to the saga view sagaArticle
+// reads. Director-origin arcs carry their own saga in meta and never reach here; this is only for
+// the agent-run arcs the registry filed. Names resolve off the arc's principals (display read).
+function emergentSaga(sim: Sim, arc: { kind: string; outcome: string | null; principals: unknown[]; rounds: number }): BriefView {
+  try {
+    const nm = (id: unknown): string => { const a = sim.agentsById && sim.agentsById.get(id); return (a && a.name) || 'someone'; };
+    const names = (arc.principals || []).map(nm);
+    return { sagaKind: arc.kind, outcome: arc.outcome, names, a: names[0] || 'someone', b: names[1] || 'another', rounds: arc.rounds };
+  } catch { return { sagaKind: arc.kind, outcome: arc.outcome, names: [], a: 'someone', b: 'another', rounds: 0 }; }
 }
 
 // PERSON — a soul worth knowing, framed by their ANGLE (the drive behind the
@@ -617,11 +690,17 @@ export function gatherDispatches(sim: Sim): Dispatch[] {
     // single retrospective FEATURE, so the reader gets the whole shaped story (betrayal
     // → vengeance → duel; a tyrant humbled; a traitor unmasked) instead of three
     // scattered beats. Highest value — these are the tales worth the price of the paper.
-    const sagas = (sim.director && sim.director._sagas) || [];
-    for (const s of sagas) {
-      if (!s || !s.sig) continue;
-      if (sim.time - (s.t || 0) > 120) continue;     // only FRESH sagas — so each ages out
-      out.push({ value: 3.6, sig: s.sig, brief: { kind: 'saga', saga: s, dateline: 'the realm', t: s.t } });   // of the desk before its file-cooldown lapses (filed once, never re-run)
+    // ONE source (docs/architecture/12 §3): the shared sim.sagas ledger holds BOTH director-authored
+    // AND emergent completed arcs. A director-origin arc carries the original saga in meta (rendered
+    // unchanged); an EMERGENT arc (vendetta/rescue/muster/rags) is mapped to a saga view from the arc.
+    const closed = (sim.sagas && sim.sagas.recentClosed && sim.sagas.recentClosed()) || [];
+    for (const arc of closed) {
+      if (!arc || !arc.sig) continue;
+      if (arc.outcome === 'crowded_out' || arc.outcome === 'lapsed') continue;   // truncated/dissolved: not a told story
+      const meta = arc.meta || {};
+      const saga = meta.saga || emergentSaga(sim, arc);                          // director saga as-is, else synthesised
+      if (!saga) continue;
+      out.push({ value: 3.6, sig: arc.sig, brief: { kind: 'saga', saga, dateline: 'the realm', t: arc.closedAt } });
     }
   } catch { /* never throw */ }
   return out;

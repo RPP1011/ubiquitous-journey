@@ -46,6 +46,9 @@ function warbandDirectedAssault(ok, helpers) {
       { maxFrames: 90, pin: [[foe2, 16, 0], [lone, 0, 0]], refresh: [[lone, foe2]] });
     ok(lone.goals.some((g) => g.kind === 'muster') && !lone.goals.some((g) => g.kind === 'assault'),
       'warband 6: a LONE would-be leader musters (recruits) first — it does not assault alone');
+    // ARC (docs/architecture/12 §3.5): the muster opened a tracked `warband` arc for the leader.
+    ok(st2.sim.sagas.findArc('warband:' + lone.id) != null,
+      'warband 7: the muster OPENED a warband arc in sim.sagas');
     st2.dispose();
   }
 }

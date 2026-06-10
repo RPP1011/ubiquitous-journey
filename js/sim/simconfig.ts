@@ -543,6 +543,81 @@ export const LEDGER = {
   commitExpiry: 300,     // sim-seconds an armed commitment persists before it lapses unkept
 };
 
+// --- ARCS: the emergent-arc / saga registry (docs/architecture/12 §3 — the narrative spine) ----
+// The bounds + timescales for sim.sagas. Tuning only; the store math lives in js/sim/arcs.ts.
+export const ARCS = {
+  maxOpen: 48,           // hard cap on concurrently-open arcs (the WEAKEST incumbent evicted via close)
+  maxClosed: 64,         // ring of completed arcs the Gazette/UI read (bounded memory)
+  maxBeats: 12,          // bounded per-arc chapter trail (open + rounds + close)
+  openTtl: 180,          // sim-seconds an open arc lives unresolved before sweep lapses it; re-armed
+                         //   by each fresh `round` beat (a slow feud outlives an open-and-shut one)
+  roundNoteGap: 20,      // min sim-seconds between throttled round-beat chronicle notes per arc
+  sweepSecs: 4,          // self-throttle for sagas.sweep() (matches the chronicle poll cadence)
+  gazetteFreshSecs: 120, // a closed arc is "fresh" news for this long (matches the director-saga cooldown)
+};
+
+// --- SIGNALS: the narrative-signal catalog (docs/architecture/13 — the values probes read) -------
+// Per-agent, bounded, event-folded values the observer layer measures. Tuning only; the store math
+// lives in js/sim/signals.ts. Orderings, not measurements — fast half-life ~Gazette cadence, slow ~5×.
+export const SIGNALS = {
+  goldHalfFast: 120,     // fast gold EWMA half-life (sim-s) — ~the Gazette cadence (recent fortunes)
+  goldHalfSlow: 600,     // slow gold EWMA half-life — ~5× the fast (the long baseline)
+  lossRing: 8,           // bounded ring of recent downward gold steps (tagged robbed/spent/gifted/fined)
+  lossMin: 1,            // a gold step smaller than this is noise — not ringed
+  snubHalfLife: 180,     // snubsFelt decays toward 0 with this half-life (a cold shoulder fades)
+};
+
+// --- STATUS: the status-delta / failure sensor (docs/architecture/12 §5 — fall-from-grace) --------
+// The omniscient observer probe's thresholds. Reads TREND EWMAs (not a running max), requires an
+// INVOLUNTARY cause for ruin (spending is not ruin), and clears its flags past a recover band
+// (hysteresis) so fall–recover–fall can fire more than once. Tuning only; logic in statusSensor.ts.
+export const STATUS = {
+  passSecs: 6,           // self-throttle for the observer pass (sim-s); not every tick
+  ruinFrac: 0.85,        // RUIN when goldFast <= goldSlow * this (a FAST fall below the baseline)
+  involuntaryFrac: 0.5,  // …AND the involuntary (robbed/fined) share of recent losses is >= this
+  lossWindow: 300,       // the window (sim-s) over which the involuntary loss share is measured
+  shunStanding: -0.35,   // SHUNNED beat when the true roster mean opinion crosses below this
+  snubThreshold: 3,      // the `slandered` MEMORY fires only once snubsFelt reaches this (perceivable)
+  retireSurcharge: 4,    // RETIRE when feltSurcharge('burgle') crosses this (a burned-out thief)
+  recoverFracGold: 0.95, // ruin clears when goldFast recovers past this fraction of the (relaxed) baseline
+  recoverFracThresh: 0.6,// shun/slander/retire flags clear when pulled back across this fraction of the bar
+  minGoldHigh: 20,       // ignore ruin below this baseline (a pauper who was always poor isn't "ruined")
+};
+
+// --- WEALTH: the believed-wealth cue bridge + recognition channel (docs/architecture/12 §6) -------
+// The town can esteem someone FOR being rich — a belief (never ground truth), written by a visible
+// cue in perception, read in cognition to nudge esteem. Gated per-disposition (deference vs envy).
+export const ESTEEM = {
+  sightWeight: 0.2,      // per-sighting weight the visible prosperity cue firms the belief by
+  recognizeMin: 0.45,    // believedWealth·wealthConf above which the recognition channel engages
+  deferWarm: 0.03,       // per-tick standing WARM the deferential give a believed-rich, non-suspect local
+  envyCool: 0.025,       // per-tick standing COOL the envious give the believed-rich (the envious mirror)
+  suspectGate: 0.4,      // a believed-suspect local earns no deference (suspicion above this blocks it)
+};
+
+// --- RAGS: the rags-to-riches arc (docs/architecture/12 §3.5 / §6) --------------------------------
+// Opens on a real wealth climb; closes 'celebrated' on DEFERENCE MASS (count of perceivers warmed
+// past a bar) — NOT net mean standing, which the §6 envy mirror could hold below threshold forever.
+export const RAGS = {
+  openGold: 120,         // goldSlow crossing this (a real climb, not a windfall flicker) opens the arc
+  deferBar: 0.25,        // a perceiver counts toward deference mass when its standing toward a exceeds this
+  celebrateMass: 4,      // that many warmed perceivers ⇒ the climb is socially recognised → 'celebrated'
+};
+
+// --- OUTLAW: NPC infamy + the pro-outlaw warming hook (docs/architecture/12 §9) -------------------
+// An NPC robber accrues a town-read `notoriety` (generalised from player-only); the desperate warm to
+// a robber-of-the-rich (the Robin Hood mirror, FOUR conjuncts — review 5). Tuning only.
+export const OUTLAW = {
+  warmRisk: 0.6,         // a witness this bold or bolder may admire a robbery (conjunct: larcenous/bold)
+  warmAltru: 0.4,        // …and this uncaring or less (low altruism)
+  warmPoorGold: 30,      // …and this poor or poorer (the desperate make folk heroes)
+  warmAllyBar: 0.2,      // …and NOT allied to the victim (standing toward victim at/below this)
+  warmVictimWealth: 0.4, // …and believes the victim WEALTHY (robs the rich — needs §6 believedWealth)
+  warmth: 0.3,           // the standing WARM a qualifying witness gives the bold robber
+  dreadAt: 0.45,         // notoriety crossing this opens the `outlaw` arc (a rising infamy)
+  legendAt: 0.85,        // notoriety crossing this closes it 'celebrated' (an outlaw legend)
+};
+
 // --- CAUTION: outcome-conditioned caution (docs/architecture/11-outcome-conditioned-caution-lld) ---
 // The burned-hand half of regret: a per-agent, per-STRATEGY signed surcharge — written when a watched
 // theft-shaped act's realized yield falls short of its believed yield, when the venture dies on the

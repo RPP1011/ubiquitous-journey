@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { Fighter } from '../fighter.js';
 import { Agent } from './agent.js';
-import { ROSTER, SIM, NAMES, MONSTER, MOTIVE, CAMPS, TOWNS, SCARECROW, BUILD, LOD, KNOW, RECRUIT, factionHostile } from './simconfig.js';
+import { ROSTER, SIM, NAMES, MONSTER, MOTIVE, CAMPS, TOWNS, SCARECROW, BUILD, LOD, KNOW, RECRUIT, OUTLAW, factionHostile } from './simconfig.js';
 import { assignHouse, founderHouse } from './houses.js';
 import { ARENA_RADIUS, BIOME, findBiomeSpot, regionAt, REGIONS, terrainHeight } from '../arena.js';
 import { resetXpStats } from '../rpg/xpstats.js';
@@ -27,6 +27,9 @@ import './features/index.js';   // load the action-grammar features (each self-r
 import { seedNarratives } from './seeding.js';
 import { Lineage } from './lineage.js';
 import { Chronicle } from './chronicle.js';
+import { SagaStore } from './arcs.js';
+import { foldLoss } from './signals.js';
+import { runStatusSensor } from './statusSensor.js';
 import { Gazette } from './gazette.js';
 import { Reporter } from './reporter.js';
 import { Bounties } from './bounties.js';
@@ -45,7 +48,7 @@ import { reason } from './schemas/interpreter.js';
 import { ACTIVE as SCHEMA_CATALOGUE } from './schemas/catalogue.js';
 import type {
   Agent as AgentShape, Percept, Perceivable, World as IWorld, MentalMap as IMentalMap,
-  Town, FullCtx, CognitionCtx, ResolverFacade, SiteHandle, MakeFighter,
+  Town, FullCtx, CognitionCtx, ResolverFacade, ArcPorts, SiteHandle, MakeFighter,
   Fighter as IFighter, CombatEvent, EntityId, AgentRef, PosSnapshot, AbilitySpec, Personality,
   ActionEvent, ActionEventSpec,
 } from '../../types/sim.js';
@@ -170,6 +173,8 @@ export class Simulation {
   director: Director;
   lineage: Lineage;
   chronicle: Chronicle;
+  sagas: SagaStore;
+  _arcPortsCache?: ArcPorts;
   gazette: Gazette;
   reporter: Reporter;
   bounties: Bounties;
@@ -275,6 +280,13 @@ export class Simulation {
     // kills, vendettas, prodigies rising, fortunes — plus raids/births sampled from
     // the Director/Lineage tallies. Read-only; bounded ring; never throws on tick.
     this.chronicle = new Chronicle(this);
+
+    // SAGAS: the emergent-arc / saga registry (docs/architecture/12 §3 — THE SPINE). A generic
+    // open→escalate→close completed-arc ledger any emergent loop files through (vendettas, rescues,
+    // musters, rags-to-riches), surfaced to the chronicle/Gazette. Constructed AFTER chronicle (it
+    // files beats through it) and folds the Director's _recordSaga into one shared ledger. Bounded,
+    // guarded, lazily swept — no heavy per-tick pass.
+    this.sagas = new SagaStore(this);
 
     // GAZETTE + REPORTER: a roaming gazetteer interviews newsworthy townsfolk and
     // publishes a town newspaper of their emergent adventures (template prose;
@@ -617,7 +629,22 @@ export class Simulation {
   // `perceivables` sibling carries agents+props and is consumed ONLY by the perceive loop —
   // so a 'bandit' Scarecrow never reaches surveyor/intrigue/director/the AoE scan (the seam
   // is narrow by design, not merely asserted-safe).
-  _ctx(): FullCtx { return { agents: this.agents, perceivables: this._perceivables(), agentsById: this.agentsById, world: this.world, map: this._mentalMap(), time: this.time, player: this.player || null, playerId: this.player ? this.player.id : null, buildSites: this.buildSites, cities: this.cities, resolver: this._cogResolver() }; }
+  _ctx(): FullCtx { return { agents: this.agents, perceivables: this._perceivables(), agentsById: this.agentsById, world: this.world, map: this._mentalMap(), time: this.time, player: this.player || null, playerId: this.player ? this.player.id : null, buildSites: this.buildSites, cities: this.cities, resolver: this._cogResolver(), arcs: this._arcPorts() }; }
+
+  // The narrator ARC WRITE-PORTS handed to BOTH ctxs (docs/architecture/12 §3). Observer-layer,
+  // write-only: a cognition-pass hook (deriveGoals/pruneGoals) can open/append/close a completed-arc
+  // record without ever reading the roster. Carries NO roster handle, so the cognition ctx stays
+  // clean under the epistemic scan. Built once, lazily; thin binds over sim.sagas.
+  _arcPorts(): ArcPorts {
+    if (this._arcPortsCache) return this._arcPortsCache;
+    const s = this.sagas;
+    return (this._arcPortsCache = {
+      openArc: (opts) => s.openArc(opts),
+      appendArcBeat: (key, tag, text) => s.appendBeat(key, tag, text),
+      closeArc: (key, outcome, text) => s.closeArc(key, outcome, text),
+      findArc: (key) => s.findArc(key),
+    });
+  }
 
   // LOD RELEVANCE (Phase 3 — Scale): is this agent worth full-fidelity cognition THIS tick?
   // Truth-side (lives in Simulation orchestration — reads own-state + truth, NEVER widens the
@@ -686,6 +713,7 @@ export class Simulation {
       playerId: this.player ? this.player.id : null,
       partyLeader: (this.party && this.party.leader) ? this.party.leader : null,
       resolver: this._cogResolver(),
+      arcs: this._arcPorts(),       // narrator arc write-ports — observer-layer, write-only (no roster)
     } satisfies CognitionCtx;
   }
 
@@ -810,6 +838,7 @@ export class Simulation {
           if (buying) {
             if (a.gold < price) return false;
             a.applyBuy(good, price); cp.applySell(good, price);
+            foldLoss(a, 'spent', price, sim.time);   // signal: a VOLUNTARY outflow (not ruin)
           } else {
             if (a.surplus(good) < 1 || cp.gold < price) return false;
             a.applySell(good, price); cp.applyBuy(good, price);
@@ -837,6 +866,7 @@ export class Simulation {
             sim.recordSuccoured(to, from.id, 1);
             from.gold -= gold;
             to.gold = (to.gold || 0) + gold;
+            foldLoss(from, 'gifted', gold, sim.time);   // signal: a VOLUNTARY outflow (a gift/payment)
           } else return false;
           // receiver warms toward the giver via ITS OWN belief store.
           if (to.beliefs) { const rel = to.beliefs.get(from.id); if (rel) rel.standing = Math.min(1, rel.standing + 0.15); }
@@ -860,6 +890,7 @@ export class Simulation {
             const got = Math.min(Math.max(0, gold), src.gold || 0);
             if (got <= 0) return 0;
             src.gold -= got; a.gold = (a.gold || 0) + got;
+            foldLoss(src, 'robbed', got, sim.time);   // signal: an INVOLUNTARY loss (the RUIN cause)
             return got;
           }
           if (item) {
@@ -894,13 +925,29 @@ export class Simulation {
               rel.suspicion = Math.min(1, (rel.suspicion || 0) + sev);
             }
           }
-          // bystanders who see it grow suspicious of the actor (their own belief; lighter than the victim).
+          // bystanders who see it: most grow suspicious — but a DESPERATE witness admires a robber of
+          // the RICH (the Robin Hood mirror, docs/architecture/12 §9.2). FOUR conjuncts (review 5):
+          // larcenous/bold AND poor AND NOT allied to the victim AND believes the victim wealthy.
+          // Drop any one and it warms a witness whose friend was robbed, or a robbery of a fellow
+          // pauper — the wrong story. Per-perceiver, belief-only; the positive mirror of the souring.
           for (const w of sim.agents) {
             if (w === actor || w === victim || !w.alive || w.controlled) continue;
             if (w.pos.distanceTo(actor.pos) > SIM.visionRange) continue;
             const wb = w.beliefs.get(actor.id) || w.beliefs.observe(actor.id, actor.faction, actor.pos, sim.time, false);
-            if (wb) wb.suspicion = Math.min(1, (wb.suspicion || 0) + sev * 0.5);
+            if (!wb) continue;
+            const P = w.personality || {};
+            const vb = victimId != null ? w.beliefs.get(victimId) : null;
+            const admires = kind === 'rob' &&
+              (P.risk_tolerance || 0) >= OUTLAW.warmRisk && (P.altruism ?? 0.5) <= OUTLAW.warmAltru &&  // larcenous/bold
+              (w.gold || 0) <= OUTLAW.warmPoorGold &&                                                    // poor
+              (!vb || (vb.standing || 0) <= OUTLAW.warmAllyBar) &&                                       // not allied to the victim
+              (!!vb && (vb.believedWealth || 0) >= OUTLAW.warmVictimWealth);                             // robs the rich (§6)
+            if (admires) wb.standing = Math.min(1, (wb.standing || 0) + sev * OUTLAW.warmth);
+            else wb.suspicion = Math.min(1, (wb.suspicion || 0) + sev * 0.5);
           }
+          // OUTLAW ARC (docs/architecture/12 §3.5): a robbery the town witnessed is an escalation round
+          // on the actor's infamy arc (opened by statusSensor when notoriety crosses dreadAt).
+          if (kind === 'rob') { try { if (sim.sagas && sim.sagas.findArc('outlaw:' + actor.id)) sim.sagas.appendBeat('outlaw:' + actor.id, 'round', `${actor.name} struck again.`); } catch { /* never throw */ } }
           // the deed feeds the RPG progression (the actor's emergent class) via the shared bus.
           busEmit({ actorId: actor.id, verb: kind, tags: ['THEFT', 'RISK'], targetId: victimId ?? undefined, magnitude: sev, t: sim.time });
         } catch { /* never throw on the tick */ }
@@ -1123,6 +1170,13 @@ export class Simulation {
       // CHRONICLE: sample the Director/Lineage tallies for raid/birth beats
       // (bus-driven beats are captured by its subscription). Self-throttled; guarded.
       this.chronicle.tick();
+      // SAGAS: lazy-expiry sweep of the emergent-arc registry — lapse open arcs past their TTL
+      // (graceful dissolve + freeze backstop). Self-throttled (ARCS.sweepSecs); guarded; no scan.
+      this.sagas.sweep(this.time);
+      // STATUS SENSOR: the omniscient fall-from-grace probe (docs/architecture/12 §5). Self-throttled
+      // (STATUS.passSecs); fires RUIN/SHUNNED/RETIRE beats + ruined/slandered/thwarted memories on a
+      // downward crossing. Observer-layer (reads truth + the signal store); guarded; never throws.
+      runStatusSensor(this);
       // REPORTER: the gazetteer roams, interviews the most newsworthy soul, and
       // files a story to the Gazette. Deterministic; self-throttled; guarded.
       this.reporter.tick(ctx, step);

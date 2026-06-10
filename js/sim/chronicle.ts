@@ -52,6 +52,13 @@ export const BEAT = {
   LEGEND: 'legend',       // a hero is hailed or a foe becomes a dread nemesis (epithets)
   UNION: 'union',         // a marriage — a wedding / a cross-House alliance (romance)
   BUILD: 'build',         // a building raised — a home founded, a tavern, the town grows
+  // emergent-arc beats (docs/architecture/12) — the registry files these on open/round/close.
+  RUIN: 'ruin',           // an agent's fortunes collapse (fall-from-grace; the status sensor)
+  SHUNNED: 'shunned',     // the town turns cold toward an agent (the slander beat)
+  RETIRE: 'retire',       // a burned veteran gives up the venture (burnedVeteran arc)
+  RISE: 'rise',           // an agent climbs (rags-to-riches accrual / a wealth recognition)
+  MUSTER: 'muster',       // a warband forms and marches (recruiter assault arc)
+  RESCUE: 'rescue',       // a captive is freed (affect rescue arc)
 };
 
 export class Chronicle {

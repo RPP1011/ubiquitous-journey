@@ -8,6 +8,18 @@ import type { Agent } from './agent.js';
 import type { Perceivable } from './percept.js';
 import type { World, MentalMap } from './world.js';
 import type { AbilitySpec } from './abilities.js';
+import type { Arc, ArcOpenOpts } from './arcs.js';
+
+/** The narrator's arc write-ports, exposed on BOTH ctxs (docs/architecture/12 §3). These are
+ *  OBSERVER-LAYER, write-only: they file/escalate/close completed-arc records the chronicle and
+ *  Gazette consume. They carry NO roster handle and never drive a decision, so they are sanctioned
+ *  on the cognition ctx (a deriveGoals/pruneGoals hook can open/close an arc without reading truth). */
+export interface ArcPorts {
+  openArc(opts: ArcOpenOpts): Arc | null;
+  appendArcBeat(key: string, tag: string, text?: string): Arc | null;
+  closeArc(key: string, outcome: string, text?: string): Arc | null;
+  findArc(key: string): Arc | null;
+}
 
 /** An opaque build-site handle (resolved by the execution facade; never inspected by cognition). */
 export type SiteHandle = unknown;
@@ -78,6 +90,7 @@ export interface FullCtx {
   buildSites: unknown;          // the dynamic BuildSites registry (opaque to types)
   cities: unknown;              // the cities registry (opaque to types)
   resolver: ResolverFacade;
+  arcs: ArcPorts;               // narrator arc write-ports (sim.sagas) — observer-layer, write-only
 }
 
 /** RESTRICTED COGNITION context (Simulation._cognitionCtx). Handed to decide()/act().
@@ -91,4 +104,5 @@ export interface CognitionCtx {
   playerId: EntityId | null;
   partyLeader: Agent | null;
   resolver: ResolverFacade;
+  arcs: ArcPorts;               // narrator arc write-ports (sim.sagas) — observer-layer, write-only (no roster)
 }

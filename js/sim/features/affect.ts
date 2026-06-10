@@ -43,7 +43,10 @@ registerExecutor('free', (a, step, dt, ctx) => {
   if (!ctx.resolver) { a.fighter.setMoving(0); return; }
   const targetId = (step.bind || {}).target;
   if (targetId == null || !reach(a, ctx, targetId, dt)) return;
-  ctx.resolver.affect(a, targetId, 'freed');
+  if (ctx.resolver.affect(a, targetId, 'freed')) {
+    // RESCUE ARC closes 'freed' — the captive is cut loose (docs/architecture/12 §3.5). Write-only.
+    if (ctx.arcs) ctx.arcs.closeArc('rescue:' + targetId, 'freed', 'The captive was freed.');
+  }
 });
 
 // wreck(target): sabotage. Physical change only; an owner's anger emerges from perception.
@@ -89,6 +92,9 @@ registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
   g.priority = 0.7; g.from = 'rescue';
   g.expiresAt = (ctx ? ctx.time : 0) + 120;                         // don't chase a moved captive forever
   a.pushGoal(g, ctx);
+  // RESCUE ARC (docs/architecture/12 §3.5): keyed on the VICTIM (one rescue arc, many would-be
+  // rescuers); whoever frees closes it. Opened at the derive; closed 'freed' in the free executor.
+  if (ctx && ctx.arcs) ctx.arcs.openArc({ kind: 'rescue', key: 'rescue:' + bestId, principals: [a.id, bestId] });
 });
 
 // ── THE EMERGENT GRATITUDE (the freed captive's own belief warms toward its rescuer) ────────────

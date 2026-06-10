@@ -10,6 +10,7 @@
 import { COMMODITIES, ECON, BASE_PRICE } from './simconfig.js';
 import { POI_KIND } from './world.js';
 import { recordTrade } from './econstats.js';
+import { noteSnub } from './signals.js';
 import type { Agent, Commodity, EntityId } from '../../types/sim.js';
 
 // runMarket/economicSlight/sour take the live Simulation instance (the EXECUTION side:
@@ -43,6 +44,7 @@ function sour(who: Agent, at: Agent, amt: number, sim: Sim, pid: EntityId | null
   if (!b) b = who.beliefs.observe(at.id, at.faction, at.pos, sim.time, false);
   const greed = (who.personality && (who.personality.greed ?? who.personality.ambition)) ?? 0.5;
   b.standing = Math.max(-1, b.standing - amt * (0.4 + greed));               // the greedier, the harder they take it
+  noteSnub(who, sim.time);   // SIGNAL ([13] §3): a felt slight — perceivable evidence the `slandered` memory reads
 }
 
 export function runMarket(sim: Sim): void {

@@ -8,6 +8,7 @@ import type { EntityId } from './core.js';
 export type EpisodeKind =
   | 'triumph' | 'bloodshed' | 'assaulted' | 'witnessed_death' | 'survived'
   | 'windfall' | 'milestone' | 'bond' | 'succoured' | 'relic' | 'closure'
+  | 'ruined' | 'thwarted' | 'slandered'   // status-sensor episodes (docs/architecture/12 §5)
   | (string & {});   // open: other salient kinds may be recorded
 
 /** One episode — plain data, bounded by ring overwrite. */

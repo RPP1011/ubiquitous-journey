@@ -34,9 +34,13 @@ export function affectTest(ok, helpers) {
       captive._held = true;
       st.believe(rescuer, captive);
       rescuer.pushGoal(goalFree(captive.id), st.ctx());
+      st.sim.sagas.openArc({ kind: 'rescue', key: 'rescue:' + captive.id, principals: [rescuer.id, captive.id] });   // (the deriver's open)
       st.run(() => captive._held === false, { maxFrames: 1500, pin: [[captive, 5, 0]], refresh: [[rescuer, captive]] });
       ok(captive._held === false && captive._freedBy === rescuer.id,
         `affect FREE: the captive's bonds were cut (_held=${captive._held}, _freedBy=${captive._freedBy})`);
+      // ARC (docs/architecture/12 §3.5): the free executor CLOSED the rescue arc 'freed'.
+      ok(st.sim.sagas.recentClosed().some((x) => x.kind === 'rescue' && x.outcome === 'freed'),
+        'affect FREE: the free executor closed the rescue arc `freed`');
       st.dispose();
     }
     // WRECK — sabotage a target (the _wrecked flag flips; an owner's anger would emerge from sight).

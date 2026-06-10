@@ -111,6 +111,9 @@ export function memoryPhrase(ep: Episode, nameOf?: ((id: number | string) => str
     case 'succoured':       return who ? `was saved by ${who}` : 'was helped in need';
     case 'relic':           return `found a relic in ${ep.place || 'a ruin'}`;
     case 'closure':         return who ? `made peace over ${who}` : 'found closure';
+    case 'ruined':          return 'lost everything';
+    case 'thwarted':        return 'gave up the venture';
+    case 'slandered':       return 'found themselves shunned';
     default:                return ep.kind;
   }
 }

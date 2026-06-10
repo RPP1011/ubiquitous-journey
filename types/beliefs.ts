@@ -50,9 +50,14 @@ export interface BeliefState {
   inert: boolean;                   // revised "proven harmless" (overrides hostile + faction prior)
   assoc: AssocBelief | null;        // subject↔place association (the urchin's stash belief); null = none
   assocSightings: number;           // raw surveil-sighting accumulator (pre-consolidation)
+  believedWealth: number;           // believed prosperity of the subject, 0..1 (docs/architecture/12 §6)
+  wealthConf: number;               // how sure (firmed by first-hand cues, faded by decay)
 
   // record one piece of liveness evidence ('struck'|'blocked'|'harmedMe'|'moved'). Guarded.
   recordAnimacy(kind: 'struck' | 'blocked' | 'harmedMe' | 'moved'): void;
+  // nudge the believed-wealth estimate toward `implies` (0..1) by `weight` — a perceived
+  // prosperity cue (a fat trade, fine gear, an owned home). Belief, never ground truth. Guarded.
+  recordWealthCue(implies: number, weight: number): void;
   // accumulate one surveil sighting of the subject near a `placeKind`; after `minSightings`
   // confirmations it CONSOLIDATES into `assoc` (conf grows by `gainConf`/sighting). Guarded.
   recordAssocSighting(placeKind: string, pos: Vec2Like, gainConf: number, minSightings: number): void;

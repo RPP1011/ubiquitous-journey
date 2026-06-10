@@ -7,7 +7,7 @@
 // Behaviour-preserving: verbatim bodies of the old Agent methods. No cycles —
 // imports config, pure helpers, motivation, and the occupation chooser.
 
-import { SIM, WEIGHT, ECON, COMMODITIES, GROUP_TYPES, LEGEND, SOCIAL, COMFORT, NOVELTY, BUILD, factionHostile } from '../simconfig.js';
+import { SIM, WEIGHT, ECON, COMMODITIES, GROUP_TYPES, LEGEND, SOCIAL, COMFORT, NOVELTY, BUILD, ESTEEM as WEALTH, factionHostile } from '../simconfig.js';
 import { updateAmbition, ambitionFavor, ambitionWantsFight, deriveGoals, pruneGoals } from '../motivation.js';
 import { chooseOccupation, laborValue } from './occupation.js';
 import { qualifyHome, isUnhoused } from '../construction.js';
@@ -26,6 +26,30 @@ interface Candidate { kind: string; score: number; [k: string]: unknown }
 
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
 
+// WEALTH RECOGNITION CHANNEL (docs/architecture/12 §6) — belief-only esteem: an agent that BELIEVES
+// a non-suspect local is prosperous nudges its OWN standing toward them. Personality-gated WITH the
+// envious mirror (review 6): the deferential/social WARM toward believed wealth (they court patronage);
+// the proud-and-self-serving COOL (resentment of the parvenu). Reads ONLY the agent's own beliefs
+// (believedWealth·wealthConf) and writes only its own standing — inside the epistemic split. Bounded
+// by the belief table; guarded; never throws on the tick.
+export function recognizeWealth(a: Agent): void {
+  try {
+    const store = (a.beliefs as unknown as { map?: Map<EntityId, { believedWealth?: number; wealthConf?: number; suspicion?: number; standing: number }> });
+    if (!store || !store.map) return;
+    const P = (a.personality || {}) as { altruism?: number; ambition?: number; social_drive?: number };
+    const altru = P.altruism ?? 0.5, ambn = P.ambition ?? 0.5, soc = P.social_drive ?? 0.5;
+    const envious = ambn > 0.55 && altru < 0.45;        // proud + self-serving → resents the rich
+    for (const b of store.map.values()) {
+      if (!b) continue;
+      const mass = (b.believedWealth || 0) * (b.wealthConf || 0);
+      if (mass < WEALTH.recognizeMin) continue;
+      if ((b.suspicion || 0) > WEALTH.suspectGate) continue;   // a believed-suspect earns no deference
+      if (envious) b.standing = Math.max(-1, b.standing - WEALTH.envyCool * mass);
+      else if (altru > 0.4 || soc > 0.5) b.standing = Math.min(1, b.standing + WEALTH.deferWarm * mass);
+    }
+  } catch { /* never throw on the tick */ }
+}
+
 export function decide(a: Agent, ctx: CognitionCtx): void {
   a._rpgNow = ctx.time;   // stamp sim time for this tick's emitted deeds
   if (!a.alive || a.controlled) return;
@@ -37,6 +61,7 @@ export function decide(a: Agent, ctx: CognitionCtx): void {
   // read truth-side in depthMetrics — never inside cognition. A tick decide() is SKIPPED
   // (amortized by LOD) leaves the scheduler-zeroed 0, which is the measured win.
   a._decideCalls = 1;
+  recognizeWealth(a);   // belief-only esteem: defer to (or envy) the believed-rich (§12 §6)
 
   // SCHEMA GOAL DWELL-LOCK (anti-thrash): a high-priority schema response (flee/fight set
   // directly by reason()) stamps a short min-dwell lock so a one-tick belief flicker (the

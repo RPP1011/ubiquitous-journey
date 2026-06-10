@@ -19,6 +19,8 @@ import { combatUnit } from './suites/combat.mjs';
 import { proceduralAbilityTest } from './suites/abilities.mjs';
 import { plannerSelfTest } from './suites/planner.mjs';
 import { obligationsTest } from './suites/obligations.mjs';
+import { arcsTest, arcsE2ETest } from './suites/arcs.mjs';
+import { signalsTest, wealthTest, outlawTest } from './suites/signals.mjs';
 import { executionTest } from './suites/execution.mjs';
 // Action-grammar EXECUTION suites (docs/architecture/10) — one per feature worktree, pre-registered
 // so each fills its own file with zero shared edits. Stubs are no-ops until filled.
@@ -58,6 +60,15 @@ proceduralAbilityTest(ok);
 plannerSelfTest(ok, helpers);
 // Action-grammar Phase 5: the obligation ledger (commitments + recurrence), the one new store.
 obligationsTest(ok);
+// Narrative tooling (docs/architecture/12 §3): the arc/saga registry — open/append/close lifecycle,
+// keying dedup, bounded eviction, unconditional close, re-arm/re-ignition. The narrative SPINE.
+arcsTest(ok);
+arcsE2ETest(ok, helpers);
+// Narrative signals (docs/architecture/13) + the status-delta sensor (12 §5): transfer-fold ruin
+// gating, hysteresis, and snubsFelt-not-the-mean as the slander gate.
+signalsTest(ok);
+wealthTest(ok);
+outlawTest(ok, helpers);
 // Action-grammar EXECUTION feature suites (filled per worktree; no-op stubs until then).
 urchinTest(ok, helpers);
 learningTest(ok, helpers);

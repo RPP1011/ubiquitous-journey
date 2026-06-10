@@ -111,11 +111,16 @@ registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
   const target = Math.max(2, (RECRUIT.selfStrength || 1) + 2);       // believed strength to outmatch the threat
   // the leader's OWN believed band strength (execution-mediated; the deriver never scans the roster).
   const bandStr = (ctx && ctx.resolver && ctx.resolver.warbandStrength) ? ctx.resolver.warbandStrength(a) : (RECRUIT.selfStrength || 1);
+  // WARBAND ARC (docs/architecture/12 §3.5): a muster is now a tracked arc — opened when a leader
+  // sets out to raise a force, rounds appended per joinWarband (groups.ts), closed 'marched' when the
+  // band reaches strength and marches on the believed foe (or lapsed if it never musters). Write-only.
+  if (ctx && ctx.arcs) ctx.arcs.openArc({ kind: 'warband', key: 'warband:' + a.id, principals: [a.id] });
   if (bandStr >= target) {
     // MUSTERED enough — march the band on the believed foe; followers converge (decideParty).
     const g = goalAssault(foe.subjectId);
     g.priority = 0.7; g.from = 'warleader'; g.expiresAt = now + 120;
     a.pushGoal(g, ctx);
+    if (ctx && ctx.arcs) ctx.arcs.closeArc('warband:' + a.id, 'marched');   // the muster succeeded → it marches
   } else {
     // still too weak alone — raise the force first.
     const g = goalMuster(target);

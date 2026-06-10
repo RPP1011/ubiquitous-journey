@@ -12,6 +12,7 @@ import { RPG } from '../rpg/rpgconfig.js';
 import { TUNE } from '../constants.js';
 import { SIM, MONSTER, EPITHETS, DIRECTOR, AVENGER, GRATEFUL, LEGEND, CAPTIVE, factionHostile } from './simconfig.js';
 import { setHouseFeud, areHousesFeuding } from './houses.js';
+import { arcKey } from './arcs.js';
 import { buildObituary, obituaryWorthy } from './gazette.js';
 import type { Agent, CombatEvent, ActionEvent, ActionEventSpec } from '../../types/sim.js';
 
@@ -142,6 +143,22 @@ export function onCombatEvents(sim: Sim, events: CombatEv[]): void {
     if (ev.type === 'dead') {
       sim.stampSlain(T, A);
       if (sim._deathSeen) sim._deathSeen.add(T.id); else sim._deathSeen = new Set([T.id]);
+    }
+
+    // VENDETTA ARC — APPEND a `round`, or CLOSE on the killing blow (docs/architecture/12 §3.5). A
+    // blow between an OPEN vendetta pair is an escalation chapter (named beat filed HERE, observer-
+    // layer; re-arms the TTL so a slow feud outlives an open-and-shut one); the LETHAL blow that
+    // settles the feud closes it 'fulfilled'. The kill IS the satisfying event, so the mutual-feud
+    // guard is moot (the slain principal holds no live counterpart goal). UNCONDITIONAL close.
+    // Guarded; a no-op if no arc is open for the pair (a routine camp brawl files nothing).
+    if (sim.sagas && (A.faction === 'townsfolk' || T.faction === 'townsfolk')) {
+      try {
+        const vk = arcKey('vendetta', A.id, T.id);
+        if (sim.sagas.findArc(vk)) {
+          if (ev.type === 'dead') sim.sagas.closeArc(vk, 'fulfilled');
+          else sim.sagas.appendBeat(vk, 'round', `${A.name} struck ${T.name}.`);
+        }
+      } catch { /* never throw on the tick */ }
     }
 
     // lifetime tallies that feed the killer's 'renown' ambition
@@ -424,15 +441,18 @@ export function onCombatEvents(sim: Sim, events: CombatEv[]): void {
     // reads. WITNESS-GATED (the epistemic split): only a deed a townsperson SEES feeds the
     // legend — murder in an empty wood and no legend grows. Murdering townsfolk breeds
     // NOTORIETY (the town comes to fear a butcher); slaying threats breeds FAME.
-    if (ev.type === 'dead' && A.controlled && LEGEND && LEGEND.enabled) {
+    if (ev.type === 'dead' && LEGEND && LEGEND.enabled) {
       let witnessed = false;
       for (const w of sim.agents) {
         if (w === T || !w.alive || !w.autonomous || w.faction !== 'townsfolk') continue;
         if (w.pos.distanceTo(T.pos) <= SIM.visionRange) { witnessed = true; break; }
       }
       if (witnessed) {
-        if (T.faction === 'townsfolk') A.notoriety = Math.min(1, ((A.notoriety as number) || 0) + (LEGEND.perMurder || 0.34));
-        else if (T.faction === MONSTER.faction || factionHostile('townsfolk', T.faction) || T.nemesis || T.warlord) A.fame = Math.min(1, ((A.fame as number) || 0) + (LEGEND.perHeroic || 0.2));
+        // NOTORIETY generalised (docs/architecture/12 §9): ANY non-monster actor's witnessed
+        // townsfolk-murder breeds town-read infamy — an NPC butcher/outlaw accrues it the same way the
+        // player does (feeds RECRUIT + the outlaw arc). Still witness-gated. FAME stays a PLAYER concept.
+        if (T.faction === 'townsfolk' && A.faction !== MONSTER.faction) A.notoriety = Math.min(1, ((A.notoriety as number) || 0) + (LEGEND.perMurder || 0.34));
+        else if (A.controlled && (T.faction === MONSTER.faction || factionHostile('townsfolk', T.faction) || T.nemesis || T.warlord)) A.fame = Math.min(1, ((A.fame as number) || 0) + (LEGEND.perHeroic || 0.2));
       }
     }
 

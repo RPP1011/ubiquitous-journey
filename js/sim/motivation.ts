@@ -13,6 +13,7 @@
 import { MOTIVE, SIM } from './simconfig.js';
 import { RPG } from '../rpg/rpgconfig.js';
 import { goalAvenge, goalSeekFortune, goalRepay, goalGrieve, goalDelve } from './planner.js';
+import { arcKey } from './arcs.js';
 import { runDerivers, runPlanOutcome } from './exec/registry.js';
 import { STAGE, REASON } from './trace.js';
 import type { Agent, CognitionCtx, Goal, Personality, AmbitionSnapshot, EntityId, Stage, Reason } from '../../types/sim.js';
@@ -189,6 +190,19 @@ export function ambitionWantsFight(a: Agent): boolean {
 // | succoured (benefactor)        | repay(withId)         ← Phase B
 // | witnessed_death (liked subj)  | grieve(withId) (+avenge(byId) if known)  Phase B
 // | relic    (place)              | delve(place)          ← Phase B
+// VENDETTA ARC OPEN (docs/architecture/12 §3.5). When an avenge goal is derived, file/refresh the
+// completed-arc record for the feud so an EMERGENT vendetta the agents run themselves produces a
+// closed saga (not just scattered beats). Idempotent on the symmetric key (either party's derive,
+// or a re-derive next tick, opens the SAME arc). Write-only narrator port — NO roster read, no name
+// (the named escalation/close beats are filed observer-side in combatEvents). Townsfolk-only, to
+// match the resolution path that closes it; raider brawls aren't vendettas. Guarded.
+function openVendettaArc(a: Agent, ctx: CognitionCtx | null, foeId: EntityId): void {
+  try {
+    if (!ctx || !ctx.arcs || foeId == null || a.faction !== 'townsfolk') return;
+    ctx.arcs.openArc({ kind: 'vendetta', key: arcKey('vendetta', a.id, foeId), principals: [a.id, foeId] });
+  } catch { /* never throw on the tick */ }
+}
+
 export function deriveGoals(a: Agent, ctx: CognitionCtx | null): void {
   if (!a || a.controlled || !a.memory || typeof a.pushGoal !== 'function') return;
   if (a.faction === 'monster') return;              // monsters carry no grudge-goals
@@ -214,6 +228,7 @@ export function deriveGoals(a: Agent, ctx: CognitionCtx | null): void {
         g.priority = 0.9; g.from = 'assaulted';
         g.expiresAt = now + (MOTIVE.avengeExpiry || 120);
         traceDerived(a, ctx, g, a.pushGoal(g, ctx));
+        openVendettaArc(a, ctx, ep.withId);   // narrative spine: the feud is now a tracked arc (§12 §3.5)
       } else if (ep.kind === 'windfall') {
         const g = goalSeekFortune(ep.place || 'market', MOTIVE.fortuneTarget || 140);
         g.priority = 0.6; g.from = 'windfall';
@@ -243,6 +258,7 @@ export function deriveGoals(a: Agent, ctx: CognitionCtx | null): void {
           av.priority = 0.85; av.from = 'witnessed_death';
           av.expiresAt = now + (MOTIVE.avengeExpiry || 120);
           traceDerived(a, ctx, av, a.pushGoal(av, ctx));
+          openVendettaArc(a, ctx, ep.byId as EntityId);   // the blood-feud is now a tracked arc (§12 §3.5)
         }
       } else if (ep.kind === 'relic') {
         // found / heard of a relic in a place -> delve there (aspirational for NPCs).

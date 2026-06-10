@@ -232,7 +232,7 @@ export async function soak(ok, { makeFighter, stubScene }) {
   // a tasting of who's chasing what
   for (const a of sim.agents.filter((x) => !x.controlled).slice(0, 5)) {
     console.log(`INFO   ${a.name}: ${a.ambition ? a.ambition.label : '-'} ` +
-      `(${Math.round((a.ambition?.progress || 0) * 100)}%)  doing:${a.goal.kind}`);
+      `(${Math.round((a.ambition?.progress || 0) * 100)}%)  doing:${a.goal?.kind}`);
   }
 }
 

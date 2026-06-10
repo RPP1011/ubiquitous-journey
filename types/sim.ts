@@ -38,8 +38,12 @@ export type {
 } from './agent.js';
 
 export type {
-  SiteHandle, BuildSiteFacade, ResolverFacade, CognitionCtx, FullCtx,
+  SiteHandle, BuildSiteFacade, ResolverFacade, CognitionCtx, FullCtx, ArcPorts,
 } from './ctx.js';
+
+export type {
+  Arc, ArcBeat, ArcOpenOpts, SagaStore,
+} from './arcs.js';
 
 export type {
   Tag, Verb, ActionEvent, ActionEventSpec, EventBus, BehaviorProfile,

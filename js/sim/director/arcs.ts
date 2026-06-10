@@ -62,6 +62,19 @@ export function _recordSaga(d: Dir, saga: Saga): void {
   saga.sig = `saga:${saga.sagaKind}:${saga.key || ''}:${Math.floor(d.sim.time)}`;
   S.push(saga);
   while (S.length > 12) S.shift();
+  // FOLD into the shared emergent-arc ledger (docs/architecture/12 §3): one ledger holds both
+  // authored (director) AND emergent completed arcs, so the Gazette reads a single source
+  // (sim.sagas.recentClosed). A director saga is a one-shot retrospective — open then close
+  // immediately, carrying the original saga in meta so sagaArticle renders it unchanged. Guarded.
+  try {
+    const sim = d.sim;
+    if (sim && sim.sagas) {
+      const k = `dir:${saga.sagaKind}:${saga.key || ''}:${Math.floor(sim.time)}`;
+      if (sim.sagas.openArc({ kind: saga.sagaKind, key: k, principals: [], meta: { director: true, saga } })) {
+        sim.sagas.closeArc(k, 'told');
+      }
+    }
+  } catch { /* never throw on the tick */ }
 }
 
 // duelists/principals must be unencumbered to stage an arc climax.

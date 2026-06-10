@@ -64,6 +64,8 @@ export class BeliefState implements IBeliefState {
   inert: boolean;
   assoc: AssocBelief | null;
   assocSightings: number;
+  believedWealth: number;
+  wealthConf: number;
 
   constructor(subjectId: EntityId) {
     this.subjectId = subjectId;
@@ -117,6 +119,20 @@ export class BeliefState implements IBeliefState {
     // supplies one first. Read by the planner's `know_assoc` precondition (own-state).
     this.assoc = null;
     this.assocSightings = 0;
+    // believed PROSPERITY of the subject (docs/architecture/12 §6): evidence-accrual like every other
+    // belief field — nudged by a visible cue (recordWealthCue), faded by decay. NEVER ground truth.
+    this.believedWealth = 0;
+    this.wealthConf = 0;
+  }
+
+  // nudge the believed-wealth estimate toward `implies` (0..1) by `weight` — a perceived prosperity
+  // cue (a fat trade, fine gear, an owned home). Mirrors recordAssocSighting: evidence firms the
+  // estimate + its confidence; decay fades the confidence so a stale read goes uncertain. Guarded.
+  recordWealthCue(implies: number, weight: number) {
+    const w = Math.max(0, Math.min(1, weight || 0));
+    const imp = Math.max(0, Math.min(1, implies || 0));
+    this.believedWealth = Math.max(0, Math.min(1, this.believedWealth + (imp - this.believedWealth) * w));
+    this.wealthConf = Math.min(1, this.wealthConf + w * (1 - this.wealthConf));
   }
 
   // record one piece of liveness evidence on this belief (lazy-allocates the tally on the
@@ -291,6 +307,9 @@ export class BeliefStore implements IBeliefStore {
     for (const b of this.map.values()) {
       b.confidence = Math.max(0, b.confidence - SIM.confidenceDecay * dt);
       b.suspicion = Math.max(0, b.suspicion - SIM.suspicionDecay * dt);
+      // a believed-wealth read goes stale like any other: fade its confidence so an unrefreshed
+      // prosperity estimate becomes uncertain (the recognition channel weights by wealthConf).
+      if (b.wealthConf > 0) b.wealthConf = Math.max(0, b.wealthConf - SIM.confidenceDecay * dt);
     }
   }
 }
