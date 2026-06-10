@@ -33,6 +33,7 @@ beliefs about you too. No build step — ES modules served over HTTP, Three.js v
 | 08 | [Testing & headless runtime](08-testing.md) | `bun test/headless.mjs`, the headless seam, what still needs a browser |
 | 09 | [The reasoning layer](09-reasoning-layer.md) | **target architecture** — belief-gated cognition at scale: the 3-tier execution hierarchy, the steering/potential-field composition, the `InteractionSchema` IR, destination-intent ToM, GOAP worked examples, and build-time enforcement that cognition cannot read truth |
 | 10 | [The action grammar & knowledge model](10-action-grammar.md) | **design** — the vocabulary the planner builds plans from: effects, the actions (generated from data tables) that produce them, the knowledge model (`Know(topic)` over facts carrying value/confidence/provenance/decay), how plans are built per-agent rather than from a shared tree, situation coverage, and the build order |
+| 10 (LLD) | [Action grammar — implementation spec](10-action-grammar-lld.md) | **low-level design** — the implementation companion to 10: module map, core data structures, and pseudocode for the backward-chainer, threshold composition, the knowledge model, the verb/deriver/effect-holds registries, the conserved resolver, the obligation ledger, and each feature module — plus the current implementation status & gaps |
 
 Design/feature docs (the *why we built it this way*, deeper than this reference) live
 beside these in `docs/`: `goal-system.md`, `drama-plan.md`, `director-levers.md`,

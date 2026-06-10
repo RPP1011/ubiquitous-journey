@@ -1343,7 +1343,9 @@ export function goalWreck(subjectId: EntityId): Goal {
 
 // Phase-5 knowledge accessors surfaced for the executor + tests: the one-level Believes model
 // (recordBelieves/believesConf) and the compliance prediction (complianceOf). Own-state only.
-export { recordBelieves, believesConf, complianceOf };
+// `knowsTopic`/`topicConfidence` let a feature's observe/ask/study effect-holds read whether a
+// topic is now held confidently enough (the executor wrote the evidence); `topicKey` keys it.
+export { recordBelieves, believesConf, complianceOf, knowsTopic, topicConfidence, topicKey };
 
 // steal(mark, target): hold gold >= target by BURGLING the mark's believed stash. The
 // gold_ge atom carries the mark so the burgle primitive routes to it; the same gold target

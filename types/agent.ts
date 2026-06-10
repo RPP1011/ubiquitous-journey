@@ -207,6 +207,8 @@ export interface Agent {
   _held?: boolean;                                                  // a captive's believed-held state (free flips it)
   _freedBy?: EntityId;                                              // who cut this agent's bonds (Affect: free)
   _wrecked?: boolean;                                               // a target sabotaged (Affect: wreck)
+  _surveilAccum?: number;                                           // surveil dwell-time accumulator (urchin: throttles assoc sightings)
+  _offers?: Record<EntityId, { from: EntityId; payoff: number; t: number }>;  // recruit offers this agent has perceived (follower side)
 
   // ───── OPTIONAL transient role/visual state ─────
   reporterTarget?: Vector3 | null;    // the gazetteer's current subject position

@@ -192,6 +192,22 @@ export const URCHIN = {
   sightGain: 0.3,            // confidence added to `assoc` per surveil sighting (capped 1)
   surveilBudget: 18,         // sim-seconds the surveil step runs before goal-expiry drains it
   standoffRange: 14,         // surveil holds OUTSIDE the mark's modelled sight (2nd-order ToM v1)
+  // --- the LIVE steal-goal deriver (docs/architecture/10-lld §13; the flagship heist) ---
+  // A poor + larcenous townsperson forms a steal goal against a believed-prosperous mark. The
+  // disposition gate (greed) is what stops "everyone turns thief when broke" — poverty is the
+  // circumstance, character is the choice. Picks the mark from BELIEF cues (most-established in
+  // mind ≈ a settled, prosperous local), never the roster. Kept selective so theft is narrative
+  // spice, not economic collapse (the take is conserved either way — gold moves, never mints).
+  deriveBelowGold: 26,       // only an agent poorer than this considers a heist (circumstance)
+  // DISPOSITION GATE (the design's "what you'll even consider"): larcenous == uncaring about
+  // others' welfare (LOW altruism) AND bold (HIGH risk_tolerance). Read off the traits the spawn
+  // actually seeds (there is no `greed` trait). A scrupulous or timid soul never reaches for theft —
+  // poverty is the circumstance, character is the choice, so only this corner of personality-space does.
+  deriveAltruismMax: 0.4,    // altruism at/below which an agent is uncaring enough to steal
+  deriveRiskMin: 0.55,       // risk_tolerance at/above which it is bold enough to try
+  deriveTarget: 16,          // believed gold the heist aims to lift (flat estimate until wealth-cue inference)
+  deriveExpiry: 110,         // sim-seconds a steal goal persists before it cools
+  surveilDwell: 4.5,         // sim-seconds of holding at standoff per accrued surveil sighting (slow gather)
 };
 
 // MULTIPLE TOWNS (open world): the world holds several dense town cores with
@@ -391,6 +407,8 @@ export const KNOW = {
   studyTuition: 6,       // taught: gold paid for trusted instruction (recipes)
   confCostScale: 8,      // how hard a LOW-confidence belief inflates the cost of acting on it —
                          //   cost-includes-confidence, so agents scout before they commit
+  observeGain: 0.18,     // confidence accrued into a topic's home per sim-second of first-hand watching
+  askGain: 0.3,          // confidence a single (cheap, vaguer) ask adds to a topic's home
 };
 
 // --- ROB: the take-from-a-person acquire row (docs/architecture/10, Phase 3) -----------
@@ -431,6 +449,8 @@ export const RECRUIT = {
   candidateStrength: 1,  // a candidate's believed strength before the compliance discount
   minStanding: -0.2,     // a candidate must be believed at least this well-disposed to approach
   minCompliance: 0.15,   // a recruit contributing less believed force than this isn't worth a row
+  offerWarmth: 0.08,     // how much perceiving an offer warms a candidate toward the leader (its OWN belief)
+  musterRiskTol: 0.6,    // risk_tolerance at/above which a leader will try to muster against a strong foe
 };
 
 // --- AFFECT: changing another entity's physical state (docs/architecture/10, Phase 5) ----
@@ -454,6 +474,7 @@ export const AFFECT = {
 export const LEDGER = {
   enabled: false,
   max: 8,                // hard cap on outstanding obligations per agent (bounded, like the belief table)
+  commitExpiry: 300,     // sim-seconds an armed commitment persists before it lapses unkept
 };
 
 // --- episodic memory (three-tier ring buffers) ------------------------------

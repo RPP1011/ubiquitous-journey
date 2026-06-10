@@ -15,10 +15,20 @@
 > | 4 — Waiting | the hold-until step (+ deadlines, reactive preemption) | `HOLD` |
 > | 5 — The rest | `recruit`/believed-force/`Believes` (one level) + Strength/Secret topics; `wreck`/`free`; the obligation ledger | `RECRUIT`, `AFFECT`, `LEDGER` |
 >
-> What remains is the *live wiring* — turning the flags on, the executors for the new verbs
-> (observe/ask/study/recruit/rob/free/wreck/hold), live goal-derivation for the new goals, and the
-> follower-side motivation — none of which the gated planner vocabulary needs in order to be correct.
-> Each phase is covered by gated tests in `test/suites/planner.mjs` (and `obligations.mjs`).
+> The *live wiring* is now implemented too — the executors for the new verbs, the goal-derivers,
+> and the conserved resolver primitives — as five disjoint feature modules in `js/sim/features/`
+> (urchin/learning/recruiter/affect/ledger), each gated by its flag and covered by a frame-loop
+> test suite. Flags still ship OFF (byte-identical soak), but a populated town with them ON is
+> stable and produces emergent thievery. See the LLD §19–20 for the as-built status, the remaining
+> gaps (graded recipes, wealth-cue estimation, captivity/sabotage triggers, NPC war-parties), and
+> the narrative-depth evaluation. Each phase is covered by gated tests in `test/suites/planner.mjs`,
+> `obligations.mjs`, and the per-feature `urchin/learning/recruit/affect/ledger.mjs`.
+>
+> **Implementing it?** This doc is the *design* (the why). The step-by-step *implementation* spec —
+> the module map, data structures, and pseudocode for the planner, the registries, the resolver, the
+> ledger, and each feature module — is the LLD companion:
+> **[`10-action-grammar-lld.md`](10-action-grammar-lld.md)**, which also tracks the current
+> implementation status and the remaining gaps.
 
 ## What the planner does
 

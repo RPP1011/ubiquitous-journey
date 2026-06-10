@@ -908,6 +908,19 @@ export class Simulation {
           return false;
         } catch { return false; }
       },
+      // RECRUIT OFFER (docs/architecture/10 §12) — plant an offer the candidate PERCEIVES, the
+      // Inform half of recruiting. It writes only the candidate's own `_offers` (a perception),
+      // NEVER a goal into it — the candidate weighs the offer and decides for itself. The leader's
+      // own prediction (Believes-it-will-follow) is recorded leader-side via recordBelieves. Guarded.
+      makeOffer(leader, candidateId, payoff) {
+        try {
+          const c = sim.agentsById.get(candidateId);
+          if (!c || !c.alive || !leader) return false;
+          if (!c._offers) c._offers = {};
+          c._offers[leader.id] = { from: leader.id, payoff: payoff || 0, t: sim.time };
+          return true;
+        } catch { return false; }
+      },
       // BUILD-STATE EXECUTION FACADE (Phase 2a, debt #2 retirement): the truth-side build
       // state (BuildSites), exposed as a narrow set of execution operations — exactly like
       // the market resolver. `buildStep` runs in act() (execution), which legitimately reads

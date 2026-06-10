@@ -45,6 +45,10 @@ export interface ResolverFacade {
   take(a: Agent, sourceId: EntityId, payload: { item?: string; n?: number; gold?: number }): number;
   witnessDeed(actor: Agent, victimId: EntityId | null, kind: string, severity?: number): void;
   affect(actor: Agent, targetId: EntityId, state: 'freed' | 'wrecked'): boolean;
+  // RECRUIT (Inform): plant an OFFER on the candidate's own perception (`_offers`). NOT a
+  // foreign-mind write of a goal — the candidate decides for itself; this only makes the offer
+  // perceivable. Co-location-gated by the caller. Returns true on a landed offer.
+  makeOffer(leader: Agent, candidateId: EntityId, payoff: number): boolean;
   buildSite: BuildSiteFacade;
 }
 
