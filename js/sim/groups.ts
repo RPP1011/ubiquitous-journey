@@ -127,6 +127,30 @@ export class Groups {
     // loose groups: no follow — the tag alone biases decide() + reads in relations
   }
 
+  // PUBLIC band-join used by the RECRUITER follow-through (WARBAND, docs/architecture/10-lld
+  // §19 item 4): a candidate that has formed its OWN decision to join an NPC leader's warband
+  // (decided in cognition — recruiter.ts' deriver, off the follower's own _offers/standing/
+  // personality) requests the flag flip HERE, on the EXECUTION side, through the SAME _join path
+  // every emergent band uses. No parallel system: this only flips the existing band flags
+  // (inParty / bandLeaderId / groupType:'warband' / partySlot / combatant) exactly like
+  // Party.recruit. Guards everything (the freeze lesson); returns whether the agent joined.
+  joinWarband(F: Ag, leaderId: unknown, cap: number): boolean {
+    try {
+      if (!F || !F.alive || F.controlled) return false;
+      if (F.inParty || F.bandLeaderId != null) return false;     // already banded
+      if (F.faction === 'monster' || !F.autonomous) return false;
+      const L = this.sim.agentsById.get(leaderId);
+      if (!L || !L.alive || L === F || L.controlled) return false;
+      if (L.faction === 'monster') return false;                 // peers, not a monster's thralls
+      const gt = GROUP_TYPES_T.warband;
+      if (!gt) return false;
+      const limit = Math.max(1, Math.min(cap || gt.maxFollowers, gt.maxFollowers));
+      if (this._followersOf(L.id).length >= limit) return false; // band is full
+      this._join(F, L, 'warband', gt);
+      return true;
+    } catch { return false; }
+  }
+
   _prune(): void {
     const pid = this._playerId();
     for (const F of this.sim.agents) {

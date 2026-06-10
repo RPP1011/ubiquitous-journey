@@ -49,6 +49,12 @@ export interface ResolverFacade {
   // foreign-mind write of a goal — the candidate decides for itself; this only makes the offer
   // perceivable. Co-location-gated by the caller. Returns true on a landed offer.
   makeOffer(leader: Agent, candidateId: EntityId, payoff: number): boolean;
+  // WARBAND (recruiter follow-through, docs/architecture/10-lld §19 item 4): the EXECUTION half of
+  // a recruited NPC band-join. The follower DECIDES to join in cognition (its own offer/standing/
+  // personality — no roster read); this flips the band flags through the shared Groups machinery
+  // (the same path the player's Party uses). NOT a foreign-mind write — the candidate asked to join
+  // itself. `cap` bounds the leader's band. Returns whether the follower actually joined.
+  joinBand(follower: Agent, leaderId: EntityId, cap: number): boolean;
   buildSite: BuildSiteFacade;
 }
 

@@ -453,6 +453,24 @@ export const RECRUIT = {
   musterRiskTol: 0.6,    // risk_tolerance at/above which a leader will try to muster against a strong foe
 };
 
+// --- WARBAND: the recruiter follow-through (docs/architecture/10-lld §19 item 4, §12) -------
+// RECRUIT wires only the BELIEF half — a leader makes an Offer the candidate perceives, the
+// candidate WARMS toward the leader through its own belief. WARBAND turns a warmed candidate into
+// an actual MARCHING NPC ally: the candidate forms its OWN decision to join the offering leader's
+// band (reading only its own _offers + belief-standing + personality — the epistemic split holds),
+// then the SAME band machinery the player's Party uses flips the flags (inParty / bandLeaderId /
+// groupType:'warband' / partySlot / combatant) and the existing decide()/follow steer-fill march
+// it. No parallel system, no foreign-mind write: recruitment stays an Inform; the follower decides.
+// Day-one OFF — with this off NO NPC ever forms a recruited band, so the soak is byte-identical.
+export const WARBAND = {
+  enabled: false,
+  joinStanding: 0.35,    // believed-standing toward the offerer at/above which a candidate will join
+  minPayoff: 0,          // believed offer payoff at/above which the join is worth considering
+  joinRiskTol: 0.45,     // risk_tolerance scale: the bolder accept a thinner offer (× this damps the bar)
+  offerTtl: 30,          // sim-seconds an unanswered offer stays actionable before it lapses
+  maxFollowers: 6,       // hard cap on an NPC leader's recruited band (matches PARTY.maxSize ceiling)
+};
+
 // --- AFFECT: changing another entity's physical state (docs/architecture/10, Phase 5) ----
 // The Affect rows beyond strike(→dead): `free` (→ freed — cut a captive's bonds) and `wreck`
 // (→ not intact — sabotage). Each is a trivial final act gated by a hard requirement (be there,
