@@ -88,3 +88,181 @@ export function noteSnub(a: Agent, now: number): void {
 export function snubsFelt(a: Agent, now: number): number {
   const s = peek(a); return s ? snubDecay(s, now) : 0;
 }
+
+// ============================================================================
+// MORE CATALOG SIGNALS (docs/architecture/13 Families C/D/E — the §8 priority cut)
+// Each names its probe and folds on an EXISTING event seam — never a per-tick scan.
+// ============================================================================
+
+// ── Family E: deedLedger(a) — counts + first/last timestamps by tag (thefts/kills/rescues/gifts/
+// frees). The TRUTH side of witnessDeed/the combat fold. Feeds esteemTruthGap, epithets, obituaries.
+interface DeedTally { n: number; first: number; last: number; }
+export function foldDeed(a: Agent, tag: string, now: number): void {
+  if (!a || !tag) return;
+  try {
+    const aa = a as Agent & { _deeds?: Record<string, DeedTally> };
+    const d = aa._deeds || (aa._deeds = {});
+    const t = d[tag] || (d[tag] = { n: 0, first: now, last: now });
+    t.n += 1; t.last = now;
+  } catch { /* never throw */ }
+}
+export function deedCount(a: Agent, tag: string): number {
+  const d = (a as Agent & { _deeds?: Record<string, DeedTally> })._deeds;
+  return d && d[tag] ? d[tag].n : 0;
+}
+export function deedLedger(a: Agent): Record<string, DeedTally> {
+  return (a as Agent & { _deeds?: Record<string, DeedTally> })._deeds || {};
+}
+
+// ── Family E: oaths(a) — narrative-weight goals (avenge/repay/court/rescue) recorded WITH their pop
+// REASON (rule 4): kept (satisfied) vs abandoned (expired/unreachable). "a man of his word" measured.
+interface OathTally { sworn: number; kept: number; abandoned: number; }
+export function foldOathSworn(a: Agent, kind: string): void {
+  if (!a || !kind) return;
+  try { const o = oaths(a); (o[kind] || (o[kind] = { sworn: 0, kept: 0, abandoned: 0 })).sworn += 1; } catch { /* */ }
+}
+export function foldOathPop(a: Agent, kind: string, reason: 'kept' | 'abandoned'): void {
+  if (!a || !kind) return;
+  try { const t = oaths(a)[kind] || (oaths(a)[kind] = { sworn: 0, kept: 0, abandoned: 0 }); t[reason] += 1; } catch { /* */ }
+}
+export function oaths(a: Agent): Record<string, OathTally> {
+  const aa = a as Agent & { _oaths?: Record<string, OathTally> };
+  return aa._oaths || (aa._oaths = {});
+}
+
+// ── Family D: town climate. peaceClock — sim-time since the last townsfolk death by violence; the
+// chronicle's connective tissue ("the first killing since midwinter"). Folded on the combat death fold.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Sim = any;
+export function notePeaceBreak(sim: Sim, now: number): void {
+  try { (sim as Sim & { _lastViolentDeath?: number })._lastViolentDeath = now; } catch { /* */ }
+}
+export function peaceClock(sim: Sim, now: number): number {
+  const t = (sim as Sim & { _lastViolentDeath?: number })._lastViolentDeath;
+  return t == null ? now : Math.max(0, now - t);
+}
+
+// ── Family D: scarcity[good] — a good's clearing price deviation from its long-run EWMA mean. Folded
+// on marketClear. >1 = dear (famine), <1 = cheap (glut). Feeds famine/glut arcs + narratable booms.
+interface ScarcityState { mean: number; t: number; }
+export function foldScarcity(sim: Sim, good: string, price: number, now: number): void {
+  if (!good || !(price > 0)) return;
+  try {
+    const m = (sim as Sim & { _scarcity?: Record<string, ScarcityState> });
+    const store = m._scarcity || (m._scarcity = {});
+    const s = store[good];
+    if (!s) { store[good] = { mean: price, t: now }; return; }
+    const dt = Math.max(0, now - s.t);
+    s.mean = price + (s.mean - price) * Math.pow(0.5, dt / (SIGNALS.scarcityHalf || 1200));
+    s.t = now;
+  } catch { /* never throw */ }
+}
+export function scarcity(sim: Sim, good: string): number {
+  const s = (sim as Sim & { _scarcity?: Record<string, ScarcityState> })._scarcity;
+  return s && s[good] && s[good].mean > 0 ? 1 : 1;   // placeholder ratio; the live ratio is read with a price (below)
+}
+export function scarcityMean(sim: Sim, good: string): number {
+  const s = (sim as Sim & { _scarcity?: Record<string, ScarcityState> })._scarcity;
+  return s && s[good] ? s[good].mean : 0;
+}
+
+// ── Family B: grievance(a,b) — a SPARSE, LRU'd signed blow ledger between a pair (rounds, last-blow-
+// by, mean inter-blow interval). Folded on the combat/vendetta blow fold. Escalation slope (intervals
+// shrinking = feud accelerating → Gazette urgency) + ONE-SIDEDNESS (all blows one direction =
+// persecution, not feud). Never a full N² matrix (rule 5): only pairs that actually traded blows.
+interface Grievance { rounds: number; byA: number; byB: number; lastT: number; meanGap: number; aId: string; bId: string; touched: number; }
+function grievanceStore(sim: Sim): Map<string, Grievance> {
+  const m = sim as Sim & { _grievance?: Map<string, Grievance> };
+  return m._grievance || (m._grievance = new Map());
+}
+export function foldGrievance(sim: Sim, fromId: unknown, toId: unknown, now: number): void {
+  if (fromId == null || toId == null) return;
+  try {
+    const a = String(fromId), b = String(toId);
+    const [lo, hi] = a < b ? [a, b] : [b, a];
+    const key = lo + ':' + hi;
+    const store = grievanceStore(sim);
+    let g = store.get(key);
+    if (!g) { g = { rounds: 0, byA: 0, byB: 0, lastT: now, meanGap: 0, aId: lo, bId: hi, touched: now }; store.set(key, g); }
+    const gap = now - g.lastT;
+    if (g.rounds > 0) g.meanGap = g.meanGap === 0 ? gap : g.meanGap * 0.6 + gap * 0.4;   // EWMA of inter-blow gap
+    g.rounds += 1; g.lastT = now; g.touched = now;
+    if (a === lo) g.byA += 1; else g.byB += 1;
+    while (store.size > (SIGNALS.grievanceMax || 64)) {                                    // LRU evict the stalest
+      let oldestKey: string | null = null, oldestT = Infinity;
+      for (const [k, v] of store) if (v.touched < oldestT) { oldestT = v.touched; oldestKey = k; }
+      if (oldestKey) store.delete(oldestKey); else break;
+    }
+  } catch { /* never throw */ }
+}
+// the feud's character: accelerating? (recent gaps shrinking) and one-sided? (all blows one way).
+export function grievanceOf(sim: Sim, aId: unknown, bId: unknown): Grievance | null {
+  try {
+    const a = String(aId), b = String(bId);
+    const [lo, hi] = a < b ? [a, b] : [b, a];
+    return grievanceStore(sim).get(lo + ':' + hi) || null;
+  } catch { return null; }
+}
+export function isOneSided(g: Grievance | null): boolean {
+  return !!g && g.rounds >= (SIGNALS.grievanceMinRounds || 3) && (g.byA === 0 || g.byB === 0);
+}
+
+// ── Family C: dramatic irony, quantified ([T] by construction — the OMNISCIENT layer's privilege:
+// it reads a belief AND the truth it's about, and the GAP is the irony. No agent can compute these;
+// no cognition path may read them. Observer-layer helpers (read truth freely), guarded.
+
+// esteemTruthGap(a) — the town's mean opinion/believed-wealth of `a` vs a's TRUE deed ledger + gold.
+// Positive standingGap = the CELEBRATED VILLAIN (esteemed despite dark deeds); negative = the UNSUNG
+// HERO (rescues/gifts unrewarded). wealthGap = believed-rich-but-broke (a flashy spender), or vice-versa.
+export function esteemTruthGap(sim: Sim, a: Agent): { standingGap: number; wealthGap: number; darkDeeds: number; goodDeeds: number } {
+  let sStanding = 0, sWealth = 0, n = 0;
+  try {
+    for (const o of (sim.agents as Agent[])) {
+      if (!o || o === a || !o.alive || o.controlled || !o.beliefs) continue;
+      const b = o.beliefs.get(a.id);
+      if (!b) continue;
+      sStanding += (b.standing || 0); sWealth += (b.believedWealth || 0); n++;
+    }
+  } catch { /* */ }
+  const meanStanding = n ? sStanding / n : 0;
+  const meanBelievedWealth = n ? sWealth / n : 0;
+  const darkDeeds = deedCount(a, 'theft') + deedCount(a, 'kill');
+  const goodDeeds = deedCount(a, 'rescue') + deedCount(a, 'gift');
+  const trueWealth = Math.max(0, Math.min(1, (a.gold || 0) / 200));         // a rough 0..1 truth scale
+  // standingGap: esteem MINUS what the deeds deserve (good - dark, scaled). wealthGap: believed - true.
+  const deserved = Math.max(-1, Math.min(1, (goodDeeds - darkDeeds) * 0.2));
+  return { standingGap: meanStanding - deserved, wealthGap: meanBelievedWealth - trueWealth, darkDeeds, goodDeeds };
+}
+
+// doomedVenture(a) — a's active avenge/assault goal points at a target that is ALREADY truth-dead/gone:
+// "marching on a ghost." The narrator can foreshadow the wasted raid the moment it departs. Computed
+// once over the agent's active goals (bounded). Reads truth (the target's liveness) — observer-only.
+export function doomedVenture(sim: Sim, a: Agent): boolean {
+  try {
+    const goals = (a as Agent & { goals?: Array<{ kind?: string; subjectId?: unknown }> }).goals;
+    if (!Array.isArray(goals)) return false;
+    for (const g of goals) {
+      if (!g || (g.kind !== 'avenge' && g.kind !== 'assault' && g.kind !== 'fight')) continue;
+      if (g.subjectId == null) continue;
+      const t = sim.agentsById.get(g.subjectId);
+      if (!t || !t.alive) return true;                                       // hunting the already-dead
+    }
+  } catch { /* */ }
+  return false;
+}
+
+// misallocatedSuspicion(a) — the town carries real suspicion of `a` who has done NO true theft: the
+// emergent Innocent-Accused (suspicion arising falsely, the better story than an authored one). Reads
+// the roster's suspicion (truth) + a's true deed ledger. Observer-only.
+export function misallocatedSuspicion(sim: Sim, a: Agent): number {
+  try {
+    if (deedCount(a, 'theft') > 0) return 0;                                 // genuinely guilty → not misallocated
+    let mass = 0;
+    for (const o of (sim.agents as Agent[])) {
+      if (!o || o === a || !o.alive || o.controlled || !o.beliefs) continue;
+      const b = o.beliefs.get(a.id);
+      if (b && b.suspicion > 0.3) mass += b.suspicion;
+    }
+    return mass;
+  } catch { return 0; }
+}

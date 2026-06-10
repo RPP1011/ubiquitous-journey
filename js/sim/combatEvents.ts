@@ -14,6 +14,7 @@ import { SIM, MONSTER, EPITHETS, DIRECTOR, AVENGER, GRATEFUL, LEGEND, CAPTIVE, f
 import { setHouseFeud, areHousesFeuding } from './houses.js';
 import { arcKey } from './arcs.js';
 import { runPlanOutcome } from './exec/registry.js';
+import { foldGrievance, notePeaceBreak, foldDeed } from './signals.js';
 import type { OutcomeEvt } from './exec/registry.js';
 import type { CognitionCtx } from '../../types/sim.js';
 import { buildObituary, obituaryWorthy } from './gazette.js';
@@ -163,6 +164,9 @@ export function onCombatEvents(sim: Sim, events: CombatEv[]): void {
         }
       } catch { /* never throw on the tick */ }
     }
+    // GRIEVANCE (docs/architecture/13 B): a directed blow folds the sparse pairwise blow ledger
+    // (rounds, by-whom, inter-blow interval) — escalation slope + one-sidedness. Bounded LRU; guarded.
+    foldGrievance(sim, A.id, T.id, sim.time);
 
     // OUTLAW arc — CLOSE 'brought_down' when a rising outlaw is slain (docs/architecture/12 §3.5 / §9).
     // The Watch (or anyone) running the bandit down ends the infamy arc. WARBAND arc — CLOSE 'routed'
@@ -181,6 +185,8 @@ export function onCombatEvents(sim: Sim, events: CombatEv[]): void {
     // lifetime tallies that feed the killer's 'renown' ambition
     if (ev.type === 'dead' && A.life) {
       A.life.kills += 1;
+      foldDeed(A, 'kill', sim.time);                                   // §13 E.deedLedger (truth side)
+      if (T.faction === 'townsfolk') notePeaceBreak(sim, sim.time);    // §13 D.peaceClock — a townsperson fell to violence
       if (T.faction === MONSTER.faction) A.life.monsterKills += 1;
       // EPITHETS — a foe who slays townsfolk earns a dread NEMESIS name; a
       // townsperson who fells foes is hailed a HERO. Either then rides every beat.

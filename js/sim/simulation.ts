@@ -28,7 +28,7 @@ import { seedNarratives } from './seeding.js';
 import { Lineage } from './lineage.js';
 import { Chronicle } from './chronicle.js';
 import { SagaStore } from './arcs.js';
-import { foldLoss } from './signals.js';
+import { foldLoss, foldDeed, foldScarcity } from './signals.js';
 import { runStatusSensor } from './statusSensor.js';
 import { Gazette } from './gazette.js';
 import { Reporter } from './reporter.js';
@@ -839,6 +839,7 @@ export class Simulation {
             if (a.gold < price) return false;
             a.applyBuy(good, price); cp.applySell(good, price);
             foldLoss(a, 'spent', price, sim.time);   // signal: a VOLUNTARY outflow (not ruin)
+            foldScarcity(sim, good, price, sim.time); // §13 D.scarcity: the clearing price vs its long-run mean
           } else {
             if (a.surplus(good) < 1 || cp.gold < price) return false;
             a.applySell(good, price); cp.applyBuy(good, price);
@@ -867,6 +868,7 @@ export class Simulation {
             from.gold -= gold;
             to.gold = (to.gold || 0) + gold;
             foldLoss(from, 'gifted', gold, sim.time);   // signal: a VOLUNTARY outflow (a gift/payment)
+            foldDeed(from, 'gift', sim.time);            // §13 E.deedLedger
           } else return false;
           // receiver warms toward the giver via ITS OWN belief store.
           if (to.beliefs) { const rel = to.beliefs.get(from.id); if (rel) rel.standing = Math.min(1, rel.standing + 0.15); }
@@ -925,6 +927,7 @@ export class Simulation {
               rel.suspicion = Math.min(1, (rel.suspicion || 0) + sev);
             }
           }
+          foldDeed(actor, kind === 'rob' ? 'theft' : kind, sim.time);   // §13 E.deedLedger (truth side of witnessDeed)
           // bystanders who see it: most grow suspicious — but a DESPERATE witness admires a robber of
           // the RICH (the Robin Hood mirror, docs/architecture/12 §9.2). FOUR conjuncts (review 5):
           // larcenous/bold AND poor AND NOT allied to the victim AND believes the victim wealthy.

@@ -13,6 +13,7 @@
 
 import { registerExecutor, registerEffectHolds, registerDeriver } from '../exec/registry.js';
 import { stepTargetPos, goalFree, goalAvenge } from '../planner.js';
+import { foldDeed } from '../signals.js';
 import { steer } from '../agent/steer.js';
 import type { Agent, CognitionCtx, PlanStep } from '../../../types/sim.js';
 import { ROB, CAPTIVE, SIM } from '../simconfig.js';
@@ -46,6 +47,7 @@ registerExecutor('free', (a, step, dt, ctx) => {
   if (ctx.resolver.affect(a, targetId, 'freed')) {
     // RESCUE ARC closes 'freed' — the captive is cut loose (docs/architecture/12 §3.5). Write-only.
     if (ctx.arcs) ctx.arcs.closeArc('rescue:' + targetId, 'freed', 'The captive was freed.');
+    foldDeed(a, 'rescue', ctx.time);   // §13 E.deedLedger (truth side)
   }
 });
 

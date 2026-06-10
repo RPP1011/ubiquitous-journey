@@ -567,6 +567,9 @@ export const SIGNALS = {
   lossRing: 8,           // bounded ring of recent downward gold steps (tagged robbed/spent/gifted/fined)
   lossMin: 1,            // a gold step smaller than this is noise — not ringed
   snubHalfLife: 180,     // snubsFelt decays toward 0 with this half-life (a cold shoulder fades)
+  scarcityHalf: 1200,    // long-run price EWMA half-life per good (the scarcity baseline)
+  grievanceMax: 64,      // LRU cap on the sparse pairwise grievance map (rule 5 — never an N² matrix)
+  grievanceMinRounds: 3, // a grievance with at least this many blows is "a feud" (escalation/one-sidedness read)
 };
 
 // --- STATUS: the status-delta / failure sensor (docs/architecture/12 §5 — fall-from-grace) --------

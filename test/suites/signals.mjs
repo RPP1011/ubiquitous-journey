@@ -7,7 +7,10 @@
 //   S4  snubsFelt feeds   — true mean collapses with ZERO snubs ⇒ SHUNNED beat fires, `slandered`
 //                           memory does NOT; three snubs ⇒ the memory fires (review-1 regression).
 
-import { foldLoss, noteSnub, lossReasonShare, snubsFelt, goldTrend, sampleGold } from '../../js/sim/signals.js';
+import { foldLoss, noteSnub, lossReasonShare, snubsFelt, goldTrend, sampleGold,
+  foldDeed, deedCount, foldOathSworn, foldOathPop, oaths, notePeaceBreak, peaceClock,
+  foldScarcity, scarcityMean, foldGrievance, grievanceOf, isOneSided,
+  esteemTruthGap, doomedVenture, misallocatedSuspicion } from '../../js/sim/signals.js';
 import { statusSensor } from '../../js/sim/statusSensor.js';
 import { SagaStore } from '../../js/sim/arcs.js';
 import { BeliefState } from '../../js/sim/beliefs.js';
@@ -133,6 +136,72 @@ export function wealthTest(ok) {
     b.suspicion = 0.9;
     recognizeWealth(a);
     ok(b.standing === 0, 'wealth W5: a believed-suspect rich local earns no deference (suspect gate)');
+  }
+}
+
+// ---- the broader doc-13 catalog: Families C/D/E priority-cut signals -----------------------------
+// deedLedger, oaths(with pop reasons), peaceClock, scarcity, grievance(slope/one-sidedness), and the
+// irony probes esteemTruthGap / doomedVenture / misallocatedSuspicion. Driven directly for determinism.
+export function catalogTest(ok) {
+  // E.deedLedger — counts by tag.
+  {
+    const a = { id: 1 };
+    foldDeed(a, 'theft', 0); foldDeed(a, 'theft', 5); foldDeed(a, 'rescue', 9);
+    ok(deedCount(a, 'theft') === 2 && deedCount(a, 'rescue') === 1, 'catalog deedLedger: deeds tally by tag');
+  }
+  // E.oaths — sworn + kept/abandoned by POP REASON (rule 4).
+  {
+    const a = { id: 1 };
+    foldOathSworn(a, 'avenge'); foldOathSworn(a, 'avenge'); foldOathPop(a, 'avenge', 'kept'); foldOathPop(a, 'avenge', 'abandoned');
+    const t = oaths(a).avenge;
+    ok(t.sworn === 2 && t.kept === 1 && t.abandoned === 1, 'catalog oaths: sworn vs kept vs abandoned recorded with the reason');
+  }
+  // D.peaceClock — time since the last violent townsperson death.
+  {
+    const sim = { };
+    notePeaceBreak(sim, 100);
+    ok(peaceClock(sim, 130) === 30, 'catalog peaceClock: counts the quiet since the last killing');
+  }
+  // D.scarcity — the long-run price mean tracks (a glut pulls it down, a famine up).
+  {
+    const sim = { };
+    foldScarcity(sim, 'food', 4, 0); foldScarcity(sim, 'food', 12, 600);
+    const mean = scarcityMean(sim, 'food');
+    ok(mean > 4 && mean < 12, `catalog scarcity: the long-run mean tracks the clearing price (${mean.toFixed(1)})`);
+  }
+  // B.grievance — rounds + ONE-SIDEDNESS (all blows one direction = persecution, not a feud).
+  {
+    const sim = { };
+    foldGrievance(sim, 1, 2, 0); foldGrievance(sim, 1, 2, 10); foldGrievance(sim, 1, 2, 20);   // 1 always strikes 2
+    const g = grievanceOf(sim, 2, 1);
+    ok(g && g.rounds === 3, 'catalog grievance: blows tally as rounds (order-normalised key)');
+    ok(isOneSided(g), 'catalog grievance: all blows one direction reads as ONE-SIDED (persecution)');
+    foldGrievance(sim, 2, 1, 30);   // 2 strikes back → no longer one-sided
+    ok(!isOneSided(grievanceOf(sim, 1, 2)), 'catalog grievance: a blow returned makes it a two-sided feud');
+  }
+  // C.esteemTruthGap — the CELEBRATED VILLAIN (esteemed despite dark deeds).
+  {
+    const villain = { id: 1, gold: 10, alive: true };
+    foldDeed(villain, 'theft', 0); foldDeed(villain, 'kill', 0);
+    const fan = { id: 2, alive: true, beliefs: new Map([[1, { standing: 0.7, believedWealth: 0.2, suspicion: 0 }]]) };
+    const sim = { agents: [villain, fan], agentsById: new Map([[1, villain], [2, fan]]) };
+    const gap = esteemTruthGap(sim, villain);
+    ok(gap.standingGap > 0 && gap.darkDeeds === 2, `catalog esteemTruthGap: a celebrated villain reads a positive standing gap (${gap.standingGap.toFixed(2)})`);
+  }
+  // C.doomedVenture — hunting the already-dead ("marching on a ghost").
+  {
+    const ghost = { id: 9, alive: false };
+    const hunter = { id: 1, goals: [{ kind: 'avenge', subjectId: 9 }] };
+    const sim = { agents: [hunter, ghost], agentsById: new Map([[9, ghost], [1, hunter]]) };
+    ok(doomedVenture(sim, hunter) === true, 'catalog doomedVenture: an avenge goal on a dead target is a doomed venture');
+  }
+  // C.misallocatedSuspicion — the innocent accused (suspicion with no true theft).
+  {
+    const innocent = { id: 1, alive: true };   // no theft deeds
+    const a = { id: 2, alive: true, beliefs: new Map([[1, { suspicion: 0.6 }]]) };
+    const b = { id: 3, alive: true, beliefs: new Map([[1, { suspicion: 0.5 }]]) };
+    const sim = { agents: [innocent, a, b], agentsById: new Map() };
+    ok(misallocatedSuspicion(sim, innocent) > 0.5, 'catalog misallocatedSuspicion: suspicion of an innocent (no theft) is flagged');
   }
 }
 
