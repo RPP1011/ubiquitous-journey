@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { Fighter } from '../fighter.js';
 import { Agent } from './agent.js';
-import { ROSTER, SIM, NAMES, MONSTER, MOTIVE, CAMPS, TOWNS, SCARECROW, BUILD, LOD, KNOW, factionHostile } from './simconfig.js';
+import { ROSTER, SIM, NAMES, MONSTER, MOTIVE, CAMPS, TOWNS, SCARECROW, BUILD, LOD, KNOW, RECRUIT, factionHostile } from './simconfig.js';
 import { assignHouse, founderHouse } from './houses.js';
 import { ARENA_RADIUS, BIOME, findBiomeSpot, regionAt, REGIONS, terrainHeight } from '../arena.js';
 import { resetXpStats } from '../rpg/xpstats.js';
@@ -760,6 +760,18 @@ export class Simulation {
           }
           return best ? { id: best.id, pos: { x: best.pos.x, y: best.pos.y, z: best.pos.z } } : null;
         } catch { return null; }
+      },
+      // WARBAND strength (recruiter capstone): the leader's OWN believed force — its base plus each
+      // living follower banded to it. Execution-side roster scan (the leader knowing its own band is
+      // own-state, mediated here exactly like enemyNearLeader returns a ref). Lets a mustered leader
+      // decide it is strong enough to MARCH on the believed foe. Returns a number; guarded.
+      warbandStrength(leader) {
+        try {
+          if (!leader || !leader.alive) return 0;
+          let n = 0;
+          for (const o of sim.agents) if (o.alive && o.bandLeaderId === leader.id) n++;
+          return (RECRUIT.selfStrength || 1) + n * (RECRUIT.candidateStrength || 1);
+        } catch { return 0; }
       },
       // Live world position of subjectId — ONLY when vision-confirmed (used by the player's
       // controlled `approach`/`fight` execution, which legitimately tracks a seen target).

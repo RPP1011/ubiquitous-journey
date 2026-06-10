@@ -33,6 +33,9 @@ export interface ResolverFacade {
   castTarget(observer: Agent, subjectId: EntityId): Agent | null;
   nearestVisibleOfFaction(observer: Agent, faction: string): AgentRef | null;
   enemyNearLeader(observer: Agent, leader: Agent | null): AgentRef | null;
+  // the leader's OWN believed warband strength (base + living followers banded to it) — lets a
+  // mustered war-leader judge it is strong enough to march on the believed foe. Execution-side.
+  warbandStrength(leader: Agent): number;
   seenPos(observer: Agent, subjectId: EntityId): PosSnapshot | null;
   isLiveAgent(subjectId: EntityId): boolean;
   marketClear(a: Agent, good: string, buying: boolean): boolean;

@@ -10,7 +10,44 @@ import { goalMuster, believesConf } from '../../js/sim/planner.js';
 export function recruitTest(ok, helpers) {
   recruitBeliefHalf(ok, helpers);
   warbandFollowThrough(ok, helpers);
+  warbandDirectedAssault(ok, helpers);
   warbandSmoke(ok, helpers);
+}
+
+// ---- the recruiter CAPSTONE: muster -> MARCH on the foe (the missing directed-assault half) ----
+// Proves the leader, once it actually leads a band strong enough to outmatch a believed foe, turns
+// that band ONTO the foe (goal 'assault') instead of forever recruiting — and that a LONE would-be
+// leader musters (recruits) first. Belief-only target; the band converges via decideParty.
+function warbandDirectedAssault(ok, helpers) {
+  {
+    // (A) a leader that ALREADY leads two followers + believes a foe -> turns the band on it.
+    const st = new FeatureStage(helpers);
+    const leader = st.add('Ulf', 0, 0, { personality: { risk_tolerance: 0.9 } });
+    leader.canWork = true; leader.combatant = true;          // a war-leader fights (won't flee mid-march)
+    for (const k in leader.needs) leader.needs[k] = 1;
+    const foe = st.add('Grol', 16, 0, { faction: 'bandit', combatant: true });
+    const f1 = st.add('Ace', 1, 0), f2 = st.add('Bo', -1, 0);
+    for (const f of [f1, f2]) { f.bandLeaderId = leader.id; f.inParty = true; f.groupType = 'warband'; f.combatant = true; }
+    leader.beliefs.observe(foe.id, foe.faction, foe.pos, st.sim.time, true);   // believes the foe hostile
+    const ranA = st.run(() => leader.goals.some((g) => g.kind === 'assault' && g.subjectId === foe.id),
+      { maxFrames: 90, pin: [[foe, 16, 0], [leader, 0, 0], [f1, 1, 0], [f2, -1, 0]], refresh: [[leader, foe]] });
+    ok(leader.goals.some((g) => g.kind === 'assault' && g.subjectId === foe.id),
+      `warband 5: a mustered leader (band ≥ target) turns the band ONTO the believed foe — goal 'assault' (${ranA}f)`);
+    st.dispose();
+
+    // (B) a LONE would-be leader (no band) musters (recruits) first — does NOT assault alone.
+    const st2 = new FeatureStage(helpers);
+    const lone = st2.add('Sten', 0, 0, { personality: { risk_tolerance: 0.9 } });
+    lone.canWork = true;
+    for (const k in lone.needs) lone.needs[k] = 1;
+    const foe2 = st2.add('Vok', 16, 0, { faction: 'bandit', combatant: true });
+    lone.beliefs.observe(foe2.id, foe2.faction, foe2.pos, st2.sim.time, true);
+    st2.run(() => lone.goals.some((g) => g.kind === 'muster'),
+      { maxFrames: 90, pin: [[foe2, 16, 0], [lone, 0, 0]], refresh: [[lone, foe2]] });
+    ok(lone.goals.some((g) => g.kind === 'muster') && !lone.goals.some((g) => g.kind === 'assault'),
+      'warband 6: a LONE would-be leader musters (recruits) first — it does not assault alone');
+    st2.dispose();
+  }
 }
 
 function recruitBeliefHalf(ok, helpers) {

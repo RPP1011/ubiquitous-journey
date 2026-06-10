@@ -13,7 +13,7 @@
 // (the WARBAND follow-through); the belief half proves the no-foreign-write boundary.
 
 import { registerExecutor, registerDeriver, registerEffectHolds } from '../exec/registry.js';
-import { goalMuster, recordBelieves, complianceOf, stepTargetPos } from '../planner.js';
+import { goalMuster, goalAssault, recordBelieves, complianceOf, stepTargetPos } from '../planner.js';
 import { RECRUIT, WARBAND, SIM } from '../simconfig.js';
 import { steer } from '../agent/steer.js';
 import type { Agent, CognitionCtx, PlanStep, EntityId } from '../../../types/sim.js';
@@ -89,11 +89,15 @@ registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
   if (ctx.resolver.joinBand(a, bestId, WARBAND.maxFollowers || 6) && a._offers) delete a._offers[bestId];
 });
 
-// THE LEADER SIDE (belief-only): a bold agent that believes a foe too strong to face alone forms a
-// muster goal to out-number it. Conservative gate (bold + a confidently-believed strong hostile);
-// dormant for the timid. goalMuster's target is the believed strength to outmatch.
+// THE LEADER SIDE (belief-only deriver, the recruiter capstone, BOTH halves): a bold agent that
+// believes a foe too strong to face alone first MUSTERS a force (recruits, via composeForce →
+// makeOffer); once it actually leads a band strong enough to outmatch the threat, it turns the band
+// ONTO the foe — `goalAssault`, the missing march-on-the-foe half. Belief-only target; the band
+// converges via decideParty. Conservative gate (bold + a confidently-believed strong hostile);
+// dormant for the timid and for followers (only a would-be / standing leader musters).
 registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
   if (!a || a.controlled || !a.canWork || a.faction === 'monster' || !a.beliefs) return;
+  if (a.inParty || a.bandLeaderId != null) return;                   // a follower doesn't raise its own band
   const bold = a.personality ? (a.personality.risk_tolerance || 0) : 0;
   if (bold < (RECRUIT.musterRiskTol || 0.6)) return;                 // only the bold try to raise a force
   let foe = null;
@@ -103,10 +107,21 @@ registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
     foe = b; break;
   }
   if (!foe) return;
-  const g = goalMuster(Math.max(2, (RECRUIT.selfStrength || 1) + 2));   // outmatch the believed threat
-  g.priority = 0.5; g.from = 'muster';
-  g.expiresAt = (ctx ? ctx.time : 0) + 120;
-  a.pushGoal(g, ctx);
+  const now = ctx ? ctx.time : 0;
+  const target = Math.max(2, (RECRUIT.selfStrength || 1) + 2);       // believed strength to outmatch the threat
+  // the leader's OWN believed band strength (execution-mediated; the deriver never scans the roster).
+  const bandStr = (ctx && ctx.resolver && ctx.resolver.warbandStrength) ? ctx.resolver.warbandStrength(a) : (RECRUIT.selfStrength || 1);
+  if (bandStr >= target) {
+    // MUSTERED enough — march the band on the believed foe; followers converge (decideParty).
+    const g = goalAssault(foe.subjectId);
+    g.priority = 0.7; g.from = 'warleader'; g.expiresAt = now + 120;
+    a.pushGoal(g, ctx);
+  } else {
+    // still too weak alone — raise the force first.
+    const g = goalMuster(target);
+    g.priority = 0.5; g.from = 'muster'; g.expiresAt = now + 120;
+    a.pushGoal(g, ctx);
+  }
 });
 
 export {};

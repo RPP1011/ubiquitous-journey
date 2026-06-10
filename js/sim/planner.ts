@@ -1318,6 +1318,19 @@ export function goalAvenge(subjectId: EntityId): Goal {
   };
 }
 
+// assault(subjectId): MARCH on a believed foe and put it down — the recruiter capstone's missing
+// half (a mustered war-leader turns the band it raised against a threat ONTO that threat). Same
+// pursue-the-believed-subject mechanic as avenge (plans `attack`, approaches the believed lastPos,
+// combat resolves on ground truth), without the revenge/grief semantics; the band CONVERGES on the
+// leader's fight via decideParty (followers fight enemies near the leader). Belief-only target.
+export function goalAssault(subjectId: EntityId): Goal {
+  return {
+    kind: 'assault', subjectId,
+    atoms: [Atom.dead(subjectId)] as AtomT[],
+    predicate(agent: unknown) { return believedDead(agent as Agent, subjectId); },
+  };
+}
+
 // seek_fortune(place, target): hold gold >= target.
 export function goalSeekFortune(place: string, target: number): Goal {
   const amt = Math.max(1, target || 0);

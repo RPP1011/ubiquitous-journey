@@ -992,6 +992,14 @@ The **remaining gaps** (each a follow-up; nothing is gated behind a flag any mor
      (recruitment stays an Inform; the candidate asked to join itself). Tests in
      `test/suites/recruit.mjs` (an NPC candidate joins an NPC leader and follows; a populated smoke
      stays gold-conserved + un-wiped + freeze-free).
+   - **The directed-assault half is now wired (the former dangling piece).** A mustered leader no
+     longer just recruits forever: once `ctx.resolver.warbandStrength(leader)` (its OWN believed band
+     force, execution-mediated) crosses the muster target, the leader-side deriver pushes
+     `goalAssault(foe)` — it marches on the **believed** foe (the avenge-style pursue-and-attack
+     mechanic, combat on ground truth) and the band **converges** via `decideParty`. So `goalMuster`
+     reaching strength now has a downstream consumer; the capstone fires end-to-end. Tests
+     `recruit.mjs` `warband 5` (banded leader → `assault`) / `warband 6` (lone leader → `muster` first);
+     soak stays town-un-wiped + gold-conserved with it live.
 5. **The planning budget (§16) is unbuilt** — fine at the target population; a future ceiling.
 
 ## 20. Narrative-depth evaluation
