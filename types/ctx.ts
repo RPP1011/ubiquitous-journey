@@ -53,6 +53,12 @@ export interface ResolverFacade {
   // conserved transfer); returns true when a teacher taught, so study learns only from a real
   // instructor. Execution-side (scans the roster); the caller gates being at the market.
   teachRecipe(student: Agent, good: string): boolean;
+  // WARBAND (recruiter follow-through, docs/architecture/10-lld §19 item 4): the EXECUTION half of
+  // a recruited NPC band-join. The follower DECIDES to join in cognition (its own offer/standing/
+  // personality — no roster read); this flips the band flags through the shared Groups machinery
+  // (the same path the player's Party uses). NOT a foreign-mind write — the candidate asked to join
+  // itself. `cap` bounds the leader's band. Returns whether the follower actually joined.
+  joinBand(follower: Agent, leaderId: EntityId, cap: number): boolean;
   buildSite: BuildSiteFacade;
 }
 

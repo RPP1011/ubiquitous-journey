@@ -945,6 +945,17 @@ export class Simulation {
           return true;
         } catch { return false; }
       },
+      // WARBAND JOIN (recruiter follow-through, docs/architecture/10-lld §19 item 4) — the
+      // EXECUTION half of forming a recruited NPC band. The follower already DECIDED to join in
+      // cognition (recruiter.ts' deriver, off its OWN _offers/standing/personality); this flips the
+      // band flags through the SHARED Groups machinery (the very path the player's Party uses), so
+      // there is no parallel system and no foreign-mind write (the candidate asked to join itself).
+      // Bounded by `cap`; fully guarded (never throws on the tick). Returns whether it joined.
+      joinBand(follower, leaderId, cap) {
+        try {
+          return sim.groups ? sim.groups.joinWarband(follower, leaderId, cap) : false;
+        } catch { return false; }
+      },
       // BUILD-STATE EXECUTION FACADE (Phase 2a, debt #2 retirement): the truth-side build
       // state (BuildSites), exposed as a narrow set of execution operations — exactly like
       // the market resolver. `buildStep` runs in act() (execution), which legitimately reads

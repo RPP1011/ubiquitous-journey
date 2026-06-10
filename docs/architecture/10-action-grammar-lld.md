@@ -885,6 +885,7 @@ a breadth step turns it on. The discipline (see the `action-grammar-build-arc` m
 | `URCHIN.enabled` | (2) | false | shadow/approach/burgle (the urchin heist) |
 | `HOLD.enabled` | 4 | false | the `hold` row |
 | `RECRUIT.enabled` | 5 | false | the `force_ge` composer + `recruit` row |
+| `WARBAND.enabled` | 5 | false | the recruiter follow-through: a warmed candidate's own join-decision deriver + `resolver.joinBand` (NPC marching ally) |
 | `AFFECT.enabled` | 5 | false | the `free`/`wreck` rows |
 | `LEDGER.enabled` | 5 | false | any live per-tick ledger wiring |
 | `ESTIMATE.enabled` | 6 | false | the wealth-cue haul `estimateHaul` + `haulSurcharge` (else flat `deriveTarget`/`ROB.amount`) |
@@ -957,9 +958,23 @@ The **remaining gaps** (deliberately out of this pass; each a follow-up behind i
    mislead. (Tests: `urchin W1–W4`.)
 3. **`free`/`wreck` carry no live deriver** — the sim has no captivity / sabotage-target mechanic to
    trigger them, so their goals + executors are correct and unit-tested but dormant in the soak.
-4. **NPC war-party formation/following is unbuilt.** `recruit`'s belief half (offer, prediction,
-   follower belief-shift) is wired; turning a warmed candidate into a marching NPC ally reuses no
-   existing mechanic (`Party` is player-only) and is the follow-up.
+4. **NPC war-party formation/following — BUILT** (gated `WARBAND.enabled`, day-one OFF). `recruit`'s
+   belief half (offer, prediction, follower belief-shift) was already wired; the follow-through now
+   turns a warmed candidate into a marching NPC ally **without a parallel system**. The seam:
+   - `Party` is no longer player-only — its leader is whatever Agent the constructor is handed
+     (`get leader()` returns it; the player's party is just "the band whose leader is the controlled
+     agent", special only for input). The recruit standing gate reads the player-only reputation
+     ledger for a player-led band, the candidate's OWN belief-standing for an NPC-led band.
+   - A second follower-side **deriver** in `recruiter.ts` (cognition: reads ONLY the follower's own
+     `_offers` + its belief-standing toward the offerer + personality — no roster) forms the
+     candidate's **own** decision to join, then requests the flag flip through the EXECUTION seam
+     `ctx.resolver.joinBand(follower, leaderId, cap)` → `Groups.joinWarband` → the **same** `_join`
+     every emergent band uses (flips `inParty`/`bandLeaderId`/`groupType:'warband'`/`partySlot`/
+     `combatant`). The existing `decideParty`/`fillFollow`/`enemyNearLeader` path — already
+     NPC-leader-aware off belief — marches and fights it. No AI fork, no foreign-mind write
+     (recruitment stays an Inform; the candidate asked to join itself). Tests in
+     `test/suites/recruit.mjs` (an NPC candidate joins an NPC leader and follows; a flag-ON
+     populated smoke stays gold-conserved + un-wiped + freeze-free).
 5. **The planning budget (§16) is unbuilt** — fine at the target population; a future ceiling.
 
 ## 20. Narrative-depth evaluation
