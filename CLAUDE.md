@@ -63,9 +63,11 @@ It drives the sim exactly like the render loop (`sim.update` → `fighter.update
 `onCombatEvents`) and asserts the invariants: no freeze over 12k frames, gold conservation, trades
 happen, beliefs form, every NPC has a valid ambition that progresses. `headless.mjs` is a thin runner
 that loads `test/harness.mjs` (`makeOk` tally, `stubScene`, `makeFighter`) and the suites in
-`test/suites/*.mjs` (`epistemic`, `shadows`, `combat`, `abilities`, `planner`, `execution`,
-`memoryGoals`, `percept`, `schemas`, `hearsay`, `obituary`, `construction`, `homecoming`, `city`,
-`soak`) plus `test/scenarios.mjs`. There's no single-suite CLI flag — to run one suite,
+`test/suites/*.mjs` (`epistemic`, `shadows`, `combat`, `abilities`, `planner`, `obligations`,
+`urchin`, `learning`, `recruit`, `affect`, `ledger`, `caution`, `execution`, `memoryGoals`,
+`percept`, `schemas`, `recipes`, `trace`, `hearsay`, `obituary`, `construction`, `homecoming`,
+`city`, `soak`, `scaling` — the action-grammar/caution features each have their own suite) plus
+`test/scenarios.mjs`. There's no single-suite CLI flag — to run one suite,
 comment out the others in `headless.mjs` or import the suite into a scratch runner. Other runners:
 `test/scenarios.mjs`, `test/history.mjs`, and the `test/bench.mjs` / `test/levelbench.mjs` benchmarks.
 The seam is a logic-only
@@ -87,9 +89,12 @@ npm/import-from-CDN; keep everything local and import-mapped.
 > **Authoritative architecture reference: [`docs/architecture/`](docs/architecture/00-overview.md).**
 > Start at `00-overview.md` (system map + invariants index + config locator), then the
 > per-cluster docs: `01-sim-spine`, `02-epistemic-split`, `03-rpg-abilities`,
-> `04-drama-society`, `05-economy-news`, `06-world-dungeons`, `07-ui`, `08-testing`.
-> The summary below is the quickstart; those docs are the full as-built spec — keep them
-> updated when you change architecture (not just tuning).
+> `04-drama-society`, `05-economy-news`, `06-world-dungeons`, `07-ui`, `08-testing`,
+> `09-reasoning-layer`. The **action-grammar / knowledge model** is `10-action-grammar` (+ its LLD),
+> outcome-conditioned **caution** is `11-outcome-conditioned-caution-lld`, and the (designed,
+> unbuilt) emergent-arc detection + authoring tooling is `12-narrative-tooling-lld`. SLM/LLM
+> opportunities: `docs/slm-opportunities.md`. The summary below is the quickstart; those docs are
+> the full as-built spec — keep them updated when you change architecture (not just tuning).
 
 > **Post-refactor module layout (SRP).** The former god-objects were split into single-
 > responsibility modules — behavior moved, call sites unchanged (thin delegating methods):
@@ -122,11 +127,13 @@ DOM/HUD wiring, and player input. The whole frame body is wrapped in a try/catch
 Each fixed tick runs these passes **in this order** over all agents:
 
 ```
-perceive → beliefs.decay → gossipBeliefs → decide → _runMarket → progression.tick → quests
+perceive → beliefs.decay → gossipBeliefs → reason → decide → _runMarket → progression.tick → quests
 ```
 
 then `act(dt)` runs every frame. This order matters: beliefs are refreshed and faded before
-decisions read them.
+decisions read them. `reason` is the schema interpreter (below); `decide` runs `deriveGoals` +
+`pruneGoals` + planning inside it. `reason`/`decide` are LOD-amortized (only due agents each tick);
+`perceive`/`decay`/`gossip` and `act` run every tick/frame.
 
 ### The epistemic split (why deception works)
 
@@ -139,6 +146,13 @@ So an agent can be genuinely fooled (disguise/stealth/planted rumour) while real
 correctly. `Simulation.isHostile` is the combat-time predicate (faction + latched-hostile belief +
 reputation); `Agent._nearestHostile`/`considerHostile` is the belief-time one. Combat outcomes fold
 back into beliefs via `Simulation.onCombatEvents` (victim + witnesses learn the aggressor).
+
+**Scope: the split is a COGNITION boundary, not an OBSERVER boundary** (docs/architecture/02). It
+constrains what an agent reads *to decide*. The **omniscient observer layer** — the Director,
+Chronicle, Gazette/Reporter, society passes, and any detection probe — is not an NPC: it reads
+ground truth across the roster to *narrate / record world history*, never to drive a decision. The
+test is "does this read drive an agent's behaviour?" (then belief-scope it), not "does it touch
+another agent's truth".
 
 Beliefs live in `js/sim/beliefs.js` (`BeliefStore` = the spec's per-`(observer→subject)` N² table).
 The other half of the world-model is the **mental map** (`js/sim/mentalmap.js`, `MentalMap`/`Place`
@@ -164,6 +178,40 @@ Buildings are now **places-as-percepts**: `construction.js` spawns a finished bu
 `sim.percepts` with a namespaced id (`B:<n>`, disjoint from agent ids) and a believed `sheltered`
 state; an agent DISCOVERS its home by sight (`homeBeliefId`) and its loss by perception or belief
 decay — no telepathic re-route (the `test/suites/homecoming.mjs` gate).
+
+### The action grammar & feature layer (planner vocabulary as data)
+
+The planner (`js/sim/planner.js`) backward-chains over `PRIMITIVES` (verb rows) toward `Atom`
+goals, and the **verb→executor binding is a registry, not a switch**: `js/sim/exec/registry.js`
+holds `EXECUTORS` (verb→world-interaction on arrival), `DERIVERS` (belief→goal, run each cognition
+tick by `deriveGoals`), `EFFECT_HOLDS` (has-this-step's-effect-landed), and `PLAN_OUTCOME` (a
+watched act resolved). Adding a behaviour = **registering a row**, never editing control flow. Each
+**feature is ONE file** in `js/sim/features/` (loaded via `features/index.js`), registering its rows
+as an import side-effect — disjoint by construction:
+- `urchin.js` — the heist (surveil/approach/burgle) + a steal-deriver gated on **circumstance ×
+  character** (poor AND bold AND uncaring), so crime is rare and emergent.
+- `affect.js` — rob / free / wreck via the conserved resolver.
+- `learning.js` + `recipeKnow.js` — the **knowledge model** (`Know(topic)` carrying value/confidence/
+  provenance) via observe/ask/study; recipes are **graded** (half-learned, forgotten when unpractised,
+  conserved tuition to a teacher).
+- `recruiter.js` — recruit is an **Inform** (an offer the candidate perceives + the leader's one-level
+  `Believes` prediction); the follower decides for itself (`WARBAND` join), and a mustered leader
+  **marches on the believed foe** (`goalAssault`; the band converges via `decideParty`).
+- `ledger.js` (`obligations.js`) — the obligation ledger: a promise armed now, discharged on a
+  perceived event later (or lapsed).
+- `caution.js` (`experience.js`) — **outcome-conditioned caution**: a per-agent, per-strategy signed
+  surcharge added to a watched act's `cost`, **burned** on a failed/wasteful/perilous outcome and
+  **eroded** by time and success. The burned-hand half of regret (docs/architecture/11).
+
+The **execution** half is `ctx.resolver` (built in `simulation.js`): generic, conserved world-mutation
+primitives — `take`/`witnessDeed`/`affect`/`deliverTo`/`marketClear`/`joinBand`/`teachRecipe`/
+`warbandStrength`. The discipline (docs `emergent-consequences`): keep the **mechanic** generic +
+conserved; let the **social consequence EMERGE** from perception (per-perceiver, witness-gated) — never
+a hardcoded single-victim reaction. Captivity (capture-on-defeat → believed-captive → rescue) and the
+wealth-cue haul estimate (`estimateHaul`) are wired the same way. **Gating is by branch** (these are
+always-live; no in-code on/off flag — see Conventions). Some vocabulary is present but **dormant by
+design** (`wreck` has no target mechanic; `hold`/`goalSate` have no live trigger) — documented future
+breadth steps, not incomplete wiring. Full spec: `docs/architecture/10-action-grammar-lld.md`.
 
 ### The RPG event spine
 
