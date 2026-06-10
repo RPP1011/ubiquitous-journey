@@ -170,5 +170,16 @@ export function outlawTest(ok, { makeFighter, stubScene }) {
   robber.notoriety = 0.5;
   statusSensor(robber, sim, sim.time);
   ok(sim.sagas.findArc('outlaw:' + robber.id) != null, 'outlaw O3: NPC notoriety crossing dreadAt opens the outlaw arc');
+
+  // O4 — the outlaw run down: a killing blow closes the arc 'brought_down' (the combat death fold).
+  sim.onCombatEvents([{ type: 'dead', attacker: { agent: victim, id: victim.id }, target: { agent: robber, id: robber.id } }]);
+  ok(sim.sagas.recentClosed().some((x) => x.kind === 'outlaw' && x.outcome === 'brought_down'),
+    'outlaw O4: a slain rising outlaw closes the arc brought_down');
+
+  // O5 — a war-leader cut down before mustering: the warband arc closes 'routed' (item-1 path).
+  sim.sagas.openArc({ kind: 'warband', key: 'warband:' + kindRich.id, principals: [kindRich.id] });
+  sim.onCombatEvents([{ type: 'dead', attacker: { agent: poorBold, id: poorBold.id }, target: { agent: kindRich, id: kindRich.id } }]);
+  ok(sim.sagas.recentClosed().some((x) => x.kind === 'warband' && x.outcome === 'routed'),
+    'outlaw O5: a war-leader cut down closes the warband arc routed');
   sim.dispose();
 }

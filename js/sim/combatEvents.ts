@@ -13,6 +13,9 @@ import { TUNE } from '../constants.js';
 import { SIM, MONSTER, EPITHETS, DIRECTOR, AVENGER, GRATEFUL, LEGEND, CAPTIVE, factionHostile } from './simconfig.js';
 import { setHouseFeud, areHousesFeuding } from './houses.js';
 import { arcKey } from './arcs.js';
+import { runPlanOutcome } from './exec/registry.js';
+import type { OutcomeEvt } from './exec/registry.js';
+import type { CognitionCtx } from '../../types/sim.js';
 import { buildObituary, obituaryWorthy } from './gazette.js';
 import type { Agent, CombatEvent, ActionEvent, ActionEventSpec } from '../../types/sim.js';
 
@@ -157,6 +160,20 @@ export function onCombatEvents(sim: Sim, events: CombatEv[]): void {
         if (sim.sagas.findArc(vk)) {
           if (ev.type === 'dead') sim.sagas.closeArc(vk, 'fulfilled');
           else sim.sagas.appendBeat(vk, 'round', `${A.name} struck ${T.name}.`);
+        }
+      } catch { /* never throw on the tick */ }
+    }
+
+    // OUTLAW arc — CLOSE 'brought_down' when a rising outlaw is slain (docs/architecture/12 §3.5 / §9).
+    // The Watch (or anyone) running the bandit down ends the infamy arc. WARBAND arc — CLOSE 'routed'
+    // when a war-leader with an OPEN (still-mustering) band falls before it could march. Both feed the
+    // win/loss signal through PLAN_OUTCOME ([11] §8's second customer — synergy 2). Guarded.
+    if (ev.type === 'dead' && sim.sagas) {
+      try {
+        if (sim.sagas.findArc('outlaw:' + T.id)) sim.sagas.closeArc('outlaw:' + T.id, 'brought_down', `${T.name} the outlaw was brought down at last.`);
+        if (sim.sagas.findArc('warband:' + T.id)) {
+          sim.sagas.closeArc('warband:' + T.id, 'routed', `${T.name}'s war-band scattered when its leader fell.`);
+          runPlanOutcome(T, { time: sim.time } as unknown as CognitionCtx, { status: 'peril', step: { prim: 'attack', bind: {} } } as unknown as OutcomeEvt);   // routed ≈ peril ([11] §8)
         }
       } catch { /* never throw on the tick */ }
     }

@@ -5,6 +5,7 @@
 // SAGAS the Gazette threads into a single feature. Free functions over `d`.
 import { DIRECTOR, SIM } from '../simconfig.js';
 import { BEAT } from '../chronicle.js';
+import { arcKey } from '../arcs.js';
 import { rand, clamp } from './util.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -213,7 +214,13 @@ export function _stepAccused(d: Dir, arc: Arc, now: number): Arc | null {
 // feud, via lineage._wed); timid ones bow to the old hatred and part, heartbroken.
 export function _stepRomance(d: Dir, arc: Arc, now: number): Arc | null {
   const A = d.sim.agentsById.get(arc.a), B = d.sim.agentsById.get(arc.b);
-  const clear = () => { if (A) A._courtingId = null; if (B) B._courtingId = null; };
+  // clear the courtship intent AND close the (authoring-opened) romance arc in sim.sagas with the
+  // outcome (docs/architecture/12 §8). Guarded; a no-op if no such arc is open (emergent romances
+  // fold via _recordSaga instead). 'lapsed' is the dissolve default (a principal gone/wed-to-another).
+  const clear = (outcome: string = 'lapsed') => {
+    if (A) A._courtingId = null; if (B) B._courtingId = null;
+    try { if (A && B && d.sim.sagas) d.sim.sagas.closeArc(arcKey('romance', A.id, B.id), outcome); } catch { /* never throw */ }
+  };
   if (!A || !A.alive || !B || !B.alive || A.mateId != null || B.mateId != null) { clear(); return null; }   // gone or wed to another
   if (arc.stage === 1) {
     // OBSTACLE: the feud bears down — kin scowl, the town gossips.
@@ -225,13 +232,14 @@ export function _stepRomance(d: Dir, arc: Arc, now: number): Arc | null {
   if (nerve >= (DIRECTOR.tropes.starCrossedResolve ?? 0.52) && d.sim.lineage && d.sim.lineage._wed) {
     try { d.sim.lineage._wed(A, B); } catch { /* never throw */ }    // a union — and lineage._wed HEALS the feud + narrates it
     d._recordSaga({ sagaKind: 'romance', key: `${A.id}-${B.id}`, a: A.name, b: B.name, hA: arc.hA, hB: arc.hB, outcome: 'union' });
+    clear('union');
   } else {
     // HEARTBREAK: the old hatred proves the stronger.
     d._sour(A, B, 0.2); d._sour(B, A, 0.2);   // the bitterness of a love forsworn
     d._note(BEAT.VENDETTA, A.id, `The old hatred proved stronger than young love — ${A.name} and ${B.name} have parted, kept asunder by the feud of Houses ${arc.hA} and ${arc.hB}.`, arc);
     d._recordSaga({ sagaKind: 'romance', key: `${A.id}-${B.id}`, a: A.name, b: B.name, hA: arc.hA, hB: arc.hB, outcome: 'heartbreak' });
+    clear('heartbreak');
   }
-  clear();
   return null;
 }
 

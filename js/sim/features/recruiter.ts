@@ -12,7 +12,8 @@
 // warmed candidate into a marching ally) reuses the SAME band machinery the player's Party uses
 // (the WARBAND follow-through); the belief half proves the no-foreign-write boundary.
 
-import { registerExecutor, registerDeriver, registerEffectHolds } from '../exec/registry.js';
+import { registerExecutor, registerDeriver, registerEffectHolds, runPlanOutcome } from '../exec/registry.js';
+import type { OutcomeEvt } from '../exec/registry.js';
 import { goalMuster, goalAssault, recordBelieves, complianceOf, stepTargetPos } from '../planner.js';
 import { RECRUIT, WARBAND, SIM } from '../simconfig.js';
 import { steer } from '../agent/steer.js';
@@ -33,8 +34,13 @@ registerExecutor('recruit', (a, step, dt, ctx) => {
   // the cue it can see (the candidate's believed standing toward it). Calibrated, not a dice-roll.
   const b = a.beliefs ? a.beliefs.get(candId) : null;
   recordBelieves(a, candId, 'follow', complianceOf(b ? b.standing : 0));
-  // make the OFFER the candidate perceives (its own store) — the Inform, nothing more.
-  if (ctx.resolver && ctx.resolver.makeOffer) ctx.resolver.makeOffer(a, candId, RECRUIT.candidateStrength);
+  // make the OFFER the candidate perceives (its own store) — the Inform, nothing more. INFAMY DRAWS A
+  // FOLLOWING (docs/architecture/12 §9.3): a notorious leader makes a MORE COMPELLING offer — the
+  // payoff is tilted by the leader's own notoriety (own-state; the town reads it via the generalised
+  // notoriety bridge, so a warming candidate weighs a richer believed payoff). Infamy literally recruits.
+  const noto = (a as Agent & { notoriety?: number }).notoriety || 0;
+  const payoff = RECRUIT.candidateStrength * (1 + noto * (RECRUIT.notorietyTilt || 0));
+  if (ctx.resolver && ctx.resolver.makeOffer) ctx.resolver.makeOffer(a, candId, payoff);
 });
 
 registerEffectHolds('recruit', () => true);   // the offer landed; composeForce credited it in planning
@@ -121,6 +127,9 @@ registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
     g.priority = 0.7; g.from = 'warleader'; g.expiresAt = now + 120;
     a.pushGoal(g, ctx);
     if (ctx && ctx.arcs) ctx.arcs.closeArc('warband:' + a.id, 'marched');   // the muster succeeded → it marches
+    // emit the marched outcome through PLAN_OUTCOME ([11] §8's second customer — synergy 2): the band
+    // committing to battle is the win/loss signal caution will read once `attack` joins the watched set.
+    try { runPlanOutcome(a, ctx as CognitionCtx, { status: 'windfall', step: { prim: 'attack', bind: {} } } as unknown as OutcomeEvt); } catch { /* never throw */ }
   } else {
     // still too weak alone — raise the force first.
     const g = goalMuster(target);

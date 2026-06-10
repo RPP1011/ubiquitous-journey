@@ -481,6 +481,7 @@ export const RECRUIT = {
   minCompliance: 0.15,   // a recruit contributing less believed force than this isn't worth a row
   offerWarmth: 0.08,     // how much perceiving an offer warms a candidate toward the leader (its OWN belief)
   musterRiskTol: 0.6,    // risk_tolerance at/above which a leader will try to muster against a strong foe
+  notorietyTilt: 0.6,    // a notorious leader's offer payoff is tilted by notoriety×this (infamy draws a following, §9.3)
 };
 
 // --- WARBAND: the recruiter follow-through (docs/architecture/10-lld §19 item 4, §12) -------
