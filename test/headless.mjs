@@ -21,7 +21,7 @@ import { plannerSelfTest } from './suites/planner.mjs';
 import { obligationsTest } from './suites/obligations.mjs';
 import { seedingTest, romanceTest } from './suites/seeding.mjs';
 import { arcsTest, arcsE2ETest } from './suites/arcs.mjs';
-import { signalsTest, wealthTest, outlawTest, whitelistTest, catalogTest, catalogTailTest } from './suites/signals.mjs';
+import { signalsTest, wealthTest, outlawTest, whitelistTest, catalogTest, catalogTailTest, gossipSnubTest, softAvoidTest } from './suites/signals.mjs';
 import { executionTest } from './suites/execution.mjs';
 // Action-grammar EXECUTION suites (docs/architecture/10) — one per feature worktree, pre-registered
 // so each fills its own file with zero shared edits. Stubs are no-ops until filled.
@@ -68,8 +68,10 @@ arcsE2ETest(ok, helpers);
 // Narrative signals (docs/architecture/13) + the status-delta sensor (12 §5): transfer-fold ruin
 // gating, hysteresis, and snubsFelt-not-the-mean as the slander gate.
 signalsTest(ok);
+gossipSnubTest(ok);   // Task A: gossip-about-self feeds snubsFelt (docs/architecture/13 §3)
 wealthTest(ok);
 outlawTest(ok, helpers);
+softAvoidTest(ok, helpers);   // Task B: suspicion-gated soft-avoidance ("cross the street", doc 13 §3)
 whitelistTest(ok);
 catalogTest(ok);
 catalogTailTest(ok);

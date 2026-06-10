@@ -8,7 +8,8 @@
 
 import { terrainHeight, concealmentAt } from '../../arena.js';
 import { inferDestination } from '../beliefs.js';
-import { SIM, SOURCE, BAND, COMMODITIES, ECON, MAP, ESTEEM as WEALTHCUE, factionHostile } from '../simconfig.js';
+import { SIM, SOURCE, BAND, COMMODITIES, ECON, MAP, SIGNALS, ESTEEM as WEALTHCUE, factionHostile } from '../simconfig.js';
+import { noteSnub } from '../signals.js';
 import { PERCEPT_KIND } from '../percept.js';
 import { STAGE, REASON } from '../trace.js';
 import type { Agent, FullCtx, Perceivable } from '../../../types/sim.js';
@@ -209,6 +210,19 @@ export function gossipBeliefs(a: Agent, ctx: FullCtx): void {
     // body has no .beliefs, and o.beliefs.all() on one would freeze the tick. Defence-in-depth.
     if (!o.beliefs) continue;
     if (a.pos.distanceTo(o.pos) > SIM.talkRange) continue;
+    // GOSSIP-ABOUT-SELF SNUB (docs/architecture/13 §3 snubsFelt): if this chatting neighbour
+    // HOLDS a negative opinion of ME (a soured standing and/or a raised suspicion), I overhear
+    // them speaking ill of me — a PERCEIVED cold shoulder. noteSnub(self) is OWN-STATE (the snub
+    // I felt), the legitimate input for the `slandered` memory; I do NOT read the teller's mind for
+    // a decision — I only register that I was ill-spoken of. Bounded to one snub per ingest pass
+    // (the `break` below already limits this to one partner per tick); the snub decay does the rest.
+    if (!a.controlled) {
+      const mine = o.beliefs.get(a.id);
+      if (mine && ((mine.standing || 0) <= SIGNALS.snubGossipStanding ||
+                   (mine.suspicion || 0) >= SIGNALS.snubGossipSuspicion)) {
+        noteSnub(a, ctx.time);
+      }
+    }
     for (const b of o.beliefs.all()) {
       if (b.subjectId === a.id) continue;   // don't gossip about me to myself
       // Phase 2a: NEVER gossip PLACE-beliefs (buildings). mergeFrom copies only person-belief

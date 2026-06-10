@@ -18,13 +18,18 @@ import { foldLoss, noteSnub, lossReasonShare, snubsFelt, goldTrend, sampleGold,
   cohesion, presumedDead, loversCrossed, rumourDepth, noteBeat, quietIndex,
   noteWitness, witnessSet, triangleHints } from '../../js/sim/signals.js';
 import { statusSensor } from '../../js/sim/statusSensor.js';
+import { gossipBeliefs } from '../../js/sim/agent/perception.js';
 import { SagaStore } from '../../js/sim/arcs.js';
-import { BeliefState } from '../../js/sim/beliefs.js';
+import { BeliefState, BeliefStore } from '../../js/sim/beliefs.js';
 import { recognizeWealth } from '../../js/sim/agent/decide.js';
 import { World } from '../../js/sim/world.js';
 import { Simulation } from '../../js/sim/simulation.js';
 import { Agent } from '../../js/sim/agent.js';
+import * as THREE from 'three';
 import { readFileSync } from 'node:fs';
+
+// a real THREE.Vector3 — observe() does lastPos.copy(pos), so a plain {x,z} won't do.
+function vec3(x, y, z) { return new THREE.Vector3(x, y, z); }
 
 function mkAgent(id, gold, name = 'A' + id) {
   return {
@@ -101,6 +106,62 @@ export function signalsTest(ok) {
     try { sampleGold({ id: 7 }, 0); foldLoss(null, 'x', 1, 0); snubsFelt({ id: 7 }, 0); statusSensor({ id: 7 }, mkSim([]), 0); }
     catch { threw = true; }
     ok(!threw, 'signals: malformed/missing inputs never throw');
+  }
+}
+
+// ---- TASK A: gossip-about-self feeds snubsFelt (docs/architecture/13 §3 snubsFelt) --------------
+// When an agent PERCEIVES a chatting neighbour holding a NEGATIVE opinion of ITSELF (soured standing
+// and/or raised suspicion), it overhears them speaking ill of it — a perceivable snub that bumps
+// snubsFelt (the own-state input for `slandered`). Positive / neutral / other-subject gossip does NOT.
+// Driven through the real gossipBeliefs bridge with real BeliefStores for determinism.
+export function gossipSnubTest(ok) {
+  // a chatting agent `a` (the receiver/overhearer) beside a neighbour `o` (the teller). Place them
+  // within talkRange and give each a real BeliefStore so gossipBeliefs iterates them as in the sim.
+  const mk = (id) => {
+    const a = {
+      id, alive: true, controlled: false, faction: 'townsfolk',
+      pos: vec(0, 0), beliefs: new BeliefStore(id),
+    };
+    return a;
+  };
+  const ctx = { time: 10, agents: [] };
+  const run = (recv, teller) => { ctx.agents = [recv, teller]; gossipBeliefs(recv, ctx); };
+
+  // A1 — a teller who SOURED on me (standing well below the snub bar) ⇒ I feel a snub.
+  {
+    const a = mk(1), o = mk(2); o.pos = vec(1, 0);   // adjacent
+    const tb = o.beliefs._ensure(a.id); tb.standing = -0.6; tb.confidence = 0.9;
+    run(a, o);
+    ok(snubsFelt(a, 10) >= 1, `gossip A1: overhearing a neighbour who SOURED on me bumps snubsFelt (${snubsFelt(a, 10).toFixed(2)})`);
+  }
+  // A2 — a teller who merely SUSPECTS me (suspicion above the bar, standing neutral) ⇒ also a snub.
+  {
+    const a = mk(1), o = mk(2); o.pos = vec(1, 0);
+    const tb = o.beliefs._ensure(a.id); tb.standing = 0; tb.suspicion = 0.5; tb.confidence = 0.9;
+    run(a, o);
+    ok(snubsFelt(a, 10) >= 1, `gossip A2: overhearing a neighbour who SUSPECTS me bumps snubsFelt (${snubsFelt(a, 10).toFixed(2)})`);
+  }
+  // A3 — a teller who likes me (positive standing, no suspicion) ⇒ NO snub.
+  {
+    const a = mk(1), o = mk(2); o.pos = vec(1, 0);
+    const tb = o.beliefs._ensure(a.id); tb.standing = 0.5; tb.confidence = 0.9;
+    run(a, o);
+    ok(snubsFelt(a, 10) === 0, 'gossip A3: a neighbour who LIKES me produces no snub');
+  }
+  // A4 — a teller holding only OTHER-subject opinions (a sour view of #9, none of me) ⇒ NO snub.
+  {
+    const a = mk(1), o = mk(2); o.pos = vec(1, 0);
+    const ob = o.beliefs._ensure(9); ob.standing = -0.9; ob.confidence = 0.9;   // hates #9, not me
+    run(a, o);
+    ok(snubsFelt(a, 10) === 0, 'gossip A4: a teller souring on a THIRD party (not me) produces no snub');
+  }
+  // A5 — bounded: one ingest pass yields at most one snub (the `break` limits to one partner/tick).
+  {
+    const a = mk(1), o = mk(2); o.pos = vec(1, 0);
+    const tb = o.beliefs._ensure(a.id); tb.standing = -0.9; tb.confidence = 0.9;
+    run(a, o);
+    const after1 = snubsFelt(a, 10);
+    ok(after1 >= 1 && after1 < 2, `gossip A5: a single ingest pass yields at most one snub (${after1.toFixed(2)})`);
   }
 }
 
@@ -461,5 +522,69 @@ export function outlawTest(ok, { makeFighter, stubScene }) {
   sim.onCombatEvents([{ type: 'dead', attacker: { agent: poorBold, id: poorBold.id }, target: { agent: kindRich, id: kindRich.id } }]);
   ok(sim.sagas.recentClosed().some((x) => x.kind === 'warband' && x.outcome === 'routed'),
     'outlaw O5: a war-leader cut down closes the warband arc routed');
+  sim.dispose();
+}
+
+// ---- TASK B: suspicion-gated soft-avoidance — "cross the street" (docs/architecture/13 §3) -------
+// A merely-SUSPECTED, soured-but-NOT-hostile neighbour I believe is close earns a faint, low-priority
+// berth (an `avoid` goal whose `around` is the suspect's believed pos), SHORT of fleeing — and it
+// must NOT out-prioritise work/survival. Belief-only (my own suspicion/standing/hostile/lastPos).
+export function softAvoidTest(ok, { makeFighter, stubScene }) {
+  const world = new World(stubScene);
+  const sim = new Simulation(stubScene, world, { makeFighter });
+  let nid = 1;
+  const P = () => ({ risk_tolerance: 0.5, altruism: 0.5, ambition: 0.5, social_drive: 0.3, curiosity: 0.4 });
+  const add = (name, x, z, cfg = {}) => {
+    const a = new Agent(makeFighter('knight', {}), { id: nid++, name, profession: null, personality: P(), faction: 'townsfolk', townsperson: true, ...cfg });
+    a.fighter.root.position.set(x, 0, z);
+    sim.agents.push(a); sim.agentsById.set(a.id, a); return a;
+  };
+  const cog = () => sim._cognitionCtx();
+
+  // S-B1 — a believed-SUSPECT (suspicion above the bar, standing cool, NOT hostile) within range
+  // produces a soft-avoid berth. To isolate the social discomfort from the economic scheduler we
+  // make this agent a non-worker (canWork=false), so its only !inDanger candidates are avoid+wander
+  // — avoid (weight 0.35) decisively beats wander (~0.15) and becomes the goal, steering OFF the
+  // suspect's believed pos. (S-B3 below proves a WORKER does NOT let it override work.)
+  {
+    const a = add('Wary', 0, 0); a.canWork = false;
+    const sb = a.beliefs.observe(2, 'townsfolk', vec3(3, 0, 0), 0, false);   // believe #2 is 3m away
+    sb.suspicion = 0.6; sb.standing = -0.1; sb.hostile = false; sb.confidence = 0.9;
+    a.decide(cog());
+    ok(a.goal && a.goal.kind === 'avoid', `softavoid S-B1: a near believed-suspect earns a soft-avoid berth (goal=${a.goal && a.goal.kind})`);
+    ok(a.goal && a.goal.around && Math.abs(a.goal.around.x - 3) < 1e-6,
+      'softavoid S-B1: the berth is centred on where I BELIEVE the suspect is (around = belief lastPos)');
+  }
+
+  // S-B2 — a NEUTRAL neighbour (no suspicion, warm-enough standing) earns NO berth: same setup, but
+  // the belief is unsuspicious → the avoid candidate never fires (the agent just wanders).
+  {
+    const a = add('Calm', 0, 0); a.canWork = false;
+    const nb = a.beliefs.observe(2, 'townsfolk', vec3(3, 0, 0), 0, false);
+    nb.suspicion = 0.0; nb.standing = 0.2; nb.hostile = false; nb.confidence = 0.9;
+    a.decide(cog());
+    ok(a.goal && a.goal.kind !== 'avoid', `softavoid S-B2: a neutral neighbour earns NO berth (goal=${a.goal && a.goal.kind})`);
+  }
+
+  // S-B3 — the berth must NOT out-prioritise WORK. A normal WORKER (canWork=true) with the SAME near
+  // suspect still chooses to work — the soft-avoid is a wisp of discomfort, not a behaviour override.
+  {
+    const a = add('Busy', 0, 0);
+    a.gold = 0;   // a real wealth motive so `work` scores well above the soft-avoid floor
+    const sb = a.beliefs.observe(2, 'townsfolk', vec3(3, 0, 0), 0, false);
+    sb.suspicion = 0.6; sb.standing = -0.1; sb.hostile = false; sb.confidence = 0.9;
+    a.decide(cog());
+    ok(a.goal && a.goal.kind !== 'avoid', `softavoid S-B3: the soft-avoid does NOT out-prioritise work (goal=${a.goal && a.goal.kind})`);
+  }
+
+  // S-B4 — a believed-HOSTILE close by is the SURVIVAL flee's business, not this faint wariness: the
+  // soft-avoid predicate explicitly skips hostiles (it must never duplicate/override the flee path).
+  {
+    const a = add('Threatened', 0, 0); a.canWork = false;
+    const hb = a.beliefs.observe(2, 'bandit', vec3(3, 0, 0), 0, true);   // hostile sighting
+    hb.suspicion = 0.6; hb.standing = -0.8; hb.hostile = true; hb.confidence = 0.9;
+    a.decide(cog());
+    ok(a.goal && a.goal.kind !== 'avoid', `softavoid S-B4: a believed-hostile drives flee/fight, not the soft-avoid (goal=${a.goal && a.goal.kind})`);
+  }
   sim.dispose();
 }

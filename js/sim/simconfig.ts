@@ -570,6 +570,12 @@ export const SIGNALS = {
   lossRing: 8,           // bounded ring of recent downward gold steps (tagged robbed/spent/gifted/fined)
   lossMin: 1,            // a gold step smaller than this is noise — not ringed
   snubHalfLife: 180,     // snubsFelt decays toward 0 with this half-life (a cold shoulder fades)
+  // GOSSIP-ABOUT-SELF snub (docs/architecture/13 §3 snubsFelt): when an agent overhears a chatting
+  // neighbour HOLDING a negative opinion of IT (soured standing and/or raised suspicion), that is a
+  // PERCEIVED cold shoulder ("they speak ill of me") — own-state evidence that feeds the snub counter.
+  // At most ONE snub per gossip-ingest pass (the `break` already bounds it to one partner/tick).
+  snubGossipStanding: -0.2,  // a teller's standing toward me at/below this counts as ill-spoken
+  snubGossipSuspicion: 0.3,  // …or a teller's suspicion of me at/above this (a whispered doubt)
   scarcityHalf: 1200,    // long-run price EWMA half-life per good (the scarcity baseline)
   grievanceMax: 64,      // LRU cap on the sparse pairwise grievance map (rule 5 — never an N² matrix)
   grievanceMinRounds: 3, // a grievance with at least this many blows is "a feud" (escalation/one-sidedness read)
@@ -903,6 +909,15 @@ export const SOCIAL = {
   bondBonus: 0.03,      // EXTRA standing/sec for deliberately spending time together (vs incidental
                         //   proximity) — quality time bonds faster than just passing nearby
   shadowGap: 6,         // stand-off distance the `shadow` disposition (doubt-the-mask schema) trails a suspect at
+  // SOFT AVOIDANCE — "cross the street" (docs/architecture/13 §3 snubsFelt). A merely-SUSPECTED,
+  // soured-but-NOT-hostile nearby neighbour earns a faint, LOW-priority berth (a mild steer-away),
+  // SHORT of fleeing — social discomfort, not panic. Reads ONLY my OWN belief (suspicion/standing/
+  // hostile/lastPos). Gated bold (suspicion ABOVE the soft bar AND standing cool) and scored low so
+  // it never out-pulls work/market/survival; the chronicle's "neighbours cross the street" made real.
+  avoidSuspicion: 0.4,  // believed suspicion at/above this (but not hostile) earns a wide berth
+  avoidStanding: 0,     // …AND a believed standing at/below this (a cool acquaintance, not a friend)
+  avoidRange: 7,        // only a suspect I believe is THIS close unsettles me (a near-street berth)
+  avoidWeight: 0.35,    // the soft-avoid candidate's score — low, so work/market/survival win
 };
 
 // ============================================================================

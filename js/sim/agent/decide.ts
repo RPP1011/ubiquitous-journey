@@ -389,6 +389,16 @@ export function decide(a: Agent, ctx: CognitionCtx): void {
       }
     }
   }
+  // SOFT AVOIDANCE — "cross the street" (docs/architecture/13 §3 snubsFelt). A merely-SUSPECTED,
+  // soured-but-NOT-hostile neighbour I believe is close earns a FAINT, low-priority berth (a mild
+  // steer-away short of fleeing). Suppressed in danger (real flee/fight wins) and scored low so it
+  // never out-pulls work/market/survival — a wisp of social discomfort, not panic. Belief-only
+  // (suspicion/standing/hostile/lastPos — my OWN belief), so the epistemic split holds. The `avoid`
+  // goal carries `around` = where I BELIEVE the suspect is; fillAvoid pushes me off it as a repulsor.
+  if (!inDanger) {
+    const avoidPos = pickSuspectToAvoid(a);
+    if (avoidPos) push('avoid', SOCIAL.avoidWeight, { around: avoidPos });
+  }
   if (!inDanger) push('wander', WEIGHT.wander * (0.6 + P.curiosity));
 
   // longer-term motivation tilts the short-term utility toward its preferred
@@ -448,6 +458,29 @@ function pickSocialTarget(a: Agent): EntityId | null {
     if (score > bestScore) { bestScore = score; best = b.subjectId; }
   }
   return best;
+}
+
+// SOFT AVOIDANCE target (docs/architecture/13 §3 snubsFelt) — the nearest believed-SUSPECT I'd
+// give a wide berth: suspicion at/above the soft bar, standing cool (NOT a friend), NOT yet hostile
+// (a hostile is the survival flee's business, not this faint wariness), confidently known, and within
+// avoidRange of where I BELIEVE it is. Reads ONLY my OWN beliefs (suspicion/standing/hostile/lastPos/
+// confidence) — the epistemic split holds. Returns the suspect's believed pos ({x,z}) to steer OFF,
+// or null when no one unsettles me. Guarded; never throws (the freeze lesson).
+function pickSuspectToAvoid(a: Agent): { x: number; z: number } | null {
+  try {
+    let best: { x: number; z: number } | null = null, bestD = Infinity;
+    for (const b of a.beliefs.all()) {
+      if (b.subjectId === a.id || b.placeKind) continue;          // not myself, not a place-belief
+      if (b.hostile) continue;                                    // a hostile is the flee's job, not this
+      if ((b.suspicion || 0) < SOCIAL.avoidSuspicion) continue;   // not suspect enough to unsettle me
+      if ((b.standing || 0) > SOCIAL.avoidStanding) continue;     // a warm acquaintance gets no berth
+      if (b.confidence < SIM.actOnBeliefMin || !b.lastPos) continue;
+      const d = a.pos.distanceTo(b.lastPos);
+      if (d > SOCIAL.avoidRange) continue;                        // only a near suspect crosses my street
+      if (d < bestD) { bestD = d; best = { x: b.lastPos.x, z: b.lastPos.z }; }
+    }
+    return best;
+  } catch { return null; }
 }
 
 // nearest comfort source for the comfort goal — now BELIEF-BACKED (debt #2 retired). The
