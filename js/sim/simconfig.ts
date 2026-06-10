@@ -418,7 +418,36 @@ export const KNOW = {
 // row emits nothing and the steal goal still routes through the urchin's cache `burgle`.
 export const ROB = {
   enabled: false,
-  amount: 5,             // believed gold taken (a fixed estimate until wealth-cue inference lands)
+  amount: 5,             // believed gold taken (the flat fallback when ESTIMATE wealth-cue inference is off)
+};
+
+// --- ESTIMATE: the wealth-cue haul inference (docs/architecture/10-lld §15) -------------
+// A believed quantity that can NEVER be observed (the gold inside a mark's purse/cache) is an
+// EXPECTED VALUE with a confidence, inferred from perceivable PROXIES — never the real ledger. It
+// replaces the flat URCHIN.deriveTarget / ROB.amount constant: a thief estimates each mark's haul
+// from cues on its OWN belief (how established/notable the mark is, whether it has SEEN a stash),
+// anchored on a faction prior. Every input is itself a belief, so the estimate is WRONG precisely
+// when the cues mislead (a flashy-but-broke mark reads fat, yields little — and `take` is conserved,
+// so an empty mark simply gives up less). The confidence folds into the heist's COST (a hazy estimate
+// makes the raid expensive → the urchin cases it longer). Day-one OFF: disabled → the deriver keeps
+// the flat constant and the surcharge is 0, so URCHIN/ROB behave byte-identically to before.
+export const ESTIMATE = {
+  enabled: false,
+  basePrior: 10,         // believed haul for a mark of unknown category (anchors a bare belief)
+  priorConf: 0.12,       // confidence of the bare prior before any cue firms it (a pure guess)
+  estCap: 60,            // ceiling on a believed haul — no runaway estimate from stacked cues
+  // FACTION PRIOR (the only believed "category" a belief carries — lastFaction): a settled
+  // townsperson is worth more to rob than an outsider passing through or a coinless raider.
+  categoryPrior: { townsfolk: 14, outsider: 8, rival: 9, bandit: 6, wilds: 5, monster: 0 } as Record<string, number>,
+  // CUES — each NUDGES the estimate toward what it implies and FIRMS confidence by its weight
+  // (firmUp: conf += (1-conf)*weight, asymptotic toward certainty like any evidence accrual):
+  establishedNudge: 10,  // gold a well-established (high-confidence) belief adds — a settled local reads prosperous
+  establishedWeight: 0.3,
+  assocNudge: 8,         // a SEEN stash/cache (assoc) is direct evidence of stored wealth
+  assocWeight: 0.35,
+  notorietyNudge: 12,    // a notable / notorious figure (believed fame) reads richer
+  firsthandWeight: 0.25, // a first-hand belief (hops 0) firms the estimate; hearsay keeps it shaky
+  confCostScale: 7,      // how hard a HAZY haul estimate inflates the heist cost (case it longer)
 };
 
 // --- HOLD-UNTIL: waiting for the world to change (docs/architecture/10, Phase 4) -------

@@ -817,7 +817,13 @@ small fixed innate vector, partly inherited):
 
 A believed quantity that can never be observed (the gold inside a cache) is an **expected value with
 a confidence**, inferred from proxies. Formed by the **same evidence-accrual** that builds every
-other belief, anchored on a prior:
+other belief, anchored on a prior. **Implemented** (`estimateHaul` in `planner.ts`, gated by
+`ESTIMATE.enabled`, day-one OFF): a faction-category prior (`b.lastFaction`) nudged by the cues on
+the agent's OWN belief — how established the mark is (`b.confidence`), a SEEN stash (`b.assoc`),
+believed fame (`b.notoriety`) — each firming the confidence via `firmUp(c,w)=c+(1-c)w`. The urchin
+deriver targets the believed-richest mark (`value × confidence`) and aims the goal for the estimate;
+`haulSurcharge` folds the confidence into the burgle/rob cost so a hazy guess cases longer. Off ⇒
+the deriver keeps the flat `URCHIN.deriveTarget` and the surcharge is 0 (byte-identical):
 
 ```
 estimateHaul(agent, markId):
@@ -879,6 +885,7 @@ a breadth step turns it on. The discipline (see the `action-grammar-build-arc` m
 | `RECRUIT.enabled` | 5 | false | the `force_ge` composer + `recruit` row |
 | `AFFECT.enabled` | 5 | false | the `free`/`wreck` rows |
 | `LEDGER.enabled` | 5 | false | any live per-tick ledger wiring |
+| `ESTIMATE.enabled` | 6 | false | the wealth-cue haul `estimateHaul` + `haulSurcharge` (else flat `deriveTarget`/`ROB.amount`) |
 
 ---
 
@@ -935,8 +942,11 @@ The **remaining gaps** (deliberately out of this pass; each a follow-up behind i
 1. **Recipe knowledge is still binary.** `topicConfidence('recipe')` is 1/0 and `study` adds to a
    `Set`; the four-field graded recipe (half-learned, forgotten when the last holder dies) and a
    conserved tuition transfer to a teacher are unbuilt.
-2. **Wealth-cue estimation is a flat constant** (`URCHIN.deriveTarget` / `ROB.amount`) — the §15
-   prior-nudged-by-perceived-cues inference is not yet wired, so a thief's expected haul is fixed.
+2. ~~**Wealth-cue estimation is a flat constant**~~ — **DONE.** `estimateHaul` (§15) is wired and
+   gated by `ESTIMATE.enabled` (day-one OFF): the urchin deriver targets the believed-richest mark
+   and aims for the inferred haul, and `haulSurcharge` folds the estimate's confidence into the
+   heist cost. A thief's expected haul is now a belief-cue inference, wrong exactly when the cues
+   mislead. (Tests: `urchin W1–W4`.)
 3. **`free`/`wreck` carry no live deriver** — the sim has no captivity / sabotage-target mechanic to
    trigger them, so their goals + executors are correct and unit-tested but dormant in the soak.
 4. **NPC war-party formation/following is unbuilt.** `recruit`'s belief half (offer, prediction,

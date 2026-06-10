@@ -10,8 +10,8 @@
 // believed haul are picked from CUES on the agent's own beliefs, never the roster.
 
 import { registerExecutor, registerDeriver, registerEffectHolds } from '../exec/registry.js';
-import { goalSteal, stepTargetPos } from '../planner.js';
-import { URCHIN, SIM } from '../simconfig.js';
+import { goalSteal, stepTargetPos, estimateHaul } from '../planner.js';
+import { URCHIN, SIM, ESTIMATE } from '../simconfig.js';
 import { steer } from '../agent/steer.js';
 import { goTo } from '../agent/movement.js';
 import type { Agent, CognitionCtx, PlanStep } from '../../../types/sim.js';
@@ -94,16 +94,25 @@ registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
   if ((p.altruism ?? 1) > URCHIN.deriveAltruismMax) return;
   if ((p.risk_tolerance ?? 0) < URCHIN.deriveRiskMin) return;
   if (!a.beliefs) return;
-  let markId: number | string | null = null, best = 0;
+  let markId: number | string | null = null, best = 0, bestTarget = URCHIN.deriveTarget;
   for (const b of a.beliefs.all()) {
     if (!b || b.subjectId === a.id) continue;
     if (b.confidence < SIM.actOnBeliefMin) continue;
     if (b.hostile || (a.considerHostile && a.considerHostile(b))) continue;   // foes are a combat matter
-    const cue = b.confidence;                                        // established-in-mind ≈ a settled local
-    if (cue > best) { best = cue; markId = b.subjectId; }
+    // Pick the most APPEALING mark. With wealth-cue inference (§15) the urchin targets the
+    // believed-RICHEST, weighting the estimate by its confidence so a wild guess can't win on its
+    // own; the goal then aims for that believed haul. Off → the prior behaviour (best-established).
+    let cue: number, target: number;
+    if (ESTIMATE.enabled) {
+      const e = estimateHaul(a, b.subjectId);
+      cue = e.value * e.confidence; target = Math.max(1, Math.round(e.value));
+    } else {
+      cue = b.confidence; target = URCHIN.deriveTarget;             // established-in-mind ≈ a settled local
+    }
+    if (cue > best) { best = cue; markId = b.subjectId; bestTarget = target; }
   }
   if (markId == null) return;
-  const g = goalSteal(markId, URCHIN.deriveTarget);
+  const g = goalSteal(markId, bestTarget);
   g.priority = 0.5; g.from = 'larceny';
   g.expiresAt = (ctx ? ctx.time : 0) + (URCHIN.deriveExpiry || 110);
   a.pushGoal(g, ctx);

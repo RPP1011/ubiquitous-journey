@@ -18,7 +18,7 @@
 // this module standalone — it is NOT wired into decide() yet.
 
 import * as THREE from 'three';
-import { PROFESSIONS, COMMODITIES, ECON, SIM, URCHIN, QUANTITY, KNOW, ROB, HOLD, RECRUIT, AFFECT } from './simconfig.js';
+import { PROFESSIONS, COMMODITIES, ECON, SIM, URCHIN, QUANTITY, KNOW, ROB, HOLD, RECRUIT, AFFECT, ESTIMATE } from './simconfig.js';
 import { POI_KIND } from './world.js';
 import { STAGE, REASON } from './trace.js';
 import { effectHolds } from './exec/registry.js';
@@ -355,6 +355,41 @@ function confidenceSurcharge(agent: Agent, t: KnowTopic): number {
   return Math.max(0, 1 - topicConfidence(agent, t)) * KNOW.confCostScale;
 }
 
+// WEALTH-CUE HAUL ESTIMATE (docs/architecture/10-lld §15). The gold inside a mark's purse can NEVER
+// be observed, so a thief ESTIMATES it: a faction-category PRIOR, then NUDGED by the perceivable
+// cues on the agent's OWN belief about the mark (how established it is in mind, a SEEN stash, its
+// believed notoriety), each cue also FIRMING the confidence (firmUp = evidence accrual toward 1).
+// Belief-only (epistemic split) — every input is a belief, so the estimate is wrong EXACTLY when the
+// cues mislead, which is the only fairness it is owed. Returns an expected {value, confidence}; the
+// value sets the heist's gold target, the confidence its cost surcharge. Pure; never throws.
+function firmUp(conf: number, weight: number): number { return conf + (1 - conf) * Math.max(0, weight); }
+export function estimateHaul(agent: Agent, markId: EntityId): { value: number; confidence: number } {
+  const b = agent.beliefs ? agent.beliefs.get(markId) : null;
+  if (!b) return { value: ESTIMATE.basePrior, confidence: ESTIMATE.priorConf };
+  const cat = b.lastFaction != null ? ESTIMATE.categoryPrior[b.lastFaction] : undefined;
+  let value = cat != null ? cat : ESTIMATE.basePrior;
+  let conf = ESTIMATE.priorConf;
+  // CUE: how established the mark is in mind — a settled, prosperous-seeming local.
+  value += (b.confidence || 0) * ESTIMATE.establishedNudge;
+  conf = firmUp(conf, (b.confidence || 0) * ESTIMATE.establishedWeight);
+  // CUE: a SEEN stash/cache (assoc) — direct evidence of stored wealth, scaled by how sure of it.
+  if (b.assoc) { value += ESTIMATE.assocNudge * (b.assoc.conf || 0); conf = firmUp(conf, ESTIMATE.assocWeight); }
+  // CUE: believed notoriety/fame — a notable figure reads richer.
+  value += Math.abs(b.notoriety || 0) * ESTIMATE.notorietyNudge;
+  // CUE: provenance — a first-hand belief (hops 0) firms the estimate; hearsay leaves it shaky.
+  conf = firmUp(conf, (b.hops || 0) === 0 ? ESTIMATE.firsthandWeight : 0);
+  value = Math.max(1, Math.min(ESTIMATE.estCap, value));
+  return { value, confidence: Math.max(0, Math.min(1, conf)) };
+}
+
+// COST surcharge for a HAZY haul estimate (analogue of confidenceSurcharge, but for the believed
+// haul rather than a Know topic): a shaky guess makes the raid expensive, so the urchin cases it
+// longer before betting. 0 when ESTIMATE is off → dependent costs stay flat (byte-identical).
+function haulSurcharge(agent: Agent, markId: EntityId): number {
+  if (!ESTIMATE.enabled) return 0;
+  return Math.max(0, 1 - estimateHaul(agent, markId).confidence) * ESTIMATE.confCostScale;
+}
+
 // ---------------------------------------------------------------------------
 // PHASE 3 — the ACQUIRE table (docs/architecture/10 "Actions come from tables"). Each row is one
 // way to bring a resource into the agent's OWN holdings, differing only in SOURCE, whether the
@@ -680,7 +715,7 @@ export const PRIMITIVES: Primitive[] = [
     // COST-INCLUDES-CONFIDENCE (Phase 2): a raid on a SHAKY stash belief is likely a wasted,
     // dangerous trip, so it costs more — which pushes the planner to `observe` again first
     // (re-confirm the stash) before committing. Off (KNOW disabled) → flat, byte-identical.
-    cost(agent, ctx, bind) { return PLAN.actBase + confidenceSurcharge(agent, { kind: 'loc', subjectId: bind.target as EntityId, place: 'stash' }); },
+    cost(agent, ctx, bind) { return PLAN.actBase + confidenceSurcharge(agent, { kind: 'loc', subjectId: bind.target as EntityId, place: 'stash' }) + haulSurcharge(agent, bind.target as EntityId); },
     exec: acquireExec('burgle'),
   },
 
@@ -700,7 +735,7 @@ export const PRIMITIVES: Primitive[] = [
       // distance to the believed mark + the danger of a forceful taking (riskier than a quiet cache)
       const tp = believedPos(agent, ctx, { subjectId: bind.target as EntityId });
       const d = tp ? Math.hypot(tp.x - agent.pos.x, tp.z - agent.pos.z) : 40;
-      return d * PLAN.travelPerMetre + PLAN.actBase * 2;
+      return d * PLAN.travelPerMetre + PLAN.actBase * 2 + haulSurcharge(agent, bind.target as EntityId);
     },
     exec: acquireExec('rob'),
   },
