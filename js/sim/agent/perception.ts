@@ -108,8 +108,7 @@ export function perceive(a: Agent, ctx: FullCtx): void {
     // set records it on my belief — truth-in / belief-out, the same sanctioned bridge as notoriety.
     // The affect deriver reads ONLY this belief (never `_held`), so the rescue DECISION stays in
     // belief-space. Re-confirmed each sighting; cleared when I see it freed (a freed captive idles
-    // beside its rescuer, so its onlookers re-perceive it and drop the flag). `_held` is set only
-    // when CAPTIVE.enabled, so off → always undefined → b.captive stays false → byte-stable.
+    // beside its rescuer, so its onlookers re-perceive it and drop the flag).
     b.captive = !!o._held;
   }
   // DESTINATION-INTENT: any tracked subject I am NO LONGER seeing — but still hold a

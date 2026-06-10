@@ -31,8 +31,7 @@ export function decide(a: Agent, ctx: CognitionCtx): void {
   if (!a.alive || a.controlled) return;
   // CAPTIVE (the rescue arc): a held captive makes no decisions — it idles where it's held until a
   // rescuer frees it. We still let its beliefs perceive/decay (that runs before decide) so it can
-  // be SEEN as a captive and, once freed, perceive `_freedBy` and warm. `_held` is set ONLY when
-  // CAPTIVE.enabled, so off → never set → never taken → soak byte-identical. Clear any stale goal.
+  // be SEEN as a captive and, once freed, perceive `_freedBy` and warm. Clear any stale goal.
   if (a._held) { a.goal = null; return; }
   // REASONING-COST (Phase 3, measurement only): this tick ran decide(). Own-scalar write,
   // read truth-side in depthMetrics — never inside cognition. A tick decide() is SKIPPED

@@ -5,16 +5,14 @@
 // the planner (feltSurcharge beside confidenceSurcharge). The registries' cleanest proof that a
 // behaviour-shaping feature can be a single registered row.
 //
-// Gated INSIDE the handler (registration is unconditional so a test can toggle CAUTION.enabled at
-// runtime, the codebase's real feature pattern): off ⇒ the handler returns immediately, the emit
-// sites never fire, and feltSurcharge is 0 — the soak is byte-identical.
+// ALWAYS-LIVE on the mainline: the handler writes the surcharge whenever a watched act resolves,
+// and the read side (feltSurcharge) prices it into the plan.
 
 import { registerPlanOutcome } from '../exec/registry.js';
 import { recordBurn, recordWindfall, expKey } from '../experience.js';
-import { CAUTION } from '../simconfig.js';
 
 registerPlanOutcome((a, ctx, evt) => {
-  if (!CAUTION.enabled || !a || !evt || !evt.step) return;
+  if (!a || !evt || !evt.step) return;
   const key = expKey(evt.step.prim, evt.step.bind);
   const now = ctx ? ctx.time : 0;
   switch (evt.status) {

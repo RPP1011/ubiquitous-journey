@@ -1,7 +1,8 @@
 # 11 (LLD) — Outcome-conditioned caution: implementation spec (v2)
 
-> **Status: low-level design, IMPLEMENTED (day-one OFF, gated by `CAUTION.enabled`). v2** folds the
-> self-review of v1; the substantive changes:
+> **Status: low-level design, IMPLEMENTED & ALWAYS-LIVE on the mainline (gating is by branch, not an
+> in-code flag — the former `CAUTION.enabled` switch is removed; the `CAUTION` block keeps only its
+> tuning fields). v2** folds the self-review of v1; the substantive changes:
 > the watched set **shrinks to the three theft-shaped rows** (`attack`/`hold` out — §8 says why),
 > outcome classification gains a **neutral band** and an **acted-but-unlanded** path (so the empty
 > cache classifies as the shortfall it is), **waste moves to the goal layer** (re-planning is the
@@ -86,9 +87,9 @@ What it must **not** do:
 | --- | --- | --- |
 | `js/sim/experience.ts` | both | **pure helpers**, the `obligations.ts` pattern: the `ActExperience` store math — `recordBurn` / `recordWindfall` / `feltSurcharge` / `classifyYield` / `relevantConfidence` / `expKey` / lazy decay. No tick wiring of its own. |
 | `js/sim/exec/registry.ts` | seam | **one new registry**: `PLAN_OUTCOME` — handlers fired when a watched act resolves (`shortfall` / `neutral` / `windfall` / `peril` / `waste`). Same shape as `EFFECT_HOLDS`: `registerPlanOutcome(fn)`, `runPlanOutcome(a, ctx, evt)`, each handler independently guarded. |
-| `js/sim/agent/act.ts` | execution | the **step-level emit sites** (`cautionPre`/`cautionPost`): snapshot + `_acted` arrival flag on watched steps; classify + emit on step landing, on drop of an *acted* step, and on the peril signal. All gated by `CAUTION.enabled` (off ⇒ no field writes ⇒ byte-identical soak). |
+| `js/sim/agent/act.ts` | execution | the **step-level emit sites** (`cautionPre`/`cautionPost`): snapshot + `_acted` arrival flag on watched steps; classify + emit on step landing, on drop of an *acted* step, and on the peril signal. Always-live (invoked every tick from `execPlanStep`). |
 | `js/sim/motivation.ts` (`pruneGoals`) | cognition | the **waste emit site** (`cautionWaste`): a goal that expires or is flagged unreachable after real travel toward a watched step that never came within reach (§4.4). Gated. |
-| `js/sim/planner.ts` | cognition | the **one central read hook** in `solveAtom`: `stepCost += feltSurcharge(agent, prim, bind, now)`, beside the existing `confidenceSurcharge`; plus the plan-time `bind._conf` snapshot (§5). Gated; 0 / no-op when off. **Composers are NOT covered** — see the §7 caveat. |
+| `js/sim/planner.ts` | cognition | the **one central read hook** in `solveAtom`: `stepCost += feltSurcharge(agent, prim, bind, now)`, beside the existing `confidenceSurcharge`; plus the plan-time `bind._conf` snapshot (§5). Always-live; 0 when no experience. **Composers are NOT covered** — see the §7 caveat. |
 | `js/sim/features/caution.ts` | both | the feature file: registers the single `PLAN_OUTCOME` handler that calls into `experience.ts`. **No verbs, no executors, no derivers, no effect-holds** — the smallest feature yet; caution is pure cost-shaping. |
 | `types/agent.ts` | types | `_actExperience?: Map<string, ActExperience>` + the `_cautionStep`/`_cautionGoal` transition pointers on `Agent`. |
 | `types/goals.ts` | types | `_snap`/`_acted`/`_emitted` on `PlanStep`, `_conf` on `PlanBind`, `_cautionTrail` on `Goal`. |
@@ -97,7 +98,7 @@ What it must **not** do:
 ### Where it runs in the tick
 
 ```
-act(dt) ── execPlanStep ── watched step starts:  snapshot (flag-gated)              [cautionPre]
+act(dt) ── execPlanStep ── watched step starts:  snapshot                           [cautionPre]
                         ── each frame:           _acted ||= within arriveDist        [cautionPost]
                         ── reached & acted:      classify yield (3 bands) → runPlanOutcome
                         ── frightened mid-act:   peril → runPlanOutcome
@@ -163,8 +164,7 @@ it an observable outcome.
 ### Config (`js/sim/simconfig.ts`)
 
 ```
-CAUTION = {
-  enabled: false,         // day-one OFF — soak byte-identical
+CAUTION = {                // always-live (no on/off flag) — tuning fields only
   watched: ['burgle', 'rob', 'loot'],
 
   // ── timescale: anchored to the goal layer's own retry clock ──
@@ -197,7 +197,7 @@ preserve while tuning: `partialCooldown ≪ halfLife`; `|windfall| < burn.shortf
 
 ---
 
-## 4. Emit sites & outcome classification (gated by `CAUTION.enabled` throughout)
+## 4. Emit sites & outcome classification (always-live throughout)
 
 ### 4.1 Snapshot + the `_acted` flag (`act.ts` `cautionPre`/`cautionPost`)
 
@@ -284,7 +284,7 @@ is.
 At **plan time**, `solveAtom` snapshots the confidence of the belief the watched step leans on:
 
 ```
-if CAUTION.enabled and prim.name in CAUTION.watched:
+if prim.name in CAUTION.watched:
   bind._conf = relevantConfidence(agent, prim.name, bind)
 ```
 
@@ -338,9 +338,8 @@ recordBurn(a, key, status, conf, now):
 recordWindfall(a, key, now):
   write(a, key, (e) => CAUTION.windfall / (1 + e.n * 0.25), now)   // 10th success teaches < 1st
 
-// THE COGNITION READ — beside confidenceSurcharge in solveAtom. Own-state only. 0 when off.
+// THE COGNITION READ — beside confidenceSurcharge in solveAtom. Own-state only. 0 when unknown.
 feltSurcharge(a, primName, bind, now):
-  if !CAUTION.enabled: return 0
   e = a._actExperience?.get(expKey(primName, bind)); if !e: return 0
   s = decayed(e, now)
   if s > 0: s *= (1 − (a.personality?.risk_tolerance ?? 0.5) * CAUTION.rtRelief)   // the bold shrug
@@ -363,10 +362,9 @@ In `solveAtom`, beside the existing cost assembly:
 
 ```
 stepCost = prim.cost(agent, ctx, bind)                       // existing (incl. confidenceSurcharge)
-if CAUTION.enabled:
-  stepCost += feltSurcharge(agent, prim.name, bind, ctx.time) // NEW — flag-gated, 0 when off
-  if prim.name in CAUTION.watched:
-    bind._conf = relevantConfidence(agent, prim.name, bind)   // NEW — the §5 plan-time snapshot
+stepCost += feltSurcharge(agent, prim.name, bind, ctx.time)  // always-live; 0 when no experience
+if prim.name in CAUTION.watched:
+  bind._conf = relevantConfidence(agent, prim.name, bind)    // the §5 plan-time snapshot
 ```
 
 Nothing else in the planner changes. The widen path is untouched — a desperate agent's widened
@@ -419,13 +417,10 @@ its real execution path end-to-end before admission**, the same discipline 10 ap
 ```ts
 import { registerPlanOutcome } from '../exec/registry.js';
 import { recordBurn, recordWindfall, expKey } from '../experience.js';
-import { CAUTION } from '../simconfig.js';
 
-// Registration is UNCONDITIONAL (so a test can toggle CAUTION.enabled at runtime, the codebase's
-// real feature pattern); the gate is INSIDE the handler. Off ⇒ returns immediately + feltSurcharge
-// is 0 + the emit sites never fire ⇒ byte-identical.
+// Always-live: the handler writes the surcharge whenever a watched act resolves.
 registerPlanOutcome((a, ctx, evt) => {
-  if (!CAUTION.enabled || !a || !evt || !evt.step) return;
+  if (!a || !evt || !evt.step) return;
   const key = expKey(evt.step.prim, evt.step.bind);
   const now = ctx ? ctx.time : 0;
   switch (evt.status) {
@@ -452,7 +447,7 @@ C5  neutral band is silent      — classifyYield(50,35)='neutral'
 C6  windfall embolds, shallowly — windfall ⇒ s<0; |s| ≤ capDiscount even after 20 successes
 C7  attribution                 — same shortfall at conf 0.9 burns less than at conf 0.2
 C8  desperation override        — a fully-burned strategy is finite (≤ cap): no timidity lock
-C12 bounds & byte-identity      — s clamps to cap; map ≤ maxKeys (oldest-t evicted); OFF ⇒ felt 0
+C12 bounds                      — s clamps to cap; map ≤ maxKeys (oldest-t evicted)
 C-int the emit chain            — a real heist (frame loop) on a near-empty mark burns the thief's
                                   strategy (act.ts emit site → handler → store, end-to-end)
 C11 §8 regression               — a combat verb (attack) is NEVER burned (not in the watched set)

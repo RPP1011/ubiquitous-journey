@@ -53,8 +53,7 @@ const randDir = (): FighterDir => DIRS[(Math.random() * 4) | 0];
 export function act(a: Agent, dt: number, ctx: CognitionCtx): void {
   if (!a.alive || a.controlled) return;
   // CAPTIVE (the rescue arc): a held captive does not act — it stands fast where its captor left
-  // it (no work, no wander, no flight). Only `free` (its bonds cut) lifts `_held`. `_held` is set
-  // ONLY when CAPTIVE.enabled, so this is byte-stable with the flag off (never set → never taken).
+  // it (no work, no wander, no flight). Only `free` (its bonds cut) lifts `_held`.
   if (a._held) { a.fighter.setMoving(0); a._updateLabel(); return; }
   a.priceGossip(ctx, dt);
   // drink a remedy when badly hurt — keeps a recurring demand for potions
@@ -226,12 +225,11 @@ export function produce(a: Agent, dt: number): void {
   const skillMul = masteryMul(a, output);
   if (g.inputs) {
     // RECIPE GATE (own-state): a crafted good is producible only if I KNOW its recipe.
-    // Master-gated by RECIPES.enabled (off ⇒ byte-identical baseline). Guarded for the
-    // freeze lesson: a professionless agent's `recipes` is an empty Set (never undefined),
-    // and a missing field still can't throw. No event emitted, no timer touched — a silent
-    // no-op, so an un-taught maker simply idles and re-chooses next decide (Phase 4 supplies
-    // the learn/teach step that fills `recipes`).
-    if (RECIPES.enabled && !(a.recipes && a.recipes.has(output))) {
+    // ALWAYS-LIVE. Guarded for the freeze lesson: a professionless agent's `recipes` is an
+    // empty Set (never undefined), and a missing field still can't throw. No event emitted, no
+    // timer touched — a silent no-op, so an un-taught maker simply idles and re-chooses next
+    // decide (the learn/teach step that fills `recipes` supplies it).
+    if (!(a.recipes && a.recipes.has(output))) {
       maybeRediscover(a, output, dt);     // Phase-4 stub: rate 0 on day one ⇒ never fires
       a.fighter.setMoving(0); return;
     }
@@ -539,8 +537,8 @@ export function offensivePower(spec: AbilitySpec): number {
 // (every watched executor is arrival-gated, so reach ⇒ the verb ran), then classified: shortfall/
 // neutral/windfall by realized-vs-believed yield, or peril if the agent is frightened mid-act. A
 // dropped watched step that was acted (interrupted before it landed) classifies too; one that was
-// never reached costs nothing (re-planning is the engine's normal operation, never punished). All
-// gated by CAUTION.enabled at the call site (off ⇒ never invoked ⇒ byte-identical soak).
+// never reached costs nothing (re-planning is the engine's normal operation, never punished).
+// ALWAYS-LIVE: invoked from execPlanStep every tick.
 
 const cautionTouched = (step: PlanStep | undefined): boolean => !!step && CAUTION.watched.indexOf(step.prim) >= 0;
 const threatened = (a: Agent): boolean => ((a.mood && a.mood.fear) || 0) >= (CAUTION.perilFear || 1);
@@ -615,9 +613,9 @@ export function execPlanStep(a: Agent, dt: number, ctx: CognitionCtx): void {
   const step = a.goal!.step as PlanStep | undefined;
   if (!goal || !step) { a.fighter.setMoving(0); return; }
   try {
-    if (CAUTION.enabled) cautionPre(a, ctx, goal, step);   // snapshot watched step / classify a dropped one
+    cautionPre(a, ctx, goal, step);   // snapshot watched step / classify a dropped one
     execPrimitive(a, step, dt, ctx);
-    if (CAUTION.enabled) cautionPost(a, ctx, goal, step);  // reached & acted ⇒ classify yield; threatened ⇒ peril
+    cautionPost(a, ctx, goal, step);  // reached & acted ⇒ classify yield; threatened ⇒ peril
     // advance when this step's effect has landed in believed state
     if (stepEffectHolds(a, ctx, step) && goal.plan) {
       if (goal.step === undefined) goal.step = 0;

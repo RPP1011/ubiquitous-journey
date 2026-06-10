@@ -1,12 +1,11 @@
 // ---- the recruiter, live (docs/architecture/10 execution) -------------------------------
-// Drives recruit's BELIEF half end-to-end with RECRUIT forced on: a leader approaches a candidate
-// and makes an OFFER it perceives, recording the leader's OWN one-level prediction that the
+// Drives recruit's BELIEF half end-to-end (always-live on the mainline): a leader approaches a
+// candidate and makes an OFFER it perceives, recording the leader's OWN one-level prediction that the
 // candidate will follow. Asserts the no-foreign-mind-write boundary: (1) the leader holds a Believes
 // prediction; (2) the candidate PERCEIVED an offer (its own _offers); (3) the offer shifted the
 // candidate's OWN belief (it warmed toward the leader) — no goal was written into it from outside.
 import { FeatureStage } from './_stage.mjs';
 import { goalMuster, believesConf } from '../../js/sim/planner.js';
-import { RECRUIT, WARBAND } from '../../js/sim/simconfig.js';
 
 export function recruitTest(ok, helpers) {
   recruitBeliefHalf(ok, helpers);
@@ -15,9 +14,7 @@ export function recruitTest(ok, helpers) {
 }
 
 function recruitBeliefHalf(ok, helpers) {
-  const prev = RECRUIT.enabled;
-  RECRUIT.enabled = true;
-  try {
+  {
     const st = new FeatureStage(helpers);
     const leader = st.add('Tor', 0, 0, { personality: { risk_tolerance: 0.9 } });
     const cand = st.add('Edda', 6, 0);
@@ -43,18 +40,16 @@ function recruitBeliefHalf(ok, helpers) {
     ok(cAfter > cBefore,
       `recruit 3: the offer shifted the candidate's OWN belief — it warmed toward the leader (${cBefore.toFixed(2)} -> ${cAfter.toFixed(2)})`);
     st.dispose();
-  } finally { RECRUIT.enabled = prev; }
+  }
 }
 
 // ---- the recruiter FOLLOW-THROUGH (WARBAND, docs/architecture/10-lld §19 item 4) ----------
 // Proves the missing half: a warmed candidate forms its OWN decision to MARCH with an NPC leader,
-// reusing the SAME band machinery the player's Party uses (NOT a parallel system). Flag forced ON;
-// restored in finally. Asserts the candidate actually JOINS an NPC leader's band (the band flags
-// flip), and then FOLLOWS (decide commits 'follow' once banded, off belief about the NPC leader).
+// reusing the SAME band machinery the player's Party uses (NOT a parallel system; always-live on the
+// mainline). Asserts the candidate actually JOINS an NPC leader's band (the band flags flip), and
+// then FOLLOWS (decide commits 'follow' once banded, off belief about the NPC leader).
 function warbandFollowThrough(ok, helpers) {
-  const prevR = RECRUIT.enabled, prevW = WARBAND.enabled;
-  RECRUIT.enabled = true; WARBAND.enabled = true;
-  try {
+  {
     const st = new FeatureStage(helpers);
     // BOTH are ordinary NPCs (no controlled flag) — the leader is NOT the player. This is the
     // whole point: a band led by ANY agent, the player special only for input.
@@ -80,18 +75,16 @@ function warbandFollowThrough(ok, helpers) {
     ok(cand.goal && cand.goal.kind === 'follow',
       `warband 4: a banded follower with no foe near commits to FOLLOW the NPC leader (goal=${cand.goal && cand.goal.kind}) — the existing follow machinery, no AI fork`);
     st.dispose();
-  } finally { RECRUIT.enabled = prevR; WARBAND.enabled = prevW; }
+  }
 }
 
 // ---- NPC-leader-with-flag-ON smoke (the soak-invariant guard for the live path) ------------
-// A small populated run with WARBAND (+RECRUIT) ON stays STABLE: gold conserved to the cent, no
-// freeze (the frame loop completes every frame), and the town is not wiped. The whole point of
-// reusing the conserved/generic machinery is that turning the flag on adds bands without breaking
-// any hard invariant. Flag restored in finally.
+// A small populated run with the recruiter/warband path live stays STABLE: gold conserved to the
+// cent, no freeze (the frame loop completes every frame), and the town is not wiped. The whole point
+// of reusing the conserved/generic machinery is that the live path adds bands without breaking any
+// hard invariant.
 function warbandSmoke(ok, helpers) {
-  const prevR = RECRUIT.enabled, prevW = WARBAND.enabled;
-  RECRUIT.enabled = true; WARBAND.enabled = true;
-  try {
+  {
     const st = new FeatureStage(helpers);
     const N = 10;
     const agents = [];
@@ -119,5 +112,5 @@ function warbandSmoke(ok, helpers) {
       `warband smoke 2: gold conserved to the cent (${goldBefore.toFixed(2)} -> ${goldAfter.toFixed(2)})`);
     ok(alive >= N - 1, `warband smoke 3: the town is not wiped (${alive}/${N} alive)`);
     st.dispose();
-  } finally { RECRUIT.enabled = prevR; WARBAND.enabled = prevW; }
+  }
 }

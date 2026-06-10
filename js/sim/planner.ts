@@ -103,7 +103,7 @@ interface Solved { steps: PlanStep[]; cost: number; }
 // The best-first search state threaded through the whole solve. `n` bounds the frontier;
 // the rest are the Phase-1 threshold-composition side-channel: `widen` (a bold agent taps
 // riskier sources), `partial`/`shortfall` (set when a numeric target was UNREACHABLE — the
-// satisfice plan() reads to cool the goal down). All absent/false when QUANTITY is off.
+// satisfice plan() reads to cool the goal down).
 interface Frontier { n: number; widen?: boolean; partial?: boolean; shortfall?: number; }
 
 // PROFESSIONS (from the still-JS simconfig) keyed by dynamic profession name. One typed
@@ -124,7 +124,7 @@ export const PLAN = {
   // --- goal-stack bounds (Phase 2 wiring) ---
   stackDepth: 4,       // hard cap on agent.goals (LIFO; oldest/lowest dropped)
   reachRange: 2.2,     // distance at which a transfer/attack target is "at" reach
-  // --- numeric-threshold composition (docs/architecture/10, Phase 1; gated by QUANTITY) ---
+  // --- numeric-threshold composition (docs/architecture/10, Phase 1; always-live) ---
   partialCooldown: 12, // sim-seconds an unreachable threshold goal rests before re-planning
 };
 
@@ -306,8 +306,8 @@ function topicConfidence(agent: Agent, t: KnowTopic | null | undefined): number 
       // a believed price is held as a flat number (no per-good confidence yet) — present ⇒ sure.
       return (t.good && agent.priceBeliefs && (agent.priceBeliefs[t.good] || 0) > 0) ? 1 : 0;
     case 'recipe':
-      // own-state craft knowledge — graded confidence when RECIPES.graded (half-learned reads <1),
-      // else binary (present-in-Set ⇒ fully sure). recipeKnow owns the read (§6).
+      // own-state craft knowledge — GRADED confidence (half-learned reads <1, firmed by study/
+      // watching, forgotten if unpractised). recipeKnow owns the read (§6).
       return recipeConf(agent, t.good);
     case 'strength': {
       // a believed force at a place (the camp's numbers) — own-state, accrued from scouting.
@@ -352,10 +352,9 @@ function knowsTopic(agent: Agent, t: KnowTopic | null | undefined): boolean {
 
 // COST-INCLUDES-CONFIDENCE (Phase 2): how much a LOW-confidence belief inflates the cost of an
 // act that leans on it — the one place the knowledge model's confidence feeds back into what an
-// agent decides to do. 0 when KNOW is off (dependent costs stay flat → byte-stable) or the fact
-// is sure; up to KNOW.confCostScale when it is a pure guess, so the planner scouts before betting.
+// agent decides to do. 0 when the fact is sure; up to KNOW.confCostScale when it is a pure guess,
+// so the planner scouts before betting.
 function confidenceSurcharge(agent: Agent, t: KnowTopic): number {
-  if (!KNOW.enabled) return 0;
   return Math.max(0, 1 - topicConfidence(agent, t)) * KNOW.confCostScale;
 }
 
@@ -388,9 +387,8 @@ export function estimateHaul(agent: Agent, markId: EntityId): { value: number; c
 
 // COST surcharge for a HAZY haul estimate (analogue of confidenceSurcharge, but for the believed
 // haul rather than a Know topic): a shaky guess makes the raid expensive, so the urchin cases it
-// longer before betting. 0 when ESTIMATE is off → dependent costs stay flat (byte-identical).
+// longer before betting.
 function haulSurcharge(agent: Agent, markId: EntityId): number {
-  if (!ESTIMATE.enabled) return 0;
   return Math.max(0, 1 - estimateHaul(agent, markId).confidence) * ESTIMATE.confCostScale;
 }
 
@@ -667,16 +665,15 @@ export const PRIMITIVES: Primitive[] = [
     exec: acquireExec('loot'),
   },
 
-  // ── EPISTEMIC primitives (Phase 4, the urchin). Gated by URCHIN.enabled: every
-  // effectMatches early-returns null when off, so the planner emits none and the soak is
-  // byte-stable. The tri+ slot into the SAME backward-chainer as gather/produce. ───────────
+  // ── EPISTEMIC primitives (Phase 4, the urchin). ALWAYS-LIVE on the mainline: the trio
+  // slot into the SAME backward-chainer as gather/produce. ───────────
 
   // shadow(mark): the epistemic GATHER — surveil to ACQUIRE know_assoc. pre: — (the executor
   // does the slow follow-at-standoff). `shadow` is to know_assoc what `gather` is to have.
   {
     name: 'shadow',
     effectMatches(sg) {
-      if (!URCHIN.enabled || sg.pred !== 'know_assoc' || sg.subjectId == null) return null;
+      if (sg.pred !== 'know_assoc' || sg.subjectId == null) return null;
       return { name: 'shadow', target: sg.subjectId };
     },
     precondition() { return []; },                 // the surveil itself is the acquisition
@@ -689,7 +686,7 @@ export const PRIMITIVES: Primitive[] = [
   {
     name: 'approach',
     effectMatches(sg) {
-      if (!URCHIN.enabled || sg.pred !== 'at') return null;
+      if (sg.pred !== 'at') return null;
       const pl = sg.place;
       if (!(pl && typeof pl === 'object' && pl.assoc)) return null;
       return { name: 'approach', place: pl, target: pl.subjectId };
@@ -712,26 +709,25 @@ export const PRIMITIVES: Primitive[] = [
   {
     name: 'burgle',
     effectMatches(sg) {
-      if (!URCHIN.enabled || sg.pred !== 'gold_ge' || sg.subjectId == null) return null;
+      if (sg.pred !== 'gold_ge' || sg.subjectId == null) return null;
       return { name: 'burgle', target: sg.subjectId, place: { subjectId: sg.subjectId, assoc: 'stash' }, amt: sg.amt };
     },
     precondition(agent, ctx, bind) { return [Atom.knowAssoc(bind.target as EntityId), Atom.at(bind.place as PlannerPlace)]; },
     // COST-INCLUDES-CONFIDENCE (Phase 2): a raid on a SHAKY stash belief is likely a wasted,
     // dangerous trip, so it costs more — which pushes the planner to `observe` again first
-    // (re-confirm the stash) before committing. Off (KNOW disabled) → flat, byte-identical.
+    // (re-confirm the stash) before committing.
     cost(agent, ctx, bind) { return PLAN.actBase + confidenceSurcharge(agent, { kind: 'loc', subjectId: bind.target as EntityId, place: 'stash' }) + haulSurcharge(agent, bind.target as EntityId); },
     exec: acquireExec('burgle'),
   },
 
   // ── rob(mark): the acquire table's `person` row — take gold from a mark by FORCE. MOVED, so
   // the executor debits the mark as it credits the robber (the closed loop, like loot/burgle).
-  // Gated by ROB.enabled: off → effectMatches returns null, the steal goal routes through the
-  // urchin's cache `burgle`, and the soak is byte-stable. Precondition is reaching the mark (no
-  // cache to locate — you take it off their person), so the plan is [goto(mark) → rob]. ──
+  // ALWAYS-LIVE on the mainline. Precondition is reaching the mark (no cache to locate — you take
+  // it off their person), so the plan is [goto(mark) → rob]. ──
   {
     name: 'rob',
     effectMatches(sg) {
-      if (!ROB.enabled || sg.pred !== 'gold_ge' || sg.subjectId == null) return null;
+      if (sg.pred !== 'gold_ge' || sg.subjectId == null) return null;
       return { name: 'rob', target: sg.subjectId, amt: sg.amt ?? ROB.amount };
     },
     precondition(agent, ctx, bind) { return [Atom.inReach(bind.target as EntityId)]; },
@@ -744,16 +740,15 @@ export const PRIMITIVES: Primitive[] = [
     exec: acquireExec('rob'),
   },
 
-  // ── KNOWLEDGE channels (Phase 2, the generalised epistemic GATHERs). Gated by KNOW.enabled:
-  // every effectMatches early-returns null when off, so the planner emits none and the soak is
-  // byte-stable. `observe` subsumes the urchin's `shadow` — first-hand watching of ANY topic. ──
+  // ── KNOWLEDGE channels (Phase 2, the generalised epistemic GATHERs). ALWAYS-LIVE on the
+  // mainline. `observe` subsumes the urchin's `shadow` — first-hand watching of ANY topic. ──
 
   // observe(topic): the trusted-but-slow first-hand channel. Watches the world directly until
   // confident — no precondition (the surveil/watch IS the acquisition). Serves any topic.
   {
     name: 'observe',
     effectMatches(sg) {
-      if (!KNOW.enabled || sg.pred !== 'know' || !sg.topic) return null;
+      if (sg.pred !== 'know' || !sg.topic) return null;
       return { name: 'observe', topic: sg.topic };
     },
     precondition() { return []; },
@@ -767,7 +762,7 @@ export const PRIMITIVES: Primitive[] = [
   {
     name: 'ask',
     effectMatches(sg) {
-      if (!KNOW.enabled || sg.pred !== 'know' || !sg.topic) return null;
+      if (sg.pred !== 'know' || !sg.topic) return null;
       const k = sg.topic.kind;
       if (k !== 'loc' && k !== 'whereabouts' && k !== 'price') return null;
       return { name: 'ask', topic: sg.topic };
@@ -782,7 +777,7 @@ export const PRIMITIVES: Primitive[] = [
   {
     name: 'study',
     effectMatches(sg) {
-      if (!KNOW.enabled || sg.pred !== 'know' || !sg.topic || sg.topic.kind !== 'recipe') return null;
+      if (sg.pred !== 'know' || !sg.topic || sg.topic.kind !== 'recipe') return null;
       return { name: 'study', topic: sg.topic };
     },
     precondition() { return [Atom.goldGe(KNOW.studyTuition), Atom.at(POI_KIND.MARKET)]; },
@@ -793,11 +788,11 @@ export const PRIMITIVES: Primitive[] = [
   // ── hold(cond): the WAIT step (Phase 4). It produces the `hold_until` effect — the agent
   // holds at a safe/hidden spot and the plan advances when `cond` becomes believed-true. The
   // precondition is being AT that safe place (so the wait happens under cover, not in the open).
-  // Gated by HOLD.enabled: off → effectMatches returns null and no plan ever contains a hold. ──
+  // ALWAYS-LIVE on the mainline. ──
   {
     name: 'hold',
     effectMatches(sg) {
-      if (!HOLD.enabled || sg.pred !== 'hold_until' || !sg.cond) return null;
+      if (sg.pred !== 'hold_until' || !sg.cond) return null;
       return { name: 'hold', cond: sg.cond, place: sg.place, deadline: sg.deadline };
     },
     precondition(agent, ctx, bind) { return bind.place ? [Atom.at(bind.place as PlannerPlace)] : []; },
@@ -821,11 +816,11 @@ export const PRIMITIVES: Primitive[] = [
 
   // ── free(captive): the Affect row that cuts a captive's bonds (→ freed). A trivial final act
   // gated by a hard requirement — be at the captive (and, in the full rescue, unopposed, which the
-  // hold-until on camp strength supplies). Gated by AFFECT.enabled; off → never matches, byte-stable. ──
+  // hold-until on camp strength supplies). ALWAYS-LIVE on the mainline. ──
   {
     name: 'free',
     effectMatches(sg) {
-      if (!AFFECT.enabled || sg.pred !== 'freed' || sg.subjectId == null) return null;
+      if (sg.pred !== 'freed' || sg.subjectId == null) return null;
       return { name: 'free', target: sg.subjectId };
     },
     precondition(agent, ctx, bind) { return [Atom.inReach(bind.target as EntityId)]; },
@@ -834,11 +829,11 @@ export const PRIMITIVES: Primitive[] = [
   },
 
   // ── wreck(target): the Affect row that sabotages (→ not intact). Same shape as free: reach it,
-  // then the trivial act. Gated by AFFECT.enabled. ──
+  // then the trivial act. ALWAYS-LIVE on the mainline (dormant — no deriver targets a structure). ──
   {
     name: 'wreck',
     effectMatches(sg) {
-      if (!AFFECT.enabled || sg.pred !== 'wrecked' || sg.subjectId == null) return null;
+      if (sg.pred !== 'wrecked' || sg.subjectId == null) return null;
       return { name: 'wreck', target: sg.subjectId };
     },
     precondition(agent, ctx, bind) { return [Atom.inReach(bind.target as EntityId)]; },
@@ -854,9 +849,8 @@ const byName = (n: string): Primitive | null => PRIMITIVES.find((p) => p.name ==
 function inReachPrecond(bind: { target: EntityId }): SubAtom[] { return [Atom.at({ subjectId: bind.target })]; }
 
 // ---------------------------------------------------------------------------
-// PHASE 1 — numeric-threshold composition (docs/architecture/10). Gated by
-// QUANTITY.enabled at the solveAtom seam: when off, neither composer is reached and
-// the planner is byte-identical. Each composer reasons over the HANDFUL of believed
+// PHASE 1 — numeric-threshold composition (docs/architecture/10). ALWAYS-LIVE at the
+// solveAtom seam. Each composer reasons over the HANDFUL of believed
 // sources an agent actually knows of, greedily stacking the best yield-for-cost until
 // the believed total crosses the target — or, when it cannot, returns the best PARTIAL
 // plan (the SATISFICE) and flags `frontier.partial`/`shortfall` so plan() cools the goal.
@@ -1013,17 +1007,15 @@ function solveAtom(agent: Agent, ctx: CognitionCtx, atom: SubAtom, depth: number
   // already satisfied in the simulated believed state?
   if (atomSatisfied(atom, agent, ctx, simState)) return { steps: [], cost: 0 };
 
-  // PHASE 1 (gated by QUANTITY): numeric-threshold atoms COMPOSE several acquisitions toward
+  // PHASE 1 (ALWAYS-LIVE): numeric-threshold atoms COMPOSE several acquisitions toward
   // the target instead of emitting a single advancing step, and satisfice + flag the frontier
   // when it cannot be reached. The subjectId-flavoured gold_ge (the urchin's burgle) keeps its
-  // own single-source path. Off → neither branch is reached, so the planner is byte-identical.
-  if (QUANTITY.enabled) {
-    if (atom.pred === 'gold_ge' && atom.subjectId == null) return composeGold(agent, ctx, atom, depth, frontier, simState);
-    if (atom.pred === 'need_ge') return composeNeed(agent, ctx, atom, depth, frontier, simState);
-  }
-  // PHASE 5 (gated by RECRUIT): a believed-force threshold composes recruits the same way gold
-  // composes sales. Off → never reached, byte-identical.
-  if (RECRUIT.enabled && atom.pred === 'force_ge') return composeForce(agent, ctx, atom, depth, frontier, simState);
+  // own single-source path.
+  if (atom.pred === 'gold_ge' && atom.subjectId == null) return composeGold(agent, ctx, atom, depth, frontier, simState);
+  if (atom.pred === 'need_ge') return composeNeed(agent, ctx, atom, depth, frontier, simState);
+  // PHASE 5 (ALWAYS-LIVE): a believed-force threshold composes recruits the same way gold
+  // composes sales.
+  if (atom.pred === 'force_ge') return composeForce(agent, ctx, atom, depth, frontier, simState);
 
   let best: Solved | null = null;
   for (const prim of PRIMITIVES) {
@@ -1047,12 +1039,10 @@ function solveAtom(agent: Agent, ctx: CognitionCtx, atom: SubAtom, depth: number
     if (!Number.isFinite(stepCost)) continue;      // unreachable place / unknown price
     // CAUTION (doc 11): the outcome-conditioned surcharge — a strategy that has burned THIS agent
     // before is priced dearer (one that has paid, cheaper), beside confidenceSurcharge. Capped (never
-    // infeasible), 0/no-op when off. Also snapshot the plan-time confidence the watched bet leans on
-    // (§5 attribution), so a knowing gamble that fails burns harder than a confident one that does.
-    if (CAUTION.enabled) {
-      stepCost += feltSurcharge(agent, prim.name, bind as unknown as PlanStep['bind'], ctx.time);
-      if (CAUTION.watched.indexOf(prim.name) >= 0) bind._conf = relevantConfidence(agent, prim.name, bind as unknown as PlanStep['bind']);
-    }
+    // infeasible). Also snapshot the plan-time confidence the watched bet leans on (§5 attribution),
+    // so a knowing gamble that fails burns harder than a confident one that does. ALWAYS-LIVE.
+    stepCost += feltSurcharge(agent, prim.name, bind as unknown as PlanStep['bind'], ctx.time);
+    if (CAUTION.watched.indexOf(prim.name) >= 0) bind._conf = relevantConfidence(agent, prim.name, bind as unknown as PlanStep['bind']);
     const cost = stepCost + sub.cost;
     if (!Number.isFinite(cost)) continue;
     // bind carries the planner's wider place form ({subjectId}); the PlanStep boundary
@@ -1216,17 +1206,17 @@ export function plan(agent: Agent, goal: Goal, ctx: CognitionCtx): Plan | null {
   if (!atoms || !atoms.length) return null;
   try {
     const frontier: Frontier = { n: 0 };
-    // PHASE 1 (gated): drive-scaled WIDENING — a bold agent widens the failure search toward
+    // PHASE 1 (ALWAYS-LIVE): drive-scaled WIDENING — a bold agent widens the failure search toward
     // riskier sources (sells into its keep reserve). Personality (risk_tolerance) is the lever
-    // the doc names; the timid never widen. Off / no personality → undefined (no widen).
-    if (QUANTITY.enabled && agent.personality) frontier.widen = (agent.personality.risk_tolerance || 0) >= QUANTITY.widenRiskTol;
+    // the doc names; the timid never widen. No personality → undefined (no widen).
+    if (agent.personality) frontier.widen = (agent.personality.risk_tolerance || 0) >= QUANTITY.widenRiskTol;
     const state = initState(agent);
     const r = solveAll(agent, ctx, atoms, 0, frontier, state);
     // a PARTIAL result is the SATISFICE for an unreachable numeric threshold: it may carry
     // the best steps the agent can run (earn what it can) OR be empty (pure shortfall). Either
     // way it is NOT a dead end — plan() returns it (marked) so the goal layer runs/cools it
     // rather than dropping the goal, and the drive persists in motivation. frontier.partial is
-    // only ever set by a gated composer (gold/need/force), so reading it raw stays byte-stable.
+    // only ever set by a composer (gold/need/force).
     const partial = !!frontier.partial;
     // TRACE (write-only, never read back): the GOAP outcome for this goal — a found plan
     // (with its step count) or a dead end (no feasible primitive chain → the agent replans
@@ -1339,7 +1329,7 @@ export function goalSeekFortune(place: string, target: number): Goal {
 }
 
 // sate(need, level): raise a graded need ABOVE a believed level by eating (Phase 1; the
-// threshold composition is gated by QUANTITY at the planner seam). Deliberately NOT wired
+// threshold composition is always-live at the planner seam). Deliberately NOT wired
 // into deriveGoals — the reactive needs scheduler still services hunger live; this exposes
 // the SAME need as a planner threshold so a later breadth phase can compose a meal-run toward
 // it (the doc's "needs are graded"). predicate reads own need only; never others'.
@@ -1354,8 +1344,8 @@ export function goalSate(need: string, level: number): Goal {
 
 // learn(topic): hold a topic confidently enough to act on (Phase 2). The teaching/scouting goal
 // — the apprentice who must Know(recipe), the spy who must Know(loc). Satisfied by observe / ask
-// / study (whichever is cheapest given beliefs). Gated by KNOW at the planner seam (the channel
-// rows emit nothing when off). predicate reads OWN knowledge only — never the roster.
+// / study (whichever is cheapest given beliefs). The channel rows are always-live at the planner
+// seam. predicate reads OWN knowledge only — never the roster.
 export function goalLearn(topic: KnowTopic): Goal {
   return {
     kind: 'learn', topic,
@@ -1366,8 +1356,8 @@ export function goalLearn(topic: KnowTopic): Goal {
 
 // muster(amt): build a believed force of AT LEAST `amt` — the leader who wants to assault a camp
 // of believed strength `amt` raises a force to outmatch it (Phase 5). Composed by recruiting,
-// greedily, cheapest reliable force first. predicate reads own believed force only; gated by
-// RECRUIT at the planner seam. The downstream assault then gates on this mustered force.
+// greedily, cheapest reliable force first. predicate reads own believed force only; the composer
+// is always-live at the planner seam. The downstream assault then gates on this mustered force.
 export function goalMuster(amt: number): Goal {
   const target = Math.max(1, amt || 0);
   return {
@@ -1380,7 +1370,7 @@ export function goalMuster(amt: number): Goal {
 // free(captive) / wreck(target): the Affect goals (Phase 5). Plan against a BELIEVED physical
 // state (the captive is held here, the thing is intact) — sound at plan time, possibly wrong at
 // execution (moved/already-freed), resolved truthfully on arrival. predicate is external (the
-// believed state is confirmed by perception); gated by AFFECT at the planner seam.
+// believed state is confirmed by perception); the rows are always-live at the planner seam.
 export function goalFree(subjectId: EntityId): Goal {
   return { kind: 'free', subjectId, atoms: [Atom.freed(subjectId)] as AtomT[], predicate() { return false; } };
 }

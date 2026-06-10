@@ -11,8 +11,8 @@
 // structurally a little belief table with decay: a handful of entries per agent, most empty.
 //
 // SAFETY (the freeze lesson): every function is guarded and never throws; the store is bounded
-// (LEDGER.max). Gated by LEDGER.enabled for any LIVE per-tick wiring (none yet), so the soak is
-// byte-stable — these are pure helpers a later breadth step calls from the cognition tick.
+// (LEDGER.max). These are pure helpers; the per-tick wiring lives in the ledger feature
+// (ALWAYS-LIVE on the mainline).
 
 import { LEDGER } from './simconfig.js';
 import type { Agent, Obligation } from '../../types/sim.js';

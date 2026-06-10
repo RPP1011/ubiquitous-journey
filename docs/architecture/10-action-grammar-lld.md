@@ -171,11 +171,10 @@ solveAtom(agent, ctx, atom, depth, frontier, simState) -> Solved | null:
 
   if atomSatisfied(atom, agent, ctx, simState): return { steps: [], cost: 0 }   // §3.4
 
-  // ── threshold composition intercept (gated) — these COMPOSE many steps toward a number ──
-  if QUANTITY.enabled:
-    if atom.pred=='gold_ge' and atom.subjectId==null: return composeGold(…)     // §5.1
-    if atom.pred=='need_ge':                          return composeNeed(…)     // §5.2
-  if RECRUIT.enabled and atom.pred=='force_ge':        return composeForce(…)    // §5.3
+  // ── threshold composition intercept — these COMPOSE many steps toward a number ──
+  if atom.pred=='gold_ge' and atom.subjectId==null:    return composeGold(…)     // §5.1
+  if atom.pred=='need_ge':                             return composeNeed(…)     // §5.2
+  if atom.pred=='force_ge':                            return composeForce(…)    // §5.3
 
   // ── generic backward-chain over every primitive ──
   best = null
@@ -273,10 +272,10 @@ plan(agent, goal, ctx) -> Plan | null:
   if !atoms.length: return null
   try:
     frontier = { n: 0 }
-    if QUANTITY.enabled and agent.personality:                      // drive-scaled WIDEN (§5, §15)
+    if agent.personality:                                           // drive-scaled WIDEN (§5, §15)
       frontier.widen = agent.personality.risk_tolerance >= QUANTITY.widenRiskTol
     r = solveAll(agent, ctx, atoms, depth=0, frontier, initState(agent))
-    partial = !!frontier.partial                                    // set ONLY by a gated composer
+    partial = !!frontier.partial                                    // set ONLY by a composer
     trace.note(PLAN, r ? PLAN_FOUND : PLAN_FAILED, …)               // write-only
     if !r: return null
     if !r.steps.length and !partial: return null                    // truly nothing to do
@@ -286,8 +285,8 @@ plan(agent, goal, ctx) -> Plan | null:
   catch: return null                                                // NEVER throw on the tick
 ```
 
-> `frontier.partial` must **not** be gated on `QUANTITY` when read — `composeForce` (RECRUIT) also
-> sets it. Reading it raw stays byte-stable because *only* a gated composer ever writes it.
+> `frontier.partial` is set by any composer that satisfices (`composeGold`/`composeNeed`/
+> `composeForce`); `plan()` reads it raw to mark the result partial.
 
 ---
 
@@ -345,7 +344,7 @@ replan. Used by `decide`.
 A `gold_ge`/`need_ge`/`force_ge` atom does **not** emit a single advancing step — it **composes**
 several acquisitions toward the target, greedily, over the handful of believed sources the agent
 knows of. This is the one place the planner spends more than one step on a single numeric atom.
-Gated by `QUANTITY.enabled` (gold/need) and `RECRUIT.enabled` (force) at the `solveAtom` intercept.
+Always-live at the `solveAtom` intercept (gold/need via `QUANTITY`'s tuning, force via `RECRUIT`'s).
 
 ### The satisfice / widen / cooldown contract (read this before any composer)
 
@@ -467,8 +466,7 @@ knowsTopic(a,t)    = topicConfidence(a,t) >= KNOW.minConf                       
 
 // COST-INCLUDES-CONFIDENCE — the one place confidence feeds back into a decision.
 confidenceSurcharge(a, t):
-  if !KNOW.enabled: return 0                              // off ⇒ dependent costs flat (byte-stable)
-  return max(0, 1 - topicConfidence(a,t)) * KNOW.confCostScale   // a guess inflates the cost
+  return max(0, 1 - topicConfidence(a,t)) * KNOW.confCostScale   // a guess inflates the cost (sure ⇒ 0)
 ```
 
 The three write channels are primitives (no precondition for observe/ask — the watch *is* the
@@ -482,7 +480,7 @@ study(topic):   cost KNOW.studyTuition   // taught; pre: gold>=tuition + at(mark
 
 > **The four fields every fact carries** — value, confidence, provenance (retelling-depth), and
 > last-updated time — already exist on the belief table for facts about others. The recipe set **was
-> the gap** (a binary `Set`); now **implemented** (`js/sim/recipeKnow.ts`, `RECIPES.graded`): a
+> the gap** (a binary `Set`); now **always-live** (`js/sim/recipeKnow.ts`): a
 > per-recipe `{conf, hops, t}` map backs the Set so recipes are graded knowledge — half-learned from
 > a brief teacher, forgotten when not practised (so a craft dies out once its last practising holder
 > stops). The `learning` feature owns it. Reading/writing/fading reuse the same evidence-accrual
@@ -705,9 +703,9 @@ and in the full rescue *unopposed*, supplied by the hold-until on camp strength)
 ## 13. The feature-module pattern
 
 Each action-grammar feature is **one file** in `js/sim/features/` + **one test suite**, registering
-its verbs/derivers/effect-holds as an import **side-effect**, gated by its own flag. Disjoint by
-construction — a feature touches no shared code, which is what lets the phases be built in parallel
-worktrees. `js/sim/features/index.ts` imports them all; `simulation.ts` imports the index once.
+its verbs/derivers/effect-holds as an import **side-effect**, always-live (no per-feature flag).
+Disjoint by construction — a feature touches no shared code, which is what let the phases be built in
+parallel worktrees. `js/sim/features/index.ts` imports them all; `simulation.ts` imports the index once.
 
 ```ts
 // js/sim/features/index.ts
@@ -721,13 +719,13 @@ export {};
 ```ts
 import { registerExecutor, registerDeriver, registerEffectHolds } from '../exec/registry.js';
 import { goalX } from '../planner.js';
-import { FLAG } from '../simconfig.js';
+import { FLAG } from '../simconfig.js';   // tuning fields only — no on/off switch
 
-if (FLAG.enabled) {                              // gate ALL live registration (off ⇒ byte-stable soak)
-  registerExecutor('verb', (a, step, dt, ctx) => { /* world-interaction; MAY read truth via ctx.resolver */ });
-  registerDeriver((a, ctx) => { /* belief/own-state ONLY → a.pushGoal(goalX(...)) */ });
-  registerEffectHolds('verb', (a, ctx, step) => /* believed test the step's effect landed */);
-}
+// Registration is unconditional (always-live; gating is by branch). The verb/deriver/effect-holds
+// rows are registered as an import side-effect.
+registerExecutor('verb', (a, step, dt, ctx) => { /* world-interaction; MAY read truth via ctx.resolver */ });
+registerDeriver((a, ctx) => { /* belief/own-state ONLY → a.pushGoal(goalX(...)) */ });
+registerEffectHolds('verb', (a, ctx, step) => /* believed test the step's effect landed */);
 ```
 
 > **DERIVERS are cognition** — belief/own-state only (epistemic split). **EXECUTORS are execution**
@@ -737,7 +735,7 @@ if (FLAG.enabled) {                              // gate ALL live registration (
 
 ### Per-feature pseudocode
 
-**`urchin.ts`** (flagship heist; `URCHIN.enabled`). Verbs `surveil`/`approach`/`burgle`:
+**`urchin.ts`** (flagship heist; `URCHIN` tuning). Verbs `surveil`/`approach`/`burgle`:
 
 ```
 surveil(a, step):  walk toward the believed mark at standoff; on enough watching,
@@ -750,7 +748,7 @@ deriver:           a poor/despised agent with a believed-rich mark → a.pushGoa
 effect-holds:      surveil → knows the stash (assoc present); burgle → gold raised
 ```
 
-**`learning.ts`** (`KNOW.enabled`). Verbs `observe`/`ask`/`study`:
+**`learning.ts`** (`KNOW` tuning). Verbs `observe`/`ask`/`study`:
 
 ```
 observe(topic): watch first-hand; accrue evidence into the topic's home (recipe/whereabouts/…)
@@ -761,7 +759,7 @@ effect-holds:   observe/ask/study → knowsTopic(a, topic)
 ALSO: upgrade a.recipes from a binary Set to the four-field graded knowledge (the recipe lifecycle)
 ```
 
-**`recruiter.ts`** (`RECRUIT.enabled`). Verb `recruit` + both ends:
+**`recruiter.ts`** (`RECRUIT`/`WARBAND` tuning). Verb `recruit` + both ends:
 
 ```
 recruit(candidate): approach; on reach, make the OFFER the candidate perceives + recordBelieves(leader, …)
@@ -771,7 +769,7 @@ effect-holds:       recruit → the offer landed
 NO foreign-mind write: recruit is an Inform; the follower decides for itself.
 ```
 
-**`affect.ts`** (`ROB.enabled` for rob; `AFFECT.enabled` for free/wreck). Verbs `rob`/`free`/`wreck`:
+**`affect.ts`** (`ROB`/`CAPTIVE` tuning; rob/free/wreck always-live). Verbs `rob`/`free`/`wreck`:
 
 ```
 rob(mark):     approach; on reach, ctx.resolver.take(a, markId, { gold: believedHaul })
@@ -782,7 +780,7 @@ derivers:      e.g. a rescuer believing a friend is held → a.pushGoal(goalFree
 effect-holds:  rob → gold raised; free → captive believed freed; wreck → target believed wrecked
 ```
 
-**`ledger.ts`** (`LEDGER.enabled`). Wires `obligations.ts` into the tick:
+**`ledger.ts`** (`LEDGER` tuning). Wires `obligations.ts` into the tick:
 
 ```
 producer:    arm a commitment when a promise is made (a credit deal, a vow) → addObligation(a, {…})
@@ -819,13 +817,13 @@ small fixed innate vector, partly inherited):
 
 A believed quantity that can never be observed (the gold inside a cache) is an **expected value with
 a confidence**, inferred from proxies. Formed by the **same evidence-accrual** that builds every
-other belief, anchored on a prior. **Implemented** (`estimateHaul` in `planner.ts`, gated by
-`ESTIMATE.enabled`, day-one OFF): a faction-category prior (`b.lastFaction`) nudged by the cues on
+other belief, anchored on a prior. **Always-live** (`estimateHaul` in `planner.ts`, `ESTIMATE`
+tuning): a faction-category prior (`b.lastFaction`) nudged by the cues on
 the agent's OWN belief — how established the mark is (`b.confidence`), a SEEN stash (`b.assoc`),
 believed fame (`b.notoriety`) — each firming the confidence via `firmUp(c,w)=c+(1-c)w`. The urchin
 deriver targets the believed-richest mark (`value × confidence`) and aims the goal for the estimate;
-`haulSurcharge` folds the confidence into the burgle/rob cost so a hazy guess cases longer. Off ⇒
-the deriver keeps the flat `URCHIN.deriveTarget` and the surcharge is 0 (byte-identical):
+`haulSurcharge` folds the confidence into the burgle/rob cost so a hazy guess cases longer (the flat
+`URCHIN.deriveTarget` fallback is gone):
 
 ```
 estimateHaul(agent, markId):
@@ -865,49 +863,54 @@ reasoning-cost-per-agent-per-tick to stay flat as population grows.
 
 ---
 
-## 17. Config flags & the gating discipline
+## 17. The gating discipline — gating is by branch, not by in-code flags
 
-Every phase ships behind a **day-one-OFF** flag so the long-running soak is **byte-identical** until
-a breadth step turns it on. The discipline (see the `action-grammar-build-arc` memory):
+> **Status update.** The action grammar was *built* phase-by-phase behind day-one-OFF
+> `enabled`/`graded` flags so each commit left the long-running soak byte-identical. That scaffolding
+> is **removed**: the decision is **gating is done by branch, not by an in-code flag.** Every feature
+> below is now **always-live on the mainline** — there is no `enabled`/`graded` field in its config
+> block and no "off path" / fallback branch. The config blocks keep only their **tuning** fields. The
+> table is kept as the as-built map of *what each former flag gated* (now unconditional code).
 
-- one phase per commit; each leaves `bunx tsc --noEmit && bunx tsc` clean and `bun test/headless.mjs`
-  green;
-- a gated primitive's `effectMatches` **early-returns `null` when its flag is off**, so the planner
-  emits none of its steps and the search is byte-identical;
-- `confidenceSurcharge` returns `0` when `KNOW` is off, so dependent costs stay flat;
-- new shared types must be re-exported from the `types/sim.ts` barrel (`KnowTopic`, `Obligation`).
+The remaining discipline:
 
-| flag (`js/sim/simconfig.ts`) | phase | default | gates |
-| --- | --- | --- | --- |
-| `QUANTITY.enabled` | 1 | **true (LIVE)** | the `composeGold`/`composeNeed` intercept + drive-scaled widen |
-| `KNOW.enabled` | 2 | false | observe/ask/study rows + `confidenceSurcharge` |
-| `ROB.enabled` | 3 | false | the `rob` acquire row |
-| `URCHIN.enabled` | (2) | false | shadow/approach/burgle (the urchin heist) |
-| `HOLD.enabled` | 4 | false | the `hold` row |
-| `RECRUIT.enabled` | 5 | false | the `force_ge` composer + `recruit` row |
-| `WARBAND.enabled` | 5 | false | the recruiter follow-through: a warmed candidate's own join-decision deriver + `resolver.joinBand` (NPC marching ally) |
-| `AFFECT.enabled` | 5 | false | the `free`/`wreck` rows |
-| `CAPTIVE.enabled` | 5 | false | the captivity → rescue TRIGGER: capture-on-defeat + the `captive` belief + the `goalFree` rescue deriver + emergent gratitude (the `free` arc's live payoff) |
-| `LEDGER.enabled` | 5 | false | any live per-tick ledger wiring |
-| `ESTIMATE.enabled` | 6 | false | the wealth-cue haul `estimateHaul` + `haulSurcharge` (else flat `deriveTarget`/`ROB.amount`) |
-| `RECIPES.graded` | 6 | false | graded recipe conf (`recipeKnow.ts`: half-learned/forget + `teachRecipe` tuition) — else binary Set |
+- each change leaves `bunx tsc --noEmit && bunx tsc` clean and `bun test/headless.mjs` green;
+- a primitive's `effectMatches` matches on its predicate alone (no flag term); the planner emits its
+  steps whenever the subgoal fits;
+- `confidenceSurcharge` / `haulSurcharge` always compute (a confident fact still surcharges 0);
+- shared types are re-exported from the `types/sim.ts` barrel (`KnowTopic`, `Obligation`);
+- to gate a feature *out*, do it on a **branch** — do not reintroduce an in-code flag.
+
+| feature (`js/sim/simconfig.ts` block) | phase | gates (now unconditional) |
+| --- | --- | --- |
+| `QUANTITY` | 1 | the `composeGold`/`composeNeed` intercept + drive-scaled widen |
+| `KNOW` | 2 | observe/ask/study rows + `confidenceSurcharge` |
+| `ROB` | 3 | the `rob` acquire row |
+| `URCHIN` | (2) | shadow/approach/burgle (the urchin heist) |
+| `HOLD` | 4 | the `hold` row |
+| `RECRUIT` | 5 | the `force_ge` composer + `recruit` row |
+| `WARBAND` | 5 | the recruiter follow-through: a warmed candidate's own join-decision deriver + `resolver.joinBand` (NPC marching ally) |
+| `AFFECT` | 5 | the `free`/`wreck` rows |
+| `CAPTIVE` | 5 | the captivity → rescue TRIGGER: capture-on-defeat + the `captive` belief + the `goalFree` rescue deriver + emergent gratitude (the `free` arc's live payoff) |
+| `LEDGER` | 5 | the per-tick ledger arm/settle/discharge wiring |
+| `ESTIMATE` | 6 | the wealth-cue haul `estimateHaul` + `haulSurcharge` (the urchin deriver targets the believed-richest mark; the flat `deriveTarget` path is gone) |
+| `RECIPES` (graded) | 6 | graded recipe conf (`recipeKnow.ts`: half-learned/forget + `teachRecipe` tuition); the binary-Set fallback is gone |
 
 ---
 
 ## 18. Testing pattern
 
-Gated phase tests live in `test/suites/planner.mjs` (`obligations.mjs` for the ledger). Each toggles
-its flag, asserts, and **restores in a `finally`** (so the suite leaves the config as it found it):
+Phase tests live in `test/suites/planner.mjs` (`obligations.mjs` for the ledger) plus the per-feature
+suites. The features are always-live, so a suite just sets up the agent and asserts directly — no
+flag toggle / `finally` restore (a suite that needs a *deterministic* outcome may still pin a
+**tuning** field like `CAPTIVE.captureChance = 1`, restoring it in `finally`):
 
 ```
 function testKnowledge(ok) {
-  const prev = KNOW.enabled; KNOW.enabled = true;
-  try {
-    const a = makeFighter(...);
-    const p = plan(a, goalLearn({ kind:'recipe', good:'potion' }), ctx);
-    ok(p && p.steps.some(s => s.prim==='study'), 'K1: a recipe goal plans a study step');
-    // … K2..K4
-  } finally { KNOW.enabled = prev; }
+  const a = makeFighter(...);
+  const p = plan(a, goalLearn({ kind:'recipe', good:'potion' }), ctx);
+  ok(p && p.steps.some(s => s.prim==='study'), 'K1: a recipe goal plans a study step');
+  // … K2..K4
 }
 ```
 
@@ -918,23 +921,25 @@ into a scratch runner. The `groups` soak is RNG-flaky (passes on re-run).
 
 ## 19. Current implementation status & the gaps
 
-**The live wiring is now implemented.** All five feature modules in `js/sim/features/` are built —
-each registers its executors / derivers / effect-holds as an import side-effect, gated by its own
-flag, disjoint (one file + one test). The full headless suite (typecheck + 12k-tick soak + every
-feature suite) is green, and the action grammar runs end-to-end through the real frame loop:
+**The live wiring is implemented and ALWAYS-LIVE on the mainline.** All feature modules in
+`js/sim/features/` are built — each registers its executors / derivers / effect-holds as an import
+side-effect, disjoint (one file + one test). The full headless suite (typecheck + 12k-tick soak +
+every feature suite) is green with every feature live, and the action grammar runs end-to-end through
+the real frame loop:
 
-| feature (file) | verbs wired | live deriver | flag |
-| --- | --- | --- | --- |
-| `urchin.ts` | surveil / approach / burgle | poor + larcenous → `goalSteal` (mark from belief cues) | `URCHIN` |
-| `affect.ts` | rob / free / wreck | rob shares the steal deriver; **free is LIVE** (a liked believed-captive + bold/kind → `goalFree`, via the `CAPTIVE` capture trigger); wreck dormant (no enemy structure entity to target) | `ROB` / `AFFECT` / `CAPTIVE` |
-| `learning.ts` | observe / ask / study | a crafter lacking its recipe → `goalLearn` | `KNOW` |
-| `recruiter.ts` | recruit | bold leader vs strong foe → `goalMuster`; follower warms from a perceived offer | `RECRUIT` |
-| `ledger.ts` | (no verb — a settle deriver) | a `succoured` memory arms a commitment; meeting the benefactor fires the deferred repay | `LEDGER` |
+| feature (file) | verbs wired | live deriver |
+| --- | --- | --- |
+| `urchin.ts` | surveil / approach / burgle | poor + larcenous → `goalSteal` (mark from belief cues) |
+| `affect.ts` | rob / free / wreck | rob shares the steal deriver; **free is LIVE** (a liked believed-captive + bold/kind → `goalFree`, via the `CAPTIVE` capture trigger); wreck dormant (no enemy structure entity to target) |
+| `learning.ts` | observe / ask / study | a crafter lacking its recipe → `goalLearn` |
+| `recruiter.ts` | recruit | bold leader vs strong foe → `goalMuster`; follower warms from a perceived offer + the `WARBAND` join follow-through |
+| `ledger.ts` | (no verb — a settle deriver) | a `succoured` memory arms a commitment; meeting the benefactor fires the deferred repay |
+| `caution.ts` | (no verb — a plan-outcome handler) | writes the per-strategy surcharge on a watched act's outcome |
 
 Each feature's `test/suites/*.mjs` drives it through the frame loop (heist, robbery, free/wreck,
-recipe-learning, the offer + one-level `Believes`, the ledger arm→fire→discharge). Flags ship
-**day-one OFF** still (the soak is byte-identical), but a populated town with the flags ON is
-**stable** — gold conserved, town survives, no freeze — and produces emergent thievery (see §20).
+recipe-learning, the offer + one-level `Believes`, the ledger arm→fire→discharge, the caution burn).
+A populated two-town soak with everything live is **stable** — gold conserved, town survives, no
+freeze — and produces emergent thievery (see §20).
 
 The seam invariants held all the way through: `take`/`witnessDeed`/`affect`/`makeOffer` are generic
 conserved resolver primitives; the social meaning is the row's `socialTrace` data; the souring
@@ -942,36 +947,35 @@ conserved resolver primitives; the social meaning is the row's `socialTrace` dat
 never a foreign-mind write. One executor gotcha worth recording: **effect-holds is keyed by
 `step.prim`, not the exec verb** — so `surveil`'s effect-holds registers under its prim `shadow`.
 
-The **remaining gaps** (deliberately out of this pass; each a follow-up behind its flag):
+The **remaining gaps** (each a follow-up; nothing is gated behind a flag any more):
 
-1. ~~**Recipe knowledge is still binary.**~~ **DONE.** Graded recipes are wired (`js/sim/recipeKnow.ts`,
-   gated by `RECIPES.graded`, day-one OFF): `a._recipeKnow` holds per-recipe `{conf,hops,t}`, the
+1. ~~**Recipe knowledge is still binary.**~~ **DONE & always-live.** Graded recipes are wired
+   (`js/sim/recipeKnow.ts`): `a._recipeKnow` holds per-recipe `{conf,hops,t}`, the
    binary `a.recipes` Set is the *craftable* view (in iff conf ≥ `craftMinConf`), so a recipe is
    **half-learned** below the bar, firmed by repeated study/watching, and **forgotten** if not
    practised (`forgetTick` fades every recipe but the agent's `_trade` — a craft dies out of a town
    once its last practising holder stops). `study` now pays a **conserved tuition** to a co-located
    teacher (`resolver.teachRecipe`). `topicConfidence('recipe')` reads the graded conf. (Tests:
    `learning G1–G4`.)
-2. ~~**Wealth-cue estimation is a flat constant**~~ — **DONE.** `estimateHaul` (§15) is wired and
-   gated by `ESTIMATE.enabled` (day-one OFF): the urchin deriver targets the believed-richest mark
-   and aims for the inferred haul, and `haulSurcharge` folds the estimate's confidence into the
-   heist cost. A thief's expected haul is now a belief-cue inference, wrong exactly when the cues
-   mislead. (Tests: `urchin W1–W4`.)
-3. ~~**`free`/`wreck` carry no live deriver**~~ — **`free` DONE** (the captivity → rescue arc). The
-   `CAPTIVE` block (day-one OFF) wires the missing trigger: on a captor-faction (bandit/rival/monster)
+2. ~~**Wealth-cue estimation is a flat constant**~~ — **DONE & always-live.** `estimateHaul` (§15)
+   is wired: the urchin deriver targets the believed-richest mark and aims for the inferred haul,
+   and `haulSurcharge` folds the estimate's confidence into the heist cost. A thief's expected haul
+   is a belief-cue inference, wrong exactly when the cues mislead. (Tests: `urchin W1–W4`.)
+3. ~~**`free`/`wreck` carry no live deriver**~~ — **`free` DONE & always-live** (the captivity →
+   rescue arc). The `CAPTIVE` trigger wires it: on a captor-faction (bandit/rival/monster)
    lethal blow against a non-combatant townsperson, the victim is CAPTURED instead of killed —
    revived + `_held` + `_captorId` (EXECUTION, in `combatEvents.ts`); a held captive idles (decide/act
    guards). Perception bridges a seen `_held` to a `captive` flag on the witness's BELIEF; the
    `affect.ts` rescue deriver (belief + own-personality ONLY — a well-liked believed-captive +
    bold/kind disposition) forms `goalFree`; the freed captive's gratitude EMERGES (a per-perceiver
    warmth on its OWN belief about `_freedBy`, the positive mirror of `witnessDeed`). Gold is conserved
-   across capture (no death-loot), the captive never deadlocks the soak, and OFF is byte-identical.
+   across capture (no death-loot), and the captive never deadlocks the soak.
    (Tests: `affect CAPTIVE CAP1–2 / PER / RES1–3`.) **`wreck` stays dormant** by design: the resolver's
    `affect('wrecked')` operates on `sim.agentsById` (agents), and there is no enemy-owned agent-or-
    percept STRUCTURE carrying a believed position + hostility to target — watchtowers are bare
    emplacements (no id/belief), buildings are non-hostile place-percepts — so a clean `wreck` deriver
    would require inventing a structure-as-roster-entity subsystem (explicitly out of scope; not forced).
-4. **NPC war-party formation/following — BUILT** (gated `WARBAND.enabled`, day-one OFF). `recruit`'s
+4. **NPC war-party formation/following — BUILT & always-live** (`WARBAND` tuning). `recruit`'s
    belief half (offer, prediction, follower belief-shift) was already wired; the follow-through now
    turns a warmed candidate into a marching NPC ally **without a parallel system**. The seam:
    - `Party` is no longer player-only — its leader is whatever Agent the constructor is handed
@@ -986,19 +990,20 @@ The **remaining gaps** (deliberately out of this pass; each a follow-up behind i
      `combatant`). The existing `decideParty`/`fillFollow`/`enemyNearLeader` path — already
      NPC-leader-aware off belief — marches and fights it. No AI fork, no foreign-mind write
      (recruitment stays an Inform; the candidate asked to join itself). Tests in
-     `test/suites/recruit.mjs` (an NPC candidate joins an NPC leader and follows; a flag-ON
-     populated smoke stays gold-conserved + un-wiped + freeze-free).
+     `test/suites/recruit.mjs` (an NPC candidate joins an NPC leader and follows; a populated smoke
+     stays gold-conserved + un-wiped + freeze-free).
 5. **The planning budget (§16) is unbuilt** — fine at the target population; a future ceiling.
 
 ## 20. Narrative-depth evaluation
 
 A populated two-town world (~65 NPCs) run ~150 sim-seconds with the grammar live, measuring what
-**emerges** versus the soak invariants:
+**emerges** versus the soak invariants (these runs predate the flag removal; the grammar is now
+always-live, which is the "full grammar" row):
 
 | run | freeze | gold | town pop | emergent deeds | thieves / marks | suspicion fallout |
 | --- | --- | --- | --- | --- | --- | --- |
-| heist (`URCHIN`+`ROB`+`KNOW`) | none | 2600 → 2600 | 50 → 62 | 9 robberies | 5 / 31 | Σ susp 1.0 |
-| full grammar (all flags) | none | 2600 → 2600 | 50 → 61 | 18 robberies | 12 / 51 | Σ susp 3.6 (max 0.87), 19 soured pairs |
+| heist (urchin + rob + knowledge) | none | 2600 → 2600 | 50 → 62 | 9 robberies | 5 / 31 | Σ susp 1.0 |
+| full grammar (all features live) | none | 2600 → 2600 | 50 → 61 | 18 robberies | 12 / 51 | Σ susp 3.6 (max 0.87), 19 soured pairs |
 
 What this demonstrates about narrative depth:
 

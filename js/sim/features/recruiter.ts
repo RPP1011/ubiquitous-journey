@@ -2,15 +2,15 @@
 // the `recruit` verb (approach a candidate and make an OFFER it perceives), a muster-goal deriver
 // (a bold would-be leader facing a believed-too-strong foe forms a goalMuster), and the FOLLOWER
 // side as an ORDINARY belief update (the candidate, perceiving an offer, warms toward the leader
-// through its OWN belief — never a foreign-mind write). All from THIS file as DATA rows. Gated by
-// RECRUIT.enabled; off → nothing live, soak byte-stable.
+// through its OWN belief — never a foreign-mind write). All from THIS file as DATA rows.
+// ALWAYS-LIVE on the mainline (both ends).
 //
 // The architecturally load-bearing claim is that NO side writes the other's mind: `recruit` is an
 // Inform — it makes an offer the candidate PERCEIVES (its `_offers`) + records the leader's own
 // one-level prediction (recordBelieves: "I believe this candidate will follow", at compliance
 // confidence). The candidate then decides for itself. NPC war-party FORMATION/FOLLOWING (turning a
-// warmed candidate into a marching ally) reuses no existing mechanic and is the remaining gap
-// (10-lld §19); the belief half — the part that proves the no-foreign-write boundary — is here.
+// warmed candidate into a marching ally) reuses the SAME band machinery the player's Party uses
+// (the WARBAND follow-through); the belief half proves the no-foreign-write boundary.
 
 import { registerExecutor, registerDeriver, registerEffectHolds } from '../exec/registry.js';
 import { goalMuster, recordBelieves, complianceOf, stepTargetPos } from '../planner.js';
@@ -23,7 +23,6 @@ const REACH = 2.2;
 // recruit(candidate): approach; on reach, make the OFFER the candidate perceives AND record the
 // leader's OWN one-level prediction that the candidate will follow (compliance off its standing).
 registerExecutor('recruit', (a, step, dt, ctx) => {
-  if (!RECRUIT.enabled) { a.fighter.setMoving(0); return; }
   const candId = (step.bind || {}).target;
   if (candId == null) { a.fighter.setMoving(0); return; }
   const tp = stepTargetPos(a, ctx, { subjectId: candId });
@@ -44,7 +43,7 @@ registerEffectHolds('recruit', () => true);   // the offer landed; composeForce 
 // offer warms toward the offerer through ITS OWN belief — the offer shifted what it believes, no
 // foreign goal was written into it. Its later decide() then weighs joining for itself.
 registerDeriver((a: Agent, _ctx: CognitionCtx | null) => {
-  if (!RECRUIT.enabled || !a || !a._offers || !a.beliefs) return;
+  if (!a || !a._offers || !a.beliefs) return;
   for (const k in a._offers) {
     const off = a._offers[k];
     if (!off) continue;
@@ -60,10 +59,10 @@ registerDeriver((a: Agent, _ctx: CognitionCtx | null) => {
 // candidate decides yes, the flag flip is EXECUTION: it requests the join through ctx.resolver
 // .joinBand, which reuses the SAME band machinery (Groups._join) the player's Party uses. No
 // foreign-mind write: the OFFER (an Inform) warmed it; the candidate weighed it and chose to ask
-// to join. Gated by WARBAND.enabled — off ⇒ no NPC ever forms a recruited band (soak byte-stable).
-// Heavily guarded; bounded by the offer loop. Already-banded / unfit agents short-circuit.
+// to join. ALWAYS-LIVE on the mainline. Heavily guarded; bounded by the offer loop. Already-banded
+// / unfit agents short-circuit.
 registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
-  if (!WARBAND.enabled || !a || !a._offers || !a.beliefs) return;
+  if (!a || !a._offers || !a.beliefs) return;
   if (!a.alive || a.controlled || a.inParty || a.bandLeaderId != null) return;   // not already banded
   if (a.faction === 'monster' || !a.autonomous) return;
   if (!ctx || !ctx.resolver || !ctx.resolver.joinBand) return;                   // need the exec seam
@@ -94,7 +93,6 @@ registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
 // muster goal to out-number it. Conservative gate (bold + a confidently-believed strong hostile);
 // dormant for the timid. goalMuster's target is the believed strength to outmatch.
 registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
-  if (!RECRUIT.enabled) return;
   if (!a || a.controlled || !a.canWork || a.faction === 'monster' || !a.beliefs) return;
   const bold = a.personality ? (a.personality.risk_tolerance || 0) : 0;
   if (bold < (RECRUIT.musterRiskTol || 0.6)) return;                 // only the bold try to raise a force
