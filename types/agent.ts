@@ -209,6 +209,7 @@ export interface Agent {
   _captorId?: EntityId;                                            // who captured this agent (CAPTIVE; ground truth, execution)
   _freedBy?: EntityId;                                              // who cut this agent's bonds (Affect: free)
   _courtingId?: EntityId | null;                                   // chosen sweetheart (romance trope/authoring); the court enactment reads it
+  _diedAt?: number;                                                // sim-time of death, stamped by the corpse reaper (then reaped after the grace TTL)
   _freedAck?: EntityId;                                             // _freedBy already turned into emergent gratitude (de-dup guard)
   _wrecked?: boolean;                                               // a target sabotaged (Affect: wreck)
   _surveilAccum?: number;                                           // surveil dwell-time accumulator (urchin: throttles assoc sightings)

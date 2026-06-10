@@ -548,8 +548,11 @@ export const LEDGER = {
 // --- ARCS: the emergent-arc / saga registry (docs/architecture/12 §3 — the narrative spine) ----
 // The bounds + timescales for sim.sagas. Tuning only; the store math lives in js/sim/arcs.ts.
 export const ARCS = {
-  maxOpen: 48,           // hard cap on concurrently-open arcs (the WEAKEST incumbent evicted via close)
-  maxClosed: 64,         // ring of completed arcs the Gazette/UI read (bounded memory)
+  maxOpen: 96,           // hard cap on concurrently-open arcs (the WEAKEST incumbent evicted via close)
+  maxClosed: 320,        // ring of completed arcs the Gazette/UI read — sized so a populous town's
+                         //   narrative HISTORY persists across a long session instead of churning out
+                         //   in seconds (a 30-min trace produced ~100 real arcs post-churn-fix; 64 was
+                         //   far too small and evicted ordinary agents' stories before they were read).
   maxBeats: 12,          // bounded per-arc chapter trail (open + rounds + close)
   openTtl: 180,          // sim-seconds an open arc lives unresolved before sweep lapses it; re-armed
                          //   by each fresh `round` beat (a slow feud outlives an open-and-shut one)
@@ -680,8 +683,11 @@ export const MEMORY = {
   consolidateEvery: 8,         // sim-seconds between consolidation passes
   mtmThreshold: 0.35,          // STM salience needed to consolidate into MTM
   ltmThreshold: 0.6,           // MTM salience needed to consolidate into LTM
-  mtmDecay: 0.02,              // salience lost per sim-second in medium term
-  ltmDecay: 0.004,             // long-term fades ~5x slower (formative, sticky)
+  mtmDecay: 0.006,             // salience lost per sim-second in medium term (a memory lasts ~minutes,
+                               //   not the ~15s the old 0.02 gave — "medium term" should mean minutes)
+  ltmDecay: 0.00025,           // long-term is FORMATIVE + sticky: the old 0.004 erased even a 0.8
+                               //   memory in ~200s (every LTM episode read salience 0.00 in the life
+                               //   trace), so "most salient memory" was meaningless. ~0.45 fade / 30min.
   dedupWindow: 8,              // s within which a repeat episode reinforces, not duplicates
 };
 
@@ -1113,6 +1119,12 @@ export const DUNGEON = {
 // --- general sim tuning (shared with movement/perception) -------------------
 export const SIM = {
   tickHz: 6,
+  corpseTtl: 90,            // sim-seconds a corpse lingers before it is REAPED from the roster.
+                           //   Without this, dead townsfolk/monsters/rivals were never removed and
+                           //   accumulated forever (a 30-min trace held 256 corpses vs 92 living) —
+                           //   bloating every pass + reading as a tripled "population". The grace
+                           //   window lets looting / obituary / witness folds fire before reaping.
+  corpseReapSecs: 4,       // self-throttle for the reaper sweep (sim-seconds)
   talkRange: 3.4,            // gossip range (prices AND beliefs): ~adjacent (widened a touch
                              //   so the 2x map's looser clusters still chatter)
   moveSpeed: 4.4,            // faster travel so agents still cross the 2x map and meet (was 3.4)
@@ -1781,8 +1793,11 @@ export const DIRECTOR = {
 // CHRONICLE — the live drama feed (js/sim/chronicle.js). Tunes what gets pulled
 // out of the deed firehose and into the story log: only NOTABLE beats, bounded.
 export const CHRONICLE = {
-  cap: 80,               // ring-buffer size: most-recent N beats kept (bounded memory)
-  legendCap: 120,        // the SAGA ledger: how many momentous beats the town remembers
+  cap: 320,              // ring-buffer size: most-recent N beats kept. Sized for a POPULOUS town —
+                         //   at 80 the feed churned so fast that an ordinary townsperson's deeds
+                         //   (slaying a raider in the town's defence) scrolled off within seconds and
+                         //   never reached the Gazette/UI; legibility for rank-and-file lives needs depth.
+  legendCap: 400,        // the SAGA ledger: how many momentous beats the town remembers
                          //   long-term (heroes, nemeses, gods, surpassings) — the history view
   // a windfall (a shrewd deal) — sell/buy events carry a profit/bargain RATIO in
   // magnitude (1 + margin). Only an exceptional margin is story-worthy ("a killing").

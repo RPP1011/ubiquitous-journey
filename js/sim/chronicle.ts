@@ -14,7 +14,7 @@
 // war-chronicle voice (names + a terse, past-tense beat).
 
 import { bus } from '../rpg/events.js';
-import { CHRONICLE, MONSTER } from './simconfig.js';
+import { CHRONICLE, MONSTER, factionHostile } from './simconfig.js';
 import { noteBeat } from './signals.js';
 import type { ActionEvent } from '../../types/sim.js';
 
@@ -205,11 +205,25 @@ export class Chronicle {
     if (this._isMonster(ev.targetId)) {
       // slaying a monster is a renown beat (heroic), keyed off the slayer
       this._push(BEAT.KILL, ev.actorId, `${slayer} cut down ${slain}.`);
+    } else if (this._townsfolkSlaysHostile(ev.actorId, ev.targetId)) {
+      // A TOWNSPERSON SLEW A TOWN-HOSTILE (a raider/rival in the town's defence) — a HEROIC beat keyed
+      // off the DEFENDER, so ordinary townsfolk who hold the line are NAMED + remembered, not just
+      // churned as a transient death of the raider (life-trace finding: rank-and-file defenders were invisible).
+      this._push(BEAT.KILL, ev.actorId, `${slayer} cut down ${slain}, defending the town.`);
     } else {
       // a townsperson fell — the gravest beat, keyed off the fallen
       this._push(BEAT.DEATH, ev.targetId, `${slain} was slain by ${slayer}.`);
       this._noteVendetta(ev.actorId, ev.targetId);
     }
+  }
+
+  // is `actorId` a townsperson and `targetId` a faction the town is hostile to (raider/rival/bandit)?
+  _townsfolkSlaysHostile(actorId: unknown, targetId: unknown): boolean {
+    try {
+      const A = this.sim && this.sim.agentsById && this.sim.agentsById.get(actorId);
+      const T = this.sim && this.sim.agentsById && this.sim.agentsById.get(targetId);
+      return !!(A && T && A.faction === 'townsfolk' && T.faction !== 'townsfolk' && factionHostile('townsfolk', T.faction));
+    } catch { return false; }
   }
 
   // a witness who thought well of the fallen turns against the killer — read

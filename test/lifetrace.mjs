@@ -110,6 +110,7 @@ if (a) {
   console.log(`  trade (current good): ${a._trade || '—'}   classes: ${classes.join(', ') || '—'}   totalLevel: ${a.progression ? a.progression.totalLevel : 0}`);
   console.log(`  ambition: ${a.ambition ? a.ambition.label : '—'} (${Math.round((a.ambition && a.ambition.progress || 0) * 100)}%)`);
   console.log(`  gold: ${Math.round(a.gold || 0)}   kills: ${a.life ? a.life.kills : 0}   notoriety: ${(a.notoriety || 0).toFixed(2)}   house: ${a.house || '—'}`);
+  console.log(`  combatant: ${!!a.combatant}   canWork: ${!!a.canWork}   banded: ${a.bandLeaderId != null}   (a combatant can't work/trade — only fight/wander)`);
   const tr = goldTrend(a);
   console.log(`  goldFast/Slow: ${tr.fast.toFixed(0)}/${tr.slow.toFixed(0)}   perilsSurvived: ${perilsSurvived(a)}`);
 
@@ -170,7 +171,10 @@ console.log(`\n— HERO'S ARCS (captured before ring-eviction) —`);
 console.log(heroArcs.length ? '  ' + heroArcs.join('\n  ') : '  (was a principal in NO completed arc all run)');
 
 console.log(`\n=============== TOWN-WIDE NARRATIVE PRODUCTION (whole run) ===============`);
-console.log(`  total completed arcs: ${arcsSeen.size}   (final pop ${sim.agents.length})`);
+const byFaction = {};
+for (const ag of sim.agents) { if (ag.alive) byFaction[ag.faction] = (byFaction[ag.faction] || 0) + 1; }
+console.log(`  final pop ${sim.agents.length} by faction: ${Object.entries(byFaction).map(([f, n]) => `${f}:${n}`).join('  ')}`);
+console.log(`  total completed arcs: ${arcsSeen.size}`);
 const entries = Object.entries(arcTally).sort((a, b) => b[1] - a[1]);
 console.log(entries.length ? entries.map(([k, n]) => `  ${k}: ${n}`).join('\n') : '  (NO arcs closed all run — the keystone metric is 0)');
 // how many townsfolk swore avenge oaths, and the total churn (a health check on the oaths signal)

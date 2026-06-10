@@ -175,6 +175,7 @@ export class Simulation {
   chronicle: Chronicle;
   sagas: SagaStore;
   _arcPortsCache?: ArcPorts;
+  _lastReap?: number;
   gazette: Gazette;
   reporter: Reporter;
   bounties: Bounties;
@@ -1181,6 +1182,9 @@ export class Simulation {
       // SAGAS: lazy-expiry sweep of the emergent-arc registry — lapse open arcs past their TTL
       // (graceful dissolve + freeze backstop). Self-throttled (ARCS.sweepSecs); guarded; no scan.
       this.sagas.sweep(this.time);
+      // CORPSE REAPER: reap dead agents past their grace TTL so the roster doesn't bloat with corpses
+      // (the "tripled population" was 256 unreaped dead). Self-throttled; guarded.
+      this._reapCorpses();
       // STATUS SENSOR: the omniscient fall-from-grace probe (docs/architecture/12 §5). Self-throttled
       // (STATUS.passSecs); fires RUIN/SHUNNED/RETIRE beats + ruined/slandered/thwarted memories on a
       // downward crossing. Observer-layer (reads truth + the signal store); guarded; never throws.
@@ -1204,6 +1208,48 @@ export class Simulation {
 
   // Town-wide standing-order double auction (see market.js).
   _runMarket(): void { runMarket(this); }
+
+  // CORPSE REAPER (life-trace finding): dead townsfolk/monsters/rivals were never removed from the
+  // roster — only raiders/horrors despawn — so corpses accumulated forever (256 dead vs 92 living in a
+  // 30-min trace), bloating every per-agent pass and reading as a tripled "population". Stamp the time
+  // of death on first sight, then REAP (scene + roster + index) once a corpse has lingered past
+  // SIM.corpseTtl — long enough for looting / obituary / witness folds to have fired. Self-throttled;
+  // guarded; never the player. Mirrors raids._despawn's cleanup.
+  _reapCorpses(): void {
+    try {
+      const now = this.time;
+      if (now - (this._lastReap ?? -Infinity) < (SIM.corpseReapSecs || 4)) return;
+      this._lastReap = now;
+      const reap: AgentShape[] = [];
+      for (const a of this.agents) {
+        if (a.controlled || a.alive) { if (a._diedAt != null) a._diedAt = undefined; continue; }
+        if (a._diedAt == null) { a._diedAt = now; continue; }          // first seen dead — start the grace clock
+        if (now - a._diedAt >= (SIM.corpseTtl || 90)) reap.push(a);
+      }
+      for (const a of reap) {
+        // ESCHEAT the corpse's coin (purse + banked stash) to the NEAREST living townsperson — a
+        // CONSERVED transfer (closed money loop: gold is never burned), and realistic (a passerby
+        // claims the unclaimed purse). If no heir exists yet, leave the corpse this pass rather than
+        // leak gold. Inventory goods are NOT a conserved quantity (production/consumption), so they
+        // simply leave the world with the corpse.
+        const purse = (a.gold || 0) + (a.stash || 0);
+        if (purse > 0) {
+          let heir: AgentShape | null = null, best = Infinity;
+          for (const o of this.agents) {
+            if (o === a || !o.alive || o.controlled || o.faction !== 'townsfolk') continue;
+            const d = o.pos.distanceToSquared(a.pos);
+            if (d < best) { best = d; heir = o; }
+          }
+          if (!heir) continue;                       // no heir — keep the corpse until one exists (don't leak)
+          heir.gold = (heir.gold || 0) + purse; a.gold = 0; a.stash = 0;
+        }
+        if (a.fighter) { (a.fighter as { alive?: boolean }).alive = false; if (a.fighter.root) this.scene.remove(a.fighter.root); }
+        const i = this.agents.indexOf(a);
+        if (i >= 0) this.agents.splice(i, 1);
+        this.agentsById.delete(a.id);
+      }
+    } catch { /* never throw on the tick */ }
+  }
 
   // emergent "market price": population-average belief (no central authority).
   avgPrice(c: string): number {
