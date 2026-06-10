@@ -909,6 +909,15 @@ export const SOCIAL = {
   bondBonus: 0.03,      // EXTRA standing/sec for deliberately spending time together (vs incidental
                         //   proximity) — quality time bonds faster than just passing nearby
   shadowGap: 6,         // stand-off distance the `shadow` disposition (doubt-the-mask schema) trails a suspect at
+  // SOFT AVOIDANCE — "cross the street" (docs/architecture/13 §3 snubsFelt). A merely-SUSPECTED,
+  // soured-but-NOT-hostile nearby neighbour earns a faint, LOW-priority berth (a mild steer-away),
+  // SHORT of fleeing — social discomfort, not panic. Reads ONLY my OWN belief (suspicion/standing/
+  // hostile/lastPos). Gated bold (suspicion ABOVE the soft bar AND standing cool) and scored low so
+  // it never out-pulls work/market/survival; the chronicle's "neighbours cross the street" made real.
+  avoidSuspicion: 0.4,  // believed suspicion at/above this (but not hostile) earns a wide berth
+  avoidStanding: 0,     // …AND a believed standing at/below this (a cool acquaintance, not a friend)
+  avoidRange: 7,        // only a suspect I believe is THIS close unsettles me (a near-street berth)
+  avoidWeight: 0.35,    // the soft-avoid candidate's score — low, so work/market/survival win
 };
 
 // ============================================================================
