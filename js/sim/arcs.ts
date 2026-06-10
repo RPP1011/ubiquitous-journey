@@ -46,7 +46,7 @@ const ARC_BEAT: Record<string, string> = {
 // arcKey — the canonical, order-normalised identity of a story (§3.4). SYMMETRIC kinds (vendetta)
 // sort their ids so either party's derive opens the SAME arc; asymmetric kinds (rescue keyed on the
 // victim) leave the authored order. This is the load-bearing dedup: openArc is idempotent on key.
-const SYMMETRIC = new Set(['vendetta', 'dynasty']);
+const SYMMETRIC = new Set(['vendetta', 'dynasty', 'romance']);
 export function arcKey(kind: string, ...ids: Array<EntityId | string | number>): string {
   const parts = ids.map((x) => String(x));
   if (SYMMETRIC.has(kind)) parts.sort();

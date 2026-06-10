@@ -19,6 +19,8 @@ import { SEEDS } from './simconfig.js';
 import { terrainHeight } from '../arena.js';
 import { ABILITY_CATALOG } from '../rpg/abilities/catalog.js';
 import { BEAT } from './chronicle.js';
+import { arcKey } from './arcs.js';
+import { setHouseFeud } from './houses.js';
 
 // `sim` (the owning Simulation — wave-2, still .js), `cfg` (the SEEDS.rivalApprentices
 // config block) and the seeded Agents are typed opaquely on purpose; this runs once at
@@ -171,4 +173,105 @@ function sour(A: Ag, B: Ag, amount: number): void {
 // kind lineage uses, so the biography/chronicle read it uniformly.
 function bond(a: Ag, withId: unknown, rel: string): void {
   try { if (a && a.memory) a.memory.record({ t: 0, kind: 'bond', withId, rel, valence: rel === 'mentor' || rel === 'apprentice' ? 0.6 : 1, salience: 0.6 }); } catch { /* */ }
+}
+
+// ============================================================================
+// THE PER-AGENT AUTHORING / TARGETING API (docs/architecture/12 §4 — the SET-UP axis)
+// ============================================================================
+// Pure functions that stamp a CHOSEN protagonist + plant the targeted constellation, then open the
+// matching emergent arc (sim.sagas) AND push a PRE-TARGETED Director arc (chosen principals, not the
+// _shuffle roulette) so the existing stepper plays it to a saga unchanged. Callable at world build OR
+// from a scenario/test — which is what makes the trope suite DETERMINISTIC. All guarded; never throw.
+// Convention (load-bearing — standing is per-perceiver): warm(x→y) raises the standing HELD BY x
+// ABOUT y. "a trusts b" is warm(a→b).
+
+// move an agent's gold to an exact target, CONSERVED (closed money loop): the delta is debited from /
+// credited to a counterpart (the richest other live agent), never minted. No-op if none can balance it.
+function setGoldConserved(sim: Sim, a: Ag, target: number): void {
+  try {
+    const cur = a.gold || 0, delta = target - cur;
+    if (Math.abs(delta) < 1e-9) return;
+    let other: Ag = null, bestGold = -Infinity;
+    for (const o of sim.agents) { if (o === a || !o.alive) continue; if ((o.gold || 0) > bestGold) { bestGold = o.gold || 0; other = o; } }
+    if (!other) return;
+    if (delta > 0 && (other.gold || 0) < delta) return;     // no one can fund the raise — leave it
+    other.gold = (other.gold || 0) - delta;
+    a.gold = cur + delta;
+  } catch { /* never throw */ }
+}
+
+// PIN — stamp chosen fields onto an EXISTING agent (the protagonist). gold is a CONSERVED set.
+export function pin(sim: Sim, agentId: unknown, opts: Record<string, unknown> = {}): Ag {
+  try {
+    const a = sim.agentsById.get(agentId); if (!a) return null;
+    if (opts.personality) Object.assign(a.personality || (a.personality = {}), opts.personality);
+    if (opts.role) a.seedRole = opts.role;
+    if (opts.house) a.house = opts.house;
+    if (typeof opts.gold === 'number') setGoldConserved(sim, a, opts.gold as number);
+    if (opts.ambition && typeof a.assignAmbition === 'function') { try { a.assignAmbition(sim.time, null, opts.ambition); } catch { /* best-effort */ } }
+    return a;
+  } catch { return null; }
+}
+
+// FORCE BETRAYAL — a trusts b, then b wrongs a. Warms a→b, plants a fresh wrong (a's `assaulted`
+// memory + soured belief), opens the vendetta arc, and pushes a PRE-TARGETED Director 'reckoning'.
+export function forceBetrayal(sim: Sim, aId: unknown, bId: unknown): boolean {
+  try {
+    const a = sim.agentsById.get(aId), b = sim.agentsById.get(bId);
+    if (!a || !b) return false;
+    sour(a, b, 0.6);                                   // a TRUSTED b (warm a→b; sour adds the signed amount)
+    sour(a, b, -1.2);                                  // …then the wrong lands — a's opinion of b craters
+    if (a.memory) a.memory.record({ t: sim.time, kind: 'assaulted', withId: bId, valence: -1, salience: 0.95 });
+    if (sim.sagas) sim.sagas.openArc({ kind: 'vendetta', key: arcKey('vendetta', aId as string, bId as string), principals: [aId, bId] });
+    (sim.director._arcs || (sim.director._arcs = [])).push({ kind: 'reckoning', wronged: aId, betrayer: bId, rel: 'one who trusted them', stage: 1, nextAt: sim.time + 30 });
+    return true;
+  } catch { return false; }
+}
+
+// FALSE WITNESS — brand an innocent. Plants suspicion of the victim into nearby townsfolk (carrying
+// the accuser as PROVENANCE if given, for a future "false accuser exposed" arc), and pushes a
+// PRE-TARGETED Director 'accused' arc with the chosen victim (not _shuffle).
+export function falseWitness(sim: Sim, victimId: unknown, accuserId?: unknown): boolean {
+  try {
+    const victim = sim.agentsById.get(victimId); if (!victim) return false;
+    let planted = 0;
+    for (const w of sim.agents) {
+      if (w === victim || !w.alive || w.controlled || w.faction !== 'townsfolk' || !w.beliefs) continue;
+      if (w.pos.distanceTo(victim.pos) > 30) continue;
+      try {
+        const wb = w.beliefs.plant ? w.beliefs.plant(victimId, { suspicion: 0.6, confidence: 0.6 }) : null;
+        if (wb && accuserId != null) wb.source = 'accuser:' + accuserId;   // provenance — who started the slander
+        planted++;
+      } catch { /* per-witness guard */ }
+    }
+    (sim.director._arcs || (sim.director._arcs = [])).push({ kind: 'accused', b: victimId, accuser: accuserId ?? null, stage: 1, nextAt: sim.time + 30 });
+    return planted > 0;
+  } catch { return false; }
+}
+
+// STAR-CROSS — aim Star-Crossed at a chosen pair: set mutual _courtingId, warm the pair, ensure a
+// feud between their houses (seed one if absent), open the romance arc + push a PRE-TARGETED Director
+// 'romance' arc. The §8 romance deriver (when built) then ENACTS the courtship the arc narrates.
+export function starCross(sim: Sim, aId: unknown, bId: unknown): boolean {
+  try {
+    const a = sim.agentsById.get(aId), b = sim.agentsById.get(bId);
+    if (!a || !b) return false;
+    a._courtingId = b.id; b._courtingId = a.id;
+    sour(a, b, 0.6); sour(b, a, 0.6);                 // they are drawn to each other (warm both ways)
+    if (a.house && b.house && a.house !== b.house) { try { setHouseFeud(sim, a.house, b.house); } catch { /* best-effort */ } }
+    if (sim.sagas) sim.sagas.openArc({ kind: 'romance', key: arcKey('romance', aId as string, bId as string), principals: [aId, bId] });
+    (sim.director._arcs || (sim.director._arcs = [])).push({ kind: 'romance', a: aId, b: bId, hA: a.house, hB: b.house, stage: 1, nextAt: sim.time + 30 });
+    return true;
+  } catch { return false; }
+}
+
+// CAPTURE TARGET — stage a rescue: set the captive's bridge state (_held/_captorId) so a rescuer's
+// perception bridges b.captive, and open the rescue arc (keyed on the victim). The §7 rescue resolves it.
+export function captureTarget(sim: Sim, captiveId: unknown, captorId: unknown): boolean {
+  try {
+    const captive = sim.agentsById.get(captiveId); if (!captive) return false;
+    captive._held = true; captive._captorId = captorId;
+    if (sim.sagas) sim.sagas.openArc({ kind: 'rescue', key: 'rescue:' + captiveId, principals: [captorId, captiveId] });
+    return true;
+  } catch { return false; }
 }

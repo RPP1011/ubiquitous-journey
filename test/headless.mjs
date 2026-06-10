@@ -19,6 +19,7 @@ import { combatUnit } from './suites/combat.mjs';
 import { proceduralAbilityTest } from './suites/abilities.mjs';
 import { plannerSelfTest } from './suites/planner.mjs';
 import { obligationsTest } from './suites/obligations.mjs';
+import { seedingTest, romanceTest } from './suites/seeding.mjs';
 import { arcsTest, arcsE2ETest } from './suites/arcs.mjs';
 import { signalsTest, wealthTest, outlawTest } from './suites/signals.mjs';
 import { executionTest } from './suites/execution.mjs';
@@ -69,6 +70,8 @@ arcsE2ETest(ok, helpers);
 signalsTest(ok);
 wealthTest(ok);
 outlawTest(ok, helpers);
+seedingTest(ok, helpers);
+romanceTest(ok, helpers);
 // Action-grammar EXECUTION feature suites (filled per worktree; no-op stubs until then).
 urchinTest(ok, helpers);
 learningTest(ok, helpers);

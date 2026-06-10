@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { DIR, TUNE } from '../../constants.js';
 import { ARENA_RADIUS } from '../../arena.js';
 import { POI_KIND } from '../world.js';
-import { GOODS, ECON, SIM, SOCIAL, BAND, BUILD, COMFORT, NOVELTY, RECIPES, CAUTION } from '../simconfig.js';
+import { GOODS, ECON, SIM, SOCIAL, BAND, BUILD, COMFORT, NOVELTY, RECIPES, CAUTION, ROMANCE } from '../simconfig.js';
 import { castSpec, onCooldown } from '../../rpg/abilities/interpreter.js';
 import { isMelee } from '../../rpg/abilities/ir.js';
 import { bus, makeEvent } from '../../rpg/events.js';
@@ -107,6 +107,12 @@ export function act(a: Agent, dt: number, ctx: CognitionCtx): void {
         a.needs.social = clamp01(a.needs.social + COMFORT.tavernSocialRate * dt);
         a.life.social += COMFORT.tavernSocialRate * dt;   // tavern colocation feeds belonging
       }
+    } else if (k === 'court' && arrived) {
+      // STAR-CROSSED, ENACTED (docs/architecture/12 §8): lingering beside the believed sweetheart
+      // deepens the bond (own belief) and feeds belonging — the lived courtship the arc narrates.
+      const cid = (goal as { subjectId?: EntityId }).subjectId;
+      if (cid != null) { const rb = a.beliefs.get(cid); if (rb) rb.standing = Math.min(1, (rb.standing || 0) + (ROMANCE.courtWarm || 0.02)); }
+      a.needs.social = clamp01(a.needs.social + SIM.socializeRate * dt);
     } else if (k === 'socialize' && arrived) {
       a.needs.social = clamp01(a.needs.social + SIM.socializeRate * dt);
       a.life.social += SIM.socializeRate * dt;     // feeds the 'belonging' ambition

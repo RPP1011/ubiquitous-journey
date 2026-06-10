@@ -30,10 +30,10 @@
 
 import * as THREE from 'three';
 import { ARENA_RADIUS, LANDMARKS } from '../../arena.js';
-import { SIM, STEER, SOCIAL, ECON, GOODS, PARTY } from '../simconfig.js';
+import { SIM, STEER, SOCIAL, ECON, GOODS, PARTY, ROMANCE } from '../simconfig.js';
 import { POI_KIND } from '../world.js';
 import { _stepAlong, groundY } from './movement.js';
-import type { Agent, CognitionCtx } from '../../../types/sim.js';
+import type { Agent, CognitionCtx, EntityId } from '../../../types/sim.js';
 
 /** A {x,z} (+optional y) point: a belief lastPos, a static POI/Place, or an own point. */
 interface XZ { x: number; z: number; y?: number }
@@ -349,6 +349,18 @@ function fillShadow(a: Agent, _ctx: CognitionCtx): Field | null {
   return attractField(sb.lastPos, false);
 }
 
+// COURT (docs/architecture/12 §8) — the Star-Crossed enactment: seek the believed position of the
+// chosen sweetheart (`_courtingId`) and linger at a social stand-off. Built from the agent's OWN
+// belief (lastPos), like every other steer-fill — no roster read. Idle when the love is out of mind.
+function fillCourt(a: Agent, _ctx: CognitionCtx): Field | null {
+  const id = (a as Agent & { _courtingId?: EntityId | null })._courtingId;
+  if (id == null) return null;
+  const sb = a.beliefs.get(id);
+  if (!sb || sb.confidence < SIM.actOnBeliefMin) return null;        // lost track of my love -> idle
+  if (a.pos.distanceTo(sb.lastPos) <= (ROMANCE.courtGap || 2.5)) return null;  // at the stand-off: HOLD (linger)
+  return attractField(sb.lastPos, false);
+}
+
 // Resolve the band leader to a { pos, alive } REF for fillFollow. The controlled
 // player-led party reads its real leader handle (the documented ctx.partyLeader
 // exception). An NPC band follows where it BELIEVES its leader is (belief lastPos),
@@ -403,6 +415,7 @@ export const STEER_FILLS: Record<string, SteerFill> = {
   avoid: fillAvoid,
   hide: fillHide,
   shadow: fillShadow,
+  court: fillCourt,
   follow: fillFollow,
   wander: fillWander,
 };

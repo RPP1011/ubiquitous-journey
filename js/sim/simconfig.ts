@@ -604,6 +604,15 @@ export const RAGS = {
   celebrateMass: 4,      // that many warmed perceivers ⇒ the climb is socially recognised → 'celebrated'
 };
 
+// --- ROMANCE: the Star-Crossed enactment (docs/architecture/12 §8) -------------------------------
+// `_courtingId` (set by the romance trope / the authoring API) was narrated but never enacted; this
+// makes the lovers SEEK each other (a watchable courtship) so the union/heartbreak is earned. Tuning.
+export const ROMANCE = {
+  weight: 1.4,           // the utility weight of the court candidate (a strong social pull, below survival)
+  courtGap: 2.5,         // the stand-off distance the lovers linger at (closer = HOLD, no jostling)
+  courtWarm: 0.02,       // per-tick standing WARM from lingering beside the believed sweetheart
+};
+
 // --- OUTLAW: NPC infamy + the pro-outlaw warming hook (docs/architecture/12 §9) -------------------
 // An NPC robber accrues a town-read `notoriety` (generalised from player-only); the desperate warm to
 // a robber-of-the-rich (the Robin Hood mirror, FOUR conjuncts — review 5). Tuning only.

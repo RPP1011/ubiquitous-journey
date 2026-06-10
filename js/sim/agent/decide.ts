@@ -7,7 +7,7 @@
 // Behaviour-preserving: verbatim bodies of the old Agent methods. No cycles —
 // imports config, pure helpers, motivation, and the occupation chooser.
 
-import { SIM, WEIGHT, ECON, COMMODITIES, GROUP_TYPES, LEGEND, SOCIAL, COMFORT, NOVELTY, BUILD, ESTEEM as WEALTH, factionHostile } from '../simconfig.js';
+import { SIM, WEIGHT, ECON, COMMODITIES, GROUP_TYPES, LEGEND, SOCIAL, COMFORT, NOVELTY, BUILD, ESTEEM as WEALTH, ROMANCE, factionHostile } from '../simconfig.js';
 import { updateAmbition, ambitionFavor, ambitionWantsFight, deriveGoals, pruneGoals } from '../motivation.js';
 import { chooseOccupation, laborValue } from './occupation.js';
 import { qualifyHome, isUnhoused } from '../construction.js';
@@ -299,6 +299,18 @@ export function decide(a: Agent, ctx: CognitionCtx): void {
       const friendPull = friend != null ? 1.25 : 1;
       push('socialize', (1 - a.needs.social) * (0.5 + P.social_drive) * WEIGHT.socialize * friendPull,
         friend != null ? { withId: friend } : undefined);
+
+      // COURT (docs/architecture/12 §8) — the Star-Crossed ENACTMENT: an agent with a chosen
+      // sweetheart (`_courtingId`, set by the romance trope / the authoring API) that it BELIEVES is
+      // reachable seeks it out and lingers (fillCourt + the on-arrival warm in act). Own-state
+      // (_courtingId) + own-belief (the partner's lastPos) — no roster read; the bolder court more
+      // readily (the same nerve _stepRomance reads). A strong pull, but scored below survival.
+      if (a._courtingId != null) {
+        const lb = a.beliefs.get(a._courtingId);
+        if (lb && lb.confidence >= SIM.actOnBeliefMin) {
+          push('court', (0.5 + (P.risk_tolerance || 0)) * ROMANCE.weight, { subjectId: a._courtingId });
+        }
+      }
 
       // SIGHTSEE — driven by the NOVELTY need (a distinct drive in the decomposed need-
       // space). Boredom builds until a curious soul takes in a fresh sight; because it's
