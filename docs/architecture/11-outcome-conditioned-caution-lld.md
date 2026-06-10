@@ -313,7 +313,11 @@ is its second reader.
 > only once the wealth-cue haul carries its **own** confidence. Until then the proxies above make
 > attribution *directionally* right (a thief acting on a half-glimpsed stash still burns harder than
 > a careful caser) while underweighting the "knew where, guessed how much" gamble. Ship with the
-> proxy; swap the read when the haul-confidence lands — one line, same rule.
+> proxy; swap the read when the haul-confidence lands — one line, same rule. **That confidence is
+> `wealthConf`** on `BeliefState`, built by [12-LLD §6] (the believed-wealth field); [12]'s build
+> roadmap step 4 performs this swap (`relevantConfidence(burgle/rob)` → `bind._conf = wealthConf(mark)`)
+> and records it as a cross-doc synergy. The two docs are coupled here: §6 there supplies the input §5
+> here declared missing.
 
 ---
 
@@ -393,7 +397,12 @@ including won ones, would burn the row at `burn.peril`, the largest constant in 
 burn-per-use that no cap/decay brake survives, converging every fighter on cowardice. Combat
 caution is a real feature, but its outcome signal must come from the fighter's own resolution
 (won / fled / health fraction lost), not from this trigger — and once it exists, `attack` can be
-admitted with `expectedYield` semantics of its own. Until then, out. (The shipped peril trigger,
+admitted with `expectedYield` semantics of its own. Until then, out. **That win/loss signal is built
+by [12-LLD §7]** — the directed-assault executor's `marched`/`routed` resolution is exactly this
+per-engagement outcome, and [12] step 5 emits it **through this doc's own `PLAN_OUTCOME` registry**
+(`marched` ≈ a `windfall`/landed step, `routed` ≈ `peril`, health-fraction in the `evt`). So admitting
+`attack` here is just registering a second `PLAN_OUTCOME` handler on an emission that already fires —
+no new carrier to build. (The shipped peril trigger,
 `mood.fear` while a *watched* step is active, is safe precisely because `attack` is not watched —
 so no snapshot exists for a combat step and the regression test `C11` asserts no `attack` burn.)
 
