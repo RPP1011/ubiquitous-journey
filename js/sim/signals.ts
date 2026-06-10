@@ -251,6 +251,88 @@ export function doomedVenture(sim: Sim, a: Agent): boolean {
   return false;
 }
 
+// ── Family A: streak[key] — consecutive same-status outcomes per watched strategy ("third failed
+// heist in a row"). Folded on PLAN_OUTCOME. + perilsSurvived(a) — count of peril outcomes (a veteran
+// of near-misses). Both feed desperation/veteran colour. Folded by features/signalsFold.ts.
+interface StreakState { key: string; status: string; run: number; }
+export function foldStreak(a: Agent, prim: string, status: string, _now: number): void {
+  if (!a || !prim) return;
+  try {
+    const aa = a as Agent & { _streak?: Record<string, StreakState> };
+    const st0 = aa._streak || (aa._streak = {});
+    const s = st0[prim] || (st0[prim] = { key: prim, status, run: 0 });
+    s.run = s.status === status ? s.run + 1 : 1;
+    s.status = status;
+  } catch { /* */ }
+}
+export function streakOf(a: Agent, prim: string): { status: string; run: number } {
+  const s = (a as Agent & { _streak?: Record<string, StreakState> })._streak;
+  return s && s[prim] ? { status: s[prim].status, run: s[prim].run } : { status: '', run: 0 };
+}
+export function foldPeril(a: Agent, _now: number): void {
+  if (!a) return;
+  try { const aa = a as Agent & { _perils?: number }; aa._perils = (aa._perils || 0) + 1; } catch { /* */ }
+}
+export function perilsSurvived(a: Agent): number { return (a as Agent & { _perils?: number })._perils || 0; }
+
+// ── Family E: firsts(a) — the sim-time of an agent's FIRST deed of a kind (corruption measured from
+// firstTheft onward; biography beats). Read off deedLedger's `first` timestamp (one-shot by nature).
+export function firstDeedAt(a: Agent, tag: string): number | null {
+  const d = (a as Agent & { _deeds?: Record<string, DeedTally> })._deeds;
+  return d && d[tag] ? d[tag].first : null;
+}
+
+// ── Family B: debt(a→b) — a's net unpaid obligation to b, summed over a's ledger (the moneylender /
+// betrayal-setup signal). A pure READ over the agent's own obligation store; no fold needed.
+export function debtBetween(a: Agent, toId: unknown): number {
+  try {
+    const obs = (a as Agent & { _obligations?: Array<{ action?: string; counterparty?: unknown; amount?: number }> })._obligations;
+    if (!Array.isArray(obs)) return 0;
+    let sum = 0;
+    for (const o of obs) { if (o && (o.action === 'pay' || o.action === 'repay') && o.counterparty === toId) sum += (o.amount || 0); }
+    return sum;
+  } catch { return 0; }
+}
+
+// ── Family D: town climate — pure observer-pass aggregates over the roster (the §5 pass already walks
+// it). wealthGini (gold concentration 0..1), suspicionClimate (total mass + top-1 share = diffuse fear
+// vs a NAMED villain era), cohesion (mean in-town standing). All read truth; observer-only; guarded.
+export function wealthGini(sim: Sim): number {
+  try {
+    const gs: number[] = [];
+    for (const o of (sim.agents as Agent[])) { if (o && o.alive && !o.controlled && o.faction === 'townsfolk') gs.push(Math.max(0, o.gold || 0)); }
+    const n = gs.length; if (n < 2) return 0;
+    gs.sort((x, y) => x - y);
+    let cum = 0, area = 0; const total = gs.reduce((s, g) => s + g, 0);
+    if (total <= 0) return 0;
+    for (let i = 0; i < n; i++) { cum += gs[i]; area += cum - gs[i] / 2; }
+    return Math.max(0, Math.min(1, 1 - (2 * area) / (n * total)));
+  } catch { return 0; }
+}
+export function suspicionClimate(sim: Sim): { mass: number; top1Share: number } {
+  try {
+    const per = new Map<unknown, number>();
+    for (const o of (sim.agents as Agent[])) {
+      if (!o || !o.alive || o.controlled || !o.beliefs || !o.beliefs.all) continue;
+      for (const b of o.beliefs.all()) { if (b && b.suspicion > 0.2) per.set(b.subjectId, (per.get(b.subjectId) || 0) + b.suspicion); }
+    }
+    let mass = 0, top = 0;
+    for (const v of per.values()) { mass += v; if (v > top) top = v; }
+    return { mass, top1Share: mass > 0 ? top / mass : 0 };
+  } catch { return { mass: 0, top1Share: 0 }; }
+}
+
+// ── Family F: arcLoad(a) — open arcs sharing `a` as a principal (protagonist pressure: pile on, or
+// spotlight the quiet). A read over the registry's open arcs (bounded). Observer-only.
+export function arcLoad(sim: Sim, a: Agent): number {
+  try {
+    const open = sim.sagas && sim.sagas._open; if (!open) return 0;
+    let n = 0;
+    for (const arc of open.values()) { if (arc.principals && arc.principals.indexOf(a.id) !== -1) n++; }
+    return n;
+  } catch { return 0; }
+}
+
 // misallocatedSuspicion(a) — the town carries real suspicion of `a` who has done NO true theft: the
 // emergent Innocent-Accused (suspicion arising falsely, the better story than an authored one). Reads
 // the roster's suspicion (truth) + a's true deed ledger. Observer-only.

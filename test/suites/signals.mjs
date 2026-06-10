@@ -10,7 +10,9 @@
 import { foldLoss, noteSnub, lossReasonShare, snubsFelt, goldTrend, sampleGold,
   foldDeed, deedCount, foldOathSworn, foldOathPop, oaths, notePeaceBreak, peaceClock,
   foldScarcity, scarcityMean, foldGrievance, grievanceOf, isOneSided,
-  esteemTruthGap, doomedVenture, misallocatedSuspicion } from '../../js/sim/signals.js';
+  esteemTruthGap, doomedVenture, misallocatedSuspicion,
+  foldStreak, streakOf, foldPeril, perilsSurvived, firstDeedAt, debtBetween,
+  wealthGini, suspicionClimate, arcLoad } from '../../js/sim/signals.js';
 import { statusSensor } from '../../js/sim/statusSensor.js';
 import { SagaStore } from '../../js/sim/arcs.js';
 import { BeliefState } from '../../js/sim/beliefs.js';
@@ -202,6 +204,50 @@ export function catalogTest(ok) {
     const b = { id: 3, alive: true, beliefs: new Map([[1, { suspicion: 0.5 }]]) };
     const sim = { agents: [innocent, a, b], agentsById: new Map() };
     ok(misallocatedSuspicion(sim, innocent) > 0.5, 'catalog misallocatedSuspicion: suspicion of an innocent (no theft) is flagged');
+  }
+
+  // A.streak — consecutive same-status outcomes per strategy; a different status resets the run.
+  {
+    const a = { id: 1 };
+    foldStreak(a, 'burgle', 'shortfall', 0); foldStreak(a, 'burgle', 'shortfall', 1); foldStreak(a, 'burgle', 'shortfall', 2);
+    ok(streakOf(a, 'burgle').run === 3 && streakOf(a, 'burgle').status === 'shortfall', 'catalog streak: three failures in a row read run=3');
+    foldStreak(a, 'burgle', 'windfall', 3);
+    ok(streakOf(a, 'burgle').run === 1, 'catalog streak: a different outcome resets the run');
+  }
+  // E.perilsSurvived + firsts.
+  {
+    const a = { id: 1 };
+    foldPeril(a, 0); foldPeril(a, 5);
+    ok(perilsSurvived(a) === 2, 'catalog perilsSurvived: peril outcomes tally');
+    foldDeed(a, 'theft', 12);
+    ok(firstDeedAt(a, 'theft') === 12 && firstDeedAt(a, 'kill') === null, 'catalog firsts: the first-deed timestamp is recorded');
+  }
+  // B.debt — net unpaid obligation to a counterparty (a pure read over the ledger).
+  {
+    const a = { id: 1, _obligations: [{ action: 'pay', counterparty: 7, amount: 5 }, { action: 'pay', counterparty: 7, amount: 3 }, { action: 'pay', counterparty: 9, amount: 2 }] };
+    ok(debtBetween(a, 7) === 8 && debtBetween(a, 9) === 2, 'catalog debt: net obligation summed per counterparty');
+  }
+  // D.wealthGini + suspicionClimate.
+  {
+    const mk = (id, gold) => ({ id, gold, alive: true, controlled: false, faction: 'townsfolk', beliefs: { all: () => [] } });
+    const equal = { agents: [mk(1, 50), mk(2, 50), mk(3, 50)] };
+    const skew = { agents: [mk(1, 0), mk(2, 0), mk(3, 150)] };
+    ok(wealthGini(equal) < 0.05, `catalog wealthGini: an equal town reads ~0 (${wealthGini(equal).toFixed(2)})`);
+    ok(wealthGini(skew) > 0.5, `catalog wealthGini: one house holding it all reads high (${wealthGini(skew).toFixed(2)})`);
+    const villainEra = { agents: [
+      { id: 2, alive: true, controlled: false, beliefs: { all: () => [{ subjectId: 99, suspicion: 0.8 }] } },
+      { id: 3, alive: true, controlled: false, beliefs: { all: () => [{ subjectId: 99, suspicion: 0.7 }] } },
+    ] };
+    const clim = suspicionClimate(villainEra);
+    ok(clim.mass > 1 && clim.top1Share > 0.9, `catalog suspicionClimate: a NAMED-villain era concentrates suspicion (top1 ${clim.top1Share.toFixed(2)})`);
+  }
+  // F.arcLoad — open arcs sharing an agent as principal.
+  {
+    const sim = { time: 0, agentsById: new Map(), chronicle: { note() {} } };
+    sim.sagas = new SagaStore(sim);
+    sim.sagas.openArc({ kind: 'vendetta', key: 'v', principals: [1, 2] });
+    sim.sagas.openArc({ kind: 'rescue', key: 'r', principals: [1, 9] });
+    ok(arcLoad(sim, { id: 1 }) === 2 && arcLoad(sim, { id: 2 }) === 1, 'catalog arcLoad: counts open arcs by principal (protagonist pressure)');
   }
 }
 

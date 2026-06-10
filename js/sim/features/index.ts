@@ -10,5 +10,6 @@ import './recruiter.js';
 import './affect.js';
 import './ledger.js';
 import './caution.js';
+import './signalsFold.js';   // docs/architecture/13: PLAN_OUTCOME-folded catalog signals (streak/perils)
 
 export {};
