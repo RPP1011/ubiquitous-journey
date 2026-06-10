@@ -14,6 +14,7 @@
 // draw (and to drop) geometry. Guarded; never throws on a query.
 
 import { CITY } from '../sim/simconfig.js';
+import { rng as simRng } from '../sim/rng.js';
 
 // `as const` so the part/material values are literal unions (not widened `string`),
 // matching the PartType/Material types below at every call site.
@@ -130,7 +131,7 @@ export function strikeNearestWall(struct: Structure, tx: number, ty: number, dmg
 }
 
 // a thrown torch: ignite a flammable part near a point (the spark a raid spreads from).
-export function torch(struct: Structure, tx: number, ty: number, rng: () => number = Math.random): boolean {
+export function torch(struct: Structure, tx: number, ty: number, rng: () => number = simRng): boolean {
   for (const [k, p] of struct.parts) {
     if (!flammable(p.material)) continue;
     const [px, py] = k.split(',').map(Number);
@@ -148,7 +149,7 @@ const FIRE_NB: [number, number, number][] = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [
 // advance any spreading fire: burning parts lose hp and (probabilistically) ignite adjacent
 // flammable parts; consumed parts are removed, then the structure SETTLES (anything left
 // unsupported collapses). Returns the count destroyed this step (incl. collapse).
-export function tickFire(struct: Structure, dt: number, rng: () => number = Math.random): number {
+export function tickFire(struct: Structure, dt: number, rng: () => number = simRng): number {
   let destroyed = 0;
   const burning: [string, Part][] = [];
   for (const [k, p] of struct.parts) if (p.burning > 0) burning.push([k, p]);

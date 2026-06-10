@@ -18,6 +18,7 @@ import { awardGoalClosureXP } from '../motivation.js';
 import { stepTargetPos, stepEffectHolds } from '../planner.js';
 import { goTo, groundY } from './movement.js';
 import { steer, STEER_FILLS } from './steer.js';
+import { rng } from '../rng.js';
 import { registerExecutor, runExecutor, runPlanOutcome } from '../exec/registry.js';
 import { classifyYield } from '../experience.js';
 import { masteryMul } from './occupation.js';
@@ -43,7 +44,7 @@ const OUTPUT_TAGS: Record<string, string[]> = Object.fromEntries(
 
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
 const DIRS: FighterDir[] = [DIR.UP, DIR.DOWN, DIR.LEFT, DIR.RIGHT];
-const randDir = (): FighterDir => DIRS[(Math.random() * 4) | 0];
+const randDir = (): FighterDir => DIRS[(rng() * 4) | 0];
 
 // resolveLeaderRef + the follow locomotion moved to steer.js (fillFollow) in Phase 2b:
 // follow is now a steer-fill (formation-slot attractor + snapTo teleport), dispatched
@@ -173,7 +174,7 @@ function spyStep(a: Agent, dt: number, _ctx: CognitionCtx): void {
   // spies don't stack on the exact centre. RUN — an infiltrator hurries through
   // the frontier monster gauntlet rather than dawdling and getting cornered.
   if (!S.scoutTarget || a.pos.distanceTo(S.scoutTarget) < 1.2) {
-    const jx = (Math.random() - 0.5) * 6, jz = (Math.random() - 0.5) * 6;
+    const jx = (rng() - 0.5) * 6, jz = (rng() - 0.5) * 6;
     S.scoutTarget = new THREE.Vector3(jx, a.pos.y, jz);
   }
   goTo(a, S.scoutTarget!, dt, true);
@@ -291,7 +292,7 @@ function maybeRediscover(a: Agent, output: string, dt: number): void {
   try {
     const rate = (RECIPES && RECIPES.rediscoverPerSec) || 0;
     if (rate <= 0 || !a.recipes) return;
-    if (Math.random() < rate * dt) a.recipes.add(output);   // Phase 4: + chronicle 'invention'
+    if (rng() < rate * dt) a.recipes.add(output);   // Phase 4: + chronicle 'invention'
   } catch { /* never throw on the tick */ }
 }
 
@@ -428,7 +429,7 @@ export function combatStep(a: Agent, dt: number, ctx: CognitionCtx): void {
   // (a scarecrow, a phantom) simply can't be cast at — the MELEE swing below still lands
   // geometrically on whatever body is there. Guarded: ability-less / no-real-target -> no-op.
   if (a._castCd <= 0) {
-    a._castCd = 0.4 + Math.random() * 0.4;
+    a._castCd = 0.4 + rng() * 0.4;
     // a spec resolves on a REAL body, so casting requires the target to be a perceived
     // live agent — the resolver returns it ONLY when vision-confirmed (a belief about a
     // scarecrow returns null and simply can't be cast at; the melee swing below still
@@ -455,8 +456,8 @@ export function combatStep(a: Agent, dt: number, ctx: CognitionCtx): void {
       if (a._releaseTimer <= 0 && f.state === 'ready') f.release();
     } else if (a._attackCd <= 0 && f.canAct() && f.state !== 'block') {
       f.ready(randDir());
-      a._releaseTimer = 0.35 + Math.random() * 0.25;
-      a._attackCd = 1.3 + Math.random() * 1.2;
+      a._releaseTimer = 0.35 + rng() * 0.25;
+      a._attackCd = 1.3 + rng() * 1.2;
     }
   }
 }

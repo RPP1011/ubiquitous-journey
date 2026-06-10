@@ -21,6 +21,7 @@ import { ABILITY_CATALOG } from '../rpg/abilities/catalog.js';
 import { BEAT } from './chronicle.js';
 import { arcKey } from './arcs.js';
 import { setHouseFeud } from './houses.js';
+import { rng } from './rng.js';
 
 // `sim` (the owning Simulation — wave-2, still .js), `cfg` (the SEEDS.rivalApprentices
 // config block) and the seeded Agents are typed opaquely on purpose; this runs once at
@@ -32,7 +33,7 @@ type Ag = any;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Cfg = any;
 
-const rand = (a: number, b: number): number => a + Math.random() * (b - a);
+const rand = (a: number, b: number): number => a + rng() * (b - a);
 const groundY = (x: number, z: number): number => { try { return typeof document === 'undefined' ? 0 : terrainHeight(x, z); } catch { return 0; } };
 
 // entry point — run all enabled seeds. Guarded per-seed so one bad seed can't

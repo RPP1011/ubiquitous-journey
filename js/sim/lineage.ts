@@ -22,6 +22,7 @@
 // Self-throttled: Simulation just calls lineage.tick(ctx, step) on the fixed loop.
 
 import * as THREE from 'three';
+import { rng } from './rng.js';
 import { Agent } from './agent.js';
 import { LINEAGE, SIM } from './simconfig.js';
 import { terrainHeight } from '../arena.js';
@@ -250,8 +251,8 @@ export class Lineage {
   _birth(A: Ag, B: Ag, ctx: Ctx): boolean {
     try {
       const sim = this.sim;
-      const px = (A.pos.x + B.pos.x) / 2 + (Math.random() * 4 - 2);
-      const pz = (A.pos.z + B.pos.z) / 2 + (Math.random() * 4 - 2);
+      const px = (A.pos.x + B.pos.x) / 2 + (rng() * 4 - 2);
+      const pz = (A.pos.z + B.pos.z) / 2 + (rng() * 4 - 2);
       const py = typeof document === 'undefined' ? 0 : terrainHeight(px, pz);
 
       const model = (A.fighter && A.fighter.characterKey) || 'knight';
@@ -344,7 +345,7 @@ export class Lineage {
     const out: Record<string, number> = {};
     for (const k of keys) {
       const base = ((a[k] ?? 0.5) + (b[k] ?? 0.5)) / 2;
-      const j = (Math.random() * 2 - 1) * LINEAGE.personalityJitter;
+      const j = (rng() * 2 - 1) * LINEAGE.personalityJitter;
       out[k] = clamp01(base + j);
     }
     return out;
@@ -454,7 +455,7 @@ export class Lineage {
       if (!b || !b.alive || b.rivalId !== a.id || a.id > b.id) continue;   // each living pair once
       const settled = a._surpassedRival || b._surpassedRival;             // the contest has a victor
       const chance = (LINEAGE.reconcileChance || 0.25) * (settled ? 1 : 0.3);
-      if (Math.random() > chance) continue;
+      if (rng() > chance) continue;
       a.rivalId = null; b.rivalId = null;                                  // the rivalry is over
       for (const [x, y] of [[a, b], [b, a]]) {
         const rb = x.beliefs && x.beliefs._ensure ? x.beliefs._ensure(y.id) : null;

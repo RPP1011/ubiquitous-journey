@@ -7,6 +7,7 @@
 // Agent methods. No cycles — imports config + pure helpers only.
 
 import { ARENA_RADIUS } from '../../arena.js';
+import { rng } from '../rng.js';
 import { GOODS, RAW_OUTPUTS, BASE_PRICE, ECON } from '../simconfig.js';
 import type { Agent, BehaviorProfile, CognitionCtx } from '../../../types/sim.js';
 
@@ -166,7 +167,7 @@ export function chooseOccupation(a: Agent, ctx: CognitionCtx): void {
       if (score > bestScore) { bestScore = score; best = good; }
     }
     if (best) a._trade = best;
-    else if (!a._trade) a._trade = RAW_OUTPUTS[(Math.random() * RAW_OUTPUTS.length) | 0];
+    else if (!a._trade) a._trade = RAW_OUTPUTS[(rng() * RAW_OUTPUTS.length) | 0];
   } catch { if (!a._trade) a._trade = 'food'; }
 }
 

@@ -7,6 +7,7 @@
 // quest is just a contract layered over emergent state — no scripted triggers.
 
 import { REP } from '../sim/reputation.js';
+import { rng } from '../sim/rng.js';
 import { bus } from '../rpg/events.js';
 import { MONSTER, SIM } from '../sim/simconfig.js';
 import type { Agent, EntityId, ActionEvent } from '../../types/sim.js';
@@ -325,7 +326,7 @@ export class QuestBoard {
     if (this.offers.length >= QUEST.radiantFloor) return;
     const folk = this._townsfolk().filter((a) => !this._postedFor.has(a.id));
     while (this.offers.length < QUEST.radiantFloor && folk.length) {
-      const giver = folk.splice((Math.random() * folk.length) | 0, 1)[0];
+      const giver = folk.splice((rng() * folk.length) | 0, 1)[0];
       const q = this._mintRadiant(giver);
       if (q) this._post(q); else break;
     }
@@ -348,10 +349,10 @@ export class QuestBoard {
     const dungeons = this.sim.dungeons;
     const dungeonsExist = dungeons && dungeons.entrances && dungeons.entrances.length;
     const monstersAlive = this.sim.agents.some((m: Agent) => m.alive && m.faction === MONSTER.faction);
-    const roll = Math.random();
+    const roll = rng();
 
     if (dungeonsExist && roll < 0.4) {
-      const place = dungeons.entrances[(Math.random() * dungeons.entrances.length) | 0].name;
+      const place = dungeons.entrances[(rng() * dungeons.entrances.length) | 0].name;
       return new Quest({
         type: 'delve', giverId: giver.id,
         title: `Recover a relic from ${place}`,
@@ -370,7 +371,7 @@ export class QuestBoard {
         reward: this._scale(QUEST.bountyReward),
       });
     }
-    const c = DELIVER_GOODS[(Math.random() * DELIVER_GOODS.length) | 0];
+    const c = DELIVER_GOODS[(rng() * DELIVER_GOODS.length) | 0];
     return new Quest({
       type: 'deliver', giverId: giver.id,
       title: `Deliver ${QUEST.deliverQty} ${c} to ${giver.name}`,

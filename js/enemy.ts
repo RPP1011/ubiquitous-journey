@@ -3,11 +3,12 @@
 // player winds up. Drives a Fighter; combat resolution is shared with the player.
 
 import { DIR, TUNE, ENEMY } from './constants.js';
+import { rng } from './sim/rng.js';
 import { ARENA_RADIUS } from './arena.js';
 import type { Fighter, FighterDir } from '../types/sim.js';
 
 const DIRS: FighterDir[] = [DIR.UP, DIR.DOWN, DIR.LEFT, DIR.RIGHT];
-const randDir = (): FighterDir => DIRS[(Math.random() * 4) | 0];
+const randDir = (): FighterDir => DIRS[(rng() * 4) | 0];
 
 export class Enemy {
   fighter: Fighter;
@@ -20,7 +21,7 @@ export class Enemy {
   constructor(fighter: Fighter, angle: number) {
     this.fighter = fighter;
     this.angle = angle;                 // preferred slot around the player
-    this.cooldown = Math.random() * ENEMY.attackCooldownMax;
+    this.cooldown = rng() * ENEMY.attackCooldownMax;
     this.releaseTimer = 0;
     this.blockHold = 0;
     this._prevPlayerReady = false;
@@ -62,8 +63,8 @@ export class Enemy {
     // react to the player's wind-up by maybe raising guard
     const winding = player.state === 'ready';
     if (winding && !this._prevPlayerReady &&
-        dist < ENEMY.engageRange * 2.2 && f.canAct() && Math.random() < ENEMY.blockChance) {
-      f.startBlock(Math.random() < 0.6 ? player.dir : randDir());
+        dist < ENEMY.engageRange * 2.2 && f.canAct() && rng() < ENEMY.blockChance) {
+      f.startBlock(rng() < 0.6 ? player.dir : randDir());
       this.blockHold = 1.1;
     }
     this._prevPlayerReady = winding;
@@ -76,8 +77,8 @@ export class Enemy {
     // attack when close enough, off cooldown and free to act
     if (dist <= ENEMY.engageRange && this.cooldown <= 0 && f.canAct() && f.state !== 'block') {
       f.ready(randDir());
-      this.releaseTimer = 0.32 + Math.random() * 0.22;     // telegraph window
-      this.cooldown = ENEMY.attackCooldownMin + Math.random() * (ENEMY.attackCooldownMax - ENEMY.attackCooldownMin);
+      this.releaseTimer = 0.32 + rng() * 0.22;     // telegraph window
+      this.cooldown = ENEMY.attackCooldownMin + rng() * (ENEMY.attackCooldownMax - ENEMY.attackCooldownMin);
     }
   }
 }

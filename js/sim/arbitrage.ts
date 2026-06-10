@@ -10,6 +10,7 @@
 // `arbitrage` goal decide.js routes + act.js walks) and the existing market auction.
 
 import { ARBITRAGE, ECON } from './simconfig.js';
+import { rng } from './rng.js';
 import type { ArbitrageState, FullCtx, EntityId } from '../../types/sim.js';
 
 // The (still-.js) Simulation is reached into loosely (agents/towns/gazette/world/
@@ -108,7 +109,7 @@ export class Arbitrage {
         if (dest != null && sim.towns && sim.towns[dest]) { pick = { good, destTownId: dest }; break; }
       }
       if (!pick) continue;
-      if (Math.random() > (ARBITRAGE.takeChance || 0.5)) continue;
+      if (rng() > (ARBITRAGE.takeChance || 0.5)) continue;
       this._take(a, pick);
     }
   }

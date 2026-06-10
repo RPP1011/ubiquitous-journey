@@ -51,7 +51,12 @@ function buildWorld() {
   if (game.world) game.world.dispose();
 
   game.world = new World(scene);
-  game.sim = new Simulation(scene, game.world);
+  // SEEDED DETERMINISM (opt-in): `?seed=<n>` in the URL arms the shared PRNG so the run
+  // reproduces (same seed → same routed stochastic stream). No param ⇒ seed undefined ⇒
+  // the PRNG stays unseeded (rng() === Math.random()), the default non-deterministic world.
+  const _seedParam = new URLSearchParams(location.search).get('seed');
+  const _seed = _seedParam == null ? undefined : (Number(_seedParam) | 0);
+  game.sim = new Simulation(scene, game.world, _seed === undefined ? {} : { seed: _seed });
   game.sim.spawn();
 
   // dungeons: scatter cave-mouth portals in the wilds and expose the manager to

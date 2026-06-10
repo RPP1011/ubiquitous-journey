@@ -3,6 +3,7 @@
 // rhythm, the light belief-only nudges (opportunity/crisis/spark), and the close-out
 // of a favored-rise's fall. Free functions over the Director instance `d`.
 import { DIRECTOR } from '../simconfig.js';
+import { rng } from '../rng.js';
 import { BEAT } from '../chronicle.js';
 import { clamp } from './util.js';
 
@@ -67,7 +68,7 @@ export function _roll(d: Dir, ctx: Ctx): void {
   if (d._points >= (C.trope || 8)) cands.push({ k: 'trope', w: W.trope || 0 });
   let total = 0; for (const c of cands) total += c.w;
   if (total <= 0) return;                 // can't afford anything yet — bank for next roll (a lull)
-  let r = Math.random() * total, pick = cands[cands.length - 1];
+  let r = rng() * total, pick = cands[cands.length - 1];
   for (const c of cands) { if ((r -= c.w) < 0) { pick = c; break; } }
   switch (pick.k) {
     case 'raid':        return d._raid(pop);          // _raid sizes + pays from the budget
@@ -86,9 +87,9 @@ export function _roll(d: Dir, ctx: Ctx): void {
 export function _opportunity(d: Dir, pop: number): void {
   const folk = d._idleTownsfolk();
   if (!folk.length) return;
-  const a = folk[(Math.random() * folk.length) | 0];
+  const a = folk[(rng() * folk.length) | 0];
   try {
-    if (Math.random() < DIRECTOR.opportunity.caravanShare) {
+    if (rng() < DIRECTOR.opportunity.caravanShare) {
       // caravan: a transient willingness to pay more brightens trade beliefs.
       for (const c in a.priceBeliefs) {
         a.priceBeliefs[c] = +(a.priceBeliefs[c] * DIRECTOR.opportunity.caravanPriceMul).toFixed(2);
@@ -112,11 +113,11 @@ export function _crisis(d: Dir): void {
   if (!folk.length) return;
   const C = DIRECTOR.crisis;
   const staples = C.staples;
-  const good = staples[(Math.random() * staples.length) | 0];
+  const good = staples[(rng() * staples.length) | 0];
   let touched = 0;
   for (const a of folk) {
     if (touched >= C.maxAffected) break;
-    if (Math.random() > C.affectShare) continue;
+    if (rng() > C.affectShare) continue;
     try {
       if (a.priceBeliefs && a.priceBeliefs[good] != null) {
         a.priceBeliefs[good] = +(a.priceBeliefs[good] * C.priceMul).toFixed(2);
@@ -134,15 +135,15 @@ export function _crisis(d: Dir): void {
 export function _spark(d: Dir): void {
   const folk = d._idleTownsfolk();
   if (folk.length < 2) return;
-  const i = (Math.random() * folk.length) | 0;
-  let j = (Math.random() * folk.length) | 0;
+  const i = (rng() * folk.length) | 0;
+  let j = (rng() * folk.length) | 0;
   if (j === i) j = (j + 1) % folk.length;
   const A = folk[i], B = folk[j];
   try {
     const drop = DIRECTOR.spark.standingDrop;
     d._sour(A, B, drop);
     // a feud is mutual; a theft is one-sided. Roll which.
-    if (Math.random() < DIRECTOR.spark.feudShare) d._sour(B, A, drop);
+    if (rng() < DIRECTOR.spark.feudShare) d._sour(B, A, drop);
     d.stats.sparks++;
     d._sinceEvent = 0;
   } catch { /* guarded */ }

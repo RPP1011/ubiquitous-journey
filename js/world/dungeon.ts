@@ -9,6 +9,7 @@
 // this class exposes.
 
 import * as THREE from 'three';
+import { rng } from '../sim/rng.js';
 import { DUNGEON } from '../sim/simconfig.js';
 
 // ── THREE cast-view (vendored three's transform members are invisible to tsc;
@@ -61,7 +62,6 @@ interface Haul { gold: number; relic: boolean; potion: boolean; }
 interface TorchLight { light: Obj3D; base: number; phase: number; }
 
 const TAU = Math.PI * 2;
-const rng = (): number => Math.random();
 
 type Grid = number[][];
 type Cell = [number, number];

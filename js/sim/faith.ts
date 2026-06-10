@@ -12,6 +12,7 @@
 // Touches no gold; fully guarded (never throws/stalls the fixed tick).
 
 import { FAITH } from './simconfig.js';
+import { rng } from './rng.js';
 import { TUNE } from '../constants.js';
 
 // `sim` (the owning Simulation — wave-2, still .js) and the believer Agents (via their
@@ -82,7 +83,7 @@ export class Faith {
       if (!flock.length) continue;            // a dead faith can't spread itself (needs a prophet)
       const chance = Math.min(0.9, (FAITH.convertChance || 0) + flock.length * (FAITH.powerConvertBonus || 0));
       for (const b of flock) {
-        if (Math.random() > chance) continue;
+        if (rng() > chance) continue;
         // nearest faithless townsperson within range
         let best = null, bd = range2;
         for (const o of this.sim.agents) {
@@ -103,7 +104,7 @@ export class Faith {
       const flock = this.believers(god);
       if (flock.length <= (FAITH.smallGodAt || 1)) continue;   // protect the last of the faithful
       for (const b of flock) {
-        if (Math.random() < (FAITH.doubtChance || 0)) { b.faith = null; this.stats.apostasies++; }
+        if (rng() < (FAITH.doubtChance || 0)) { b.faith = null; this.stats.apostasies++; }
       }
       this._noteTier(god);
     }

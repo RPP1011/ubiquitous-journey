@@ -7,6 +7,7 @@
 // "what A thinks about B" layer) and the Source/confidence provenance model.
 
 import * as THREE from 'three';
+import { rng } from './rng.js';
 import { ARENA_RADIUS } from '../arena.js';
 import { SIM, SOURCE, HEARSAY, MAP } from './simconfig.js';
 import type {
@@ -281,7 +282,7 @@ export class BeliefStore implements IBeliefStore {
       // hearsay (hops>=2); a first-hand belief is never overturned by a tale.
       if (!b.hostile && (b.hops || 0) >= 2 && b.standing <= -HEARSAY.tipStanding) {
         const p = Math.min(0.5, HEARSAY.tipChancePerHop * ((b.hops || 0) - 1));
-        if (Math.random() < p) { b.hostile = true; b.source = SOURCE.RUMOR.tag; b.rumorBorn = true; }
+        if (rng() < p) { b.hostile = true; b.source = SOURCE.RUMOR.tag; b.rumorBorn = true; }
       }
     } catch { /* never throw */ }
   }

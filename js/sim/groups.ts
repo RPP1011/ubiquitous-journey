@@ -19,6 +19,7 @@
 // is the player, so recruited companions and emergent NPC groups coexist.
 
 import { BAND, GROUP_TYPES } from './simconfig.js';
+import { rng } from './rng.js';
 import { isHomeBuilder } from './construction.js';
 
 // `sim` (the owning Simulation — wave-2, still .js) and the agents (via their long-tail
@@ -85,7 +86,7 @@ export class Groups {
     if (!anchors.length) return;
     const tries = Math.min(BAND.formAttempts || 1, anchors.length);
     for (let t = 0; t < tries; t++) {
-      const L = anchors[(Math.random() * anchors.length) | 0];
+      const L = anchors[(rng() * anchors.length) | 0];
       this._formFrom(L);
     }
   }

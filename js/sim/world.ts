@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { ARENA_RADIUS, BIOME, findBiomeSpot, regionAt, REGIONS, LANDMARKS, terrainHeight } from '../arena.js';
 import { TOWNS } from './simconfig.js';
 import { buildWalls } from './walls.js';
+import { rng } from './rng.js';
 import type { World as IWorld, Poi, Vec2Like } from '../../types/sim.js';
 
 // A minimal browser-visual mesh node. The vendored `three` is un-typed JS, so TS
@@ -124,8 +125,8 @@ export class World implements IWorld {
   // reachable hinterland. Deterministic-safe (same Math.random as other placement).
   _scatterAround(kind: string, cx: number, cz: number, count: number, minR: number, maxR: number, make: () => Obj3D, good?: string) {
     for (let i = 0; i < count; i++) {
-      const ang = Math.random() * Math.PI * 2;
-      const r = minR + Math.random() * (maxR - minR);
+      const ang = rng() * Math.PI * 2;
+      const r = minR + rng() * (maxR - minR);
       this._add(kind, new THREE.Vector3(cx + Math.cos(ang) * r, 0, cz + Math.sin(ang) * r), make());
     }
   }
@@ -134,7 +135,7 @@ export class World implements IWorld {
   // target "a mine in the Ironhills". Read-only; guarded.
   randomSiteInRegion(kind: string, region: string | null): Poi | null {
     const m = this.pois.filter((p) => p.kind === kind && p.region === region);
-    if (m.length) return m[(Math.random() * m.length) | 0];
+    if (m.length) return m[(rng() * m.length) | 0];
     return this.randomSite(kind);
   }
 
@@ -166,7 +167,7 @@ export class World implements IWorld {
   // a random site of a kind (used to scatter spawns across the world)
   randomSite(kind: string): Poi | null {
     const m = this.pois.filter((p) => p.kind === kind);
-    return m.length ? m[(Math.random() * m.length) | 0] : null;
+    return m.length ? m[(rng() * m.length) | 0] : null;
   }
 
   // a random site of a kind within `maxR` of the origin (used to seed the spawn
@@ -176,7 +177,7 @@ export class World implements IWorld {
   randomSiteNear(kind: string, maxR: number, center?: Vec2Like): Poi | null {
     const cx = center ? center.x : 0, cz = center ? center.z : 0;
     const m = this.pois.filter((p) => p.kind === kind && Math.hypot(p.pos.x - cx, p.pos.z - cz) <= maxR);
-    if (m.length) return m[(Math.random() * m.length) | 0];
+    if (m.length) return m[(rng() * m.length) | 0];
     return this.randomSite(kind);   // fall back to any if none are near
   }
 
@@ -218,7 +219,7 @@ function makeField() {
   const mat = new T3.MeshStandardMaterial({ color: 0xd8b24a, roughness: 1 });
   for (let i = 0; i < 20; i++) {
     const w = new T3.Mesh(new T3.ConeGeometry(0.12, 1.0, 5), mat);
-    w.position.set((Math.random() - 0.5) * 5, 0.5, (Math.random() - 0.5) * 5);
+    w.position.set((rng() - 0.5) * 5, 0.5, (rng() - 0.5) * 5);
     w.castShadow = true; g.add(w);
   }
   return g;
@@ -235,7 +236,7 @@ function makeWoods() {
     const crown = new T3.Mesh(new T3.ConeGeometry(0.8, 1.9, 7), leaf);
     crown.position.y = 1.6; crown.castShadow = true;
     t.add(trunk); t.add(crown);
-    t.position.set((Math.random() - 0.5) * 5, 0, (Math.random() - 0.5) * 5);
+    t.position.set((rng() - 0.5) * 5, 0, (rng() - 0.5) * 5);
     g.add(t);
   }
   return g;
@@ -245,9 +246,9 @@ function makeMine() {
   const g = new T3.Group();
   const mat = new T3.MeshStandardMaterial({ color: 0x6f7681, roughness: 1, flatShading: true });
   for (let i = 0; i < 9; i++) {
-    const r = new T3.Mesh(new T3.IcosahedronGeometry(0.45 + Math.random() * 0.6, 0), mat);
-    r.position.set((Math.random() - 0.5) * 4.5, 0.3, (Math.random() - 0.5) * 4.5);
-    r.rotation.set(Math.random(), Math.random(), Math.random());
+    const r = new T3.Mesh(new T3.IcosahedronGeometry(0.45 + rng() * 0.6, 0), mat);
+    r.position.set((rng() - 0.5) * 4.5, 0.3, (rng() - 0.5) * 4.5);
+    r.rotation.set(rng(), rng(), rng());
     r.castShadow = true; g.add(r);
   }
   // a pit-entrance timber
@@ -304,10 +305,10 @@ function makeMeadow() {
     const s = new T3.Mesh(new T3.CylinderGeometry(0.03, 0.04, 0.5, 4), stem);
     s.position.y = 0.25;
     const b = new T3.Mesh(new T3.IcosahedronGeometry(0.12, 0),
-      new T3.MeshStandardMaterial({ color: blooms[(Math.random() * blooms.length) | 0], roughness: 0.8 }));
+      new T3.MeshStandardMaterial({ color: blooms[(rng() * blooms.length) | 0], roughness: 0.8 }));
     b.position.y = 0.55;
     p.add(s, b);
-    p.position.set((Math.random() - 0.5) * 5, 0, (Math.random() - 0.5) * 5);
+    p.position.set((rng() - 0.5) * 5, 0, (rng() - 0.5) * 5);
     g.add(p);
   }
   return g;

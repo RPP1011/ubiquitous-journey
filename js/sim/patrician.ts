@@ -10,6 +10,7 @@
 // gold, fully guarded (never throws on the fixed tick).
 
 import { PATRICIAN } from './simconfig.js';
+import { rng } from './rng.js';
 
 // `sim`/`ctx` (the owning Simulation + cognition context — wave-2, still .js) and the
 // agents (via their belief/standing flags) are typed opaquely on purpose; this layer is
@@ -64,7 +65,7 @@ export class Patrician {
     // most interventions are a TRUCE (damp the feud); occasionally the Patrician
     // achieves a lasting RECONCILIATION — former enemies become friends. Peace, not
     // just a pause: the positive counterpoint to all the blood-feuds.
-    if (Math.random() < (PATRICIAN.reconcileChance || 0)) {
+    if (rng() < (PATRICIAN.reconcileChance || 0)) {
       this._reconcile(A, B);
     } else {
       this._truce(A, B);

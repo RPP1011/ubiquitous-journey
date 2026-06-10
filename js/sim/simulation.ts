@@ -43,6 +43,7 @@ import { installDeedRouter, recordDeed } from './deedRouter.js';
 import { bus, makeEvent as makeEventRaw } from '../rpg/events.js';
 import { onCombatEvents } from './combatEvents.js';
 import { MentalMap } from './mentalmap.js';
+import { rng, setSeed } from './rng.js';
 import { Scarecrow } from './percept.js';
 import { reason } from './schemas/interpreter.js';
 import { ACTIVE as SCHEMA_CATALOGUE } from './schemas/catalogue.js';
@@ -98,7 +99,7 @@ interface Camp {
 // Object3D's transform members; this covers exactly what spawn()/_spawn* touch.
 interface SceneLike { add(o: { position: THREE.Vector3 }): void; remove(o: unknown): void; }
 
-const rand = (a: number, b: number): number => a + Math.random() * (b - a);
+const rand = (a: number, b: number): number => a + rng() * (b - a);
 
 // Re-typed config views (arena.js / simconfig.js are un-typed JS inferred without string
 // index signatures — these name the by-key lookups the spawn paths perform).
@@ -117,7 +118,7 @@ const _SYL_A = ['Ar', 'Bel', 'Cor', 'Dra', 'El', 'Fen', 'Gar', 'Hal', 'Il', 'Jor
 const _SYL_B = ['a', 'e', 'i', 'o', 'ae', 'ia', 'ei', 'au'];
 const _SYL_C = ['dric', 'wyn', 'mar', 'ric', 'sa', 'lyn', 'don', 'gar', 'the', 'ven', 'na', 'ris', 'mund', 'far', 'dis', 'wald', 'ric', 'beth'];
 function synthName(): string {
-  const p = (arr: string[]): string => arr[(Math.random() * arr.length) | 0];
+  const p = (arr: string[]): string => arr[(rng() * arr.length) | 0];
   return p(_SYL_A) + p(_SYL_B) + p(_SYL_C);
 }
 
@@ -182,9 +183,14 @@ export class Simulation {
   arbitrage: Arbitrage;
   intrigue: Intrigue;
 
-  constructor(scene: SceneLike, world: IWorld, opts: { makeFighter?: MakeFighter } = {}) {
+  constructor(scene: SceneLike, world: IWorld, opts: { makeFighter?: MakeFighter; seed?: number } = {}) {
     this.scene = scene;
     this.world = world;
+    // SEEDED DETERMINISM: arm the shared PRNG before any spawn rolls. With no seed this is a no-op
+    // (the stream stays unseeded ⇒ rng() === Math.random(), so the unseeded soak is byte-identical);
+    // with a seed, every routed stochastic site draws the same sequence ⇒ reproducible runs. Set
+    // here (not lazily) so world-build rolls (personalities/names/positions) are already seeded.
+    setSeed(opts.seed);
     // body factory: the browser builds visual Fighters (default); a headless
     // harness injects a logic-only HeadlessFighter so the sim runs with no
     // renderer/DOM. Everything downstream only touches the shared interface.
@@ -333,7 +339,7 @@ export class Simulation {
   }
 
   _takeName(): string {
-    if (this._names.length) return this._names.splice((Math.random() * this._names.length) | 0, 1)[0];
+    if (this._names.length) return this._names.splice((rng() * this._names.length) | 0, 1)[0];
     // pool exhausted (many towns + generations churn through it) — SYNTHESISE a
     // plausible given name from syllables rather than an ugly "Unit<id>" (which
     // would ride every future chronicle beat). Deterministic-safe (Math.random).
@@ -376,7 +382,7 @@ export class Simulation {
     let gi = 0;
     for (const town of this.towns) {
       for (let k = 0; k < cohort; k++, gi++) {
-        const model = MODELS[(Math.random() * MODELS.length) | 0];
+        const model = MODELS[(rng() * MODELS.length) | 0];
         const fighter = this.makeFighter(model, {});
         // round-robin across site KINDS (lean toward different first trades) within
         // THIS town's home band so it starts socially dense around its own market.
@@ -604,8 +610,8 @@ export class Simulation {
       for (const town of towns) {
         const c = town.center;
         for (let i = 0; i < SCARECROW.count; i++) {
-          const ang = Math.random() * Math.PI * 2;
-          const r = r0 + Math.random() * Math.max(0, r1 - r0);
+          const ang = rng() * Math.PI * 2;
+          const r = r0 + rng() * Math.max(0, r1 - r0);
           const x = c.x + Math.cos(ang) * r;
           const z = c.z + Math.sin(ang) * r;
           this.spawnPercept(new Scarecrow({

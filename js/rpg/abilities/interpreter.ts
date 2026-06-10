@@ -12,6 +12,7 @@
 // or chosen by an NPC.
 
 import * as THREE from 'three';
+import { rng } from '../../sim/rng.js';
 import { bus } from '../events.js';
 import { validate, isMelee } from './ir.js';
 import { EFFECTS } from './effects.js';
@@ -65,7 +66,7 @@ export function castSpec(spec: AbilitySpec, caster: Agent, ctx: CastCtx | null):
   for (const e of spec.effects) {
     const fn = EFFECTS[e.op];
     if (!fn) continue;
-    if (e.chance < 1 && Math.random() > e.chance) continue;
+    if (e.chance < 1 && rng() > e.chance) continue;
 
     if (e.op === 'heal' || e.op === 'shield' || e.op === 'dash') {
       // caster-affecting ops ignore the foe list
@@ -117,7 +118,7 @@ function runChained(spec: AbilitySpec, primary: AbilityEffect, caster: Agent, ta
     if (e === primary) continue;
     if (e.when !== 'on_hit' && e.when !== 'on_kill') continue;
     if (!gateTrigger(e, caster, target, true, now)) continue;
-    if (e.chance < 1 && Math.random() > e.chance) continue;
+    if (e.chance < 1 && rng() > e.chance) continue;
     const fn = EFFECTS[e.op];
     if (fn) fn(e, caster, e.op === 'heal' || e.op === 'shield' || e.op === 'dash' ? caster : target, ctx);
   }

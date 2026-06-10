@@ -8,6 +8,7 @@
 // narrative beats.
 
 import { bus, makeEvent as makeEventRaw } from '../rpg/events.js';
+import { rng } from './rng.js';
 import { RPG } from '../rpg/rpgconfig.js';
 import { TUNE } from '../constants.js';
 import { SIM, MONSTER, EPITHETS, DIRECTOR, AVENGER, GRATEFUL, LEGEND, CAPTIVE, factionHostile } from './simconfig.js';
@@ -101,7 +102,7 @@ export function onCombatEvents(sim: Sim, events: CombatEv[]): void {
     if (ev.type === 'dead' && !T._held &&
         T.faction === 'townsfolk' && !T.combatant && !T.controlled &&
         (CAPTIVE.captorFactions || []).indexOf(A.faction) !== -1 &&
-        Math.random() < (CAPTIVE.captureChance || 0)) {
+        rng() < (CAPTIVE.captureChance || 0)) {
       try {
         const maxHp = (TUNE && TUNE.maxHealth) || 100;
         if (T.fighter && (T.fighter as { revive?: (h: number) => void }).revive) {
@@ -242,7 +243,7 @@ export function onCombatEvents(sim: Sim, events: CombatEv[]): void {
       // STASH stays put (at home — burglable while away in Phase 4, not lootable in death).
       A.gold += Math.max(0, Math.floor(T.gold || 0)); T.gold = 0;
       // T.stash is deliberately untouched — it is not on the body.
-      if (Math.random() < 0.5) A.inventory.potion = (A.inventory.potion || 0) + 1;
+      if (rng() < 0.5) A.inventory.potion = (A.inventory.potion || 0) + 1;
     }
     // vendetta credit: a PLAYER killing blow on ANY agent may settle a grieving
     // townsperson's vendetta (the named foe of an 'avenge' quest). Guarded.

@@ -11,6 +11,7 @@
 // out-of-town subject, so its travel IS the inter-town news-courier mechanic.
 
 import * as THREE from 'three';
+import { rng } from './rng.js';
 import { Agent } from './agent.js';
 import { REPORTER, MONSTER, GAZETTE, ALERT } from './simconfig.js';
 import { buildBrief, gatherDispatches } from './gazette.js';
@@ -52,7 +53,7 @@ export class Reporter {
     const sim = this.sim;
     const town = (sim.towns && sim.towns[i % sim.towns.length]) || { center: new THREE.Vector3(), radius: 70, id: 0 };
     const fighter = sim.makeFighter('knight', {});
-    const px = town.center.x + (Math.random() * 6 - 3), pz = town.center.z + (Math.random() * 6 - 3);
+    const px = town.center.x + (rng() * 6 - 3), pz = town.center.z + (rng() * 6 - 3);
     const py = typeof document === 'undefined' ? 0 : 0;
     fighter.root.position.set(px, py, pz);
     sim.scene.add(fighter.root);

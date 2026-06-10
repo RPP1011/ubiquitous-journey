@@ -4,6 +4,7 @@
 // and (later) vary movement/encounters by biome.
 
 import * as THREE from 'three';
+import { rng } from './sim/rng.js';
 
 // The vendored three.module.js is un-typed JS; tsc cannot see Object3D's
 // getter-installed transform/scene members. These minimal views cover exactly
@@ -186,8 +187,8 @@ export function nearestLandmark(x: number, z: number, maxR = Infinity): Landmark
 // Find a random spot in a given biome within a radius band (or null if none).
 export function findBiomeSpot(biome: string, minR: number, maxR: number, tries = 40): THREE.Vector3 | null {
   for (let i = 0; i < tries; i++) {
-    const a = Math.random() * Math.PI * 2;
-    const r = minR + Math.random() * (maxR - minR);
+    const a = rng() * Math.PI * 2;
+    const r = minR + rng() * (maxR - minR);
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
     if (biomeAt(x, z) === biome) return new THREE.Vector3(x, 0, z);
   }
@@ -301,7 +302,7 @@ function buildProps(scene: SceneLike): void {
 }
 
 function spot(x: number, z: number, scale: number, rand = false): Prop {
-  return { x, z, scale, rot: rand ? Math.random() * Math.PI : 0, y: terrainHeight(x, z) };
+  return { x, z, scale, rot: rand ? rng() * Math.PI : 0, y: terrainHeight(x, z) };
 }
 
 function addInstanced(

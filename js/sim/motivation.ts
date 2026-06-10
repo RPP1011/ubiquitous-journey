@@ -11,6 +11,7 @@
 // counters (agent.life) plus the gold/level the agent genuinely holds.
 
 import { MOTIVE, SIM } from './simconfig.js';
+import { rng } from './rng.js';
 import { RPG } from '../rpg/rpgconfig.js';
 import { goalAvenge, goalSeekFortune, goalRepay, goalGrieve, goalDelve } from './planner.js';
 import { arcKey } from './arcs.js';
@@ -155,7 +156,7 @@ export function assignAmbition(a: Agent, now = 0, avoid: string | null = null): 
   const P = a.personality || {};
   const ws = pool.map((k) => Math.max(0.01, AMBITIONS[k].weight(P)));
   const total = ws.reduce((s, w) => s + w, 0);
-  let r = Math.random() * total, kind = pool[0];
+  let r = rng() * total, kind = pool[0];
   for (let i = 0; i < pool.length; i++) { r -= ws[i]; if (r <= 0) { kind = pool[i]; break; } }
   a.ambition = { kind, label: AMBITIONS[kind].label, base: snapshot(a), progress: 0, t0: now, revenge: false };
 }

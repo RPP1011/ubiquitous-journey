@@ -9,6 +9,7 @@
 // dungeon agents at DUNGEON.y, ~400m apart — past every vision/combat radius.
 
 import * as THREE from 'three';
+import { rng } from '../sim/rng.js';
 import { Fighter } from '../fighter.js';
 import { Agent } from '../sim/agent.js';
 import { MONSTER, DUNGEON } from '../sim/simconfig.js';
@@ -74,7 +75,7 @@ const DUNGEON_NAMES = [
   'the Sunken Warren', 'Barrow Deep', 'the Gloamcaves', 'Mournhollow',
   'the Rotfen Crypt', 'Direpit', 'the Hollow Steps', 'Ashen Delve',
 ];
-const rand = (a: number, b: number): number => a + Math.random() * (b - a);
+const rand = (a: number, b: number): number => a + rng() * (b - a);
 
 function makePersonality(): Record<string, number> {
   return {
@@ -117,7 +118,7 @@ export class DungeonManager {
     for (let i = 0; i < DUNGEON.entranceCount; i++) {
       const spot: Vec3 = findBiomeSpot(BIOME.WILDS, ARENA_RADIUS * 0.5, ARENA_RADIUS * 0.95)
         || new T3.Vector3(rand(-1, 1) * ARENA_RADIUS * 0.7, 0, rand(-1, 1) * ARENA_RADIUS * 0.7);
-      const name = used.splice((Math.random() * used.length) | 0, 1)[0] || `Dungeon ${i + 1}`;
+      const name = used.splice((rng() * used.length) | 0, 1)[0] || `Dungeon ${i + 1}`;
       const mesh = this._mouthMesh();
       mesh.position.copy(spot);
       this.scene.add(mesh);
@@ -265,7 +266,7 @@ export class DungeonManager {
         combatant: true, threat: MONSTER.threat + dungeon.level * 0.05,
       });
       m.roam = { x: s.pos.x, z: s.pos.z, r: s.roomR };   // pace within its room
-      m.gold = 6 + ((Math.random() * 10) | 0) + dungeon.level * 2;   // loot purse
+      m.gold = 6 + ((rng() * 10) | 0) + dungeon.level * 2;   // loot purse
       this.sim.agents.push(m);
       this.sim.agentsById.set(m.id, m);
       this._mobIds.push(m.id);

@@ -23,6 +23,7 @@
 // cover identity, not extra spawns.
 
 import { INTRIGUE, SOURCE, SIM } from './simconfig.js';
+import { rng } from './rng.js';
 
 // `sim`/`ctx` (the owning Simulation + its cognition context — wave-2, still .js) and the
 // spy Agents (via their disguise/spy state flags) are typed opaquely on purpose; the
@@ -74,7 +75,7 @@ export class Intrigue {
           homeKey: key,
           anchor: camp.anchor ? camp.anchor.clone() : null,  // exfil destination
           phase: 'scout',          // scout -> exfil -> (run home) -> scout
-          plantCd: INTRIGUE.plantCadence * Math.random(),  // stagger first plant
+          plantCd: INTRIGUE.plantCadence * rng(),  // stagger first plant
         };
         this.spies.push(m);
         this.stats.spies++;
@@ -149,7 +150,7 @@ export class Intrigue {
     // blown: ground-truth faction now shows, and the town turns on the traitor.
     // (Skipped while the Director is running this spy as a SPY'S WEB arc — there the
     // exposure is a built-up revelation, not an abrupt catch, so the arc owns it.)
-    if (!spy._spyArc && Math.random() < (INTRIGUE.unmaskChance || 0)) { this._unmask(spy, ctx); return; }
+    if (!spy._spyArc && rng() < (INTRIGUE.unmaskChance || 0)) { this._unmask(spy, ctx); return; }
 
     // record the deceit so the inspector/chronicle can read it (guarded).
     if (spy.memory && spy.memory.record) {

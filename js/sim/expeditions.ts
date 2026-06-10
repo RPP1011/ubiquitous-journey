@@ -16,6 +16,7 @@ import { EXPEDITION, MONSTER } from './simconfig.js';
 import { isHomeBuilder } from './construction.js';
 import { ARENA_RADIUS } from '../arena.js';
 import { TUNE } from '../constants.js';
+import { rng } from './rng.js';
 
 // `sim` (the owning Simulation — wave-2, still .js) and the expedition Agents (captains +
 // followers, via their expedition/band flags) are typed opaquely on purpose; behaviour
@@ -26,7 +27,7 @@ type Sim = any;
 type Ag = any;
 
 const CORE = new THREE.Vector3(0, 0, 0);
-const rand = (a: number, b: number): number => a + Math.random() * (b - a);
+const rand = (a: number, b: number): number => a + rng() * (b - a);
 const HORROR_PERS = { risk_tolerance: 0.6, social_drive: 0.3, ambition: 0.5, altruism: 0.2, curiosity: 0.4 };
 
 export class Expeditions {
@@ -69,7 +70,7 @@ export class Expeditions {
     if (this.active.length >= (EXPEDITION.maxActive || 1)) return;
     const now = this.sim.time;
     if (now - this._lastForm < (EXPEDITION.formEvery || 90)) return;
-    if (Math.random() > (EXPEDITION.formChance ?? 0.5)) return;
+    if (rng() > (EXPEDITION.formChance ?? 0.5)) return;
     // don't drain a struggling town — a company is only mustered when there are folk to spare.
     const townPop = this.sim.agents.filter((a: any) => a.alive && a.autonomous && a.faction === 'townsfolk').length;
     if (townPop < (EXPEDITION.minTownPop || 18)) return;
@@ -114,10 +115,10 @@ export class Expeditions {
 
     const who = cap.name + (followers.length ? ` and ${followers.length} companion${followers.length > 1 ? 's' : ''}` : '');
     // choose the adventure: DOWN into the deep (the dungeons), or out into the wilds.
-    if (Math.random() < (EXPEDITION.delveChance ?? 0.7)) {
+    if (rng() < (EXPEDITION.delveChance ?? 0.7)) {
       this._descend(cap, who);
     } else {
-      const ang = Math.random() * Math.PI * 2;
+      const ang = rng() * Math.PI * 2;
       const r = ARENA_RADIUS * (EXPEDITION.targetRing || 0.78);
       cap.expedition.target = new THREE.Vector3(Math.cos(ang) * r, 0, Math.sin(ang) * r);
       this._note(`${who} set out on an expedition into the wilds.`);
@@ -243,7 +244,7 @@ export class Expeditions {
       this._note(`${cap.name}'s company climbs back from the deep, ${kills} horror${kills === 1 ? '' : 's'} slain — but ${names} was left below.`);
     } else {
       this.stats.triumphs++;
-      const relic = cleared && Math.random() < (EXPEDITION.relicChance ?? 0.6);
+      const relic = cleared && rng() < (EXPEDITION.relicChance ?? 0.6);
       if (relic) {
         try { for (const m of survivors) if (m.progression) m.progression.addNarrativeXP(0.8, this.sim.time); } catch { /* */ }
         try { cap.relics = (cap.relics || 0) + 1; } catch { /* */ }

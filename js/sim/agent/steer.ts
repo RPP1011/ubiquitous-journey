@@ -29,6 +29,7 @@
 // therefore never triggers in this workflow.
 
 import * as THREE from 'three';
+import { rng } from '../rng.js';
 import { ARENA_RADIUS, LANDMARKS } from '../../arena.js';
 import { SIM, STEER, SOCIAL, ECON, GOODS, PARTY, ROMANCE } from '../simconfig.js';
 import { POI_KIND } from '../world.js';
@@ -214,7 +215,7 @@ function fillReporter(a: Agent, _ctx: CognitionCtx): Field | null {
   if (t) return attractField(t, true);
   if (!a.wanderTarget || a.pos.distanceTo(a.wanderTarget) < 1.0) {
     const c = a.townAnchor || ZERO, rr = (a.townRadius || 40) * 0.5;
-    const ang = Math.random() * Math.PI * 2, r = Math.random() * rr;
+    const ang = rng() * Math.PI * 2, r = rng() * rr;
     a.wanderTarget = new THREE.Vector3(c.x + Math.cos(ang) * r, 0, c.z + Math.sin(ang) * r);
   }
   return attractField(a.wanderTarget, false);
@@ -231,7 +232,7 @@ function fillSightsee(a: Agent, _ctx: CognitionCtx): Field | null {
     const near = LANDMARKS.slice()
       .sort((p, q) => ((p.x - a.pos.x) ** 2 + (p.z - a.pos.z) ** 2) - ((q.x - a.pos.x) ** 2 + (q.z - a.pos.z) ** 2))
       .slice(0, 3);
-    const L = near[(Math.random() * near.length) | 0];
+    const L = near[(rng() * near.length) | 0];
     a.sightTarget = new THREE.Vector3(L.x, a.pos.y, L.z);
   }
   return attractField(a.sightTarget, false);
@@ -245,25 +246,25 @@ function fillWander(a: Agent, _ctx: CognitionCtx): Field | null {
     if (a.roam) {
       // dungeon dwellers pace within their room (set at spawn): a small patrol radius
       // around a fixed centre instead of the whole arena.
-      const ang = Math.random() * Math.PI * 2, r = Math.random() * a.roam.r;
+      const ang = rng() * Math.PI * 2, r = rng() * a.roam.r;
       a.wanderTarget = new THREE.Vector3(a.roam.x + Math.cos(ang) * r, a.pos.y, a.roam.z + Math.sin(ang) * r);
     } else if (a.campAnchor) {
       // camp combatants PATROL near their camp anchor (a frontier lair) rather than
       // roaming the inner village — a fixed territorial hazard, not a wandering mob.
-      const ang = Math.random() * Math.PI * 2, r = Math.random() * (a.campPatrolR || 20);
+      const ang = rng() * Math.PI * 2, r = rng() * (a.campPatrolR || 20);
       a.wanderTarget = new THREE.Vector3(a.campAnchor.x + Math.cos(ang) * r, a.pos.y, a.campAnchor.z + Math.sin(ang) * r);
     } else if (a.faction === 'monster') {
       // monsters prowl the mid-to-outer wilds around the world centre (danger lives on
       // the frontier, between the towns).
       const minR = ARENA_RADIUS * 0.45, maxR = ARENA_RADIUS * 0.92;
-      const ang = Math.random() * Math.PI * 2, r = minR + Math.random() * (maxR - minR);
+      const ang = rng() * Math.PI * 2, r = minR + rng() * (maxR - minR);
       a.wanderTarget = new THREE.Vector3(Math.cos(ang) * r, 0, Math.sin(ang) * r);
     } else {
       // townsfolk roam within THEIR town's home band (around its centre) — keeps each
       // town socially dense and stops agents diffusing into the wilderness.
       const c = a.townAnchor || ZERO;
       const maxR = (a.townRadius || ARENA_RADIUS * 0.65) * 0.85;
-      const ang = Math.random() * Math.PI * 2, r = Math.random() * maxR;
+      const ang = rng() * Math.PI * 2, r = rng() * maxR;
       a.wanderTarget = new THREE.Vector3(c.x + Math.cos(ang) * r, 0, c.z + Math.sin(ang) * r);
     }
   }

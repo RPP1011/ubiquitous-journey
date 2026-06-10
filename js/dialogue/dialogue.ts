@@ -6,6 +6,7 @@
 // planted rumours) so a conversation actually changes the social sim.
 
 import { COMMODITIES, FACTIONS, SOURCE } from '../sim/simconfig.js';
+import { rng } from '../sim/rng.js';
 import { provenanceLabel } from '../sim/beliefs.js';
 import type { Agent, BeliefState, EntityId } from '../../types/sim.js';
 
@@ -34,7 +35,7 @@ export interface DialogueOption {
 }
 
 const clamp = (x: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, x));
-const rand = (a: number, b: number): number => a + Math.random() * (b - a);
+const rand = (a: number, b: number): number => a + rng() * (b - a);
 
 // pull a 0..1 skill level off the player's progression (if the RPG layer is
 // wired in) — e.g. the highest level among "social" tagged classes. Falls back

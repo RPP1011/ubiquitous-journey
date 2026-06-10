@@ -33,6 +33,7 @@
 //   roles.js    — bodyguard / duel / protégé / guardian / legend / avenger roles
 //   caravans.js — trade-road runs the bandits prey on
 import { DIRECTOR } from './simconfig.js';
+import { rng } from './rng.js';
 import { BEAT } from './chronicle.js';
 import { clamp } from './director/util.js';
 import * as raids from './director/raids.js';
@@ -203,7 +204,7 @@ export class Director {
   _townsfolkAlive(): Ag[] { return this.sim.agents.filter((a: any) => a.alive && a.autonomous && a.faction === 'townsfolk'); }
   _lvl(a: Ag): number { return (a.progression && a.progression.totalLevel) || 0; }
   _note(kind: string, id: unknown, text: string, arc?: unknown): void { try { if (this.sim.chronicle && this.sim.chronicle.note) this.sim.chronicle.note(kind, id, text, arc); } catch { /* */ } }
-  _shuffle<T>(arr: T[]): T[] { const a = arr.slice(); for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; const t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
+  _shuffle<T>(arr: T[]): T[] { const a = arr.slice(); for (let i = a.length - 1; i > 0; i--) { const j = (rng() * (i + 1)) | 0; const t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
 
   // idle, non-grouped townsfolk are the safe pool to nudge (we avoid disturbing
   // agents already busy in a party/group or fleeing).

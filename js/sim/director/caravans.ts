@@ -5,6 +5,7 @@
 // one that returns brings a windfall (plenty). Supply lines become worth defending.
 // Free functions over the Director instance `d`.
 import * as THREE from 'three';
+import { rng } from '../rng.js';
 import { DIRECTOR } from '../simconfig.js';
 import { BEAT } from '../chronicle.js';
 import { rand } from './util.js';
@@ -26,7 +27,7 @@ export function _tropeCaravan(d: Dir): boolean {
   const trader = d._shuffle(folk)[0];
   if (!trader) return false;
   const goods = C.goods || ['ore'];
-  const good = goods[(Math.random() * goods.length) | 0];
+  const good = goods[(rng() * goods.length) | 0];
   // home = the trader's own town; destination = ANOTHER town (a real trade route)
   // if the world has more than one, else a far point on the open road (legacy).
   const now = d.sim.time;

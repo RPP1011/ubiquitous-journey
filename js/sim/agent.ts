@@ -6,6 +6,7 @@
 
 import { nearestLandmark } from '../arena.js';
 import { BeliefStore } from './beliefs.js';
+import { rng } from './rng.js';
 import {
   PROFESSIONS, COMMODITIES, BASE_PRICE, ECON,
   SIM, COMFORT, BUILD, NOVELTY, SCHEMA, WEALTH, RECIPES,
@@ -29,7 +30,7 @@ import type {
 } from '../../types/sim.js';
 
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
-const rand = (a: number, b: number): number => a + Math.random() * (b - a);
+const rand = (a: number, b: number): number => a + rng() * (b - a);
 
 // Re-typed config views (simconfig.js inferred without index signatures under allowJs).
 const BASE_PRICE_T = BASE_PRICE as Record<string, number>;
@@ -92,11 +93,11 @@ export class Agent {
     this.threat = cfg.threat || (this.combatant ? 1 : 0.3);
     this.mood = { fear: 0, anger: 0 };     // transient, decays; gates flee/fight
     this._releaseTimer = 0;
-    this._attackCd = Math.random() * 1.5;
+    this._attackCd = rng() * 1.5;
     // NPC ability cadence: a short reflex gap between cast ATTEMPTS so an NPC
     // doesn't probe its whole ability list every fixed tick. The interpreter owns
     // the real per-ability cooldown; this just paces the attempt. Staggered start.
-    this._castCd = Math.random() * 1.5;
+    this._castCd = rng() * 1.5;
 
     // needs (1 = satisfied)
     this.needs = { hunger: rand(0.5, 0.9), energy: rand(0.6, 0.95), social: rand(0.4, 0.85), comfort: rand(COMFORT.init[0], COMFORT.init[1]), novelty: rand(NOVELTY.init[0], NOVELTY.init[1]) };

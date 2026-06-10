@@ -31,6 +31,7 @@
 // throws inside the fixed loop.
 
 import * as THREE from 'three';
+import { rng } from './rng.js';
 import { BUILD, SURVEYOR, CITY, MAP } from './simconfig.js';
 import { bus, makeEvent } from '../rpg/events.js';
 import { terrainHeight } from '../arena.js';
@@ -254,7 +255,7 @@ export class BuildSites {
       const town = this._townOf(agent.townId);
       if (!town) return null;
       if (this._activeHomesIn(town.id) >= BUILD.maxConcurrentPerTown) return null;   // pace the town
-      const seed = (Math.random() * 1e9) | 0;
+      const seed = (rng() * 1e9) | 0;
       const p = this._paramsFor(BUILD_KIND.HOME, 1, seed);
       // CLAIM A TILE PLOT from the town's CityGrid (replaces the Surveyor's lane math).
       if (!this.sim.cities) return null;
@@ -278,7 +279,7 @@ export class BuildSites {
   commissionPublic(town: { id: unknown }, kind: string, _plotIgnored: unknown, ctx: Ctx): BuildSite | null {
     try {
       if (!town) return null;
-      const seed = (Math.random() * 1e9) | 0;
+      const seed = (rng() * 1e9) | 0;
       const p = this._paramsFor(kind, SURVEYOR.tavernWealth, seed);
       // CLAIM the public work's own tile plot from the CityGrid (the passed plot, an
       // old Surveyor lane allocation, is ignored — the grid guarantees non-overlap).
@@ -416,13 +417,13 @@ export class BuildSites {
           const dx = r.pos.x - b.pos.x, dz = r.pos.z - b.pos.z;
           if (dx * dx + dz * dz > reach2) continue;
           const { tx, ty } = grid.worldToTile(r.pos.x, r.pos.z);
-          if (Math.random() < (R.strikeChance || 1.2) * dt) strikeNearestWall(b.struct, tx, ty, R.strikeDmg || 14);
-          if (Math.random() < (R.torchChance || 0.25) * dt) torch(b.struct, tx, ty);
+          if (rng() < (R.strikeChance || 1.2) * dt) strikeNearestWall(b.struct, tx, ty, R.strikeDmg || 14);
+          if (rng() < (R.torchChance || 0.25) * dt) torch(b.struct, tx, ty);
         }
       }
 
       // FIRE: advance any spreading fire (consumes parts + collapses unsupported mass).
-      if (anyBurning(b.struct)) tickFire(b.struct, dt, Math.random);
+      if (anyBurning(b.struct)) tickFire(b.struct, dt, rng);
 
       // SHELTER re-eval: when a building loses shelter, kill its benefit and file a best-
       // effort razing beat. The owner is NOT unhoused here by fiat (debt #1 retired) — the
@@ -697,7 +698,7 @@ export class BuildSites {
   _townFundedHome(town: BuildSite, owner: Agent | null, ctx: Ctx): BuildSite | null {
     try {
       if (!this.sim.cities) return null;
-      const seed = (Math.random() * 1e9) | 0;
+      const seed = (rng() * 1e9) | 0;
       const p = this._paramsFor(BUILD_KIND.HOME, 1, seed);
       const tp = p.tiles;
       const plot = this.sim.cities.claimPlot(town.id, tp.w, tp.d, tp.levels);

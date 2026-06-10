@@ -3,6 +3,7 @@
 // torsos. Blocking that matches the attack direction negates the hit.
 
 import * as THREE from 'three';
+import { rng } from './sim/rng.js';
 import { TUNE } from './constants.js';
 import { EFFECTS } from './rpg/abilities/effects.js';
 import type { Fighter, CombatEvent } from '../types/sim.js';
@@ -67,7 +68,7 @@ export function resolveCombat(
             for (const e of spec.effects) {
               if (e === dmgEff || e.op === 'damage') continue;
               if (e.when && e.when !== 'on_hit') continue;
-              if (e.chance < 1 && Math.random() > e.chance) continue;
+              if (e.chance < 1 && rng() > e.chance) continue;
               const fn = EFFECTS[e.op];
               if (fn) fn(e, aAgent, (e.op === 'heal' || e.op === 'shield' || e.op === 'dash') ? aAgent : tAgent, ctx);
             }

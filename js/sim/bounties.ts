@@ -10,6 +10,7 @@
 // Modeled on Watch/Reporter: a thin subsystem that flags ordinary agents.
 
 import { BOUNTY, MONSTER } from './simconfig.js';
+import { rng } from './rng.js';
 import { isHomeBuilder } from './construction.js';
 import type { Bounty, FullCtx, EntityId } from '../../types/sim.js';
 
@@ -79,8 +80,8 @@ export class Bounties {
       if (this._hunters().length >= (BOUNTY.maxConcurrent || 2)) break;
       if (!this._eligible(a)) continue;
       if (!this._nearAMarket(a, r2)) continue;
-      if (Math.random() > (BOUNTY.takeChance || 0.5)) continue;
-      const q = jobs[(Math.random() * jobs.length) | 0];
+      if (rng() > (BOUNTY.takeChance || 0.5)) continue;
+      const q = jobs[(rng() * jobs.length) | 0];
       if (this._someoneOn(q.id)) continue;        // one NPC per job is plenty (still races the player)
       this._take(a, q);
     }
