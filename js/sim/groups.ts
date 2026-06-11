@@ -149,8 +149,9 @@ export class Groups {
       if (this._followersOf(L.id).length >= limit) return false; // band is full
       this._join(F, L, 'warband', gt);
       // WARBAND ARC (docs/architecture/12 §3.5): a fresh follower is an escalation round on the
-      // leader's muster arc ("N now ride with them"); re-arms its TTL. Observer-layer; guarded.
-      try { if (this.sim.sagas) this.sim.sagas.appendBeat('warband:' + L.id, 'round', `${F.name} rode to ${L.name}'s banner.`); } catch { /* never throw */ }
+      // leader's muster arc ("N now ride with them"); re-arms its TTL. The arc opens LAZILY HERE on the
+      // first follower (never eagerly at muster — a never-escalated muster files no tale). Observer; guarded.
+      try { if (this.sim.sagas) this.sim.sagas.appendRound({ kind: 'warband', key: 'warband:' + L.id, principals: [L.id] }, `${F.name} rode to ${L.name}'s banner.`); } catch { /* never throw */ }
       return true;
     } catch { return false; }
   }

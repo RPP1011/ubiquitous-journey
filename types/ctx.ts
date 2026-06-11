@@ -16,6 +16,7 @@ import type { Arc, ArcOpenOpts } from './arcs.js';
  *  on the cognition ctx (a deriveGoals/pruneGoals hook can open/close an arc without reading truth). */
 export interface ArcPorts {
   openArc(opts: ArcOpenOpts): Arc | null;
+  appendArcRound(opts: ArcOpenOpts, text?: string): Arc | null;
   appendArcBeat(key: string, tag: string, text?: string): Arc | null;
   closeArc(key: string, outcome: string, text?: string): Arc | null;
   findArc(key: string): Arc | null;

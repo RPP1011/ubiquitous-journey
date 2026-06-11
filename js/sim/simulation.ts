@@ -647,6 +647,7 @@ export class Simulation {
     const s = this.sagas;
     return (this._arcPortsCache = {
       openArc: (opts) => s.openArc(opts),
+      appendArcRound: (opts, text) => s.appendRound(opts, text),
       appendArcBeat: (key, tag, text) => s.appendBeat(key, tag, text),
       closeArc: (key, outcome, text) => s.closeArc(key, outcome, text),
       findArc: (key) => s.findArc(key),

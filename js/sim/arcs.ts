@@ -121,6 +121,18 @@ export class SagaStore implements ISagaStore {
     } catch { return null; }
   }
 
+  // LAZY-OPEN escalation round — open the arc ON its FIRST real round, never eagerly. This is the
+  // muster-flicker fix (docs/architecture/12 §3.5): a warband arc opened at muster and closed before
+  // ANY follower rode / any march committed is NOISE, not a tale — so we DON'T open until the first
+  // escalation. openArc is idempotent on key, so re-rounds just append. Returns the (now-open) arc.
+  appendRound(opts: ArcOpenOpts, text?: string): Arc | null {
+    try {
+      if (!opts || !opts.key) return null;
+      if (!this._open.get(opts.key)) this.openArc(opts);   // idempotent open on the first round only
+      return this.appendBeat(opts.key, 'round', text);
+    } catch { return null; }
+  }
+
   // APPEND an escalation chapter. A `round` re-ARMS expiry (a slow feud must outlive an open-and-shut
   // one) and files a THROTTLED chronicle note. Bounded trail.
   appendBeat(key: string, tag: string, text?: string): Arc | null {

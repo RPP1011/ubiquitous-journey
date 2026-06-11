@@ -46,9 +46,11 @@ function warbandDirectedAssault(ok, helpers) {
       { maxFrames: 90, pin: [[foe2, 16, 0], [lone, 0, 0]], refresh: [[lone, foe2]] });
     ok(lone.goals.some((g) => g.kind === 'muster') && !lone.goals.some((g) => g.kind === 'assault'),
       'warband 6: a LONE would-be leader musters (recruits) first — it does not assault alone');
-    // ARC (docs/architecture/12 §3.5): the muster opened a tracked `warband` arc for the leader.
-    ok(st2.sim.sagas.findArc('warband:' + lone.id) != null,
-      'warband 7: the muster OPENED a warband arc in sim.sagas');
+    // ARC (docs/architecture/12 §3.5, muster-flicker fix): a muster alone — no follower ridden yet, no
+    // march committed — does NOT open an arc. The arc opens LAZILY on the first real escalation, so a
+    // never-escalated muster files no 0-round tale (the warband-arc-churn fix).
+    ok(st2.sim.sagas.findArc('warband:' + lone.id) == null,
+      'warband 7: a bare muster does NOT open a warband arc (opens lazily on the first escalation)');
     st2.dispose();
   }
 }
@@ -110,6 +112,11 @@ function warbandFollowThrough(ok, helpers) {
       `warband 2: it joined as a warband combatant (groupType=${cand.groupType}, combatant=${cand.combatant}) — exactly the Party.recruit flag set`);
     ok(!cand._offers || !cand._offers[leader.id],
       'warband 3: the offer was SPENT on joining (not re-fired every tick)');
+    // ARC (docs/architecture/12 §3.5, muster-flicker fix): the follower riding to the banner is the
+    // FIRST real escalation — it LAZILY opens the warband arc with >= 1 round (a retained tale).
+    const warArc = st.sim.sagas.findArc('warband:' + leader.id);
+    ok(warArc != null && warArc.rounds >= 1,
+      `warband 3b: the follower riding the banner lazily opened the warband arc with a round (rounds=${warArc && warArc.rounds})`);
     // banded, no believed-hostile near: decide() must route through _decideParty and commit 'follow'.
     st.run(() => false, { maxFrames: 20, pin: [[leader, 0, 0], [cand, 4, 0]], refresh: [[cand, leader]] });
     ok(cand.goal && cand.goal.kind === 'follow',

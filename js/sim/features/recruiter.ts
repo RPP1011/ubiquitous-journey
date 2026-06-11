@@ -122,16 +122,18 @@ registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
   const target = Math.max(2, (RECRUIT.selfStrength || 1) + 2);       // believed strength to outmatch the threat
   // the leader's OWN believed band strength (execution-mediated; the deriver never scans the roster).
   const bandStr = (ctx && ctx.resolver && ctx.resolver.warbandStrength) ? ctx.resolver.warbandStrength(a) : (RECRUIT.selfStrength || 1);
-  // WARBAND ARC (docs/architecture/12 §3.5): a muster is now a tracked arc — opened when a leader
-  // sets out to raise a force, rounds appended per joinWarband (groups.ts), closed 'marched' when the
-  // band reaches strength and marches on the believed foe (or lapsed if it never musters). Write-only.
-  if (ctx && ctx.arcs) ctx.arcs.openArc({ kind: 'warband', key: 'warband:' + a.id, principals: [a.id] });
+  // WARBAND ARC (docs/architecture/12 §3.5): a muster is a tracked arc — but opened LAZILY on its
+  // FIRST real escalation (a follower riding to the banner in joinWarband, OR the march below), never
+  // eagerly at muster. An open-and-immediately-closed 0-round arc is NOISE, not a tale (the muster-
+  // flicker fix): a band that lapses/routs before any escalation files no arc at all. Write-only.
+  const arcOpts = { kind: 'warband', key: 'warband:' + a.id, principals: [a.id] };
   if (bandStr >= target) {
     // MUSTERED enough — march the band on the believed foe; followers converge (decideParty).
     const g = goalAssault(foe.subjectId);
     g.priority = 0.7; g.from = 'warleader'; g.expiresAt = now + 120;
     a.pushGoal(g, ctx);
-    if (ctx && ctx.arcs) ctx.arcs.closeArc('warband:' + a.id, 'marched');   // the muster succeeded → it marches
+    // the march IS the escalation — lazily open the arc on this round, then close it 'marched'.
+    if (ctx && ctx.arcs) { ctx.arcs.appendArcRound(arcOpts, `${a.name} marched their war-band on the foe.`); ctx.arcs.closeArc('warband:' + a.id, 'marched'); }
     // emit the marched outcome through PLAN_OUTCOME ([11] §8's second customer — synergy 2): the band
     // committing to battle is the win/loss signal caution will read once `attack` joins the watched set.
     try { runPlanOutcome(a, ctx as CognitionCtx, { status: 'windfall', step: { prim: 'attack', bind: {} } } as unknown as OutcomeEvt); } catch { /* never throw */ }
