@@ -283,14 +283,14 @@ export class Agent {
     this.needs.hunger = clamp01(this.needs.hunger - SIM.hungerDrain * dt);
     this.needs.energy = clamp01(this.needs.energy - SIM.energyDrain * dt);
     // PERSONALITY LIVES THROUGH THE NEEDS: the social and novelty drains scale with the matching
-    // trait (×0.5..×1.5, neutral 0.5 → ×1), so a gregarious soul gets lonely — and a curious one
-    // bored — up to 3× faster than its opposite. The need deficit is what FIRES the socialize/
+    // trait (×0.35..×1.65, neutral 0.5 → ×1), so a gregarious soul gets lonely — and a curious one
+    // bored — up to ~5× faster than its opposite. The need deficit is what FIRES the socialize/
     // sightsee candidates, so trait → need-pressure → visible habit is a structural chain
     // (score-only multipliers proved too weak: the candidate rarely existed to be scaled).
     const Pd = this.personality || {};
-    this.needs.social = clamp01(this.needs.social - SIM.socialDrain * (0.5 + (Pd.social_drive ?? 0.5)) * dt);
+    this.needs.social = clamp01(this.needs.social - SIM.socialDrain * (0.35 + 1.3 * (Pd.social_drive ?? 0.5)) * dt);
     // NOVELTY drains too (boredom builds) — relieved by sightseeing (act.sightseeStep).
-    if (NOVELTY.enabled) this.needs.novelty = clamp01((this.needs.novelty ?? 1) - SIM.noveltyDrain * (0.5 + (Pd.curiosity ?? 0.5)) * dt);
+    if (NOVELTY.enabled) this.needs.novelty = clamp01((this.needs.novelty ?? 1) - SIM.noveltyDrain * (0.35 + 1.3 * (Pd.curiosity ?? 0.5)) * dt);
     // MASTERY does NOT drain — a learned craft stays learned. Commitment compounds over a
     // lifetime: a specialist's edge only ever grows, and a long-practised trade is a
     // permanent moat newcomers must out-WORK (not just out-wait) to rival.

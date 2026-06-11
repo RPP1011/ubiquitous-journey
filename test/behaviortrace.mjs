@@ -70,8 +70,9 @@ for (let i = 0; i < rows.length; i++) for (let j = i + 1; j < rows.length; j++) 
 }
 const spread = dn ? dsum / dn : 0;
 
-// ambition-aligned dwell: fraction of life on goals this agent's ambition FAVOURS (>1)
-const FAVGOALS = { wealth: ['work', 'market'], mastery: ['work'], renown: ['fight'], wanderlust: ['wander', 'sightsee'], belonging: ['socialize'] };
+// ambition-aligned dwell: fraction of life on goals this agent's ambition FAVOURS (>1).
+// seek_glory (the renown march to the frontier, Phase B1) IS glory-seeking behaviour.
+const FAVGOALS = { wealth: ['work', 'market'], mastery: ['work'], renown: ['fight', 'seek_glory'], wanderlust: ['wander', 'sightsee'], belonging: ['socialize'] };
 const aligned = rows.map((r) => fr(r, FAVGOALS[r.ambition] || []));
 const meanAligned = aligned.reduce((s, v) => s + v, 0) / (aligned.length || 1);
 const budgets = rows.map((r) => Math.max(...Object.values(r.frac))).sort((a, b) => a - b);
@@ -82,7 +83,9 @@ console.log(`\n=== BEHAVIOURAL DIVERSITY (seed ${SEED}, ${SECS}s) — ${rows.len
 console.log(`DOMINANT-GOAL HISTOGRAM (Shannon evenness ${evenness.toFixed(2)} of 1.0 — higher = more varied):`);
 for (const [k, n] of Object.entries(hist).sort((a, b) => b[1] - a[1])) console.log(`  ${k.padEnd(12)} ${String(n).padStart(3)}  ${pct(n / tot)}`);
 console.log(`\nTRAIT → BEHAVIOUR CORRELATIONS (Pearson; >0.3 = personality clearly drives it, ~0 = it doesn't):`);
-console.log(`  risk_tolerance → fight        r = ${corr('risk', ['fight']).toFixed(2)}`);
+// the BOLD family includes seek_glory (Phase B1): an observer watching an agent march to the
+// monster frontier reads BOLD just as surely as watching it fight — both are risk expressed.
+console.log(`  risk_tolerance → fight+glory  r = ${corr('risk', ['fight', 'seek_glory']).toFixed(2)}   (fight alone ${corr('risk', ['fight']).toFixed(2)})`);
 console.log(`  risk_tolerance → flee         r = ${corr('risk', ['flee']).toFixed(2)}   (expect NEGATIVE)`);
 console.log(`  social_drive   → socialize    r = ${corr('social', ['socialize']).toFixed(2)}`);
 console.log(`  curiosity      → sightsee+wander r = ${corr('curi', ['sightsee', 'wander']).toFixed(2)}`);

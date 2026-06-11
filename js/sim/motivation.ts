@@ -109,27 +109,27 @@ interface AmbitionDef {
 export const AMBITIONS: Record<string, AmbitionDef> = {
   wealth: {
     label: 'amass wealth', favors: { work: 1.7, socialize: 0.7 },
-    weight: (P) => 0.25 + P.ambition,
+    weight: (P) => 0.15 + 1.3 * P.ambition,
     progress: (a) => clamp01(a.gold / MOTIVE.wealthTarget),
   },
   mastery: {
     label: 'master a craft', favors: { work: 1.6, rest: 1.1 },
-    weight: (P) => 0.2 + 0.6 * P.ambition + 0.4 * P.curiosity,
+    weight: (P) => 0.12 + 0.78 * P.ambition + 0.52 * P.curiosity,
     progress: (a) => clamp01(lvl(a) / MOTIVE.masteryLevel),
   },
   renown: {
     label: 'win renown', favors: { fight: 1.9, flee: 0.5, wander: 1.2 },
-    weight: (P) => 0.1 + P.risk_tolerance,
+    weight: (P) => 0.06 + 1.3 * P.risk_tolerance,
     progress: (a) => clamp01((a.life.monsterKills - (a.ambition ? a.ambition.base.mkills : 0)) / MOTIVE.renownKills),
   },
   wanderlust: {
     label: 'see the world', favors: { wander: 2.6, work: 0.7 },
-    weight: (P) => 0.15 + P.curiosity,
+    weight: (P) => 0.09 + 1.3 * P.curiosity,
     progress: (a) => clamp01((a.life.dist - (a.ambition ? a.ambition.base.dist : 0)) / MOTIVE.wanderDist),
   },
   belonging: {
     label: 'belong', favors: { socialize: 2.0, wander: 0.9 },
-    weight: (P) => 0.15 + P.social_drive,
+    weight: (P) => 0.09 + 1.3 * P.social_drive,
     progress: (a) => clamp01((a.life.social - (a.ambition ? a.ambition.base.social : 0)) / MOTIVE.socialAmount),
   },
 };
