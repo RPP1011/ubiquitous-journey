@@ -1901,6 +1901,9 @@ export const TRACE = {
     stuckFrac: 0.90,
     collapsePopFrac: 0.25,
     behaviorFloor: 20,
+    // the MEASURED sample must cover at least this fraction of the living roster or the check holds
+    // its fire (a thin sample is the trace-ring artifact this measure retired — measured 12/103 then).
+    measuredFloorFrac: 0.5,
     // cohort metric 2 (keptOathRatioDist) zero-bucket edge; the quantile set is fixed (p10/p50/p90).
     keptOathZeroEps: 1e-9,
   },

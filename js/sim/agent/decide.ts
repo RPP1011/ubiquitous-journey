@@ -11,6 +11,7 @@ import { SIM, WEIGHT, ECON, COMMODITIES, GROUP_TYPES, LEGEND, SOCIAL, COMFORT, N
 import { updateAmbition, ambitionFavor, ambitionWantsFight, deriveGoals, pruneGoals } from '../motivation.js';
 import { chooseOccupation, laborValue } from './occupation.js';
 import { qualifyHome, isUnhoused } from '../construction.js';
+import { foldGoalDwell } from '../signals.js';
 import { STAGE, REASON } from '../trace.js';
 import type { Agent, CognitionCtx, Goal, EntityId, Stage, Reason } from '../../../types/sim.js';
 import type { Vector3 } from 'three';
@@ -61,6 +62,13 @@ export function decide(a: Agent, ctx: CognitionCtx): void {
   // read truth-side in depthMetrics — never inside cognition. A tick decide() is SKIPPED
   // (amortized by LOD) leaves the scheduler-zeroed 0, which is the measured win.
   a._decideCalls = 1;
+  // GOAL-DWELL telemetry (the behaviorCollapse measure): charge time-in-goal off the goal committed
+  // by the PREVIOUS decide tick — read here at the top, so EVERY commit path (the scorer below AND the
+  // early-return role branches: reporter/duel/avenger/spy/bounty/arbitrage/expedition/caravan/party)
+  // is measured uniformly with one call. foldGoalDwell only charges on a kind CHANGE, so this folds the
+  // whole living roster's dwell, not the thin trace-ring subset goalBudgetOf sampled. Pure observer/
+  // telemetry: an own-scalar write, NEVER read back to drive a decision (the epistemic split holds).
+  if (a.goal && a.goal.kind) foldGoalDwell(a, a.goal.kind, ctx.time);
   recognizeWealth(a);   // belief-only esteem: defer to (or envy) the believed-rich (§12 §6)
 
   // SCHEMA GOAL DWELL-LOCK (anti-thrash): a high-priority schema response (flee/fight set

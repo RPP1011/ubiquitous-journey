@@ -24,6 +24,7 @@ export interface SignalState {
   revN?: number; revT?: number; lastSign?: number;     // fortuneReversals: count, last-t, last (fast−slow) sign
   disp?: number; dispT?: number;                       // displacement EWMA + last-sample time (Family A)
   band?: { poor: number; rich: number; outlaw: number }; bandT?: number;   // timeInBand accumulators (Family A)
+  dwell?: Record<string, number>; dwellKind?: string; dwellT?: number;     // goal-dwell accumulator: seconds-per-goalKind + current kind + entered-at (the behaviorCollapse measure)
 }
 
 function st(a: Agent): SignalState {
@@ -92,6 +93,48 @@ export function noteSnub(a: Agent, now: number): void {
 // the decayed snubsFelt count (a cold shoulder fades). Read by the status sensor's slander gate.
 export function snubsFelt(a: Agent, now: number): number {
   const s = peek(a); return s ? snubDecay(s, now) : 0;
+}
+
+// ── GOAL-DWELL accumulator (the behaviorCollapse measure). A small per-agent Record<goalKind,seconds>
+// + the CURRENT committed kind + the sim-time it was entered. Folded on decide()'s EXISTING goal-commit
+// seam: when the committed goal.kind CHANGES, charge (now − enteredAt) to the PREVIOUS kind and reset.
+// So it measures dwell over the WHOLE life (a lifelong farmer legitimately camps 'work' — that is what
+// the cohort fraction is for), not a biased 24-deep trace-ring window. PURE OBSERVER/TELEMETRY: an
+// own-scalar write, NEVER read back to drive a decision (the epistemic split holds). Guarded; bounded
+// (goalKinds are a tiny fixed vocabulary). The lazy `now − enteredAt` of the in-progress kind is added
+// by the reader, so no per-tick pass is needed.
+export function foldGoalDwell(a: Agent, kind: string, now: number): void {
+  if (!a || !kind) return;
+  try {
+    const s = st(a);
+    if (!s.dwell) s.dwell = {};
+    if (s.dwellKind === undefined) { s.dwellKind = kind; s.dwellT = now; return; }   // first commit: just arm
+    if (s.dwellKind === kind) return;                                                 // same goal still held — nothing to charge yet
+    const dt = Math.max(0, now - (s.dwellT || now));
+    s.dwell[s.dwellKind] = (s.dwell[s.dwellKind] || 0) + dt;                          // charge the time spent in the PREVIOUS kind
+    s.dwellKind = kind; s.dwellT = now;                                               // enter the new kind
+  } catch { /* never throw on the tick */ }
+}
+
+// the agent's goal-dwell budget: { topFrac, span, top } over its WHOLE measured life — the same shape
+// goalBudgetOf returned, now off the dwell accumulator (the whole living roster is measured, not the
+// thin trace-ring subset). Folds the in-progress kind's lazy (now − enteredAt) so the current camp
+// counts. Returns zeros when the agent has not yet committed two goals. Guarded.
+export function goalDwellOf(a: Agent, now: number): { topFrac: number; span: number; top: string | null } {
+  try {
+    const s = peek(a);
+    if (!s || !s.dwell || s.dwellKind === undefined) return { topFrac: 0, span: 0, top: null };
+    const byKind: Record<string, number> = {};
+    let span = 0;
+    for (const k in s.dwell) { byKind[k] = s.dwell[k]; span += s.dwell[k]; }
+    const live = Math.max(0, now - (s.dwellT || now));                                // the in-progress kind's uncharged dwell
+    byKind[s.dwellKind] = (byKind[s.dwellKind] || 0) + live;
+    span += live;
+    if (span <= 0) return { topFrac: 0, span: 0, top: null };
+    let top: string | null = null, topT = 0;
+    for (const k in byKind) if (byKind[k] > topT) { topT = byKind[k]; top = k; }
+    return { topFrac: topT / span, span, top };
+  } catch { return { topFrac: 0, span: 0, top: null }; }
 }
 
 // ============================================================================

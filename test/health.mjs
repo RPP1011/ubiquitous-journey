@@ -18,7 +18,7 @@
 
 import { TRACE } from '../js/sim/simconfig.js';
 import { REASON } from '../js/sim/trace.js';
-import { deedLedger, oaths } from '../js/sim/signals.js';
+import { deedLedger, oaths, goalDwellOf } from '../js/sim/signals.js';
 
 const H = (TRACE && TRACE.health) || {};
 
@@ -36,27 +36,16 @@ function quantiles(xs, qs) {
     return s[i];
   });
 }
-// fold time-in-each-goal from an agent's trace ring (GOAL_DERIVED stamps the (kind,t) we need —
-// the design's "ride the existing trace ring"). Returns { topFrac, span, top } over the ring window.
-// A SAMPLE over the bounded ring, not the exact lifetime — that is the documented, cheap approach.
-export function goalBudgetOf(a) {
-  try {
-    const tr = (a && a.trace && a.trace.recent(64)) || [];
-    const stamps = [];
-    for (const e of tr) if (e && e.code === REASON.GOAL_DERIVED && e.a != null) stamps.push({ k: String(e.a), t: e.t || 0 });
-    if (stamps.length < 2) return { topFrac: 0, span: 0, top: null };
-    stamps.sort((x, y) => x.t - y.t);                       // recent() is newest-first → re-order to walk forward
-    const span = Math.max(0, stamps[stamps.length - 1].t - stamps[0].t);
-    if (span <= 0) return { topFrac: 0, span: 0, top: null };
-    const byKind = {};
-    for (let i = 0; i < stamps.length - 1; i++) {
-      const dt = Math.max(0, stamps[i + 1].t - stamps[i].t);
-      byKind[stamps[i].k] = (byKind[stamps[i].k] || 0) + dt;
-    }
-    let top = null, topT = 0;
-    for (const k in byKind) if (byKind[k] > topT) { topT = byKind[k]; top = k; }
-    return { topFrac: topT / span, span, top };
-  } catch { return { topFrac: 0, span: 0, top: null }; }
+// fold time-in-each-goal from the agent's dedicated GOAL-DWELL accumulator (signals.goalDwellOf) —
+// a per-agent Record<goalKind,seconds> folded on decide()'s goal-commit seam over the WHOLE life,
+// NOT the 24-deep trace ring. The trace ring was swamped by plan/infer/decide entries, so most agents
+// retained < 2 GOAL_DERIVED stamps and went UNMEASURED (the few measured were a biased recently-
+// thrashing subset that looked stuck — a measurement artifact, not a real collapse). The dwell
+// accumulator measures the whole living roster. Returns { topFrac, span, top }. Guarded. `now` is
+// sim.time so the in-progress goal's uncharged dwell is folded.
+export function goalBudgetOf(a, now) {
+  try { return goalDwellOf(a, now != null ? now : 0); }
+  catch { return { topFrac: 0, span: 0, top: null }; }
 }
 
 function result(name, ratio, floorMet, threshold, flagCond, why, detail) {
@@ -190,26 +179,33 @@ export function arcMonoculture(sim) {
 // ============================================================================
 // (e) behaviorCollapse — agents stuck in one goal. Per-agent dominantGoalFrac = timeInGoal(top)/life;
 // cohort-FLAG when the SHARE of living agents with dominantGoalFrac > stuckFrac itself exceeds
-// collapsePopFrac AND living >= behaviorFloor. Per-agent it can be legitimate (a lifelong farmer);
-// the POPULATION fraction flags a systemic stall (deriveGoals/pruneGoals at a fixed point) vs one
-// homebody. Time-in-goal rides the trace ring's GOAL_DERIVED (kind,t) stamps.
+// collapsePopFrac AND living >= behaviorFloor AND the MEASURED sample is itself thick enough
+// (measured >= measuredFloorFrac · living) — without the measured floor a thin, biased sample (the
+// old trace-ring bug measured 12/103 = a recently-thrashing subset) FALSE-FLAGS. Per-agent a high
+// dominant-goal share can be legitimate (a lifelong farmer camps 'work'); the POPULATION fraction is
+// what flags a systemic stall vs one homebody. Time-in-goal rides the dedicated goal-dwell accumulator.
 // ============================================================================
 export function behaviorCollapse(sim) {
   const floor = H.behaviorFloor || 20;
   const stuckFrac = H.stuckFrac || 0.90;
   const collapsePopFrac = H.collapsePopFrac || 0.25;
+  const measuredFloorFrac = H.measuredFloorFrac != null ? H.measuredFloorFrac : 0.5;
   const living = livingTownsfolk(sim);
+  const now = (sim && sim.time) || 0;
   let measured = 0, stuck = 0;
   try {
     for (const a of living) {
-      const b = goalBudgetOf(a);
-      if (b.span <= 0) continue;                            // too few goal-transitions to judge — skip
+      const b = goalBudgetOf(a, now);
+      if (b.span <= 0) continue;                            // never committed two goals — nothing to judge yet
       measured++;
       if (b.topFrac > stuckFrac) stuck++;
     }
   } catch { /* */ }
   const stuckPopFrac = measured > 0 ? stuck / measured : 0;
-  return result('behaviorCollapse', Number(stuckPopFrac.toFixed(2)), living.length >= floor, `${collapsePopFrac} of pop`,
+  // the sample must cover enough of the roster to be representative — a thin measured set is the
+  // artifact this fix retired, so don't flag on it (floorMet folds the measured-thickness gate).
+  const sampleThick = measured >= Math.max(1, measuredFloorFrac * living.length);
+  return result('behaviorCollapse', Number(stuckPopFrac.toFixed(2)), living.length >= floor && sampleThick, `${collapsePopFrac} of pop`,
     stuckPopFrac > collapsePopFrac,
     'deriveGoals/pruneGoals at a fixed point — one goal dominates forever and the agent ceases to be an emergent character',
     { living: living.length, measured, stuck, stuckPopFrac: Number(stuckPopFrac.toFixed(2)) });
@@ -293,8 +289,9 @@ export function neverNamedFraction(sim) {
 //    a healthy world sits well below, confirming agents cycle goals.
 export function medianGoalBudget(sim) {
   const fracs = [];
+  const now = (sim && sim.time) || 0;
   try {
-    for (const a of livingTownsfolk(sim)) { const b = goalBudgetOf(a); if (b.span > 0) fracs.push(b.topFrac); }
+    for (const a of livingTownsfolk(sim)) { const b = goalBudgetOf(a, now); if (b.span > 0) fracs.push(b.topFrac); }
   } catch { /* */ }
   const [p50, p90] = quantiles(fracs, [0.5, 0.9]);
   return { name: 'medianGoalBudget', shape: 'quantiles', measured: fracs.length,
