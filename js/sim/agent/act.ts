@@ -380,6 +380,15 @@ export function buildStep(a: Agent, dt: number, ctx: CognitionCtx): void {
   } catch { a.fighter.setMoving(0); }   // never throw on the tick (freeze lesson)
 }
 
+// AMBITION FALL-BACK (Phase B1): a broken-off fight (no target / lost quarry / leash) reverts to
+// the agent's OWN ambition standing activity rather than aimless wander — a frontier prowler keeps
+// prowling, a craftsman heads back toward its bench — until the next decide() re-scores in full.
+// Reads only own-state (the intent the ambition_goals deriver stamps, already actionable);
+// monsters carry no intent and keep the old wander. Guarded; never throws (the freeze lesson).
+function breakOffGoal(a: Agent): Goal {
+  try { return { kind: a._ambitionIntent || 'wander' }; } catch { return { kind: 'wander' }; }
+}
+
 // close on a believed-hostile target and trade directional blows (reuses the
 // Fighter swing state machine, telegraphed like the old enemy AI).
 export function combatStep(a: Agent, dt: number, ctx: CognitionCtx): void {
@@ -397,7 +406,7 @@ export function combatStep(a: Agent, dt: number, ctx: CognitionCtx): void {
   // This goes through the RESOLVER's vision-gated perception (truth in → belief out, the
   // sanctioned bridge): cognition never holds the roster, so it can't read an arbitrary
   // entity — it can only ask "if I can see my target, refresh my belief of it".
-  if (targetId == null) { a.goal = { kind: 'wander' }; return; }
+  if (targetId == null) { a.goal = breakOffGoal(a); return; }
   const seenThisTick = ctx.resolver && ctx.resolver.perceive
     ? !!ctx.resolver.perceive(a, targetId)   // re-acquired by sight -> belief refreshed
     : false;
@@ -408,7 +417,7 @@ export function combatStep(a: Agent, dt: number, ctx: CognitionCtx): void {
   // off. No true-object deref here, so the "target" may be a foe that moved, a corpse, or a
   // SCARECROW — and nothing in this path assumes otherwise.
   const b = a.beliefs.get(targetId);
-  if (!b || b.confidence < SIM.actOnBeliefMin) { a.goal = { kind: 'wander' }; return; }
+  if (!b || b.confidence < SIM.actOnBeliefMin) { a.goal = breakOffGoal(a); return; }
   // DESTINATION-INTENT PURSUIT (Theory of Mind, not dead-reckoning): when the belief is
   // FRESH (just sighted, high confidence) I close on the last SIGHTING (lastPos). When it
   // has gone STALE (out of sight, confidence below reacquireConf) I navigate instead to the
@@ -419,7 +428,7 @@ export function combatStep(a: Agent, dt: number, ctx: CognitionCtx): void {
   let tpos = b.lastPos;
   if (!seenThisTick && b.confidence < (SIM.reacquireConf ?? 0.75) && b.destPos) tpos = b.destPos;
   // territorial predators break off a chase that strays beyond their leash (believed pos).
-  if (a.homeAnchor && a.homeAnchor.distanceTo(tpos) > (a.leashR || 50)) { a.goal = { kind: 'wander' }; return; }
+  if (a.homeAnchor && a.homeAnchor.distanceTo(tpos) > (a.leashR || 50)) { a.goal = breakOffGoal(a); return; }
   const dx = tpos.x - a.pos.x, dz = tpos.z - a.pos.z;
   const dist = Math.hypot(dx, dz);
   f.setFacing(Math.atan2(-dx, -dz));

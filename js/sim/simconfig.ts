@@ -348,6 +348,16 @@ export const WEIGHT = {
                       //   market trip (urgency-scaled up to ~3.9) REGARDLESS of the agent's ambition,
                       //   or low-ambition qualifiers never commit and the build is flaky. The decide
                       //   formula gives it a high floor (×1.4) + committed stickiness (×1.8).
+  ambition:  1.00,    // AMBITION-ACTIVITY (Phase B1): the candidate that pursues a STANDING ambition
+                      //   activity (work/seek_glory/sightsee/socialize) when no enemy/opportunity is in
+                      //   sight — so an idle agent DOES its ambition's activity instead of aimless
+                      //   wandering. Score = this × (MOTIVE.ambitionDriveFloor + the matching personality
+                      //   drive), so a DRIVEN soul (~1.25) out-pulls a routine market/comfort urge while a
+                      //   half-hearted one (~0.35) still drifts to leisure — personality orders who
+                      //   pursues what hardest. decide() CLAMPS it below WEIGHT.plan (a live memory-
+                      //   derived plan always wins) and pushes it AFTER the ambitionFavor tilt (no
+                      //   double-scale); urgent survival/needs (eat/flee/emergency-comfort) out-score
+                      //   it too, so a hungry or threatened agent tends itself first.
 };
 
 // --- longer-term motivations (ambitions) ------------------------------------
@@ -363,9 +373,14 @@ export const MOTIVE = {
                          //   the Phase-1 narrative-XP headroom: level 4 became
                          //   trivial once storied lives reach 15-30, so mastery
                          //   would complete instantly; 12 keeps it a real arc)
-  renownKills: 4,        // monsters slain for "renown"
-  wanderDist: 420,       // metres roamed for "wanderlust"
-  socialAmount: 22,      // accumulated socialising for "belonging"
+  renownKills: 8,        // monsters slain for "renown" (raised with Phase B1: a standing
+                         //   seek_glory prowl lands kills far faster than incidental danger did,
+                         //   so 4 completed in minutes and the cohort evaporated into reroll)
+  wanderDist: 1400,      // metres roamed for "wanderlust" (raised with Phase B1: life.dist accrues
+                         //   from ALL walking — at 420 any errand-runner completed it in ~5 min and
+                         //   the wanderlust cohort drained into the never-completing kinds)
+  socialAmount: 70,      // accumulated socialising for "belonging" (raised with Phase B1 — the
+                         //   standing socialize activity accrues it steadily, so 22 was minutes)
   revengeTimeout: 120,   // sim-seconds a grudge-revenge persists if unfulfilled
   // --- memory-derived goal expiries (Phase 3) ---
   avengeExpiry: 120,     // sim-seconds an avenge goal persists before it cools
@@ -376,6 +391,16 @@ export const MOTIVE = {
   grieveExpiry: 90,      // sim-seconds a grief (mourning) goal lingers before it lifts
   delveExpiry: 200,      // sim-seconds a delve(place) goal persists
   succourHunger: 0.4,    // hunger at/below which receiving a gift counts as being succoured
+  // --- PERSISTENT AMBITION STANDING ACTIVITY (Phase B1) ---
+  // A slow ambition STAMPS a standing activity intent (a._ambitionIntent) each cognition tick,
+  // so decide() mints a candidate that out-scores aimless wander. The intent tracks the agent's
+  // own slow ambition (which persists over minutes) yet needs/flee/comfort still interrupt (they
+  // out-score it). See js/sim/features/ambition_goals.js + the ambition-activity candidate in decide.
+  gloryFrontierMin: 0.45,   // inner edge of the renown prowl band the seek_glory march heads to (× ARENA_RADIUS; outer ~0.92)
+  ambitionDriveFloor: 0.25, // base pull of the ambition-activity candidate before the matching
+                            //   personality drive is added (decide) — low enough that a low-drive
+                            //   soul keeps its leisure variety instead of being conscripted, high
+                            //   enough that every ambition claims real idle time (aligned dwell)
 };
 
 // --- QUANTITIES: numeric-threshold plan composition (docs/architecture/10, Phase 1) ----
@@ -1108,8 +1133,29 @@ export const CITY = {
 export const GROUP_TYPES = {
   warband: { label: 'warband', cohesion: 'travel', combatant: true,  maxFollowers: 2 },
   hearth:  { label: 'hearth',  cohesion: 'travel', combatant: false, maxFollowers: 2 },
-  guild:   { label: 'guild',   cohesion: 'loose',  combatant: false, maxFollowers: 3 },
-  circle:  { label: 'circle',  cohesion: 'loose',  combatant: false, maxFollowers: 3 },
+  // `pull` (Phase B2): how hard LOOSE membership tilts a member toward the group's LIFE —
+  // a guild's work candidate (the shared craft IS the bond), a circle's socialise candidate
+  // (gathering on the believed anchor). Read in decide's loose-group block; tune here.
+  guild:   { label: 'guild',   cohesion: 'loose',  combatant: false, maxFollowers: 3, pull: 1.5 },
+  circle:  { label: 'circle',  cohesion: 'loose',  combatant: false, maxFollowers: 3, pull: 2.2 },
+};
+
+// --- group cohesion (Phase B2 metric reference) ------------------------------
+// The truth-side groupCohesion(sim) observer (signals.ts) scores each group 0..1 by
+// clamp01(1 - meanPairwiseDist/refDist) × coActFrac — tight clusters acting alike read high.
+export const COHESION = {
+  refDist: 18,     // metres at/beyond which a group's spatial cohesion reads 0
+};
+
+// --- group names (Phase B3 legibility) ----------------------------------------
+// A fresh emergent group coins a NAME at formation (groups.js _join, drawn via the seeded
+// rng()) so a fellowship is a CHARACTER in the story — "Wenna joined the Hearthside Circle"
+// reads; "agent 41 set groupType circle" doesn't. Names are flavour only (no mechanics).
+export const GROUP_NAMES = {
+  warband: ['the Iron Banners', 'the Red Wolves', 'the Oathblades', 'the Storm Riders', 'the Grim Company'],
+  hearth:  ['the Quiet Folk', 'the Hearthkeepers', 'the Homebound', 'the Emberwatch'],
+  guild:   ['the Hammerfast Guild', 'the Honest Hands', 'the Masters\' Circle', 'the Trade Compact'],
+  circle:  ['the Hearthside Circle', 'the Old Friends', 'the Evening Company', 'the Market Fellows'],
 };
 
 // --- dungeons (Daggerfall-style sublevels) ----------------------------------

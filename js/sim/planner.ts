@@ -1453,6 +1453,16 @@ export function goalRepay(subjectId: EntityId, value = 1, kind = 'any'): Goal {
 }
 
 // ---------------------------------------------------------------------------
+// PERSISTENT-AMBITION ACTIVITY (Phase B1) — a slow ambition's standing activity (work my craft /
+// march to the frontier / take in the sights / seek my kin) is NOT a goal-stack goal (it never
+// completes, so it would never drain the stack — the stack carries SPECIFIC completing intentions).
+// It is an own-state INTENT (a._ambitionIntent) that js/sim/features/ambition_goals.js stamps and
+// decide() mints into a candidate. Four kinds REUSE an existing measured behaviour + its steer-fill
+// (work→fillWork, sightsee→fillSightsee, socialize→fillSocialize); only renown's seek_glory→
+// fillSeekGlory is new. So there is no goalSeekGlory/goalJourney/… factory here.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
 // SCHEMA DISPOSITIONS (Phase 2a → 2b LANDED) — hide/shadow/avoid are the
 // plan-less goal kinds the flagship InteractionSchemas adopt as a response.
 // They were Phase-2a collapse-fodder; Phase 2b LANDED them as steer-fills:

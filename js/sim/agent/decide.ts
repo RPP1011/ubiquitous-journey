@@ -7,7 +7,7 @@
 // Behaviour-preserving: verbatim bodies of the old Agent methods. No cycles —
 // imports config, pure helpers, motivation, and the occupation chooser.
 
-import { SIM, WEIGHT, ECON, COMMODITIES, GROUP_TYPES, LEGEND, SOCIAL, COMFORT, NOVELTY, BUILD, ESTEEM as WEALTH, ROMANCE, factionHostile } from '../simconfig.js';
+import { SIM, WEIGHT, ECON, COMMODITIES, GROUP_TYPES, LEGEND, SOCIAL, COMFORT, NOVELTY, BUILD, ESTEEM as WEALTH, ROMANCE, MOTIVE, factionHostile } from '../simconfig.js';
 import { updateAmbition, ambitionFavor, ambitionWantsFight, deriveGoals, pruneGoals } from '../motivation.js';
 import { chooseOccupation, laborValue } from './occupation.js';
 import { qualifyHome, isUnhoused } from '../construction.js';
@@ -20,7 +20,7 @@ import type { Vector3 } from 'three';
 const STAGE_T = STAGE as Record<string, Stage>;
 const REASON_T = REASON as Record<string, Reason>;
 // simconfig.js GROUP_TYPES inferred without an index signature (allowJs).
-const GROUP_TYPES_T = GROUP_TYPES as Record<string, { cohesion?: string; combatant?: boolean } | undefined>;
+const GROUP_TYPES_T = GROUP_TYPES as Record<string, { cohesion?: string; combatant?: boolean; pull?: number } | undefined>;
 
 /** A scored utility candidate (decide's deliberation), spread into the chosen goal. */
 interface Candidate { kind: string; score: number; [k: string]: unknown }
@@ -403,9 +403,10 @@ export function decide(a: Agent, ctx: CognitionCtx): void {
   // never out-pulls work/market/survival — a wisp of social discomfort, not panic. Belief-only
   // (suspicion/standing/hostile/lastPos — my OWN belief), so the epistemic split holds. The `avoid`
   // goal carries `around` = where I BELIEVE the suspect is; fillAvoid pushes me off it as a repulsor.
+  let avoiding = false;
   if (!inDanger) {
     const avoidPos = pickSuspectToAvoid(a);
-    if (avoidPos) push('avoid', SOCIAL.avoidWeight, { around: avoidPos });
+    if (avoidPos) { push('avoid', SOCIAL.avoidWeight, { around: avoidPos }); avoiding = true; }
   }
   if (!inDanger) push('wander', WEIGHT.wander * (0.6 + P.curiosity));
 
@@ -413,16 +414,57 @@ export function decide(a: Agent, ctx: CognitionCtx): void {
   // action (e.g. an ambitious agent values 'work' more, a wanderer 'wander').
   for (const c of cand) c.score *= ambitionFavor(a, c.kind);
 
+  // AMBITION-ACTIVITY (Phase B1): when no enemy/opportunity is in sight, an agent pursues its
+  // ambition's standing ACTIVITY (work my craft / march to the frontier / take in the sights /
+  // seek my kin) instead of aimless wander — the candidate that out-scores the tiny wander floor.
+  // Pushed AFTER the ambitionFavor loop (so it is NOT double-scaled by the per-kind favor — it is
+  // ALREADY the ambition's own expression) and CLAMPED below WEIGHT.plan, so a live memory-derived
+  // plan (avenge/repay/seek_fortune) ALWAYS out-ranks the standing activity — the goal stack owns
+  // specific intentions, the ambition activity only fills genuinely-idle time. Survival/urgent needs
+  // (eat/flee/emergency-comfort) still out-score it (they are pitched higher). Scaled by the matching
+  // OWN personality drive, so the bold seek glory hardest, the ambitious work hardest, etc. Own-state
+  // only (topAmbitionGoal/ambitionDrive read a._ambitionIntent + a.personality), epistemic split holds.
+  // YIELDS to a live soft-avoid: a suspect-unease berth ("cross the street") pre-empts marching off
+  // to one's ambition — the activity resumes the moment the suspect is out of mind. YIELDS to
+  // BOREDOM too: when novelty has genuinely run dry, the curiosity-scaled sightsee outing (above)
+  // gets the idle window — so the curious still take in the sights, and the ambition activity
+  // resumes once the outing tops boredom back up (a sightsee-kind ambition IS the outing, so it
+  // never yields to itself). DRIVE-PROPORTIONAL (floor in config, not a flat 0.6): the candidate
+  // spans ~[W·floor .. W·(floor+1)], so a half-hearted soul still drifts to leisure while a driven
+  // one genuinely lives its ambition — personality VISIBLY orders who pursues what, hardest.
+  if (!inDanger && !avoiding) {
+    const ak = topAmbitionGoal(a);
+    const bored = NOVELTY.enabled && (a.needs.novelty ?? 1) < NOVELTY.seekBelow;
+    if (ak && (!bored || ak.kind === 'sightsee'))
+      push(ak.kind, Math.min(WEIGHT.ambition * (MOTIVE.ambitionDriveFloor + ambitionDrive(a)), WEIGHT.plan - 0.05), ak.extra);
+  }
+
   // PLAN STEP candidate: the top goal's current primitive is a STRONGLY-weighted
   // candidate, NOT a dictator — survival/needs (flee, eat) can still out-score it
   // and interrupt; the plan stays on the stack and resumes when it wins again
   // (docs §2/§4.4). Pushed after the ambition tilt so it isn't double-scaled.
   if (planStep) push('plan', WEIGHT.plan, { step: planStep });
 
-  // loose social groups (guild/circle) pull their members together to socialise
+  // LOOSE GROUPS LIVE THEIR BOND (Phase B2): membership pulls members toward the group's LIFE,
+  // not a token socialise nudge. A CIRCLE gathers — its socialise pull is the per-type config
+  // `pull`, and a member with no chosen friend converges ON the believed anchor (the shared spot
+  // every member knows: its OWN belief of its OWN bandLeaderId, the resolveLeaderRef pattern —
+  // no roster read; the anchor itself, bandLeaderId null, stays put as the gathering point). A
+  // GUILD works its shared trade — the work candidate gets the pull (the craft IS the bond) and
+  // the old fraternise nudge stays. Tuning lives in GROUP_TYPES[type].pull (config, not logic).
   const gt = a.groupType ? GROUP_TYPES_T[a.groupType] : null;
-  if (gt && !a.inParty && gt.cohesion === 'loose')
-    for (const c of cand) if (c.kind === 'socialize') c.score *= 1.6;
+  if (gt && !a.inParty && gt.cohesion === 'loose') {
+    const pull = gt.pull || 1.6;
+    for (const c of cand) {
+      if (c.kind === 'socialize') {
+        c.score *= (a.groupType === 'circle' ? pull : 1.6);
+        if (a.groupType === 'circle' && c.withId == null && a.bandLeaderId != null) {
+          const ab = a.beliefs.get(a.bandLeaderId);
+          if (ab && ab.confidence >= SIM.actOnBeliefMin) c.withId = a.bandLeaderId;
+        }
+      } else if (c.kind === 'work' && a.groupType === 'guild') c.score *= pull;
+    }
+  }
 
   const prevKind = a.goal ? a.goal.kind : undefined;
   let best: Candidate | undefined = cand[0];
@@ -448,6 +490,42 @@ export function decide(a: Agent, ctx: CognitionCtx): void {
   // (belief-priced, proximity- and ambition-weighted, opportunity-gated). Stored
   // on a._trade and produced by act()/_produce. Belief-only inputs; guarded.
   if (winner.kind === 'work') chooseOccupation(a, ctx);
+}
+
+// AMBITION-ACTIVITY (Phase B1) — the standing-activity intent the ambition_goals feature stamps
+// on own-state (a._ambitionIntent) for the agent's CURRENT ambition: work (wealth/mastery) /
+// seek_glory (renown) / sightsee (wanderlust) / socialize (belonging). Four reuse an existing
+// MEASURED behaviour; seek_glory is the one new march-to-the-frontier kind (the fight candidate
+// fires on contact). Returns the activity kind + the extra its steer-fill needs (socialize carries
+// the believed friend to seek). Own-state ONLY — reads a._ambitionIntent + (for socialize) the
+// agent's own believed-friend; no roster read. null only for the no-ambition case. A 'work' commit
+// also runs chooseOccupation (the goal-commit tail below already does this for any winning 'work').
+// The stamped intent arrives already ACTIONABLE — the deriver (ambition_goals.ts) resolves the
+// non-worker 'work' fallback at stamp time, so every reader sees one live kind.
+export function topAmbitionGoal(a: Agent): { kind: string; extra?: Record<string, unknown> } | null {
+  const kind = (a as Agent & { _ambitionIntent?: string | null })._ambitionIntent;
+  if (!kind) return null;
+  if (kind === 'socialize') {
+    const friend = pickSocialTarget(a);                  // own-belief friend for fillSocialize (-> market fallback)
+    return { kind: 'socialize', extra: friend != null ? { withId: friend } : undefined };
+  }
+  return { kind };
+}
+
+// The personality DRIVE behind the agent's ambition — the matching OWN trait (own-state only),
+// so the candidate scales with how strongly this agent WANTS its ambition: the bold seek glory
+// hardest, the curious journey hardest, the ambitious pursue their craft hardest, the social
+// seek kin hardest. Defaults to a mid drive for an unmapped ambition. Never throws.
+function ambitionDrive(a: Agent): number {
+  const P = a.personality || {};
+  switch (a.ambition ? a.ambition.kind : '') {
+    case 'renown':     return P.risk_tolerance ?? 0.5;
+    case 'wanderlust': return P.curiosity ?? 0.5;
+    case 'wealth':     return P.ambition ?? 0.5;
+    case 'mastery':    return P.ambition ?? 0.5;
+    case 'belonging':  return P.social_drive ?? 0.5;
+    default:           return 0.5;
+  }
 }
 
 // Pick the friend this agent would most like to spend time with — the dearest
@@ -519,9 +597,18 @@ export function decideParty(a: Agent, ctx: CognitionCtx): void {
   const leader = a._leader(ctx);                 // controlled-party leader handle, or null
   const lbel = (!leader && a.bandLeaderId != null) ? a.beliefs.get(a.bandLeaderId) : null;
   const leaderLive = leader ? leader.alive : !!(lbel && lbel.confidence >= SIM.actOnBeliefMin); // EPISTEMIC-OK: controlled party leader (known mechanic)
-  // a banded agent whose leader is gone (dead/disbanded) has no one to follow —
-  // it reverts to wandering rather than assuming the player or chasing a null.
-  if (!leaderLive) { a.goal = { kind: 'wander' }; return; }
+  // a banded agent whose leader is gone (dead/disbanded) — or whose track of it has decayed
+  // below the act-on threshold — has no one to follow. Rather than camping aimless `wander`
+  // until the band dissolves (the single biggest pool of drift the behaviour trace surfaced:
+  // lost followers spent ~half their LIVES wandering), it falls back to its OWN ambition's
+  // standing activity (Phase B1, own-state intent) and lives its life; following resumes the
+  // moment it re-perceives the leader (or truth-side prune dissolves a dead leader's band).
+  if (!leaderLive) {
+    const ak = topAmbitionGoal(a);
+    a.goal = ak ? { kind: ak.kind, ...(ak.extra || {}) } : { kind: 'wander' };
+    if (a.goal.kind === 'work') chooseOccupation(a, ctx);   // same commit tail as the scorer
+    return;
+  }
   const pgt = a.groupType ? GROUP_TYPES_T[a.groupType] : null;
   const combatant = pgt ? pgt.combatant : true;   // player party + warbands fight; hearths flee
   // enemy is a belief-style REF (id + pos) — either my nearest believed-hostile or the
@@ -534,7 +621,21 @@ export function decideParty(a: Agent, ctx: CognitionCtx): void {
     const ref = ctx.resolver.enemyNearLeader(a, leader);
     if (ref) enemy = ref;
   }
-  if (enemy && !combatant) { a.goal = { kind: 'flee', fromId: enemy.id }; return; }  // hearth runs
+  if (enemy && !combatant) {
+    // HEARTH SHELTERS TOGETHER (Phase B2): homebodies don't scatter — flee TO the shelter
+    // nearest where I believe my hearth-mate (the leader) is, so the pair converges on ONE
+    // refuge. Own belief (lbel.lastPos / the controlled-leader handle) + the STATIC map —
+    // the same reads this function already makes; fillFlee honours toPos as the refuge.
+    // No known shelter → plain flight away from the threat, exactly as before.
+    if (a.groupType === 'hearth' && ctx.map) {
+      try {
+        const lp = leader ? leader.pos : (lbel ? lbel.lastPos : null);
+        const safe = lp ? ctx.map.nearest(['shelter', 'rest'], lp, a.townId) : null;
+        if (safe) { a.goal = { kind: 'flee', fromId: enemy.id, toPos: { x: safe.pos.x, z: safe.pos.z } }; return; }
+      } catch { /* never throw on the tick */ }
+    }
+    a.goal = { kind: 'flee', fromId: enemy.id }; return;   // hearth runs
+  }
   // even on the march, a safe-but-starving companion stops to eat (it has no economic
   // scheduler of its own, so without this band members slowly starved).
   if (!enemy && (a.inventory.food || 0) > 0.05 && a.needs.hunger < (ECON.eatUrgent || 0.4)) { a.goal = { kind: 'eat' }; return; }

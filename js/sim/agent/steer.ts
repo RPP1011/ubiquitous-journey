@@ -31,7 +31,7 @@
 import * as THREE from 'three';
 import { rng } from '../rng.js';
 import { ARENA_RADIUS, LANDMARKS } from '../../arena.js';
-import { SIM, STEER, SOCIAL, ECON, GOODS, PARTY, ROMANCE } from '../simconfig.js';
+import { SIM, STEER, SOCIAL, ECON, GOODS, PARTY, ROMANCE, MOTIVE } from '../simconfig.js';
 import { POI_KIND } from '../world.js';
 import { _stepAlong, groundY } from './movement.js';
 import type { Agent, CognitionCtx, EntityId } from '../../../types/sim.js';
@@ -305,6 +305,29 @@ function fillSocialize(a: Agent, ctx: CognitionCtx): Field | null {
   return m ? attractField(m.pos, false) : null;
 }
 
+// ── PERSISTENT-AMBITION STANDING-ACTIVITY FILL (Phase B1) ──────────────────────────
+// Renown's march is the ONE new locomotion the ambition layer needs; mastery/belonging/wanderlust
+// reuse fillWork/fillSocialize/fillSightsee (their committed activity kind IS work/socialize/
+// sightsee). Reads OWN-STATE + the STATIC map only (scan-clean), fully guarded (null → idle).
+
+// SEEK_GLORY (renown) — prowl the FRONTIER band where monsters roam (the same radial the monster
+// branch of fillWander uses: ARENA_RADIUS × gloryFrontierMin..0.92 around world centre). The
+// EXISTING fight candidate fires the moment a believed-hostile comes into sight — this fill only
+// carries the agent to where the danger lives. The prowl is LOCAL: each leg keeps near the agent's
+// OWN current bearing (± a wedge of jitter) rather than rolling a fresh random angle, so a seeker
+// marches straight out to the band once and then stalks ALONG it — short hops, more monster
+// contact — instead of spending its life on cross-map treks (marching dwell crowds out the very
+// fights the renown arc is for). Own-state wanderTarget; walk.
+function fillSeekGlory(a: Agent, _ctx: CognitionCtx): Field | null {
+  if (!a.wanderTarget || a.pos.distanceTo(a.wanderTarget) < 1.0) {
+    const minR = ARENA_RADIUS * (MOTIVE.gloryFrontierMin || 0.45), maxR = ARENA_RADIUS * 0.92;
+    const ang = Math.atan2(a.pos.z, a.pos.x) + (rng() - 0.5) * 1.2;   // my bearing ± ~34°
+    const r = minR + rng() * (maxR - minR);
+    a.wanderTarget = new THREE.Vector3(Math.cos(ang) * r, 0, Math.sin(ang) * r);
+  }
+  return attractField(a.wanderTarget, false);
+}
+
 // FLEE — XOR (the documented divergence from the doc sketch: NEVER a simultaneous
 // refuge-attract + threat-repel field — that would be a NEW curved-flight behaviour).
 // If the flee-to-refuge schema set a concrete `toPos` (a static place affording exit/
@@ -419,4 +442,6 @@ export const STEER_FILLS: Record<string, SteerFill> = {
   court: fillCourt,
   follow: fillFollow,
   wander: fillWander,
+  // PERSISTENT-AMBITION STANDING-ACTIVITY FILL (Phase B1) — renown's frontier march
+  seek_glory: fillSeekGlory,
 };
