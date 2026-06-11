@@ -10,6 +10,7 @@ import './recruiter.js';
 import './affect.js';
 import './ledger.js';
 import './caution.js';
+import './ambition_goals.js';   // Phase B1: persistent-ambition standing goals (replaces aimless wander)
 import './signalsFold.js';   // docs/architecture/13: PLAN_OUTCOME-folded catalog signals (streak/perils)
 
 export {};

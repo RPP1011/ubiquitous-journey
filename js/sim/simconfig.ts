@@ -348,6 +348,16 @@ export const WEIGHT = {
                       //   market trip (urgency-scaled up to ~3.9) REGARDLESS of the agent's ambition,
                       //   or low-ambition qualifiers never commit and the build is flaky. The decide
                       //   formula gives it a high floor (×1.4) + committed stickiness (×1.8).
+  ambition:  1.00,    // AMBITION-ACTIVITY (Phase B1): the candidate that pursues a STANDING ambition
+                      //   activity (work/seek_glory/sightsee/socialize) when no enemy/opportunity is in
+                      //   sight — so an idle agent DOES its ambition's activity instead of aimless
+                      //   wandering. Score = this × (MOTIVE.ambitionDriveFloor + the matching personality
+                      //   drive), so a DRIVEN soul (~1.25) out-pulls a routine market/comfort urge while a
+                      //   half-hearted one (~0.35) still drifts to leisure — personality orders who
+                      //   pursues what hardest. decide() CLAMPS it below WEIGHT.plan (a live memory-
+                      //   derived plan always wins) and pushes it AFTER the ambitionFavor tilt (no
+                      //   double-scale); urgent survival/needs (eat/flee/emergency-comfort) out-score
+                      //   it too, so a hungry or threatened agent tends itself first.
 };
 
 // --- longer-term motivations (ambitions) ------------------------------------
@@ -363,9 +373,14 @@ export const MOTIVE = {
                          //   the Phase-1 narrative-XP headroom: level 4 became
                          //   trivial once storied lives reach 15-30, so mastery
                          //   would complete instantly; 12 keeps it a real arc)
-  renownKills: 4,        // monsters slain for "renown"
-  wanderDist: 420,       // metres roamed for "wanderlust"
-  socialAmount: 22,      // accumulated socialising for "belonging"
+  renownKills: 8,        // monsters slain for "renown" (raised with Phase B1: a standing
+                         //   seek_glory prowl lands kills far faster than incidental danger did,
+                         //   so 4 completed in minutes and the cohort evaporated into reroll)
+  wanderDist: 1400,      // metres roamed for "wanderlust" (raised with Phase B1: life.dist accrues
+                         //   from ALL walking — at 420 any errand-runner completed it in ~5 min and
+                         //   the wanderlust cohort drained into the never-completing kinds)
+  socialAmount: 70,      // accumulated socialising for "belonging" (raised with Phase B1 — the
+                         //   standing socialize activity accrues it steadily, so 22 was minutes)
   revengeTimeout: 120,   // sim-seconds a grudge-revenge persists if unfulfilled
   // --- memory-derived goal expiries (Phase 3) ---
   avengeExpiry: 120,     // sim-seconds an avenge goal persists before it cools
@@ -376,6 +391,16 @@ export const MOTIVE = {
   grieveExpiry: 90,      // sim-seconds a grief (mourning) goal lingers before it lifts
   delveExpiry: 200,      // sim-seconds a delve(place) goal persists
   succourHunger: 0.4,    // hunger at/below which receiving a gift counts as being succoured
+  // --- PERSISTENT AMBITION STANDING ACTIVITY (Phase B1) ---
+  // A slow ambition STAMPS a standing activity intent (a._ambitionIntent) each cognition tick,
+  // so decide() mints a candidate that out-scores aimless wander. The intent tracks the agent's
+  // own slow ambition (which persists over minutes) yet needs/flee/comfort still interrupt (they
+  // out-score it). See js/sim/features/ambition_goals.js + the ambition-activity candidate in decide.
+  gloryFrontierMin: 0.45,   // inner edge of the renown prowl band the seek_glory march heads to (× ARENA_RADIUS; outer ~0.92)
+  ambitionDriveFloor: 0.25, // base pull of the ambition-activity candidate before the matching
+                            //   personality drive is added (decide) — low enough that a low-drive
+                            //   soul keeps its leisure variety instead of being conscripted, high
+                            //   enough that every ambition claims real idle time (aligned dwell)
 };
 
 // --- QUANTITIES: numeric-threshold plan composition (docs/architecture/10, Phase 1) ----

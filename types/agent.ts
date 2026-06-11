@@ -159,6 +159,7 @@ export interface Agent {
   avengerOf?: EntityId | null;
   guardianOf?: EntityId | null;
   sightTarget?: Vector3 | null;       // a target landmark position (steer/sightsee), not an id
+  _ambitionIntent?: string | null;    // standing ambition-activity kind (ambition_goals feature → decide)
   relics?: unknown[];
   homeBeliefId?: EntityId | null;
   _buildSiteId?: EntityId | null;
@@ -255,6 +256,7 @@ export interface Agent {
   act(dt: number, ctx: CognitionCtx): void;
   actControlled(dt: number, ctx: CognitionCtx): void;   // player-driven body (commander.js)
   chooseOccupation(ctx: CognitionCtx): void;
+  _strongestClassGood(): string | null;   // the good whose tags the strongest class is built from
 
   // trade interface (used by the market)
   keepOf(c: string): number;
