@@ -47,6 +47,7 @@ const SCANNED = [
   'js/sim/planner',
   'js/sim/agent',             // the decision helpers (with EPISTEMIC-OK carve-outs)
   'js/sim/mentalmap',         // the shared STATIC places registry (static-geography only)
+  'js/sim/roads',             // the static inter-town road graph (steer fills query it; static-geography only)
   // Phase 2a — the InteractionSchema reasoning layer: pure IR + the belief/own-state/map
   // evaluators + the bounded interpreter. Cognition: reads ONLY agent.*, the agent's own
   // BeliefStore, episodic memory, and the static mental map — never the roster.

@@ -252,7 +252,12 @@ export const TOWNS = {
   // town along the trade road). goTo funnels traffic to a gate the same way it
   // funnels across a river ford. See js/sim/walls.js (collision is config-pure +
   // headless-safe; the mesh is browser-only). Set `radius: 0` to disable.
-  wall: { radius: 16, thickness: 2, height: 5, gates: 4, gateWidth: 8 },
+  // `funnel`: the gate waypoint only OVERRIDES a mover's heading within this many
+  // metres of the doorway — far from the wall the field (target + road blend) owns
+  // the heading; collideWalls still hard-blocks the ring at any range. Without this
+  // gate, a 200m march at a walled town centre was a forced straight line at the
+  // far gate, which silently defeated the road-pull blend (and any future field).
+  wall: { radius: 16, thickness: 2, height: 5, gates: 4, gateWidth: 8, funnel: 40 },
 };
 
 // THE GAZETTE / REPORTER — a roaming "gazetteer" agent interviews newsworthy
@@ -895,16 +900,28 @@ export const PARTY = {
 //
 // Speeds reuse SIM.moveSpeed/runSpeed; arrival reuses SIM.arriveDist; the stand-off
 // gaps reuse SOCIAL.shadowGap / ECON.marketRange directly (NOT duplicated here — a
-// duplicate could drift). The ONLY value this block owns is fleeAway (was the literal
-// `6` in fleeFrom). The force WEIGHTS are dimensionless ratios; every fill in the 2b
-// pass is single-force (a strict XOR refuge-OR-threat, matching the old code, NOT the
-// simultaneous refuge+threat field the doc sketches — that is a NEW behaviour, out of
-// scope for this preserving refactor), so the weights are all effectively 1 until a
-// future simultaneous-field feature uses the ratios. Kept so that path stays tunable.
+// duplicate could drift). This block owns fleeAway (was the literal `6` in fleeFrom)
+// and the road-pull trio below. The force WEIGHTS are dimensionless ratios; every fill
+// in the 2b pass was single-force (a strict XOR refuge-OR-threat, matching the old
+// code, NOT the simultaneous refuge+threat field the doc sketches), and the ROAD blend
+// is the first feature to exercise steer()'s weighted-sum path: a second, weaker
+// attractor toward the trade road on long caravan/arbitrage/expedition legs.
 export const STEER = {
   wAttract: 1.0,   // default attractor weight (single-attractor fills)
   wThreat:  1.0,   // repulsor weight in the flee/avoid away-branch
   fleeAway: 6,     // synthetic away-target distance (was the literal 6 in fleeFrom)
+  // ROADS (legible travel arteries, js/sim/roads.js): the LONG-RANGE fills (caravan /
+  // arbitrage / expedition) blend a SECOND, milder attractor toward the nearest
+  // trade-road point — the first live use of steer()'s weighted-sum substrate.
+  // wRoad stays WELL below wAttract so the true target remains the PRIMARY attractor
+  // (facing/arrival unchanged) and travellers cut corners near both route ends
+  // instead of zigzagging onto the road — a preference, never a constraint.
+  wRoad: 0.55,        // road-pull weight (dimensionless, vs wAttract's 1.0)
+  roadSnapDist: 25,   // only a road within this lateral reach pulls (off-route legs stay straight)
+  roadMinDist: 40,    // only a LONG leg road-snaps; local hops walk straight at the target
+  roadAhead: 16,      // bias the road point this far AHEAD along the segment toward the
+                      //   destination — the pull always has a forward component (no backtrack,
+                      //   no oscillation around the centreline)
 };
 
 // --- NPC bands (parties as an AI abstraction beyond the player) --------------

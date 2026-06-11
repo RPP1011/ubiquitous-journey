@@ -27,10 +27,19 @@
 // sum-heading and the Stage-B primary-attractor arrival point are ALWAYS the same
 // point, and a pure-repulsor fill never arrives. The Stage-A/Stage-B incoherence
 // therefore never triggers in this workflow.
+//
+// THE ONE DELIBERATE EXCEPTION (the ROADS feature): the long-range fills (caravan /
+// arbitrage / expedition) blend a SECOND, weaker attractor toward the nearest trade-
+// road point (withRoad, below) — the first live use of the weighted sum. The TRUE
+// target keeps the higher weight, so it stays the PRIMARY attractor: facing + arrival
+// are still decided against the destination, and the road point is biased AHEAD along
+// the segment (roads.js), so the blended heading never flips or orbits — travellers
+// drift onto the artery, walk it, and cut the corner near both ends.
 
 import * as THREE from 'three';
 import { rng } from '../rng.js';
 import { ARENA_RADIUS, LANDMARKS } from '../../arena.js';
+import { roadPull } from '../roads.js';
 import { SIM, STEER, SOCIAL, ECON, GOODS, PARTY, ROMANCE, MOTIVE } from '../simconfig.js';
 import { POI_KIND } from '../world.js';
 import { _stepAlong, groundY } from './movement.js';
@@ -58,6 +67,21 @@ const ZERO = new THREE.Vector3(0, 0, 0);   // world-centre fallback when an agen
 // place / believed spot). `weight` defaults to STEER.wAttract.
 const attractField = (pos: XZ, run = false): Field =>
   ({ attractors: [{ pos, weight: STEER.wAttract }], run });
+
+// A long-range travel field: the true target as the PRIMARY attractor, plus — on a
+// LONG leg (target beyond STEER.roadMinDist) with a trade road within reach
+// (STEER.roadSnapDist) — a milder road attractor at a point biased AHEAD along the
+// route (roads.js). Static geography only (the ROADS graph) — scan-clean. Guarded:
+// roadPull returns null off-route / on non-finite input, leaving a plain single-
+// attractor field exactly as before the feature.
+function withRoad(a: Agent, tgt: XZ, run: boolean): Field {
+  const field: Field = { attractors: [{ pos: tgt, weight: STEER.wAttract }], run };
+  if (Math.hypot(tgt.x - a.pos.x, tgt.z - a.pos.z) > (STEER.roadMinDist || 40)) {
+    const rp = roadPull(a.pos.x, a.pos.z, tgt.x, tgt.z, STEER.roadSnapDist || 25);
+    if (rp) field.attractors!.push({ pos: rp, weight: STEER.wRoad });
+  }
+  return field;
+}
 
 const _away = new THREE.Vector3();   // scratch for the pure-repulsor synthetic target
 
@@ -183,27 +207,32 @@ function fillBounty(a: Agent, _ctx: CognitionCtx): Field | null {
 
 // ARBITRAGE — haul the load to the dear town's market (RUN); once within trading range
 // HOLD (return null -> idle) so the localized auction sells the goods there. Own-state
-// dest (a.arbitrage.destPos). Preserves the ECON.marketRange-2 hold threshold.
+// dest (a.arbitrage.destPos). Preserves the ECON.marketRange-2 hold threshold. A long
+// haul drifts onto the trade road (withRoad) — haulers share the caravans' arteries.
 function fillArbitrage(a: Agent, _ctx: CognitionCtx): Field | null {
   const ar = a.arbitrage;
   if (!ar || !ar.destPos) return null;
-  if (a.pos.distanceTo(ar.destPos) > (ECON.marketRange || 18) - 2) return attractField(ar.destPos, true);
+  if (a.pos.distanceTo(ar.destPos) > (ECON.marketRange || 18) - 2) return withRoad(a, ar.destPos, true);
   return null;   // within trading range: HOLD (was setMoving(0)) so the auction clears here
 }
 
 // EXPEDITION — march (RUN) toward the company's current objective (the wilds, or home
-// on return). Own-state target (a.expedition.target). No verb.
+// on return). Own-state target (a.expedition.target). Road-blended: the homeward leg
+// (and any near-town objective) tracks the artery; a wilds objective has no road near
+// it, so roadPull's progress gate leaves the march straight. No verb.
 function fillExpedition(a: Agent, _ctx: CognitionCtx): Field | null {
   const tgt = a.expedition && a.expedition.target;
-  return tgt ? attractField(tgt, true) : null;
+  return tgt ? withRoad(a, tgt, true) : null;
 }
 
 // CARAVAN — plod the trade road at WALKING pace toward the current waypoint (out, then
-// home). A laden caravan is SLOW — exactly what lets the ambush catch it. Own-state
-// target (a.caravanRun.target), walk. No verb.
+// home). A laden caravan is SLOW — exactly what lets the ambush catch it. Road-blended
+// (withRoad): the run actually FOLLOWS the inter-town artery, so caravans bunch where
+// the bandits (and the player) can find them. Own-state target (a.caravanRun.target),
+// walk. No verb.
 function fillCaravan(a: Agent, _ctx: CognitionCtx): Field | null {
   const ct = a.caravanRun && a.caravanRun.target;
-  return ct ? attractField(ct, false) : null;
+  return ct ? withRoad(a, ct, false) : null;
 }
 
 // REPORTER — the gazetteer hurries (RUN) toward its current subject; with none yet, it
