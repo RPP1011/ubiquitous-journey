@@ -18,7 +18,7 @@
 // Kept separate from the player's Party: this never touches a member whose leader
 // is the player, so recruited companions and emergent NPC groups coexist.
 
-import { BAND, GROUP_TYPES } from './simconfig.js';
+import { BAND, GROUP_TYPES, GROUP_NAMES } from './simconfig.js';
 import { rng } from './rng.js';
 import { isHomeBuilder } from './construction.js';
 
@@ -126,6 +126,20 @@ export class Groups {
       if (gt.combatant) F.combatant = true;           // warbands stand and fight together
     }
     // loose groups: no follow — the tag alone biases decide() + reads in relations
+    // LEGIBLE FELLOWSHIP (Phase B3): a fresh group coins a NAME (seeded rng — flavour only) and
+    // every join files a round on its `fellowship` saga arc, so a band/guild/circle is a CHARACTER
+    // in the chronicle with a beginning ("Wenna joined the Hearthside Circle") and, on dissolution
+    // (_prune), an end. Lazy-open via appendRound (a never-joined group files no tale). Keyed
+    // `fellowship:<type>:<anchor>` — disjoint from the recruiter's `warband:<id>` muster arc.
+    // Observer-layer bookkeeping only; guarded (never throws on the tick).
+    try {
+      const pool = (GROUP_NAMES as Record<string, string[]>)[type];
+      if (!L.groupName && pool && pool.length) L.groupName = pool[(rng() * pool.length) | 0];
+      F.groupName = L.groupName || null;
+      if (this.sim.sagas) this.sim.sagas.appendRound(
+        { kind: 'fellowship', key: 'fellowship:' + type + ':' + L.id, principals: [L.id, F.id] },
+        `${F.name} joined ${L.groupName || 'the ' + type} of ${L.name}.`);
+    } catch { /* never throw */ }
   }
 
   // PUBLIC band-join used by the RECRUITER follow-through (WARBAND, docs/architecture/10-lld
@@ -162,9 +176,19 @@ export class Groups {
       if (F.controlled) continue;
       if (F.bandLeaderId != null && F.bandLeaderId !== pid) {
         const L = this.sim.agentsById.get(F.bandLeaderId);
-        if (F.alive && (!L || !L.alive)) this._revert(F);          // leader gone -> dissolve
+        if (F.alive && (!L || !L.alive)) {
+          // CLOSE THE TALE (Phase B3): the leader's death/vanishing ends the fellowship —
+          // file the close BEFORE the flags are cleared (we still know type + leader id).
+          // closeArc on a never-opened key is a no-op; guarded.
+          try { if (this.sim.sagas && F.groupType) this.sim.sagas.closeArc('fellowship:' + F.groupType + ':' + F.bandLeaderId, 'disbanded'); } catch { /* never throw */ }
+          this._revert(F);                                         // leader gone -> dissolve
+        }
       } else if (F.groupType && F.bandLeaderId == null) {
-        if (!F.alive || this._followersOf(F.id).length === 0) F.groupType = null;  // empty anchor: drop label
+        if (!F.alive || this._followersOf(F.id).length === 0) {
+          // empty anchor: the fellowship has dwindled to one — close its tale + drop the label.
+          try { if (this.sim.sagas) this.sim.sagas.closeArc('fellowship:' + F.groupType + ':' + F.id, 'disbanded'); } catch { /* never throw */ }
+          F.groupType = null; F.groupName = null;
+        }
       }
     }
   }
@@ -175,6 +199,7 @@ export class Groups {
     F.inParty = false;
     F.bandLeaderId = null;
     F.groupType = null;
+    F.groupName = null;
   }
 
   // restore every NPC-group member (world teardown). Leaves the player's party alone.

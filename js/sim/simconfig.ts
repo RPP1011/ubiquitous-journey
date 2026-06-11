@@ -1147,6 +1147,17 @@ export const COHESION = {
   refDist: 18,     // metres at/beyond which a group's spatial cohesion reads 0
 };
 
+// --- group names (Phase B3 legibility) ----------------------------------------
+// A fresh emergent group coins a NAME at formation (groups.js _join, drawn via the seeded
+// rng()) so a fellowship is a CHARACTER in the story — "Wenna joined the Hearthside Circle"
+// reads; "agent 41 set groupType circle" doesn't. Names are flavour only (no mechanics).
+export const GROUP_NAMES = {
+  warband: ['the Iron Banners', 'the Red Wolves', 'the Oathblades', 'the Storm Riders', 'the Grim Company'],
+  hearth:  ['the Quiet Folk', 'the Hearthkeepers', 'the Homebound', 'the Emberwatch'],
+  guild:   ['the Hammerfast Guild', 'the Honest Hands', 'the Masters\' Circle', 'the Trade Compact'],
+  circle:  ['the Hearthside Circle', 'the Old Friends', 'the Evening Company', 'the Market Fellows'],
+};
+
 // --- dungeons (Daggerfall-style sublevels) ----------------------------------
 // A dungeon is a procedurally-assembled tile labyrinth built into a Group that
 // sits far BELOW the overworld (the arena clamp only constrains x/z, so a deep
