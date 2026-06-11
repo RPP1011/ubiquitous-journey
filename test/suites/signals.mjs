@@ -25,6 +25,7 @@ import { recognizeWealth } from '../../js/sim/agent/decide.js';
 import { World } from '../../js/sim/world.js';
 import { Simulation } from '../../js/sim/simulation.js';
 import { Agent } from '../../js/sim/agent.js';
+import { setSeed } from '../../js/sim/rng.js';
 import * as THREE from 'three';
 import { readFileSync } from 'node:fs';
 
@@ -530,8 +531,15 @@ export function outlawTest(ok, { makeFighter, stubScene }) {
 // berth (an `avoid` goal whose `around` is the suspect's believed pos), SHORT of fleeing — and it
 // must NOT out-prioritise work/survival. Belief-only (my own suspicion/standing/hostile/lastPos).
 export function softAvoidTest(ok, { makeFighter, stubScene }) {
+  // SEED the shared PRNG: `decide()` lazily rolls each fresh agent's AMBITION off rng() the first
+  // time, and a wanderlust roll lifts `wander` via ambitionFavor past the deliberately-faint 0.35
+  // avoid — so without a seed S-B1 flakes ~1/5 (the avoid berth is a wisp, not a dictator, by design).
+  // Pinning the seed makes the ambition rolls deterministic so the goal-ordering assertions are stable.
+  // The seed is passed THROUGH the Simulation opts (its constructor calls setSeed(opts.seed), which
+  // would otherwise clobber a bare setSeed here); restored to unseeded at the end so later suites keep
+  // their stochastic soak behaviour.
   const world = new World(stubScene);
-  const sim = new Simulation(stubScene, world, { makeFighter });
+  const sim = new Simulation(stubScene, world, { makeFighter, seed: 1234 });
   let nid = 1;
   const P = () => ({ risk_tolerance: 0.5, altruism: 0.5, ambition: 0.5, social_drive: 0.3, curiosity: 0.4 });
   const add = (name, x, z, cfg = {}) => {
@@ -586,5 +594,6 @@ export function softAvoidTest(ok, { makeFighter, stubScene }) {
     a.decide(cog());
     ok(a.goal && a.goal.kind !== 'avoid', `softavoid S-B4: a believed-hostile drives flee/fight, not the soft-avoid (goal=${a.goal && a.goal.kind})`);
   }
+  setSeed(undefined);   // restore the platform RNG so subsequent suites stay unseeded
   sim.dispose();
 }
