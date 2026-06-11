@@ -225,7 +225,10 @@ export const URCHIN = {
 // live/work/defend within. Town 0 stays at the origin so its terrain/landmarks
 // are unchanged. Every origin-hardcoded subsystem reads an agent's townAnchor.
 export const TOWNS = {
-  centers: [[0, 0], [210, 0]],   // world (x,z) of each town centre
+  centers: [[0, 0], [210, 0], [-170, 170], [60, -230]],   // world (x,z) of each town centre —
+                                  //   all within ~250 of origin so the monster frontier band
+                                  //   (0.45..0.92 × ARENA_RADIUS=600 ⇒ 270..552) stays wilderness;
+                                  //   varied inter-town distances (210..460m) give caravans real routes
   radius: 70,                     // a town's home band: wander / work / defence scale
   names: ['Eastmarket', 'Crowmoor', 'Highford', 'Saltwick', 'Thornvale'],   // datelines (cycled)
   // SPECIALIZATION (comparative advantage): each town's resource sites are skewed so
@@ -238,6 +241,8 @@ export const TOWNS = {
   profiles: [
     { field: 6, forest: 8, mine: 9, meadow: 2 },   // Eastmarket — ironhill town: ore+wood rich, HERB-poor (wants herb)
     { field: 6, forest: 3, mine: 3, meadow: 9 },   // Crowmoor   — green town:    herb rich, ORE+WOOD-poor (wants ore+wood)
+    { field: 9, forest: 6, mine: 2, meadow: 4 },   // Highford   — breadbasket:   food+wood rich, ORE-poor (wants ore/tools)
+    { field: 6, forest: 2, mine: 8, meadow: 5 },   // Saltwick   — delvers' town: ore+herb rich, WOOD-poor (wants wood)
   ],
   // STONE WALLS ringing each town's built core. The ring sits just INSIDE the
   // resource ring (sites scatter from r=18 outward), so it encloses the market /

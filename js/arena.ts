@@ -33,7 +33,7 @@ interface PosAttr { count: number; getX(i: number): number; getZ(i: number): num
 const mesh = (g: THREE.BufferGeometry, m: THREE.Material): THREE.Mesh =>
   new THREE.Mesh(g, m as THREE.MeshBasicMaterial);
 
-export const ARENA_RADIUS = 320;           // playable world radius (open world: holds several towns + frontier)
+export const ARENA_RADIUS = 600;           // playable world radius (Phase A expansion: ~1.1 km² — four towns + a true frontier band; landmarks/camps/glory-prowl all scale off this)
 const GROUND = ARENA_RADIUS + 16;          // ground half-extent (past the edge)
 
 export const BIOME = { VILLAGE: 'village', PLAINS: 'plains', FOREST: 'forest', HILLS: 'hills', WILDS: 'wilds' };
