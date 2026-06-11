@@ -257,7 +257,7 @@ export function decide(a: Agent, ctx: CognitionCtx): void {
   let inDanger = false;
   if (enemy) {
     const dist = a.pos.distanceTo(enemy.pos);
-    const committed = a.goal!.kind === 'flee' || a.goal!.kind === 'fight';
+    const committed = a.goal?.kind === 'flee' || a.goal?.kind === 'fight';
     inDanger = dist <= SIM.dangerRange || (committed && dist <= SIM.safeRange);
     // renown-seekers and the vengeful stand and fight even if they're civilians;
     // hunters/monsters pursue at any range (fight isn't danger-gated).
