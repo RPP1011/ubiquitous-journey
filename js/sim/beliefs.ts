@@ -306,7 +306,25 @@ export class BeliefStore implements IBeliefStore {
   // Per-second decay of certainty and suspicion.
   decay(dt: number) {
     for (const b of this.map.values()) {
-      b.confidence = Math.max(0, b.confidence - SIM.confidenceDecay * dt);
+      // TIE-WEIGHTED RETENTION (non-uniform decay): confidence in someone fades SLOWER the more
+      // they personally MATTER to me — keyed on |standing| (a real relationship, love OR hate),
+      // NEVER on mere suspicion/the hostile flag. The distinction is load-bearing: the belief-cap
+      // sweep showed unbounded minds annihilate the town (cap>=100 -> 1-3 survivors) because
+      // witnessed/gossiped hostility about STRANGERS never faded — hostility metastasized until
+      // everyone fought everyone. A stranger you only heard ill of fades (feuds die by being
+      // forgotten); the one who actually wronged or loved you stays in mind (vendettas stay
+      // PERSONAL). Spouse/blood-enemy ≈ (1+tieRetention)x slower than a market acquaintance.
+      // NON-AGENT (place) beliefs retain by NATURE, not by tie: a building doesn't walk, so
+      // positional knowledge of it never goes stale like a person's — only its believed STATE
+      // (sheltered) changes, and rarely. placeRetention slows every placeKind belief (the
+      // eviction pass already never drops one's home; this is the decay-side of that
+      // precedent — the homecoming's stale-intact home belief persists until SIGHT revises it,
+      // while a torched tavern unvisited for long enough still fades to uncertainty). Props/
+      // scarecrows carry no placeKind and keep person-rate fade — being mistaken for a person
+      // is their entire job.
+      const tie = b.placeKind ? (SIM.placeRetention || 0) : (SIM.tieRetention || 0) * Math.min(1, Math.abs(b.standing || 0));
+      const keep = 1 + tie;
+      b.confidence = Math.max(0, b.confidence - (SIM.confidenceDecay * dt) / keep);
       b.suspicion = Math.max(0, b.suspicion - SIM.suspicionDecay * dt);
       // a believed-wealth read goes stale like any other: fade its confidence so an unrefreshed
       // prosperity estimate becomes uncertain (the recognition channel weights by wealthConf).

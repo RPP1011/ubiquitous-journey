@@ -1254,11 +1254,22 @@ export const SIM = {
   waterSpeedMul: 0.4,       // speed multiplier wading the river (vs steering to a ford)
   ravineSpeedMul: 0.5,      // speed multiplier crossing a ravine floor
   beliefDecayStride: 4,     // decay each agent's table every Kth tick at K×dt (linear fades ⇒ exact; 1/K the walks)
-  beliefsPerAgent: 50,      // bounded ToM table size. 12 proved too small a mind for a ~100-soul
-                            //   town: the crowded-market churn evicted any unremarkable neighbour
-                            //   within ticks (the alms post-mortem: a donor literally could not
-                            //   keep the pauper in mind long enough to pay it), and quietly
-                            //   throttled friend-seeking/standing-based behaviour the same way.
+  tieRetention: 3,          // non-uniform decay: confidence in a |standing|=1 tie (beloved/blood-enemy)
+                            //   fades (1+this)× slower than a stranger's — relationships consolidate,
+                            //   acquaintances churn. Keyed on standing ONLY (never suspicion/hostile:
+                            //   rumour-fed fear of strangers must fade, or feuds metastasize town-wide).
+  placeRetention: 4,        // non-agent (placeKind) beliefs fade (1+this)× slower: buildings don't
+                            //   walk — only their believed STATE changes, rarely (decay-side of the
+                            //   never-evict-home precedent; the homecoming's stale belief persists).
+  beliefsPerAgent: 25,      // bounded ToM table size — the MEASURED optimum (test/beliefsweep.mjs,
+                            //   caps 12..300 × 2 seeds): tables PIN at the cap at every size (minds
+                            //   always saturate — the cap IS the curator), 12 was too small (the
+                            //   alms post-mortem: a donor couldn't keep the pauper in mind long
+                            //   enough to pay), 50 cost ~40% more ms/frame AND measured worse on
+                            //   every legibility axis, and ≥100 ANNIHILATED the town (the hostile
+                            //   latch never cools; the bound is the throttle on how many enemies
+                            //   one mind can hold — bounded forgetting is a survival mechanism).
+                            //   25 + tie-weighted retention: best correlations, healthy town.
   gossipFalloff: 0.85,      // confidence multiplier when a belief is passed along
   gossipCap: 0.8,           // ceiling on second-hand confidence
   confidenceDecay: 1 / 240, // belief certainty fades per second

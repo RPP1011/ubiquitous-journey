@@ -13,7 +13,7 @@ import { goalDwellVector, groupCohesion } from '../js/sim/signals.js';
 
 const SECS = Number(process.argv[2]) || 900;
 const SEEDS = [Number(process.argv[3]) || 31, Number(process.argv[4]) || 77];
-const CAPS = [12, 25, 50, 75, 100];
+const CAPS = [12, 25, 50, 100, 175, 300];   // 175 ≈ roster-scale; 300 = effectively UNBOUNDED (eviction never fires)
 const dt = 1 / 60;
 
 const pearson = (xs, ys) => {
