@@ -220,8 +220,11 @@ export async function constructionTest(ok, { makeFighter, stubScene }) {
   // ── 6. every NPC still has a comfort need, a goal, and a valid ambition ──────
   ok(sim.agents.every((a) => (a.alive ? (a.needs && typeof a.needs.comfort === 'number') : true)),
     'construction: every living agent has a comfort need');
-  ok(sim.agents.every((a) => a.goal && a.goal.kind),
-    'construction: every agent has a goal');
+  // A HELD captive legitimately has goal=null (decide.ts: captivity suspends agency until rescue),
+  // and the dead/player are exempt too — so assert a goal only for agents that actually run decide.
+  // (Without this guard the check flaked ~1/14 when someone was captive on the asserting tick.)
+  ok(sim.agents.every((a) => (a.alive && !a.controlled && !a._held) ? (a.goal && a.goal.kind) : true),
+    'construction: every active (non-captive) agent has a goal');
   const validAmbition = (a) => a.ambition && (a.ambition.revenge || AMBITIONS[a.ambition.kind]);
   ok(sim.agents.filter((a) => !a.controlled).every(validAmbition),
     'construction: every NPC still has a valid ambition');
