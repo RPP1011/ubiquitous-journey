@@ -58,12 +58,16 @@ export class SagaStore implements ISagaStore {
   _open: Map<string, Arc>;
   _closed: Arc[];
   _seq: number;
+  _lapsedAt: Map<string, number>;
 
   constructor(sim: Sim) {
     this.sim = sim;
     this._open = new Map();    // key -> open arc (dedup + fast find); bounded ARCS.maxOpen
     this._closed = [];         // ring of completed arcs (cap ARCS.maxClosed) — what the Gazette/UI read
     this._seq = 0;             // monotonic arcId
+    this._lapsedAt = new Map();// key -> sim-time of its last LAPSED close (the re-open refractory;
+                               //   kept beside the ring because the bounded ring evicts — a churned
+                               //   entry must not amnesty the refractory). Bounded: pruned on insert.
   }
 
   _now(): number { try { return (this.sim && this.sim.time) || 0; } catch { return 0; } }
@@ -100,6 +104,13 @@ export class SagaStore implements ISagaStore {
       const live = this._open.get(opts.key);
       if (live) return live;
       const now = this._now();
+      // LAPSED-REOPEN REFRACTORY: a tale that just PETERED OUT (closed 'lapsed') must rest before
+      // the same key re-opens — without it, every re-derive of the same grudge re-files the same
+      // vendetta the moment the goal lapses (the 50-belief trace: 228 of 366 closed arcs were
+      // vendetta:lapsed — grudge churn, not stories). A FULFILLED/celebrated close is untouched:
+      // re-ignition after a real ending is the designed parentArcId feature.
+      const lap = this._lapsedAt.get(opts.key);
+      if (lap != null && now - lap < (ARCS.lapsedReopenSecs || 240)) return null;
       const prior = this._lastClosed(opts.key);
       const arc: Arc = {
         arcId: ++this._seq,
@@ -162,6 +173,18 @@ export class SagaStore implements ISagaStore {
       const now = this._now();
       arc.closedAt = now;
       arc.outcome = outcome;
+      if (outcome === 'lapsed') {
+        this._lapsedAt.set(key, now);
+        // bounded: drop entries past the refractory (cheap full prune only when the map grows)
+        if (this._lapsedAt.size > 256)
+          for (const [k, t] of this._lapsedAt) if (now - t >= (ARCS.lapsedReopenSecs || 240)) this._lapsedAt.delete(k);
+        // A NEVER-ESCALATED TALE FILES NO TALE (the warband-muster precedent): a lapsed arc with
+        // ZERO rounds was a derive-flicker — a grudge that never came to a single blow — and
+        // retaining it floods the ring/Gazette with non-stories (the 50-belief trace: most of the
+        // vendetta:lapsed monoculture was 0-round). It still armed the refractory above, so the
+        // same grudge cannot immediately re-file; it simply leaves no history.
+        if (arc.rounds === 0) { this._open.delete(key); return arc; }
+      }
       if (text) { arc.beats.push({ t: now, tag: 'close', text }); this._note(arc, text); }
       this._open.delete(key);
       arc.sig = `arc:${arc.kind}:${arc.key}:${Math.floor(now)}`;          // Gazette dedup sig (matches _recordSaga's)

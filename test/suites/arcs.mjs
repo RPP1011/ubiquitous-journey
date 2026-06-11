@@ -63,11 +63,20 @@ export function arcsTest(ok) {
     const sim = fakeSim();
     const s = new SagaStore(sim);
     s.openArc({ kind: 'rescue', key: 'r', principals: [1, 2], expiry: 50 });
+    s.appendBeat('r', 'round', 'a real escalation');   // a ROUNDED tale — retention is for stories
+    s.findArc('r').expiry = 50;                        // pin the fixture expiry (a round re-arms the TTL)
+    s.openArc({ kind: 'rescue', key: 'r0', principals: [3, 4], expiry: 50 });   // never escalates
     sim.time = 40; s.sweep(40);
     ok(s.findArc('r') !== null, 'arcs A4: an unexpired open arc survives the sweep');
     sim.time = 60; s.sweep(60);
     const lapsed = s._closed.find((x) => x.key === 'r');
     ok(s.findArc('r') === null && lapsed && lapsed.outcome === 'lapsed', 'arcs A4: an arc past expiry is swept lapsed');
+    // a 0-ROUND lapse files NO tale (the never-escalated-muster precedent) but still arms the
+    // re-open refractory, so the same key cannot immediately re-file the same non-story.
+    ok(s.findArc('r0') === null && !s._closed.find((x) => x.key === 'r0'),
+      'arcs A4b: a never-escalated (0-round) lapse files no tale');
+    ok(s.openArc({ kind: 'rescue', key: 'r0', principals: [3, 4] }) === null,
+      'arcs A4c: the 0-round lapse still arms the re-open refractory');
   }
 
   // A8 — eviction EXCLUDES the just-opened arc, evicts the WEAKEST INCUMBENT (review 2). Three

@@ -575,6 +575,7 @@ export const LEDGER = {
 // --- ARCS: the emergent-arc / saga registry (docs/architecture/12 §3 — the narrative spine) ----
 // The bounds + timescales for sim.sagas. Tuning only; the store math lives in js/sim/arcs.ts.
 export const ARCS = {
+  lapsedReopenSecs: 240,   // a key whose tale just LAPSED rests this long before re-opening (anti grudge-churn)
   maxOpen: 96,           // hard cap on concurrently-open arcs (the WEAKEST incumbent evicted via close)
   maxClosed: 320,        // ring of completed arcs the Gazette/UI read — sized so a populous town's
                          //   narrative HISTORY persists across a long session instead of churning out
@@ -596,7 +597,9 @@ export const SIGNALS = {
   goldHalfSlow: 600,     // slow gold EWMA half-life — ~5× the fast (the long baseline)
   lossRing: 8,           // bounded ring of recent downward gold steps (tagged robbed/spent/gifted/fined)
   lossMin: 1,            // a gold step smaller than this is noise — not ringed
-  snubHalfLife: 180,     // snubsFelt decays toward 0 with this half-life (a cold shoulder fades)
+  snubHalfLife: 90,      // snubsFelt decays toward 0 with this half-life (a cold shoulder fades;
+                         //   shortened for the 50-belief social bandwidth — more mouths, faster fade)
+  snubCap: 40,           // ceiling on the felt-snub counter (readable magnitude, not an unbounded tally)
   // GOSSIP-ABOUT-SELF snub (docs/architecture/13 §3 snubsFelt): when an agent overhears a chatting
   // neighbour HOLDING a negative opinion of IT (soured standing and/or raised suspicion), that is a
   // PERCEIVED cold shoulder ("they speak ill of me") — own-state evidence that feeds the snub counter.

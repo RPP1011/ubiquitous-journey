@@ -87,7 +87,10 @@ function snubDecay(s: SignalState, now: number): number {
 // (the agent felt the cold shoulder); the legitimate input for the `slandered` memory (review 1).
 export function noteSnub(a: Agent, now: number): void {
   if (!a) return;
-  try { const s = st(a); s.snubs = snubDecay(s, now) + 1; s.snubT = now; } catch { /* never throw */ }
+  // capped: at 50-belief social bandwidth the gossip-snub channel fires constantly for a
+  // controversial soul (one trace read snubs≈457 — noise, not signal); the cap keeps "the
+  // town's cold shoulder" a readable magnitude while the slandered gate (≥3) is untouched.
+  try { const s = st(a); s.snubs = Math.min(SIGNALS.snubCap || 40, snubDecay(s, now) + 1); s.snubT = now; } catch { /* never throw */ }
 }
 
 // the decayed snubsFelt count (a cold shoulder fades). Read by the status sensor's slander gate.

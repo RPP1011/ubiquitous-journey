@@ -45,13 +45,14 @@ export function statusSensor(a: Agent, sim: Sim, now: number): void {
   try {
     sampleGold(a, now);
     const { fast, slow } = goldTrend(a);
-    const aa = a as Agent & { _ruined?: boolean; _slandered?: boolean; _retired?: boolean; _shunnedBeat?: boolean; _outlawDone?: boolean };
+    const aa = a as Agent & { _ruined?: boolean; _slandered?: boolean; _retired?: boolean; _shunnedBeat?: boolean; _outlawDone?: boolean; _ragsCelebrated?: boolean };
 
     // ── RUIN: a FAST fall below the relaxed baseline AND an INVOLUNTARY cause ──────────────────
     const fellHard = slow >= (STATUS.minGoldHigh || 20) && fast <= slow * STATUS.ruinFrac;
     const involuntary = lossReasonShare(a, ['robbed', 'fined'], STATUS.lossWindow, now) >= STATUS.involuntaryFrac;
     if (fellHard && involuntary && !aa._ruined) {
       aa._ruined = true;
+      aa._ragsCelebrated = false;   // a true ruin re-arms the rags-to-riches tale (fall, then rise again)
       record(a, { t: now, kind: 'ruined', valence: -1, salience: 0.7 });      // OWN GOLD → own-state (whitelist)
       note(sim, BEAT.RUIN, a.id, `${a.name} has fallen on hard times.`);
       try { if (sim.sagas) sim.sagas.closeArc('rags:' + a.id, 'ruined'); } catch { /* never throw */ }
@@ -63,7 +64,12 @@ export function statusSensor(a: Agent, sim: Sim, now: number): void {
     try {
       if (sim.sagas) {
         const rk = 'rags:' + a.id;
-        if (slow >= RAGS.openGold && !sim.sagas.findArc(rk) && !aa._ruined) {
+        // ONCE PER LIFE (_ragsCelebrated): findArc only blocks re-open while the old celebration
+        // survives the BOUNDED _closed ring — a busy town churns the ring, the entry evicts, and
+        // the still-warm deference mass instantly re-celebrates the re-open (the trace found ONE
+        // agent celebrated ×47). The own-flag survives eviction; a TRUE ruin re-arms it below, so
+        // a genuine fall-and-rise-again can still be celebrated twice.
+        if (slow >= RAGS.openGold && !sim.sagas.findArc(rk) && !aa._ruined && !aa._ragsCelebrated) {
           sim.sagas.openArc({ kind: 'ragsToRiches', key: rk, principals: [a.id], text: `${a.name} is climbing out of poverty.` });
         }
         if (sim.sagas.findArc(rk)) {
@@ -75,7 +81,10 @@ export function statusSensor(a: Agent, sim: Sim, now: number): void {
             const b = o.beliefs.get(a.id);
             if (b && (b.standing || 0) >= RAGS.deferBar) warmed++;
           }
-          if (warmed >= RAGS.celebrateMass) sim.sagas.closeArc(rk, 'celebrated', `${a.name} is esteemed across the town for their fortune.`);
+          if (warmed >= RAGS.celebrateMass) {
+            sim.sagas.closeArc(rk, 'celebrated', `${a.name} is esteemed across the town for their fortune.`);
+            aa._ragsCelebrated = true;             // once per life — re-armed only by a true ruin
+          }
         }
       }
     } catch { /* never throw */ }
