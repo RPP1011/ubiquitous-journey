@@ -85,7 +85,14 @@ export function tradeInputs(a: Agent): Record<string, number> | null {
 // none + the inputs for whatever good they are CURRENTLY making.
 export function wantQty(a: Agent, c: string): number {
   if (a.controlled) return 0;
-  if (c === 'food') return Math.max(0, ECON.keep.food - Math.floor(a.inventory.food));
+  // CAMPAIGN RATIONS: a townsfolk COMBATANT (frontier fighter, guard) provisions DEEPER — its
+  // patrol carries it far from the stalls and danger keeps interrupting the trip back, so a
+  // civilian larder (~keep.food meals ≈ 5 min) starves it in practice (the starvation probe's
+  // famine was all gold-rich fighters). It BUYS the bigger pack — the money loop stays closed.
+  if (c === 'food') {
+    const keep = ECON.keep.food * ((a.combatant && a.faction === 'townsfolk') ? (ECON.rationMul || 2) : 1);
+    return Math.max(0, keep - Math.floor(a.inventory.food));
+  }
   if (c === 'tool') return a.inventory.tool < 1 ? 1 : 0;
   if (c === 'potion') return a.inventory.potion < 1 ? 1 : 0;  // everyone keeps a remedy
   // buy the recipe inputs for the good I'm currently crafting (tool: wood+ore;

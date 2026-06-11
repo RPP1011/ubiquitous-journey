@@ -88,6 +88,7 @@ export const ECON = {
   // to be productive, and a couple of raw inputs so a first craft is reachable.
   starterKit: { food: 4, tool: 1, wood: 1, ore: 1, herb: 1 },
   keep: { food: 3, wood: 1, ore: 1, tool: 1, herb: 1, potion: 1 }, // reserve kept for personal use
+  rationMul: 2,               // campaign rations: a townsfolk combatant keeps rationMul x keep.food (trade.wantQty)
   maxStack: 24,
 
   // --- occupation chooser (emergent profession) ---------------------------
@@ -1145,6 +1146,17 @@ export const GROUP_TYPES = {
 // clamp01(1 - meanPairwiseDist/refDist) × coActFrac — tight clusters acting alike read high.
 export const COHESION = {
   refDist: 18,     // metres at/beyond which a group's spatial cohesion reads 0
+};
+
+// --- starvation --------------------------------------------------------------
+// Hunger is LETHAL: once a townsperson's hunger has sat empty for graceSecs its health
+// drains until it eats or dies (Agent.drainNeeds). Townsfolk only — monsters/bandits keep
+// no economy (the freeze lesson) and a lethal stomach would passively wipe their ecology.
+// A starvation death takes the same alive=false path as an expedition loss; the corpse
+// reaper files the chronicle beat and escheats the purse (gold stays conserved).
+export const STARVE = {
+  graceSecs: 60,       // seconds at empty hunger before health starts to drain (covers the walk home)
+  healthPerSec: 2.0,   // health lost per starving second (~a minute from full health)
 };
 
 // --- group names (Phase B3 legibility) ----------------------------------------

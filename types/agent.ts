@@ -187,6 +187,8 @@ export interface Agent {
   _castCd: number;
   _tradeFlash: number;
   _comfortLowSince: number | null;
+  _starveSecs?: number;            // seconds hunger has sat empty (drainNeeds starvation clock)
+  _diedOfHunger?: boolean;         // death was starvation, not a blade (the reaper's beat text)
   _buildAccum: number;
   wanderTarget: Vector3 | null;
   _repaid: Record<EntityId, boolean>;

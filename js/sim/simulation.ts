@@ -1230,7 +1230,13 @@ export class Simulation {
       const reap: AgentShape[] = [];
       for (const a of this.agents) {
         if (a.controlled || a.alive) { if (a._diedAt != null) a._diedAt = undefined; continue; }
-        if (a._diedAt == null) { a._diedAt = now; continue; }          // first seen dead — start the grace clock
+        if (a._diedAt == null) {                                       // first seen dead — start the grace clock
+          a._diedAt = now;
+          // STARVED (not slain): combat deaths are chronicled by combatEvents; a death by WANT has
+          // no slayer, so the town learns of it here, the first pass the reaper finds the body.
+          try { if (a._diedOfHunger) this.chronicle.note('death', a.id, `${a.name || 'A townsperson'} starved in want.`); } catch { /* never throw */ }
+          continue;
+        }
         if (now - a._diedAt >= (SIM.corpseTtl || 90)) reap.push(a);
       }
       for (const a of reap) {

@@ -397,6 +397,25 @@ export function decide(a: Agent, ctx: CognitionCtx): void {
       }
     }
   }
+  // SURVIVAL PROVISIONING for the professionless: the whole scheduler above is canWork-gated
+  // (production should be), but EATING never should have been — a watch guard or warband fighter
+  // (canWork=false, profession null) still has a stomach and a purse. It EATS what it carries,
+  // and when its pack runs empty it goes to MARKET to BUY food with whatever coin its wages/
+  // bounties/loot brought in (runMarket serves any townsperson at the stalls; wantQty('food')
+  // already wants the shortfall). A coinless, foodless soul has no candidate here — it must earn
+  // or beg or it starves (hunger is lethal now: drainNeeds). Townsfolk only — monsters keep no
+  // economy (the freeze lesson). Reads only own state; never throws.
+  if (!a.canWork && !inDanger && a.faction === 'townsfolk' && a.autonomous) {
+    const hungry = inv.food > 0.05 && a.needs.hunger < (ECON.eatUrgent || 0.4);
+    if (inv.food > 0.05)
+      push('eat', hungry ? WEIGHT.eat * 1.8 : Math.pow(1 - a.needs.hunger, 1.5) * WEIGHT.eat);
+    // urgency rides the ACTUAL hunger deficit: a fed-but-foodless soul scores ~0.4 (loses to a
+    // live plan/ambition — provisioning can wait), a starving one ~1.6 (out-ranks everything
+    // routine). A flat out-of-food bonus here once beat WEIGHT.plan and yanked agents off
+    // mid-plan to go shopping while fed.
+    if ((inv.food || 0) < 1 && a.gold >= 1)
+      push('market', WEIGHT.market * (0.4 + 1.2 * (1 - a.needs.hunger)));
+  }
   // SOFT AVOIDANCE — "cross the street" (docs/architecture/13 §3 snubsFelt). A merely-SUSPECTED,
   // soured-but-NOT-hostile neighbour I believe is close earns a FAINT, low-priority berth (a mild
   // steer-away short of fleeing). Suppressed in danger (real flee/fight wins) and scored low so it

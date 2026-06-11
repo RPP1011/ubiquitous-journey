@@ -9,7 +9,7 @@ import { BeliefStore } from './beliefs.js';
 import { rng } from './rng.js';
 import {
   PROFESSIONS, COMMODITIES, BASE_PRICE, ECON,
-  SIM, COMFORT, BUILD, NOVELTY, SCHEMA, WEALTH, RECIPES,
+  SIM, COMFORT, BUILD, NOVELTY, SCHEMA, WEALTH, RECIPES, STARVE,
   factionHostile,
 } from './simconfig.js';
 import { Progression } from '../rpg/progression.js';
@@ -317,6 +317,28 @@ export class Agent {
     this.mood.fear = Math.max(0, this.mood.fear - 0.4 * dt);
     this.mood.anger = Math.max(0, this.mood.anger - 0.3 * dt);
     if (this._tradeFlash > 0) this._tradeFlash -= dt;
+    // STARVATION (lethal hunger): a townsperson whose hunger has sat EMPTY past the grace
+    // window loses health until it eats or dies. Townsfolk only (monsters/bandits keep no
+    // economy — a lethal stomach would silently wipe their ecology) and never the player.
+    // Death takes the expedition-loss path (alive=false on the fighter; the corpse reaper
+    // files the beat + escheats the purse). Guarded — never throws on the tick.
+    try {
+      // _held captives are exempt: a captor sustains its ransom asset (and a captive can't act
+      // to feed itself — starving it would silently void every rescue arc before the rescuer came).
+      if (this.faction === 'townsfolk' && this.autonomous && !this.controlled && this.alive && !this._held) {
+        if (this.needs.hunger <= 0.001) {
+          this._starveSecs = (this._starveSecs || 0) + dt;
+          if (this._starveSecs > STARVE.graceSecs && this.fighter) {
+            this.fighter.health = Math.max(0, (this.fighter.health ?? 0) - STARVE.healthPerSec * dt);
+            if (this.fighter.health <= 0 && this.fighter.alive) {
+              this.fighter.alive = false;            // NB: agent.alive is a getter — set the field
+              (this.fighter as { state?: string }).state = 'dead';
+              this._diedOfHunger = true;             // the reaper files "starved" (not slain)
+            }
+          }
+        } else if (this._starveSecs) this._starveSecs = 0;   // fed again: the wasting stops
+      }
+    } catch { /* never throw on the tick */ }
   }
 
   // Record that I landed a blow on `targetId` (own-state, written by the combatEvents
