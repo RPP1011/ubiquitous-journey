@@ -12,7 +12,7 @@ import { stubScene, makeFighter } from './harness.mjs';
 import { World } from '../js/sim/world.js';
 import { Simulation } from '../js/sim/simulation.js';
 import { setSeed } from '../js/sim/rng.js';
-import { goalDwellVector } from '../js/sim/signals.js';
+import { goalDwellVector, groupCohesion } from '../js/sim/signals.js';
 
 const SEED = process.argv[2] !== undefined ? Number(process.argv[2]) : 31;
 const SECS = Number(process.argv[3]) || 1200;
@@ -90,4 +90,6 @@ console.log(`  ambition       → work+build   r = ${corr('amb', ['work', 'build
 console.log(`  altruism       → steal/rob    r = ${corr('altr', ['steal', 'rob']).toFixed(2)}   (expect NEGATIVE)`);
 console.log(`\nBEHAVIOURAL SPREAD (mean pairwise goal-vector distance, 0..1): ${spread.toFixed(3)}`);
 console.log(`LONG-TERM COMMITMENT:  ambition-aligned dwell = ${pct(meanAligned)}   ·   median top-goal budget = ${pct(median)}`);
+const gc = groupCohesion(sim);
+console.log(`GROUP COHESION (clusters acting alike, 0..1): ${gc.mean.toFixed(2)} over ${gc.groups} group(s)`);
 sim.dispose?.();

@@ -1133,8 +1133,18 @@ export const CITY = {
 export const GROUP_TYPES = {
   warband: { label: 'warband', cohesion: 'travel', combatant: true,  maxFollowers: 2 },
   hearth:  { label: 'hearth',  cohesion: 'travel', combatant: false, maxFollowers: 2 },
-  guild:   { label: 'guild',   cohesion: 'loose',  combatant: false, maxFollowers: 3 },
-  circle:  { label: 'circle',  cohesion: 'loose',  combatant: false, maxFollowers: 3 },
+  // `pull` (Phase B2): how hard LOOSE membership tilts a member toward the group's LIFE —
+  // a guild's work candidate (the shared craft IS the bond), a circle's socialise candidate
+  // (gathering on the believed anchor). Read in decide's loose-group block; tune here.
+  guild:   { label: 'guild',   cohesion: 'loose',  combatant: false, maxFollowers: 3, pull: 1.5 },
+  circle:  { label: 'circle',  cohesion: 'loose',  combatant: false, maxFollowers: 3, pull: 2.2 },
+};
+
+// --- group cohesion (Phase B2 metric reference) ------------------------------
+// The truth-side groupCohesion(sim) observer (signals.ts) scores each group 0..1 by
+// clamp01(1 - meanPairwiseDist/refDist) × coActFrac — tight clusters acting alike read high.
+export const COHESION = {
+  refDist: 18,     // metres at/beyond which a group's spatial cohesion reads 0
 };
 
 // --- dungeons (Daggerfall-style sublevels) ----------------------------------

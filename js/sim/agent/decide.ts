@@ -20,7 +20,7 @@ import type { Vector3 } from 'three';
 const STAGE_T = STAGE as Record<string, Stage>;
 const REASON_T = REASON as Record<string, Reason>;
 // simconfig.js GROUP_TYPES inferred without an index signature (allowJs).
-const GROUP_TYPES_T = GROUP_TYPES as Record<string, { cohesion?: string; combatant?: boolean } | undefined>;
+const GROUP_TYPES_T = GROUP_TYPES as Record<string, { cohesion?: string; combatant?: boolean; pull?: number } | undefined>;
 
 /** A scored utility candidate (decide's deliberation), spread into the chosen goal. */
 interface Candidate { kind: string; score: number; [k: string]: unknown }
@@ -445,10 +445,26 @@ export function decide(a: Agent, ctx: CognitionCtx): void {
   // (docs §2/§4.4). Pushed after the ambition tilt so it isn't double-scaled.
   if (planStep) push('plan', WEIGHT.plan, { step: planStep });
 
-  // loose social groups (guild/circle) pull their members together to socialise
+  // LOOSE GROUPS LIVE THEIR BOND (Phase B2): membership pulls members toward the group's LIFE,
+  // not a token socialise nudge. A CIRCLE gathers — its socialise pull is the per-type config
+  // `pull`, and a member with no chosen friend converges ON the believed anchor (the shared spot
+  // every member knows: its OWN belief of its OWN bandLeaderId, the resolveLeaderRef pattern —
+  // no roster read; the anchor itself, bandLeaderId null, stays put as the gathering point). A
+  // GUILD works its shared trade — the work candidate gets the pull (the craft IS the bond) and
+  // the old fraternise nudge stays. Tuning lives in GROUP_TYPES[type].pull (config, not logic).
   const gt = a.groupType ? GROUP_TYPES_T[a.groupType] : null;
-  if (gt && !a.inParty && gt.cohesion === 'loose')
-    for (const c of cand) if (c.kind === 'socialize') c.score *= 1.6;
+  if (gt && !a.inParty && gt.cohesion === 'loose') {
+    const pull = gt.pull || 1.6;
+    for (const c of cand) {
+      if (c.kind === 'socialize') {
+        c.score *= (a.groupType === 'circle' ? pull : 1.6);
+        if (a.groupType === 'circle' && c.withId == null && a.bandLeaderId != null) {
+          const ab = a.beliefs.get(a.bandLeaderId);
+          if (ab && ab.confidence >= SIM.actOnBeliefMin) c.withId = a.bandLeaderId;
+        }
+      } else if (c.kind === 'work' && a.groupType === 'guild') c.score *= pull;
+    }
+  }
 
   const prevKind = a.goal ? a.goal.kind : undefined;
   let best: Candidate | undefined = cand[0];
@@ -605,7 +621,21 @@ export function decideParty(a: Agent, ctx: CognitionCtx): void {
     const ref = ctx.resolver.enemyNearLeader(a, leader);
     if (ref) enemy = ref;
   }
-  if (enemy && !combatant) { a.goal = { kind: 'flee', fromId: enemy.id }; return; }  // hearth runs
+  if (enemy && !combatant) {
+    // HEARTH SHELTERS TOGETHER (Phase B2): homebodies don't scatter — flee TO the shelter
+    // nearest where I believe my hearth-mate (the leader) is, so the pair converges on ONE
+    // refuge. Own belief (lbel.lastPos / the controlled-leader handle) + the STATIC map —
+    // the same reads this function already makes; fillFlee honours toPos as the refuge.
+    // No known shelter → plain flight away from the threat, exactly as before.
+    if (a.groupType === 'hearth' && ctx.map) {
+      try {
+        const lp = leader ? leader.pos : (lbel ? lbel.lastPos : null);
+        const safe = lp ? ctx.map.nearest(['shelter', 'rest'], lp, a.townId) : null;
+        if (safe) { a.goal = { kind: 'flee', fromId: enemy.id, toPos: { x: safe.pos.x, z: safe.pos.z } }; return; }
+      } catch { /* never throw on the tick */ }
+    }
+    a.goal = { kind: 'flee', fromId: enemy.id }; return;   // hearth runs
+  }
   // even on the march, a safe-but-starving companion stops to eat (it has no economic
   // scheduler of its own, so without this band members slowly starved).
   if (!enemy && (a.inventory.food || 0) > 0.05 && a.needs.hunger < (ECON.eatUrgent || 0.4)) { a.goal = { kind: 'eat' }; return; }

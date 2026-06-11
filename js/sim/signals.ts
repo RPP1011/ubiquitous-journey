@@ -11,7 +11,7 @@
 // Pure helpers over a lazily-created per-agent `_signals` record, mirroring obligations/experience:
 // bounded ring, lazy time-decay (no per-tick pass), every function guarded (never throws on the tick).
 
-import { SIGNALS } from './simconfig.js';
+import { SIGNALS, COHESION } from './simconfig.js';
 import type { Agent, EntityId } from '../../types/sim.js';
 
 interface LossStep { t: number; reason: string; amt: number; }
@@ -557,6 +557,43 @@ export function cohesion(sim: Sim): { inTown: number; outsider: number; split: n
     const inTown = inN ? inSum / inN : 0, outsider = outN ? outSum / outN : 0;
     return { inTown, outsider, split: inTown - outsider };
   } catch { return { inTown: 0, outsider: 0, split: 0 }; }
+}
+
+// ── GROUP COHESION (Phase B2) — do groups LIVE as groups? Bucket living townsfolk by group
+// (followers by bandLeaderId; a loose anchor by its own id), and per group with ≥2 present
+// members score 0..1 = clamp01(1 - meanPairwiseDist/COHESION.refDist) × coActFrac (the share
+// whose committed goal.kind matches the group's modal kind). Tight clusters acting alike read
+// high; a "group" that is only a relations-view tag reads ~0. Truth-side observer (display +
+// the behaviour trace only — never read by cognition); bounded by the roster walk; guarded.
+export function groupCohesion(sim: Sim): { mean: number; groups: number } {
+  try {
+    const buckets = new Map<unknown, Agent[]>();
+    for (const o of (sim.agents as Agent[])) {
+      if (!o || !o.alive || o.controlled || o.faction !== 'townsfolk') continue;
+      const og = o as Agent & { bandLeaderId?: unknown; groupType?: string | null };
+      const key = og.bandLeaderId != null ? og.bandLeaderId : (og.groupType ? o.id : null);
+      if (key == null) continue;
+      let arr = buckets.get(key);
+      if (!arr) { arr = []; buckets.set(key, arr); }
+      arr.push(o);
+    }
+    let sum = 0, n = 0;
+    const ref = (COHESION && COHESION.refDist) || 18;
+    for (const members of buckets.values()) {
+      if (members.length < 2) continue;
+      let dSum = 0, dN = 0;
+      const kinds = new Map<string, number>();
+      for (let i = 0; i < members.length; i++) {
+        const gk = members[i].goal && members[i].goal!.kind;
+        if (gk) kinds.set(gk, (kinds.get(gk) || 0) + 1);
+        for (let j = i + 1; j < members.length; j++) { dSum += members[i].pos.distanceTo(members[j].pos); dN++; }
+      }
+      let modal = 0; for (const c of kinds.values()) if (c > modal) modal = c;
+      const spatial = Math.max(0, Math.min(1, 1 - (dN ? dSum / dN : ref) / ref));
+      sum += spatial * (modal / members.length); n++;
+    }
+    return { mean: n ? sum / n : 0, groups: n };
+  } catch { return { mean: 0, groups: 0 }; }
 }
 
 // ── Family C: presumedDead(a) — k agents believe `a` dead/gone (a stale whereabouts belief: its
