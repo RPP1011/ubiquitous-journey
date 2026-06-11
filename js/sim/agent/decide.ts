@@ -356,6 +356,11 @@ export function decide(a: Agent, ctx: CognitionCtx): void {
         // base comfort pull from the deficit (urgent when critically low) — shared by
         // BOTH the home/tavern seek and the sightsee alternative, so they truly compete.
         let cBase = (1 - a.needs.comfort) * WEIGHT.comfort;
+        // A STARVING BODY DOESN'T CARE ABOUT A SOFT BED: critical hunger damps the comfort pull
+        // hard, so the survival plan (forage/buy, the sate goal) can claim the body — the
+        // residual-death probe found agents comfort-dwelling at home, a field 30m away, with a
+        // live sate goal the comfort emergency kept out-scoring.
+        if (a.needs.hunger < (ECON.nibbleBelow || 0.25)) cBase *= 0.3;
         // COMFORT EMERGENCY: when comfort runs critically low it becomes urgent like
         // hunger — a near-survival pull that out-ranks a routine market/plan haul, so
         // the agent actually goes home instead of grinding the market into the ground.
@@ -466,7 +471,12 @@ export function decide(a: Agent, ctx: CognitionCtx): void {
   // one genuinely lives its ambition — personality VISIBLY orders who pursues what, hardest.
   if (!inDanger && !avoiding) {
     const ak = topAmbitionGoal(a);
-    if (ak)
+    // NO CAMPAIGN WITHOUT RATIONS: the frontier march is a map-length trip from food — a fighter
+    // with an empty pack provisions FIRST (the market/forage candidates win this window) and
+    // marches after. The residual-death probe found glory-seekers starving 200m+ from a field
+    // with a full purse they never spent.
+    const provisioned = !(ak && ak.kind === 'seek_glory' && (inv.food || 0) < 1);
+    if (ak && provisioned)
       push(ak.kind, Math.min(WEIGHT.ambition * (MOTIVE.ambitionDriveFloor + ambitionDrive(a)), WEIGHT.plan - 0.05), ak.extra);
   }
 
