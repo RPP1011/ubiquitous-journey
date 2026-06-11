@@ -65,10 +65,13 @@ function titheGranary(sim: Sim, buyer: Agent): void {
     const dx = g.pos.x - buyer.pos.x, dz = g.pos.z - buyer.pos.z;
     if (dx * dx + dz * dz > r * r) return;                       // not this town's market
     const frac = GRANARY.titheFrac || 0.15;
-    if ((g.stock || 0) >= (GRANARY.stockCap || 40)) return;      // larder full — no tax levied
-    if ((buyer.inventory.food || 0) < frac) return;              // nothing left to tithe
+    if ((g.stock || 0) >= (GRANARY.stockCap || 12)) return;      // larder full — no tax levied
+    // NEVER tax a subsistence buyer's only meal: the tithe falls on PROVISIONING buys (the
+    // buyer still holds a whole meal after it), not on a hungry pauper's single unit — the
+    // first probe found the unexempted tax STARVING the very margin the larder exists for.
+    if ((buyer.inventory.food || 0) < 1 + frac) return;
     buyer.inventory.food -= frac;
-    g.stock = Math.min(GRANARY.stockCap || 40, (g.stock || 0) + frac);
+    g.stock = Math.min(GRANARY.stockCap || 12, (g.stock || 0) + frac);
   } catch { /* never throw on the tick */ }
 }
 

@@ -129,20 +129,24 @@ export class Surveyor {
   // commission ONE public tavern for a town once it's grown and has none. The town
   // "fund" is townsfolk labour + wood (handled by BuildSites), NOT gold — so no
   // money is minted or burned. Private; called from tick per town.
-  _maybeCommissionTavern(town: Town, ctx: FullCtx) {
-    if (!SURVEYOR.tavernEnabled) return;
-    const bs = this.sim.buildSites;
-    if (!bs || !bs.commissionPublic) return;
-    if (bs.hasTavern && bs.hasTavern(town.id)) return;   // already built/under way
-
-    // population gate: enough living townsfolk anchored to THIS town.
+  // population gate shared by the public-work commissions: living townsfolk anchored
+  // to THIS town (the same count _townLabour folds truth-side in construction.js).
+  _townPop(town: Town, ctx: FullCtx): number {
     let pop = 0;
     const agents = ctx.agents || this.sim.agents || [];
     for (let i = 0; i < agents.length; i++) {
       const a = agents[i];
       if (a.alive && !a.controlled && a.faction === 'townsfolk' && a.townId === town.id) pop++;
     }
-    if (pop < SURVEYOR.tavernMinPop) return;
+    return pop;
+  }
+
+  _maybeCommissionTavern(town: Town, ctx: FullCtx) {
+    if (!SURVEYOR.tavernEnabled) return;
+    const bs = this.sim.buildSites;
+    if (!bs || !bs.commissionPublic) return;
+    if (bs.hasTavern && bs.hasTavern(town.id)) return;   // already built/under way
+    if (this._townPop(town, ctx) < SURVEYOR.tavernMinPop) return;   // population gate
 
     // a tavern is grander: footprint biases buildingGen but the plot only needs a
     // clearance, so a square footprint hint is enough for the overlap test.
@@ -161,15 +165,7 @@ export class Surveyor {
     const bs = this.sim.buildSites;
     if (!bs || !bs.commissionPublic) return;
     if (bs.hasGranary && bs.hasGranary(town.id)) return;  // already built/under way
-
-    // population gate: enough living townsfolk anchored to THIS town.
-    let pop = 0;
-    const agents = ctx.agents || this.sim.agents || [];
-    for (let i = 0; i < agents.length; i++) {
-      const a = agents[i];
-      if (a.alive && !a.controlled && a.faction === 'townsfolk' && a.townId === town.id) pop++;
-    }
-    if (pop < SURVEYOR.granaryMinPop) return;
+    if (this._townPop(town, ctx) < SURVEYOR.granaryMinPop) return;  // population gate
 
     // a long low store; like the tavern, the footprint hint only feeds the overlap test.
     const plot = this.allocatePlot(town, { w: 6, d: 5 });

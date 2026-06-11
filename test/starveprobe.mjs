@@ -38,7 +38,22 @@ for (let k = 0; k < 5; k++) await Promise.resolve();
 const dt = 1 / 60;
 const starved = new Set();   // ids seen dead-of-hunger (corpses linger ~90s, so a 10s sweep can't miss one)
 const allDead = new Set();
+const deathInfo = [];        // per-starved telemetry: gold at death, dist to own town anchor
 let granaryMeals = 0, granaries = 0, granaryStock = 0;
+const sweep = () => {
+  for (const a of sim.agents) {
+    if (a.alive || a.controlled) continue;
+    allDead.add(a.id);
+    if (a._diedOfHunger && !starved.has(a.id)) {
+      starved.add(a.id);
+      const anchor = a.townAnchor || { x: 0, z: 0 };
+      deathInfo.push({
+        gold: a.gold || 0,
+        dist: Math.hypot(a.pos.x - anchor.x, a.pos.z - anchor.z),
+      });
+    }
+  }
+};
 const t0 = Date.now();
 let frame = 0;
 while (sim.time < ARGS.duration) {
@@ -47,20 +62,9 @@ while (sim.time < ARGS.duration) {
   const ev = resolveCombat(sim.fighters, sim.isHostile.bind(sim), sim._ctx());
   if (ev.length) sim.onCombatEvents(ev);
   frame++;
-  if (frame % 600 === 0) {   // every 10 sim-seconds: sweep corpses before the reaper does
-    for (const a of sim.agents) {
-      if (a.alive || a.controlled) continue;
-      allDead.add(a.id);
-      if (a._diedOfHunger) starved.add(a.id);
-    }
-  }
+  if (frame % 600 === 0) sweep();   // every 10 sim-seconds: catch corpses before the reaper
 }
-// final sweep + granary telemetry (best-effort: fields exist only once the feature lands).
-for (const a of sim.agents) {
-  if (a.alive || a.controlled) continue;
-  allDead.add(a.id);
-  if (a._diedOfHunger) starved.add(a.id);
-}
+sweep();   // final sweep + granary telemetry (best-effort: fields exist only once the feature lands)
 try {
   for (const b of (sim.buildSites && sim.buildSites._buildings) || []) {
     if (b.buildKind === 'granary') { granaries++; granaryStock += b.stock || 0; }
@@ -69,6 +73,9 @@ try {
 } catch { /* pre-feature baseline */ }
 
 const living = sim.agents.filter((a) => a.alive && !a.controlled).length;
+const destitute = deathInfo.filter((d) => d.gold < 1).length;
+const meanDist = deathInfo.length ? deathInfo.reduce((s, d) => s + d.dist, 0) / deathInfo.length : 0;
 console.log(`starveprobe: seed=${ARGS.seed} duration=${ARGS.duration}s wall=${((Date.now() - t0) / 1000).toFixed(1)}s`);
 console.log(`  starved=${starved.size}  totalDeaths>=${allDead.size}  living=${living}`);
+console.log(`  starved destitute(gold<1)=${destitute} moneyed=${starved.size - destitute} meanDistFromTown=${meanDist.toFixed(0)}m`);
 console.log(`  granaries=${granaries} stock=${granaryStock.toFixed(1)} mealsServed=${granaryMeals}`);

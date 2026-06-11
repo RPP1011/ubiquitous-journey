@@ -1202,7 +1202,8 @@ export const SUBSIST = {
 export const GRANARY = {
   titheFrac: 0.15,   // food units tithed into the town granary per cleared market unit
   titheRange: 80,    // metres from the granary a clearing buyer must be (its town's market)
-  stockCap: 40,      // the larder holds at most this much food
+  stockCap: 12,      // the larder holds at most this much food — a buffer, NOT a hoard (a high
+                     //   cap kept taxing long after need was met, lifting meals out of circulation)
   drawMeal: 1,       // food units a destitute draws per visit
   drawRange: 3.4,    // metres from the granary a draw lands (co-location, ~talkRange)
   drawEvery: 2,      // seconds between draw attempts while standing at the larder (throttle)
