@@ -181,18 +181,12 @@ const alive = !!(a && a.alive);
 // either is set the per-agent biography is skipped — these are the auto-flag / distribution layers
 // the tool surfaces for regression gating. Both are observer-layer / truth-side (display only).
 // ============================================================================
-if (ARGS.health || ARGS.cohort) {
-  if (ARGS.health) emitHealthChecks();
-  if (ARGS.cohort) emitCohort(ARGS.cohort);
-}
-// ============================================================================
-// --digest : assemble the existing substrate into a readable LIFE STORY.
-// ============================================================================
-else if (ARGS.digest) {
-  emitDigest();
-} else {
-  emitRawBiography();
-}
+// FLAGS COMPOSE: --digest, --health-checks and --cohort can be passed together in one run and each
+// prints its own section. Only when NONE of them is set do we fall back to the raw biography dump.
+if (ARGS.digest) emitDigest();
+if (ARGS.health) emitHealthChecks();
+if (ARGS.cohort) emitCohort(ARGS.cohort);
+if (!ARGS.digest && !ARGS.health && !ARGS.cohort) emitRawBiography();
 
 sim.dispose();
 
@@ -245,27 +239,55 @@ function emitDigest() {
   const tr = (a.trace && a.trace.recent(12)) || [];
   if (tr.length) {
     push(`\n  ── How they reasoned (latest first) ──`);
+    // collapse runs of the SAME rendered line (same stage+label) into one with an "(xN)" count, so a
+    // thrashing planner that stamps "planned 4 step(s)" ten times reads as one beat, not a wall of dupes.
+    let prevLbl = null, prevStage = null, run = 0, firstT = 0;
+    const flush = () => { if (run) push(`    [${firstT.toFixed(0)}s ${prevStage}] ${prevLbl}${run > 1 ? ` (x${run})` : ''}`); };
     for (const e of tr) {
       const lbl = traceLabel(e);
       if (!lbl) continue;
-      push(`    [${(e.t || 0).toFixed(0)}s ${e.stage || STAGE.DECIDE}] ${lbl}`);
+      const stage = e.stage || STAGE.DECIDE;
+      if (lbl === prevLbl && stage === prevStage) { run++; continue; }
+      flush();
+      prevLbl = lbl; prevStage = stage; run = 1; firstT = e.t || 0;
     }
+    flush();
   }
 
   // 3) ARCS — the stories they were IN
   if (heroClosed.length || heroOpen.length) {
     push(`\n  ── The tales they were part of ──`);
-    for (const arc of heroClosed)
-      push(`    · ${arc.kind} [${arc.outcome}] — ${arc.rounds} round(s), with ${arc.principals.map(subjName).filter(Boolean).join(', ')}`);
-    for (const arc of heroOpen)
-      push(`    · ${arc.kind} (still unfolding) — ${arc.rounds} round(s), with ${arc.principals.map(subjName).filter(Boolean).join(', ')}`);
+    // collapse the RENDERED list by (kind, outcome) so it reads as a story list, not a per-instance log:
+    // sum rounds, count repeats as "(xN)", and union the named principals across the merged arcs.
+    const merge = (arcs, outcomeOf, openMark) => {
+      const groups = new Map();   // `${kind}:${outcome}` -> { kind, outcome, rounds, n, who:Set }
+      for (const arc of arcs) {
+        const outcome = outcomeOf(arc);
+        const key = `${arc.kind}:${outcome}`;
+        let g = groups.get(key);
+        if (!g) { g = { kind: arc.kind, outcome, rounds: 0, n: 0, who: new Set() }; groups.set(key, g); }
+        g.rounds += arc.rounds || 0; g.n++;
+        for (const p of arc.principals) { const nm = subjName(p); if (nm) g.who.add(nm); }
+      }
+      for (const g of groups.values())
+        push(`    · ${g.kind} ${openMark ? '(still unfolding)' : `[${g.outcome}]`}${g.n > 1 ? ` (x${g.n})` : ''} — ${g.rounds} round(s), with ${[...g.who].join(', ')}`);
+    };
+    merge(heroClosed, (arc) => arc.outcome, false);
+    merge(heroOpen, () => 'open', true);
   }
 
   // 4) MEMORY — the defining episodes (the autobiography)
+  // salient() merges LTM + MTM, so the SAME episode can surface twice — dedup by (kind, withId, rounded-t).
   const eps = a.memory ? [...a.memory.salient(8)] : [];
   if (eps.length) {
     push(`\n  ── What they would never forget ──`);
-    for (const e of eps) push(`    [${(e.t || 0).toFixed(0)}s] ${memoryPhrase(e, nameOf)}`);
+    const seenEp = new Set();
+    for (const e of eps) {
+      const key = `${e.kind}:${e.withId ?? '-'}:${(e.t || 0).toFixed(0)}`;
+      if (seenEp.has(key)) continue;
+      seenEp.add(key);
+      push(`    [${(e.t || 0).toFixed(0)}s] ${memoryPhrase(e, nameOf)}`);
+    }
   }
 
   // 5) DEEDS & OATHS — the life tally + whether they kept their word
