@@ -336,7 +336,11 @@ export class Agent {
     try {
       // _held captives are exempt: a captor sustains its ransom asset (and a captive can't act
       // to feed itself — starving it would silently void every rescue arc before the rescuer came).
-      if (this.faction === 'townsfolk' && this.autonomous && !this.controlled && this.alive && !this._held) {
+      // townsperson-gated (the documented inert-fixture contract: bare scenario fixtures leave
+      // the flag false and must stay inert — a cast member starving mid-checkpoint would silently
+      // perturb scenario arithmetic). Every REAL soul — spawned townsfolk, lineage children, the
+      // watch/warband conversions — carries townsperson:true.
+      if (this.townsperson && this.faction === 'townsfolk' && this.autonomous && !this.controlled && this.alive && !this._held) {
         if (this.needs.hunger <= 0.001) {
           this._starveSecs = (this._starveSecs || 0) + dt;
           if (this._starveSecs > STARVE.graceSecs && this.fighter) {

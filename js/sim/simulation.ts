@@ -177,6 +177,7 @@ export class Simulation {
   sagas: SagaStore;
   _arcPortsCache?: ArcPorts;
   _lastReap?: number;
+  _decayPhase?: number;   // belief-decay stride phase (rotates 0..K-1; see the ToM pass)
   gazette: Gazette;
   reporter: Reporter;
   bounties: Bounties;
@@ -1160,11 +1161,26 @@ export class Simulation {
         }
       }
       // Theory-of-Mind passes: perceive -> decay -> gossip -> decide (decisions
-      // read beliefs, never ground truth). perceive/decay/gossip run EVERY tick
-      // (un-thinned): no blind window on a threat, beliefs fade on schedule, and
-      // gossip/group-formation stays cheap + correct regardless of decide cadence.
+      // read beliefs, never ground truth). perceive/gossip run EVERY tick
+      // (un-thinned): no blind window on a threat, and gossip/group-formation
+      // stays cheap + correct regardless of decide cadence.
       for (const a of this.agents) a.perceive(ctx);
-      for (const a of this.agents) a.beliefs.decay(step);
+      // BELIEF DECAY, STRIDE-AMORTIZED: every fade in decay() is LINEAR in dt (conf -= rate*dt),
+      // so decaying each agent every Kth tick with K×step is EXACTLY equivalent in total fade
+      // while cutting the every-agent full-table walk to 1/K — what lets the ToM table afford
+      // SIM.beliefsPerAgent=50 (the scaling gate failed the 4× table at a per-tick walk). The
+      // phase offset (i % K) spreads the walks evenly across ticks; beliefs still fade on
+      // schedule to within one stride window (~0.8s at 5 Hz).
+      {
+        const K = SIM.beliefDecayStride || 4;
+        this._decayPhase = (((this._decayPhase as number) || 0) + 1) % K;
+        // keyed on the STABLE agent id, never the array index — the reaper splices the roster,
+        // and an index-keyed stride would reshuffle every agent's slot on each splice (some
+        // decaying twice a window, others skipped for stretches: uneven staleness that measurably
+        // cascaded into worse survival decisions). An id keeps each agent's cadence fixed for life.
+        for (const a of this.agents)
+          if (((typeof a.id === 'number' ? a.id : 0) % K) === this._decayPhase) a.beliefs.decay(step * K);
+      }
       for (const a of this.agents) a.gossipBeliefs(ctx);
       // REASONING pass (Phase 2a): the InteractionSchema interpreter evaluates the
       // catalogue per agent over the RESTRICTED cognition ctx (beliefs + own state +

@@ -23,6 +23,7 @@ import type { Agent, CognitionCtx, EntityId } from '../../../types/sim.js';
 registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
   const aa = a as Agent & { _pleas?: { fromId: EntityId; t: number }[] };
   if (!aa || !aa._pleas || !aa._pleas.length || aa.controlled || aa.faction !== 'townsfolk') return;
+  if (!aa.townsperson) return;   // inert-fixture contract: a scenario cast member donates nothing
   const now = ctx ? ctx.time : 0;
   // prune stale pleas first (a bounded mailbox never grows; a forgotten plea simply lapses)
   aa._pleas = aa._pleas.filter((p) => p && now - p.t <= (ALMS.pleaTtl || 20));

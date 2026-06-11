@@ -21,6 +21,7 @@ import type { Agent, CognitionCtx } from '../../../types/sim.js';
 
 registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
   if (!a || a.controlled || a.faction === 'monster' || !a.autonomous || a.inParty) return;
+  if (!a.townsperson) return;   // inert-fixture contract: bare scenario casts derive nothing
   if (!a.needs || a.needs.hunger >= (ECON.eatUrgent || 0.45)) return;        // not in want
   if ((a.inventory.food || 0) > 0.05) return;                                 // carrying — just eat
   if (Array.isArray(a.goals) && a.goals.some((g) => g.kind === 'sate')) {     // already posed: refresh

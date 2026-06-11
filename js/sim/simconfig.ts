@@ -1250,7 +1250,12 @@ export const SIM = {
   // movement: crossing a barrier cell is slow, funnelling routes through fords/bridges.
   waterSpeedMul: 0.4,       // speed multiplier wading the river (vs steering to a ford)
   ravineSpeedMul: 0.5,      // speed multiplier crossing a ravine floor
-  beliefsPerAgent: 12,      // bounded ToM table size
+  beliefDecayStride: 4,     // decay each agent's table every Kth tick at K×dt (linear fades ⇒ exact; 1/K the walks)
+  beliefsPerAgent: 50,      // bounded ToM table size. 12 proved too small a mind for a ~100-soul
+                            //   town: the crowded-market churn evicted any unremarkable neighbour
+                            //   within ticks (the alms post-mortem: a donor literally could not
+                            //   keep the pauper in mind long enough to pay it), and quietly
+                            //   throttled friend-seeking/standing-based behaviour the same way.
   gossipFalloff: 0.85,      // confidence multiplier when a belief is passed along
   gossipCap: 0.8,           // ceiling on second-hand confidence
   confidenceDecay: 1 / 240, // belief certainty fades per second

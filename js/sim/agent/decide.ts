@@ -427,7 +427,7 @@ export function decide(a: Agent, ctx: CognitionCtx): void {
   // THEMSELVES off altruism/kin — features/alms.js), so whether the town feeds its poor emerges
   // from who its people are. Hunger-gated: nobody begs on a comfortable stomach. Any faction's
   // townsperson; canWork doesn't matter — a broke labourer begs as surely as a broke guard.
-  if (!inDanger && a.faction === 'townsfolk' && a.autonomous &&
+  if (!inDanger && a.townsperson && a.faction === 'townsfolk' && a.autonomous &&
       (inv.food || 0) < 0.05 && (a.gold || 0) < 1 && a.needs.hunger < (ECON.eatUrgent || 0.45))
     push('beg', ALMS.begWeight * (0.5 + (1 - a.needs.hunger)));
   // SOFT AVOIDANCE — "cross the street" (docs/architecture/13 §3 snubsFelt). A merely-SUSPECTED,
