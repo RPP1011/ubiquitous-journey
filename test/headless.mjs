@@ -42,6 +42,7 @@ import { obituaryTest } from './suites/obituary.mjs';
 import { constructionTest } from './suites/construction.mjs';
 import { homecomingTest } from './suites/homecoming.mjs';
 import { cityTest } from './suites/city.mjs';
+import { roadsTest } from './suites/roads.mjs';
 import { soak } from './suites/soak.mjs';
 import { scalingTest } from './suites/scaling.mjs';
 import { runScenarios } from './scenarios.mjs';
@@ -113,6 +114,9 @@ await constructionTest(ok, helpers);
 await homecomingTest(ok, helpers);
 // Phase-1 tile-city: CityGrid invariants + buildingParts raid/collapse/shelter (sync).
 cityTest(ok, helpers);
+// Trade roads: the static inter-town road graph + the caravan/arbitrage/expedition
+// road-pull blend (graph connectivity, roadPull sanity, oscillation-free route walk).
+roadsTest(ok);
 await soak(ok, helpers);
 // Phase-3 (Scale) gate: the reasoning-cost-per-agent-per-tick metric stays SUB-LINEAR
 // as N grows (LOD amortizes the distant/idle tail). Fast in-suite sweep; the full

@@ -5,6 +5,7 @@
 
 import * as THREE from 'three';
 import { rng } from './sim/rng.js';
+import { ROADS } from './sim/roads.js';
 
 // The vendored three.module.js is un-typed JS; tsc cannot see Object3D's
 // getter-installed transform/scene members. These minimal views cover exactly
@@ -238,6 +239,9 @@ export function buildArena(scene: SceneLike): void {
   const waterX = xf(water); waterX.rotation.x = -Math.PI / 2; waterX.position.y = -0.6; waterX.renderOrder = -1;
   scene.add(water);
 
+  // --- trade roads (dirt strips along the inter-town road graph) -------------
+  buildRoadStrips(scene);
+
   // --- scattered terrain props (instanced for cheapness) ---------------------
   buildProps(scene);
 
@@ -271,6 +275,48 @@ export function buildArena(scene: SceneLike): void {
   sunX.shadow.camera.near = 1; sunX.shadow.camera.far = 200;
   sunX.shadow.bias = -0.0004;
   scene.add(sun); scene.add(sunX.target);
+}
+
+// The visible trade roads: one flat dirt-coloured ribbon per ROADS segment, draped
+// over the displaced terrain (vertices sampled every few metres at terrainHeight, the
+// SAME field the ground mesh uses, lifted a touch to clear the relief between ground
+// vertices). Browser-only decor, guarded exactly like the walls/defenses meshes —
+// headless never builds geometry. The sim reads the road GRAPH (sim/roads.js), never
+// this mesh.
+function buildRoadStrips(scene: SceneLike): void {
+  if (typeof document === 'undefined') return;          // browser-only decor
+  const HALF_W = 1.6;       // road half-width (a cart-track, not a highway)
+  const STEP = 4;           // metres between cross-sections (follows the relief)
+  const LIFT = 0.3;         // clear the linearly-interpolated ground between its vertices
+  const mat = new THREE.MeshStandardMaterial({ color: 0x8a7355, roughness: 1 });
+  for (const s of ROADS) {
+    const n = Math.max(2, Math.ceil(s.len / STEP) + 1);   // cross-sections along the segment
+    const dx = (s.bx - s.ax) / s.len, dz = (s.bz - s.az) / s.len;
+    const px = -dz, pz = dx;                              // lateral (perpendicular) unit
+    const verts = new Float32Array(n * 2 * 3);
+    const idx: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const t = (i / (n - 1)) * s.len;
+      const cx = s.ax + dx * t, cz = s.az + dz * t;
+      for (let side = 0; side < 2; side++) {
+        const off = side === 0 ? -HALF_W : HALF_W;
+        const x = cx + px * off, z = cz + pz * off;
+        const v = (i * 2 + side) * 3;
+        verts[v] = x; verts[v + 1] = terrainHeight(x, z) + LIFT; verts[v + 2] = z;
+      }
+      if (i > 0) {
+        const a = (i - 1) * 2, b = i * 2;
+        idx.push(a, a + 1, b, b, a + 1, b + 1);   // wound so the face normal points UP
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    const strip = mesh(geo, mat);
+    xf(strip).receiveShadow = true;
+    scene.add(strip);
+  }
 }
 
 // place ambient trees (forest) + rocks (hills) + grass (plains) via InstancedMesh

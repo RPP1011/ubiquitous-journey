@@ -7,7 +7,7 @@
 // now steer-fills. Behaviour-preserving. No cycles — config + pure arena helpers only.
 
 import { ARENA_RADIUS, terrainHeight, barrierAt } from '../../arena.js';
-import { SIM, CITY } from '../simconfig.js';
+import { SIM, CITY, TOWNS } from '../simconfig.js';
 import { collideWalls, gateWaypoint } from '../walls.js';
 import type { Agent } from '../../../types/sim.js';
 
@@ -42,8 +42,15 @@ export function _stepAlong(a: Agent, hx: number, hz: number, effTarget: XZ | nul
   // of clipping its edge — which is where "aim straight at an off-to-the-side
   // goal" deadlocks at a narrow gate. Once through, gateWaypoint returns null and
   // we re-lock on the real heading. Face/arrive (caller's job) stay on the real target.
+  // PROXIMITY-GATED (TOWNS.wall.funnel): the override only engages NEAR the doorway —
+  // a wall 200m ahead must not flatten the whole march into a forced straight line at
+  // the gate (that silently defeated steer()'s blended field, e.g. the road pull).
+  // collideWalls below still hard-blocks the ring at any range, so a far approach that
+  // meets the wall off-gate just slides along it until the funnel takes over.
   const wp = effTarget ? gateWaypoint(a.pos.x, a.pos.z, effTarget.x, effTarget.z) : null;
-  if (wp) { hx = wp.x - a.pos.x; hz = wp.z - a.pos.z; }
+  if (wp && Math.hypot(wp.x - a.pos.x, wp.z - a.pos.z) < (TOWNS.wall.funnel || 40)) {
+    hx = wp.x - a.pos.x; hz = wp.z - a.pos.z;
+  }
   // movement heading: by default straight at the target/gate. If the NEXT footstep
   // would land in a water/ravine barrier, steer along it (try a left/right tangent)
   // so the agent funnels toward a ford/land-bridge instead of wading — this is what
