@@ -425,17 +425,20 @@ export function decide(a: Agent, ctx: CognitionCtx): void {
   // OWN personality drive, so the bold seek glory hardest, the ambitious work hardest, etc. Own-state
   // only (topAmbitionGoal/ambitionDrive read a._ambitionIntent + a.personality), epistemic split holds.
   // YIELDS to a live soft-avoid: a suspect-unease berth ("cross the street") pre-empts marching off
-  // to one's ambition — the activity resumes the moment the suspect is out of mind. YIELDS to
-  // BOREDOM too: when novelty has genuinely run dry, the curiosity-scaled sightsee outing (above)
-  // gets the idle window — so the curious still take in the sights, and the ambition activity
-  // resumes once the outing tops boredom back up (a sightsee-kind ambition IS the outing, so it
-  // never yields to itself). DRIVE-PROPORTIONAL (floor in config, not a flat 0.6): the candidate
-  // spans ~[W·floor .. W·(floor+1)], so a half-hearted soul still drifts to leisure while a driven
+  // to one's ambition — the activity resumes the moment the suspect is out of mind. BOREDOM
+  // COMPETES ON SCORE, never as a gate: an earlier hard `bored` yield DEADLOCKED — an agent whose
+  // sightsee outing keeps getting interrupted (a frontier fighter, every trip cut short) never
+  // refills novelty, sat "bored" forever, and the suppressed ambition candidate let idle time fall
+  // through to aimless wander (the trace found drifters with novelty PINNED at 0 and a stamped
+  // intent they never lived). Now the deficit-scaled sightsee candidate (above) simply out-scores
+  // a half-hearted soul's activity and loses to a driven one — wander stays the LAST resort:
+  // survival first (inDanger), then plans/needs, then the ambition activity vs the outing on
+  // merit. DRIVE-PROPORTIONAL (floor in config, not a flat 0.6): the candidate spans
+  // ~[W·floor .. W·(floor+1)], so a half-hearted soul still drifts to leisure while a driven
   // one genuinely lives its ambition — personality VISIBLY orders who pursues what, hardest.
   if (!inDanger && !avoiding) {
     const ak = topAmbitionGoal(a);
-    const bored = NOVELTY.enabled && (a.needs.novelty ?? 1) < NOVELTY.seekBelow;
-    if (ak && (!bored || ak.kind === 'sightsee'))
+    if (ak)
       push(ak.kind, Math.min(WEIGHT.ambition * (MOTIVE.ambitionDriveFloor + ambitionDrive(a)), WEIGHT.plan - 0.05), ak.extra);
   }
 
