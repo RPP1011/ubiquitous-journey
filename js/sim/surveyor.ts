@@ -36,13 +36,13 @@ interface Cursor { lane: number; ring: number; }
 export class Surveyor {
   sim: Sim;
   _acc: number;
-  stats: { plots: number; taverns: number };
+  stats: { plots: number; taverns: number; granaries: number };
   _cursors: Map<number, Cursor>;
 
   constructor(sim: Sim) {
     this.sim = sim;
     this._acc = 0;
-    this.stats = { plots: 0, taverns: 0 };
+    this.stats = { plots: 0, taverns: 0, granaries: 0 };
     // per-town lane cursors for next-free-slot bookkeeping. Keyed by town id →
     // { lane, ring }; lazily created the first time a town hands out a plot. The
     // cursor only HINTS where to start scanning — the real reject test is the
@@ -153,9 +153,35 @@ export class Surveyor {
     this.stats.taverns++;
   }
 
-  // fixed-tick: survey each town for a needed public tavern. Self-throttled and
-  // fully guarded — never throws or stalls the loop (freeze lesson). Inert until a
-  // town is actually spawned (bare controlled sub-sims get nothing, like Defenses).
+  // commission ONE public granary for a town once it's grown and has none — the town's
+  // larder against famine (stocked by the market tithe, drawn by the destitute). Mirrors
+  // the tavern commission exactly: town fund = wood + labour, never gold.
+  _maybeCommissionGranary(town: Town, ctx: FullCtx) {
+    if (!SURVEYOR.granaryEnabled) return;
+    const bs = this.sim.buildSites;
+    if (!bs || !bs.commissionPublic) return;
+    if (bs.hasGranary && bs.hasGranary(town.id)) return;  // already built/under way
+
+    // population gate: enough living townsfolk anchored to THIS town.
+    let pop = 0;
+    const agents = ctx.agents || this.sim.agents || [];
+    for (let i = 0; i < agents.length; i++) {
+      const a = agents[i];
+      if (a.alive && !a.controlled && a.faction === 'townsfolk' && a.townId === town.id) pop++;
+    }
+    if (pop < SURVEYOR.granaryMinPop) return;
+
+    // a long low store; like the tavern, the footprint hint only feeds the overlap test.
+    const plot = this.allocatePlot(town, { w: 6, d: 5 });
+    if (!plot) return;                                    // no room — try next pass
+
+    bs.commissionPublic(town, 'granary', plot, ctx);
+    this.stats.granaries++;
+  }
+
+  // fixed-tick: survey each town for the public works it lacks (tavern, granary).
+  // Self-throttled and fully guarded — never throws or stalls the loop (freeze lesson).
+  // Inert until a town is actually spawned (bare controlled sub-sims get nothing).
   tick(ctx: FullCtx, dt: number) {
     try {
       if (!SURVEYOR.enabled || !this.sim._spawned) return;
@@ -163,7 +189,10 @@ export class Surveyor {
       if (this._acc < SURVEYOR.tickEvery) return;
       this._acc = 0;
       const towns = this.sim.towns || [];
-      for (let i = 0; i < towns.length; i++) this._maybeCommissionTavern(towns[i], ctx);
+      for (let i = 0; i < towns.length; i++) {
+        this._maybeCommissionTavern(towns[i], ctx);
+        this._maybeCommissionGranary(towns[i], ctx);
+      }
     } catch { /* never throw on the tick */ }
   }
 

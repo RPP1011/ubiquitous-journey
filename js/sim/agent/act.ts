@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { DIR, TUNE } from '../../constants.js';
 import { ARENA_RADIUS } from '../../arena.js';
 import { POI_KIND } from '../world.js';
-import { GOODS, ECON, SIM, SOCIAL, BAND, BUILD, COMFORT, NOVELTY, RECIPES, CAUTION, ROMANCE , ALMS } from '../simconfig.js';
+import { GOODS, ECON, SIM, SOCIAL, BAND, BUILD, COMFORT, NOVELTY, RECIPES, CAUTION, ROMANCE , ALMS, GRANARY } from '../simconfig.js';
 import { castSpec, onCooldown } from '../../rpg/abilities/interpreter.js';
 import { isMelee } from '../../rpg/abilities/ir.js';
 import { bus, makeEvent } from '../../rpg/events.js';
@@ -108,6 +108,20 @@ export function act(a: Agent, dt: number, ctx: CognitionCtx): void {
         if (ctx.resolver && ctx.resolver.solicitAlms && t - (a._lastSolicit || -Infinity) >= (ALMS.solicitEvery || 3)) {
           a._lastSolicit = t;
           ctx.resolver.solicitAlms(a);
+        }
+      } catch { /* never throw on the tick */ }
+    } else if (k === 'granary' && arrived) {
+      // THE PUBLIC LARDER: stand at the granary and draw ONE meal from civic stock — the
+      // resolver co-location-gates and conserves the move (food tithed off market clears,
+      // never gold). A bare larder is REMEMBERED on my own state (_granaryEmptyUntil), so
+      // the next decide falls back to begging instead of haunting an empty store. Throttled;
+      // guarded; the drawer never touches the building record itself — pure facade.
+      a.fighter.setMoving(0);
+      try {
+        const t = a._rpgNow || 0;
+        if (ctx.resolver && ctx.resolver.granaryDraw && t - (a._lastGranaryDraw || -Infinity) >= (GRANARY.drawEvery || 2)) {
+          a._lastGranaryDraw = t;
+          if (!ctx.resolver.granaryDraw(a)) a._granaryEmptyUntil = t + (GRANARY.emptyMemory || 45);
         }
       } catch { /* never throw on the tick */ }
     } else if (k === 'rest' && arrived) {

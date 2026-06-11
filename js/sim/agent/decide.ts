@@ -7,7 +7,7 @@
 // Behaviour-preserving: verbatim bodies of the old Agent methods. No cycles —
 // imports config, pure helpers, motivation, and the occupation chooser.
 
-import { SIM, WEIGHT, ECON, COMMODITIES, GROUP_TYPES, LEGEND, SOCIAL, COMFORT, NOVELTY, BUILD, ESTEEM as WEALTH, ROMANCE, MOTIVE, ALMS, factionHostile } from '../simconfig.js';
+import { SIM, WEIGHT, ECON, COMMODITIES, GROUP_TYPES, LEGEND, SOCIAL, COMFORT, NOVELTY, BUILD, ESTEEM as WEALTH, ROMANCE, MOTIVE, ALMS, GRANARY, factionHostile } from '../simconfig.js';
 import { updateAmbition, ambitionFavor, ambitionWantsFight, deriveGoals, pruneGoals } from '../motivation.js';
 import { chooseOccupation, laborValue } from './occupation.js';
 import { qualifyHome, isUnhoused } from '../construction.js';
@@ -428,8 +428,20 @@ export function decide(a: Agent, ctx: CognitionCtx): void {
   // from who its people are. Hunger-gated: nobody begs on a comfortable stomach. Any faction's
   // townsperson; canWork doesn't matter — a broke labourer begs as surely as a broke guard.
   if (!inDanger && a.townsperson && a.faction === 'townsfolk' && a.autonomous &&
-      (inv.food || 0) < 0.05 && (a.gold || 0) < 1 && a.needs.hunger < (ECON.eatUrgent || 0.45))
+      (inv.food || 0) < 0.05 && (a.gold || 0) < 1 && a.needs.hunger < (ECON.eatUrgent || 0.45)) {
     push('beg', ALMS.begWeight * (0.5 + (1 - a.needs.hunger)));
+    // THE PUBLIC LARDER (granary): the same destitution, but the CIVIC answer first — if I know
+    // my town raised a granary (the static-map `larder` Place the finished building registers,
+    // discovered geography exactly like the tavern's hearth), go draw a meal there. Ranked a
+    // hair above beg so the larder wins the tie; begging is for when it is bare too — the act
+    // arm stamps my OWN bare-larder memory (_granaryEmptyUntil) on a failed draw, and the trip
+    // is suppressed while that memory holds. Own state + static map only (epistemic split holds).
+    if (a._granaryEmptyUntil == null || ctx.time >= a._granaryEmptyUntil) {
+      const lp = ctx.map && ctx.map.nearest(['larder'], a.pos, a.townId);
+      if (lp) push('granary', ALMS.begWeight * (0.5 + (1 - a.needs.hunger)) + (GRANARY.drawBump || 0.05),
+        { toPos: { x: lp.pos.x, z: lp.pos.z } });
+    }
+  }
   // SOFT AVOIDANCE — "cross the street" (docs/architecture/13 §3 snubsFelt). A merely-SUSPECTED,
   // soured-but-NOT-hostile neighbour I believe is close earns a FAINT, low-priority berth (a mild
   // steer-away short of fleeing). Suppressed in danger (real flee/fight wins) and scored low so it

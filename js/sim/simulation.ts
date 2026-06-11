@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { Fighter } from '../fighter.js';
 import { Agent } from './agent.js';
-import { ROSTER, SIM, NAMES, MONSTER, MOTIVE, CAMPS, TOWNS, SCARECROW, BUILD, LOD, KNOW, RECRUIT, OUTLAW, ALMS, factionHostile } from './simconfig.js';
+import { ROSTER, SIM, NAMES, MONSTER, MOTIVE, CAMPS, TOWNS, SCARECROW, BUILD, LOD, KNOW, RECRUIT, OUTLAW, ALMS, GRANARY, factionHostile } from './simconfig.js';
 import { assignHouse, founderHouse } from './houses.js';
 import { ARENA_RADIUS, BIOME, findBiomeSpot, regionAt, REGIONS, terrainHeight } from '../arena.js';
 import { resetXpStats } from '../rpg/xpstats.js';
@@ -22,7 +22,7 @@ import { Expeditions } from './expeditions.js';
 import { Patrician } from './patrician.js';
 import { Surveyor } from './surveyor.js';
 import { Cities } from './cities.js';
-import { BuildSites } from './construction.js';
+import { BuildSites, BUILD_KIND } from './construction.js';
 import './features/index.js';   // load the action-grammar features (each self-registers its verbs)
 import { seedNarratives } from './seeding.js';
 import { Lineage } from './lineage.js';
@@ -881,6 +881,36 @@ export class Simulation {
           } else return false;
           // receiver warms toward the giver via ITS OWN belief store.
           if (to.beliefs) { const rel = to.beliefs.get(from.id); if (rel) rel.standing = Math.min(1, rel.standing + 0.15); }
+          return true;
+        } catch { return false; }
+      },
+      // THE PUBLIC LARDER (granary draw): move ONE meal from the town granary's civic stock to
+      // `a` — co-location-gated like deliverTo, so the body must actually stand at the larder.
+      // The stock was tithed IN KIND off market food clears (market.ts), so no gold moves and
+      // nothing is minted; the draw only relocates food the economy already produced. The first
+      // meal a granary serves files a chronicle beat (legibility). Returns true on a served
+      // meal — false (empty/far/none built) lets the act arm stamp the agent's own bare-larder
+      // memory so its next decide falls back to begging. Guarded; never throws on the tick.
+      granaryDraw(a) {
+        try {
+          if (!a || !a.alive || !sim.buildSites) return false;
+          const g = sim.buildSites.nearest(BUILD_KIND.GRANARY, a.pos);
+          if (!g || !g.pos) return false;
+          const r = GRANARY.drawRange || 3.4;
+          const dx = g.pos.x - a.pos.x, dz = g.pos.z - a.pos.z;
+          if (dx * dx + dz * dz > r * r) return false;            // not at the larder
+          const meal = GRANARY.drawMeal || 1;
+          if ((g.stock || 0) < meal) return false;                // the larder is bare
+          g.stock -= meal;
+          a.inventory.food = (a.inventory.food || 0) + meal;
+          sim.buildSites.stats.granaryMeals = (sim.buildSites.stats.granaryMeals || 0) + 1;
+          if (!g._fedOnce) {
+            g._fedOnce = true;
+            try {
+              if (sim.chronicle) sim.chronicle.note('build', a.id,
+                `The granary fed its first hungry soul — ${a.name || 'a pauper'} ate from the public larder.`);
+            } catch { /* chronicle is best-effort flavour */ }
+          }
           return true;
         } catch { return false; }
       },

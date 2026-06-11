@@ -54,6 +54,7 @@ export interface ResolverFacade {
   marketClear(a: Agent, good: string, buying: boolean): boolean;
   deliverTo(from: Agent, toId: EntityId, payload: { item?: string; n?: number; gold?: number }): boolean;
   solicitAlms?(beggar: Agent): number;   // carry a beggar's plea to bystanders' _pleas mailboxes (Inform)
+  granaryDraw?(a: Agent): boolean;       // serve ONE meal from the town granary's civic stock (co-location-gated)
   // Action-grammar execution (docs/architecture/10): the GENERIC "moved" acquire mechanic + the
   // EMERGENT consequence + physical Affect. `take` moves value source→taker (conserved, no baked
   // reaction — the social meaning is the acquire row's data); `witnessDeed` folds a perceived wrong
