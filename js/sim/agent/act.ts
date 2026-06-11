@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { DIR, TUNE } from '../../constants.js';
 import { ARENA_RADIUS } from '../../arena.js';
 import { POI_KIND } from '../world.js';
-import { GOODS, ECON, SIM, SOCIAL, BAND, BUILD, COMFORT, NOVELTY, RECIPES, CAUTION, ROMANCE } from '../simconfig.js';
+import { GOODS, ECON, SIM, SOCIAL, BAND, BUILD, COMFORT, NOVELTY, RECIPES, CAUTION, ROMANCE , ALMS } from '../simconfig.js';
 import { castSpec, onCooldown } from '../../rpg/abilities/interpreter.js';
 import { isMelee } from '../../rpg/abilities/ir.js';
 import { bus, makeEvent } from '../../rpg/events.js';
@@ -97,7 +97,20 @@ export function act(a: Agent, dt: number, ctx: CognitionCtx): void {
     const field = fill(a, ctx);
     const arrived = field ? steer(a, field, dt) : (a.fighter.setMoving(0), false);
     // ON-ARRIVAL / IN-PLACE VERB — explicit, per behaviour, NEVER inside steer/a fill.
-    if (k === 'rest' && arrived) {
+    if (k === 'beg' && arrived) {
+      // BEGGING (alms): stand at the stalls and solicit — the resolver carries the plea to
+      // bystanders' perceivable mailboxes (their _pleas); each decides FOR ITSELF off its own
+      // altruism/kin/surplus (features/alms.js). Throttled; guarded; the beggar never touches
+      // another agent — pure Inform, the recruiter-offer pattern.
+      a.fighter.setMoving(0);
+      try {
+        const t = a._rpgNow || 0;
+        if (ctx.resolver && ctx.resolver.solicitAlms && t - (a._lastSolicit || -Infinity) >= (ALMS.solicitEvery || 3)) {
+          a._lastSolicit = t;
+          ctx.resolver.solicitAlms(a);
+        }
+      } catch { /* never throw on the tick */ }
+    } else if (k === 'rest' && arrived) {
       a.needs.energy = clamp01(a.needs.energy + SIM.restRate * dt);
     } else if (k === 'work' && arrived) {
       produce(a, dt);

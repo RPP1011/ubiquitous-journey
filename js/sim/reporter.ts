@@ -68,6 +68,12 @@ export class Reporter {
     a.canWork = false;              // no trade / economy (guarded everywhere)
     a.gold = 0;                     // PURSELESS: no economy, so spawning/respawning a
                                     //   gazetteer never mints gold (closed money loop)
+    a.inventory.food = 12;          // PRESS RATIONS: the beat never pauses to forage, so the
+                                    //   paper provisions its gazetteer (goods are produced/
+                                    //   consumed, not conserved — only gold is; no minting).
+                                    //   The survival nibble (drainNeeds) eats from this on the
+                                    //   move; before it, starvation killed the gazetteer on a
+                                    //   loop (its role-override goal never eats or shops).
     a.townId = town.id != null ? town.id : (i % (sim.towns ? sim.towns.length : 1));
     a.townAnchor = town.center;
     a.townRadius = town.radius;

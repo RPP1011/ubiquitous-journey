@@ -140,6 +140,7 @@ export const ECON = {
 
   eatRate: 0.5,               // hunger restored per sec while eating (1:1 food)
   eatUrgent: 0.45,            // hunger below this = EAT NOW (suppress commerce; survival first)
+  nibbleBelow: 0.25,          // critical hunger: auto-nibble from the pack while moving (no goal; drainNeeds)
 
   // price-belief learning (decentralised tatonnement -> competitive prices)
   priceLearn: 0.25,           // participant belief moves toward the clearing price
@@ -1157,6 +1158,34 @@ export const COHESION = {
 export const STARVE = {
   graceSecs: 60,       // seconds at empty hunger before health starts to drain (covers the walk home)
   healthPerSec: 2.0,   // health lost per starving second (~a minute from full health)
+};
+
+// --- alms (begging + charity) --------------------------------------------------
+// The DESTITUTE channel starvation left open: a pauper (no food, no coin, hungry) BEGS at the
+// market — a visible act (resolver.solicitAlms writes a plea into bystanders' perceivable
+// `_pleas` mailbox, the recruiter-offer Inform pattern) — and a bystander DECIDES for itself
+// off its OWN personality (altruism) or kinship + its own surplus, paying via the conserved
+// repay plan (goto->pay; the receiver's succour hook fires, so gratitude emerges). Altruism
+// becomes LEGIBLE behaviour: the kind feed beggars, the uncaring walk past.
+// --- subsistence (the goalSate live trigger) -----------------------------------
+// Hunger POSED to the planner as a goal (features/subsistence): the planner then chooses by
+// cost between buying (has coin) and FORAGING at a field (capital-free gather — raw goods need
+// no profession). The survival route the role-gated/destitute were missing.
+export const SUBSIST = {
+  priority: 0.85,    // survival-grade stack priority (above ambition 0.45, below avenge 0.9)
+  sateTo: 0.7,       // plan until hunger is restored to this level
+  ttl: 60,           // goal expiry (refreshed while the want persists)
+};
+
+export const ALMS = {
+  begWeight: 0.8,          // beg scale: maxes ~1.2, UNDER WEIGHT.plan 1.3 — begging is the LAST resort, claimed only when the planner found no forage/buy route (no plan candidate to lose to)
+  almsRange: 9,            // metres a plea carries from the beggar
+  solicitEvery: 3,         // seconds between a beggar's solicitations (throttle)
+  pleaTtl: 20,             // seconds a perceived plea stays fresh in a bystander's mailbox
+  pleaCap: 4,              // bounded mailbox: oldest plea dropped beyond this
+  donorAltruismMin: 0.55,  // altruism at/above this is moved by a stranger's plea (kin always are)
+  donorSurplusGold: 12,    // a donor keeps this much for itself — only real surplus is given
+  giveAmt: 4,              // coins per alms gift (a few meals at the stalls)
 };
 
 // --- group names (Phase B3 legibility) ----------------------------------------

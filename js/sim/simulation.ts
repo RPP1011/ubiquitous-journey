@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { Fighter } from '../fighter.js';
 import { Agent } from './agent.js';
-import { ROSTER, SIM, NAMES, MONSTER, MOTIVE, CAMPS, TOWNS, SCARECROW, BUILD, LOD, KNOW, RECRUIT, OUTLAW, factionHostile } from './simconfig.js';
+import { ROSTER, SIM, NAMES, MONSTER, MOTIVE, CAMPS, TOWNS, SCARECROW, BUILD, LOD, KNOW, RECRUIT, OUTLAW, ALMS, factionHostile } from './simconfig.js';
 import { assignHouse, founderHouse } from './houses.js';
 import { ARENA_RADIUS, BIOME, findBiomeSpot, regionAt, REGIONS, terrainHeight } from '../arena.js';
 import { resetXpStats } from '../rpg/xpstats.js';
@@ -882,6 +882,35 @@ export class Simulation {
           if (to.beliefs) { const rel = to.beliefs.get(from.id); if (rel) rel.standing = Math.min(1, rel.standing + 0.15); }
           return true;
         } catch { return false; }
+      },
+      // SOLICIT ALMS (the Inform pattern, like the recruiter's offers): carry a beggar's plea to
+      // every townsperson within earshot by writing into THEIR perceivable `_pleas` mailbox
+      // (bounded; oldest dropped). Each bystander DECIDES for itself in cognition (features/alms
+      // deriver: own altruism/kin/surplus) — this only delivers the percept, never a reaction.
+      solicitAlms(beggar) {
+        try {
+          if (!beggar || !beggar.alive) return 0;
+          let heard = 0;
+          const r2 = (ALMS.almsRange || 9) ** 2;
+          for (const o of sim.agents) {
+            if (o === beggar || !o.alive || o.controlled || o.faction !== 'townsfolk' || !o.autonomous) continue;
+            if (o.pos.distanceToSquared(beggar.pos) > r2) continue;
+            // HEARING THE PLEA IS PERCEIVING THE BEGGAR: refresh the listener's belief via the
+            // same truth→belief bridge perception uses. Without this the bounded ToM table
+            // (SIM.beliefsPerAgent) evicts an unremarkable pauper within ticks at a crowded
+            // market, and the donor's repay plan finds no believedPos — you cannot give alms
+            // to someone you can't keep in mind. Re-solicited every few seconds, the belief
+            // stays alive exactly as long as the begging does.
+            try { if (o.beliefs && o.beliefs.observe) o.beliefs.observe(beggar.id, beggar.faction, beggar.pos, sim.time, false); } catch { /* never throw */ }
+            const box = (o._pleas || (o._pleas = []));
+            const dup = box.find((p) => p.fromId === beggar.id);
+            if (dup) { dup.t = sim.time; heard++; continue; }       // refresh, don't multiply
+            box.push({ fromId: beggar.id, t: sim.time });
+            while (box.length > (ALMS.pleaCap || 4)) box.shift();
+            heard++;
+          }
+          return heard;
+        } catch { return 0; }
       },
       // CONSERVED TAKE (docs/architecture/10) — the GENERIC "moved" acquire mechanic: move value
       // from a source to the taker `a`, debiting the source as it credits the taker (no minting).

@@ -188,6 +188,8 @@ export interface Agent {
   _tradeFlash: number;
   _comfortLowSince: number | null;
   _starveSecs?: number;            // seconds hunger has sat empty (drainNeeds starvation clock)
+  _pleas?: { fromId: EntityId; t: number }[];   // perceived begging pleas (bounded Inform mailbox, alms)
+  _lastSolicit?: number;           // beg-arm solicitation throttle (sim-time)
   _diedOfHunger?: boolean;         // death was starvation, not a blade (the reaper's beat text)
   _buildAccum: number;
   wanderTarget: Vector3 | null;

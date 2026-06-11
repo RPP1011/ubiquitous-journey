@@ -444,4 +444,5 @@ export const STEER_FILLS: Record<string, SteerFill> = {
   wander: fillWander,
   // PERSISTENT-AMBITION STANDING-ACTIVITY FILL (Phase B1) — renown's frontier march
   seek_glory: fillSeekGlory,
+  beg: fillMarket,        // a beggar heads for the crowd at the stalls; the plea is act's verb
 };

@@ -11,6 +11,8 @@ import './affect.js';
 import './ledger.js';
 import './caution.js';
 import './ambition_goals.js';   // Phase B1: persistent-ambition standing goals (replaces aimless wander)
+import './alms.js';          // charity decided by character: the altruistic feed the begging destitute
+import './subsistence.js';   // the goalSate live trigger: hunger posed to the planner (forage/buy by cost)
 import './signalsFold.js';   // docs/architecture/13: PLAN_OUTCOME-folded catalog signals (streak/perils)
 
 export {};

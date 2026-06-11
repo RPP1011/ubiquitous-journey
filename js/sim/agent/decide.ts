@@ -7,7 +7,7 @@
 // Behaviour-preserving: verbatim bodies of the old Agent methods. No cycles —
 // imports config, pure helpers, motivation, and the occupation chooser.
 
-import { SIM, WEIGHT, ECON, COMMODITIES, GROUP_TYPES, LEGEND, SOCIAL, COMFORT, NOVELTY, BUILD, ESTEEM as WEALTH, ROMANCE, MOTIVE, factionHostile } from '../simconfig.js';
+import { SIM, WEIGHT, ECON, COMMODITIES, GROUP_TYPES, LEGEND, SOCIAL, COMFORT, NOVELTY, BUILD, ESTEEM as WEALTH, ROMANCE, MOTIVE, ALMS, factionHostile } from '../simconfig.js';
 import { updateAmbition, ambitionFavor, ambitionWantsFight, deriveGoals, pruneGoals } from '../motivation.js';
 import { chooseOccupation, laborValue } from './occupation.js';
 import { qualifyHome, isUnhoused } from '../construction.js';
@@ -416,6 +416,15 @@ export function decide(a: Agent, ctx: CognitionCtx): void {
     if ((inv.food || 0) < 1 && a.gold >= 1)
       push('market', WEIGHT.market * (0.4 + 1.2 * (1 - a.needs.hunger)));
   }
+  // BEGGING (alms): a DESTITUTE hungry townsperson — no food to eat, no coin to buy — has one
+  // candidate left short of crime: beg at the market, where the crowd (and charity) is. The act
+  // is VISIBLE (the beg arm solicits via the resolver; bystanders perceive a plea and decide for
+  // THEMSELVES off altruism/kin — features/alms.js), so whether the town feeds its poor emerges
+  // from who its people are. Hunger-gated: nobody begs on a comfortable stomach. Any faction's
+  // townsperson; canWork doesn't matter — a broke labourer begs as surely as a broke guard.
+  if (!inDanger && a.faction === 'townsfolk' && a.autonomous &&
+      (inv.food || 0) < 0.05 && (a.gold || 0) < 1 && a.needs.hunger < (ECON.eatUrgent || 0.45))
+    push('beg', ALMS.begWeight * (0.5 + (1 - a.needs.hunger)));
   // SOFT AVOIDANCE — "cross the street" (docs/architecture/13 §3 snubsFelt). A merely-SUSPECTED,
   // soured-but-NOT-hostile neighbour I believe is close earns a FAINT, low-priority berth (a mild
   // steer-away short of fleeing). Suppressed in danger (real flee/fight wins) and scored low so it

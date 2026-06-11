@@ -317,6 +317,17 @@ export class Agent {
     this.mood.fear = Math.max(0, this.mood.fear - 0.4 * dt);
     this.mood.anger = Math.max(0, this.mood.anger - 0.3 * dt);
     if (this._tradeFlash > 0) this._tradeFlash -= dt;
+    // SURVIVAL NIBBLE: a CRITICALLY hungry agent with food in its pack eats AS IT GOES — no
+    // goal, no scorer competition (you can chew while marching or retreating). Threshold is
+    // ECON.nibbleBelow, well UNDER eatUrgent, so the deliberate `eat` GOAL still owns ordinary
+    // meals (the repertoire soak asserts it emerges); this floor only guarantees nobody starves
+    // carrying food — the death probe found agents dying with 20 meals in the bag because the
+    // eat candidate is danger-gated and a frontier fighter lives inside the danger band.
+    if (this.needs.hunger < (ECON.nibbleBelow || 0.25) && (this.inventory.food || 0) > 0) {
+      const bite = Math.min(ECON.eatRate * dt, this.inventory.food);
+      this.needs.hunger = clamp01(this.needs.hunger + bite);
+      this.inventory.food -= bite;
+    }
     // STARVATION (lethal hunger): a townsperson whose hunger has sat EMPTY past the grace
     // window loses health until it eats or dies. Townsfolk only (monsters/bandits keep no
     // economy — a lethal stomach would silently wipe their ecology) and never the player.
