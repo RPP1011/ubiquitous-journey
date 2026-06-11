@@ -137,6 +137,21 @@ export function goalDwellOf(a: Agent, now: number): { topFrac: number; span: num
   } catch { return { topFrac: 0, span: 0, top: null }; }
 }
 
+// The FULL per-goalKind dwell vector (seconds), in-progress kind's live time folded in — the raw
+// material a behavioural-diversity / personality-correlation probe needs (does a bold soul actually
+// spend its life fighting?). Same lazy read as goalDwellOf; never throws. `{}` if nothing dwelt yet.
+export function goalDwellVector(a: Agent, now: number): Record<string, number> {
+  try {
+    const s = peek(a);
+    if (!s || !s.dwell || s.dwellKind === undefined) return {};
+    const byKind: Record<string, number> = {};
+    for (const k in s.dwell) byKind[k] = s.dwell[k];
+    const live = Math.max(0, now - (s.dwellT || now));
+    byKind[s.dwellKind] = (byKind[s.dwellKind] || 0) + live;
+    return byKind;
+  } catch { return {}; }
+}
+
 // ============================================================================
 // MORE CATALOG SIGNALS (docs/architecture/13 Families C/D/E — the §8 priority cut)
 // Each names its probe and folds on an EXISTING event seam — never a per-tick scan.
