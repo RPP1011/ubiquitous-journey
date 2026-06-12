@@ -11,11 +11,13 @@
 //     without-rations precedent; the road is a map-length from a meal).
 // A tempted soul weighs each prospect ONCE (acceptChance) — even the eligible may
 // decide to stay, and a declined prospect is spent. An accepted one becomes an
-// ordinary goal-stack journey (goalMigrate → [goto] — flee/eat still preempt), and
-// only ON ARRIVAL does the agent request the citizenship flip through
-// ctx.resolver.relocate (execution; the joinBand pattern — no self-teleport, no
-// foreign write). A journey that runs out its clock just lapses: the agent stays
-// a citizen of the town it never really left.
+// own-state JOURNEY INTENT (a._migrating — the arbitrage/bounty pattern: decide
+// mints the `migrate` candidate off it, fillMigrate walks the trade road; a
+// stack-goal journey got BURIED under newer goals and lapsed 250m short). Flee/eat
+// still preempt per tick, and only ON ARRIVAL does the agent request the
+// citizenship flip through ctx.resolver.relocate (execution; the joinBand pattern
+// — no self-teleport, no foreign write). A journey that runs out its clock just
+// lapses: the agent stays a citizen of the town it never really left.
 //
 // EPISTEMIC SPLIT: reads ONLY the agent's own state (_prospects mailbox, gold,
 // inventory, personality, homeBeliefId, mateId, goals, own pos) — the prospect is
@@ -23,7 +25,6 @@
 // Bounded (prospectCap mailbox, TTL-pruned here); guarded; never throws.
 
 import { registerDeriver } from '../exec/registry.js';
-import { goalMigrate } from '../planner.js';
 import { MIGRATE } from '../simconfig.js';
 import { rng } from '../rng.js';
 import type { Agent, CognitionCtx } from '../../../types/sim.js';
@@ -48,9 +49,6 @@ registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
       aa._migrating = null;            // settled (or the flip failed — either way the journey is over)
     } else if (now >= m.until) {
       aa._migrating = null;            // the road defeated them — still a citizen of the old town
-      if (Array.isArray(aa.goals)) for (const g of aa.goals) {
-        if (g.kind === 'migrate') g.expiresAt = now;   // pruneGoals retires the stale journey
-      }
     }
     return;                            // one move at a time — no new prospects mid-journey
   }
@@ -74,11 +72,8 @@ registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
     if (!p || p.townId === aa.townId) continue;
     if ((aa.inventory && aa.inventory.food || 0) < (MIGRATE.provisionFood || 2)) continue;  // no rations, no road
     if (rng() > (MIGRATE.acceptChance || 0.5)) continue;             // slept on it; decided to stay
-    const g = goalMigrate(p.townId, p.x, p.z);
-    g.priority = MIGRATE.priority || 0.65;
-    g.from = 'migrate';
-    g.expiresAt = now + (MIGRATE.journeySecs || 300);
-    aa.pushGoal(g, ctx);
+    // COMMIT: the own-state journey intent decide() mints the `migrate` candidate off
+    // (fillMigrate walks the road; the deriver's arrival watch above settles it).
     aa._migrating = { townId: p.townId, x: p.x, z: p.z, until: now + (MIGRATE.journeySecs || 300) };
     break;                                                           // one move at a time
   }

@@ -3,8 +3,8 @@
 //   · the truth-side CENSUS pass stamps a land-is-cheap prospect into a few ears in the
 //     CROWDED town only (an Inform — the recruiter-offer mailbox pattern, never a goal write);
 //   · an ELIGIBLE perceiver (poor + unhoused + unwed + restless + provisioned) DECIDES off its
-//     own state, walks the journey as an ordinary goal-stack plan, and on ARRIVAL execution
-//     flips its citizenship (resolver.relocate) — the chronicle notes the move;
+//     own state, walks the journey as the `migrate` candidate (own-state intent + fillMigrate),
+//     and on ARRIVAL execution flips its citizenship (resolver.relocate) — the chronicle notes it;
 //   · the ROOTED do not go: a housed/wealthy perceiver ignores the same rumour, and an
 //     unprovisioned one stays put (no journey without rations).
 import * as THREE from 'three';

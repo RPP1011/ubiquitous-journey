@@ -351,6 +351,13 @@ export const WEIGHT = {
   fight:     1.60,
   flee:      1.80,
   plan:      1.30,    // a goal-stack plan step: high, but below flee/fight/eat
+  migrate:   1.55,    // an uprooting migrant's march to its new home town. Must beat a HELD plan
+                      //   even with the incumbent's ×1.18 stickiness (1.30×1.18≈1.53): the poor —
+                      //   exactly who emigrates — chronically hold a seek_fortune/sate plan, and at
+                      //   1.25 the journey-tracker probe watched every departure lapse 250m short,
+                      //   the mover never once out-scoring its own money plan. Urgent eat (~2.5),
+                      //   flee (~1.9+) and a comfort emergency still preempt — survival first;
+                      //   the journey resumes the next tick. Only ever scored while a._migrating.
   comfort:   1.80,    // seek home/tavern when comfort low: a real pull that, when comfort runs
                       //   genuinely low, beats a routine work/market/plan urge so the agent
                       //   actually goes home (kept below eat/flee — survival still wins)
@@ -1555,9 +1562,10 @@ export const LINEAGE = {
 // an Inform (the recruiter-offer / alms-plea mailbox pattern, `_prospects`). The
 // agent then DECIDES off its OWN state alone (features/migrate.js): only the poor,
 // unhoused, unwed and restless/ambitious are tempted; they provision rations first
-// (the no-campaign-without-rations precedent), walk the journey as an ordinary
-// goal-stack plan, and only ON ARRIVAL does execution flip their citizenship
-// (resolver.relocate). The rooted — housed, wedded, timid — stay. Rare by design.
+// (the no-campaign-without-rations precedent), march as the `migrate` candidate
+// (WEIGHT.migrate + fillMigrate, the arbitrage-style own-state journey), and only
+// ON ARRIVAL does execution flip their citizenship (resolver.relocate). The rooted
+// — housed, wedded, timid — stay. Rare by design.
 export const MIGRATE = {
   enabled: true,
   tickEvery: 10,            // sim-seconds between census passes (self-throttled)
@@ -1565,20 +1573,30 @@ export const MIGRATE = {
   crowdRatio: 1.2,          // a town at/above mean×this is CROWDED (rumour source)
   sparseRatio: 0.85,        // a town at/below mean×this is land-cheap (rumour destination)
   minGap: 6,                // and the two must differ by at least this many heads (anti-flutter)
-  rumoursPerPass: 2,        // at most this many prospects stamped per pass (bounded)
-  rumourChance: 0.3,        // per-candidate-ear chance the word reaches THEM this pass
+  rumoursPerPass: 3,        // at most this many prospects stamped per pass (bounded)
+  rumourChance: 0.4,        // per-candidate-ear chance the word reaches THEM this pass
   // --- the prospect mailbox (own-state Inform, pruned in cognition) ---
-  prospectTtl: 60,          // sim-seconds an unacted prospect lingers before lapsing
+  prospectTtl: 90,          // sim-seconds an unacted prospect lingers before lapsing
   prospectCap: 2,           // mailbox bound (oldest dropped)
   // --- who is tempted (own state + personality; the rooted never qualify) ---
   poorGold: 14,             // only an agent poorer than this has nothing keeping it (circumstance)
   wanderlustMin: 0.55,      // curiosity at/above which the RESTLESS are tempted…
   ambitionMin: 0.7,         // …or ambition at/above (the strivers chase the open plot)
-  acceptChance: 0.5,        // one weighing per prospect: even a tempted soul may decide to stay
+  acceptChance: 0.6,        // one weighing per prospect: even a tempted soul may decide to stay
   provisionFood: 2,         // no journey without rations — the road is a map-length from a meal
+  // a mover ENDURES the road: while a journey intent is live the routine comfort pull is
+  // damped by this factor (the journey-tracker probe watched the old town's tavern yank a
+  // migrant home over and over — the limit cycle ate the clock). A genuine comfort
+  // EMERGENCY (COMFORT.urgentBoost) still punches through — survival first.
+  roadHardship: 0.55,
   // --- the journey + settlement ---
-  priority: 0.65,           // migrate goal priority (a plan, not a panic — flee/eat still preempt)
-  journeySecs: 300,         // give up the road after this long (stay a citizen of the old town)
+  // (the march itself is the `migrate` decide candidate, WEIGHT.migrate + fillMigrate —
+  // an own-state intent like arbitrage/bounty, NOT a stack goal: a stack journey got
+  // buried under newer goals and lapsed 250m short. Flee/eat still preempt per tick.)
+  journeySecs: 600,         // give up the road after this long (stay a citizen of the old town);
+                            //   ~35s pure RUN for the longest inter-town leg + generous slack for
+                            //   the eat/flee/comfort interruptions that legitimately preempt the
+                            //   march (a war-torn home town's churn can eat whole minutes)
   settleRadius: 25,         // within this of the new town centre = arrived → relocate (execution)
 };
 

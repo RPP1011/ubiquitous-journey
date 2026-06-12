@@ -18,7 +18,7 @@
 // this module standalone — it is NOT wired into decide() yet.
 
 import * as THREE from 'three';
-import { PROFESSIONS, COMMODITIES, ECON, SIM, URCHIN, QUANTITY, KNOW, ROB, HOLD, RECRUIT, AFFECT, ESTIMATE, CAUTION, MIGRATE } from './simconfig.js';
+import { PROFESSIONS, COMMODITIES, ECON, SIM, URCHIN, QUANTITY, KNOW, ROB, HOLD, RECRUIT, AFFECT, ESTIMATE, CAUTION } from './simconfig.js';
 import { POI_KIND } from './world.js';
 import { recipeConf } from './recipeKnow.js';
 import { feltSurcharge, relevantConfidence } from './experience.js';
@@ -36,10 +36,8 @@ const RS = REASON as Record<string, Reason>;
 // The planner runs on a SUPERSET of the public Atom/PlanBind vocabulary (it adds
 // a {subjectId}-place form, the 'sated' subgoal, and corpseId/item/value fields),
 // so these widen the shared shapes rather than reinventing them. A `place` is a
-// POI-kind string, a {subjectId} target descriptor resolved via belief, OR a
-// literal {x,z} static-geography point (e.g. a town centre a rumour named —
-// shared read-only map knowledge, so cognition may navigate to it directly).
-type PlannerPlace = string | { subjectId?: EntityId; assoc?: string; x?: number; z?: number };
+// POI-kind string OR a {subjectId} target descriptor resolved via belief.
+type PlannerPlace = string | { subjectId?: EntityId; assoc?: string };
 // One subgoal atom the solver chases (the public Atom widened with the extra preds).
 interface SubAtom {
   pred: string;
@@ -180,12 +178,6 @@ function believedDead(agent: Agent | null, subjectId: EntityId): boolean {
 // or a target descriptor { subjectId } resolved via the agent's belief.lastPos.
 function believedPos(agent: Agent, ctx: CognitionCtx, place: PlannerPlace | null | undefined): import('three').Vector3 | null {
   if (!place) return null;
-  // a LITERAL static-geography point ({x,z} — e.g. the town centre a migration
-  // rumour named). Towns are shared, read-only map knowledge (like POIs and the
-  // mental map's Places), so navigating to a named one needs no belief lookup.
-  if (typeof place === 'object' && place.subjectId == null && typeof place.x === 'number') {
-    return new THREE.Vector3(place.x, 0, place.z || 0);
-  }
   if (typeof place === 'object' && place.subjectId != null) {
     const b = agent.beliefs && agent.beliefs.get(place.subjectId);
     if (place.assoc) {
@@ -1164,9 +1156,7 @@ function atomSatisfied(atom: SubAtom, agent: Agent, ctx: CognitionCtx, s: SimSta
 function placesEqual(a: PlannerPlace | null, b: PlannerPlace | null): boolean {
   if (!a || !b) return false;
   if (typeof a === 'string' || typeof b === 'string') return a === b;
-  if (a.subjectId != null || b.subjectId != null) return a.subjectId != null && a.subjectId === b.subjectId;
-  // literal {x,z} static-geography points compare by coordinates
-  return typeof a.x === 'number' && a.x === b.x && a.z === b.z;
+  return a.subjectId != null && a.subjectId === b.subjectId;
 }
 
 // Does applying this primitive actually move us toward the atom (avoid no-op
@@ -1444,23 +1434,6 @@ export function goalDelve(place: string): Goal {
     kind: 'delve', place,
     atoms: [Atom.at(place)] as AtomT[],
     predicate(agent: unknown) { const relics = (agent as Agent).relics; return !!(relics && (relics as unknown[]).length > 0); },
-  };
-}
-
-// migrate(townId, x, z): the emigration journey (the MIGRATE valve). Walk to the
-// new home town the rumour named — a literal static-geography place (the shared
-// map knows where every town is), so the plan is just [goto({x,z})]. Satisfied on
-// ARRIVAL (own pos within MIGRATE.settleRadius of the centre); the citizenship
-// flip itself is EXECUTION (resolver.relocate), requested by the migrate deriver
-// when it sees its own journey complete. predicate reads own pos only.
-export function goalMigrate(townId: number, x: number, z: number): Goal {
-  return {
-    kind: 'migrate', townId, toPos: { x, z },
-    atoms: [Atom.at({ x, z })] as AtomT[],
-    predicate(agent: unknown) {
-      const p = (agent as Agent).pos;
-      return !!p && Math.hypot(p.x - x, p.z - z) <= (MIGRATE.settleRadius || 25);
-    },
   };
 }
 
