@@ -99,6 +99,145 @@ its last practitioner (the chronicle can mourn it); learning.js's observe/ask/st
 verbs apply. This is the dynasty/mentorship arcs' missing payload — a thing of value
 that passes down lineages and can be LOST.
 
+## 5b. Worked examples (the DSL, concretely)
+
+All in the real IR (`ir.ts spec()/effect()`); **NEW IR surface is marked** — `header.requires`
+(story-state cast conditions, own-state/belief reads only), `spec.origin` (provenance),
+`spec.teachable`, and ops `rally`/`denounce`/`oathbind`/`produce_boost`/`mark` (each admitted
+with its named consumer, R1). Everything else is today's validated shape and LIMITS.
+
+```js
+// 1. BORN FROM STORY — survived a near-death (memory:survived fold). The self-cast
+//    path (integration batch) fires it at low hp; the biography cites the night.
+spec({
+  id: 'evt_survived_842',
+  name: '[The Day I Did Not Die]',
+  tier: 1,
+  origin: { seam: 'memory:survived', withId: 342, t: 1241,                     // NEW
+            text: 'earned the day Raider 342 left them bleeding at the north gate' },
+  header: { target: 'self', range: 0, cooldown: 90,
+            area: { kind: 'self' }, delivery: { kind: 'instant' } },
+  effects: [
+    effect('heal',   { amount: 40, when: 'caster_hp_below', tags: ['RESTORE', 'GRIT'] }),
+    effect('shield', { amount: 20, dur: 6, tags: ['GRIT'] }),
+  ],
+  grantsTags: ['SURVIVE', 'RESOLVE'],
+})
+
+// 2. COMMITMENT MADE MECHANICAL — granted when an avenge oath is KEPT; the rider only
+//    wakes against a subject of a LIVE avenge goal (own goal-stack read — no truth).
+//    Melee: rides the swing, block-aware. Dormant in ordinary brawls; the ability IS
+//    the grudge. The grant files: "Tomas will not forget — he carries [Sworn Over
+//    Cael's Body] now."
+spec({
+  id: 'evt_oathkept_109',
+  name: "[Sworn Over Cael's Body]",
+  tier: 2,
+  origin: { seam: 'oath:avenge:kept', withId: 109, text: 'a vow kept in blood; the edge remembers' },
+  header: { target: 'enemy', range: 2.6, cooldown: 18,
+            area: { kind: 'self' }, delivery: { kind: 'instant' },
+            requires: [{ kind: 'vs_sworn_foe' }] },                            // NEW
+  effects: [
+    effect('damage', { amount: 55, tags: ['MELEE', 'VENGEANCE'] }),
+    effect('stun',   { dur: 1.5, when: 'on_hit', tags: ['DREAD'] }),
+  ],
+  grantsTags: ['ATTACK', 'OATH'],
+})
+
+// 3. A GOD'S BOON — granted to flock members when their shrine is raised. The first
+//    heal-OTHER NPCs can cast (support path). `while_faithful` is the commitment:
+//    apostasy makes the next cast FIZZLE, and the chronicle notes "Om's Mercy left
+//    her hands." `rally` lowers the target's mood.fear (consumer: the flee/decide
+//    fear reads — the channel the faith miracle already writes).
+spec({
+  id: 'evt_shrine_om',
+  name: "[Om's Mercy]",
+  tier: 1,
+  origin: { seam: 'faith:shrine_raised', text: 'given at the raising of the shrine of Om' },
+  header: { target: 'ally', range: 6, cooldown: 30,
+            area: { kind: 'self' }, delivery: { kind: 'instant' },
+            requires: [{ kind: 'while_faithful', god: 'Om' }] },               // NEW
+  effects: [
+    effect('heal',  { amount: 30, tags: ['RESTORE', 'HOLY'] }),
+    effect('rally', { amount: 0.4, tags: ['HOLY'] }),                          // NEW op
+  ],
+  grantsTags: ['FAITH', 'MEND'],
+})
+
+// 4. MAKES STORY WHEN USED — the castable false-witness, event-born from a `betrayed`
+//    episode. `denounce` plants a belief about the TARGET in every perceived bystander
+//    (+suspicion toward the target); each bystander then gossips it onward and the
+//    hearsay GARBLING grows it — one cast can curdle into a town-wide false hostility
+//    (the accused arc's seed, emergent instead of Director-injected). `in_crowd`
+//    requires >=2 perceived bystanders (own perception).
+spec({
+  id: 'evt_betrayed_233',
+  name: '[The Quiet Word]',
+  tier: 2,
+  origin: { seam: 'memory:betrayed', withId: 233, text: "learned what a friend's smile is worth" },
+  header: { target: 'any', range: 6, cooldown: 45,
+            area: { kind: 'circle', r: 6 }, delivery: { kind: 'instant' },
+            requires: [{ kind: 'in_crowd' }] },                                // NEW
+  effects: [
+    effect('denounce', { amount: 0.5, tags: ['SLANDER'] }),                    // NEW op
+  ],
+  grantsTags: ['SOCIAL', 'CUNNING'],
+})
+
+// 5. A DEAL WITH TEETH — oathbind arms a repay-obligation on BOTH parties' ledgers
+//    via obligations.ts (amount = gold, dur = expiry). The ledger already owns
+//    discharge/lapse/DEFAULT folds — a broken pact feeds creditLoad ("known to
+//    default"), so the speaker's ability mints real social consequence, not a buff.
+spec({
+  id: 'gen_speaker_t2_pact',
+  name: '[Handshake Like Iron]',
+  tier: 2,
+  header: { target: 'any', range: 2.5, cooldown: 60,
+            area: { kind: 'self' }, delivery: { kind: 'instant' } },
+  effects: [
+    effect('oathbind', { amount: 5, dur: 300, tags: ['PACT'] }),               // NEW op
+  ],
+  grantsTags: ['SOCIAL', 'LEAD', 'PACT'],
+})
+
+// 6. TEACHABLE AND MORTAL — a House technique. `teachable` rides recipeKnow grading
+//    exactly (half-learned, firmed by practice, forgotten unpracticed, conserved
+//    tuition). It can pass down the Frost line or die with its last practitioner —
+//    and the chronicle can mourn it. `produce_boost` is the master_craft hook
+//    (a skillMul window on produce()), generalised into an ingredient.
+spec({
+  id: 'house_frost_rendering',
+  name: '[The Frost Rendering]',
+  tier: 2,
+  teachable: true,                                                             // NEW
+  origin: { seam: 'house:technique', house: 'Frost', text: 'the Frost family secret, three generations old' },
+  header: { target: 'self', range: 0, cooldown: 40,
+            area: { kind: 'self' }, delivery: { kind: 'instant' } },
+  effects: [
+    effect('produce_boost', { amount: 1.6, dur: 10, tags: ['CRAFT', 'SECRET'] }), // NEW op
+  ],
+  grantsTags: ['CRAFT', 'MASTERY'],
+})
+```
+
+And a `NARRATIVE_GRANTS` row (the data table the seams read — rows, never branches):
+
+```js
+registerNarrativeGrant({
+  seam: 'oath:kept', oathKind: 'avenge',
+  graceSec: 600,                                  // at most one event-grant per agent per 10 sim-min
+  theme: { archetype: 'combat', requires: [{ kind: 'vs_sworn_foe' }] },   // fed to the §6 machinery
+  name:       (ev, nameOf) => `[Sworn Over ${nameOf(ev.victimId)}'s Body]`,
+  provenance: (ev, nameOf) => `a vow kept in blood for ${nameOf(ev.victimId)}`,
+  beat:       (a, sp) => `${a.name} will not forget — they carry ${sp.name} now.`,
+});
+```
+
+The contrast that motivates all of it: the grind path still mints `[Greater Timber
+Cleave]` (signature-named, shared world-wide, perfectly fine) — but the ceiling is an
+ability whose NAME is a memory, whose CONDITION is a commitment, and whose USE starts
+rumours. The codex stops being a stat sheet and becomes a second biography.
+
 ## 6. Assembly machinery (v1, demoted to the engine room)
 
 The budgeted clause grammar survives as HOW specs are built: FORM × PRIMARY × RIDER ×
