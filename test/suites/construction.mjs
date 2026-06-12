@@ -372,6 +372,34 @@ export async function constructionTest(ok, { makeFighter, stubScene }) {
       pb.sheltered = false;   // learned by sight: the spire was razed
       const pick2 = nearestComfortSource(pilgrim, sim._ctx());
       ok(!!pick2 && pick2.kind === 'tavern', `construction: a place believed RAZED is skipped — the believed tavern wins (${pick2 && pick2.kind})`);
+
+      // ── 5e. THE CELLAR STRONGBOX: home banking at one's own cellared home ────────
+      // Resting at MY OWN home-with-cellar moves surplus purse gold into the stash (a pure
+      // transfer — purse+stash conserved), and a thin purse draws it back out. The throttle
+      // stamp is rewound between beats so the test doesn't wait wall-clock sim-time.
+      {
+        const { WEALTH } = await import('../../js/sim/simconfig.js');
+        const home = (sim.buildSites._buildings || []).find((b) => b.buildKind === 'home' && b.ownerId != null);
+        if (home) {
+          home.cellar = true;                       // ensure the strongbox room for the fixture
+          const owner = sim.agentsById.get(home.ownerId);
+          if (owner) {
+            owner.pos.set(home.pos.x, 0, home.pos.z);
+            owner.goal = { kind: 'comfort', toPos: { x: home.pos.x, z: home.pos.z }, srcKind: 'home' };
+            owner.needs.comfort = 0.3;
+            owner.gold = (WEALTH.bank.keepPurse || 30) + 12; owner.stash = 0;
+            const wealth0 = owner.gold + owner.stash;
+            for (let i = 0; i < 4; i++) { owner._benefitStampAt = -Infinity; act(owner, 1 / 60, sim._ctx()); }
+            ok(owner.stash > 0 && owner.gold + owner.stash === wealth0,
+              `construction: a cellared owner BANKS surplus at home, conserved (purse ${owner.gold}, stash ${owner.stash})`);
+            owner.gold = 2;                          // hard times: the purse runs thin
+            const wealth1 = owner.gold + owner.stash;
+            owner._benefitStampAt = -Infinity; act(owner, 1 / 60, sim._ctx());
+            ok(owner.gold > 2 && owner.gold + owner.stash === wealth1,
+              `construction: a thin purse DRAWS savings back out (purse ${owner.gold}, stash ${owner.stash})`);
+          }
+        }
+      }
     }
   }
 

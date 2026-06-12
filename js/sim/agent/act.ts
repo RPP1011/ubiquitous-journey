@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { DIR, TUNE } from '../../constants.js';
 import { ARENA_RADIUS } from '../../arena.js';
 import { POI_KIND } from '../world.js';
-import { GOODS, ECON, SIM, SOCIAL, BAND, BUILD, COMFORT, NOVELTY, RECIPES, CAUTION, ROMANCE , ALMS, GRANARY } from '../simconfig.js';
+import { GOODS, ECON, SIM, SOCIAL, BAND, BUILD, COMFORT, NOVELTY, RECIPES, CAUTION, ROMANCE , ALMS, GRANARY, WEALTH } from '../simconfig.js';
 import { castSpec, onCooldown } from '../../rpg/abilities/interpreter.js';
 import { isMelee } from '../../rpg/abilities/ir.js';
 import { bus, makeEvent } from '../../rpg/events.js';
@@ -154,6 +154,23 @@ export function act(a: Agent, dt: number, ctx: CognitionCtx): void {
           if (!pb.placeKind || !pb.lastPos) continue;
           const dx = pb.lastPos.x - goal.toPos.x, dz = pb.lastPos.z - goal.toPos.z;
           if (dx * dx + dz * dz <= 9) { pb.benefitFelt = Math.max(pb.benefitFelt || 0, ben.comfort ?? 0); break; }
+        }
+        // THE CELLAR STRONGBOX (home banking; same 2s throttle): resting at MY OWN cellared
+        // home moves surplus purse gold into the stash — a pure transfer, conserved (the
+        // stash is NOT on the body: corpse-looting and street robbery can't reach it, and
+        // escheat passes it to the heir — the house's wealth survives the man). And it draws
+        // back OUT when the purse runs low: savings, not dead money. The trade-off is real —
+        // banked gold can't bid at market until the owner walks home for it.
+        if (ben.mine && ben.cellar) {
+          const B = (WEALTH.bank || {}) as { keepPurse?: number; chunk?: number; withdrawBelow?: number };
+          const keep = B.keepPurse ?? 30, chunk = B.chunk ?? 5;
+          if ((a.gold || 0) > keep) {
+            const put = Math.min(chunk, Math.floor((a.gold || 0) - keep));
+            if (put > 0) { a.gold -= put; a.stash = (a.stash || 0) + put; }
+          } else if ((a.gold || 0) < (B.withdrawBelow ?? 10) && (a.stash || 0) > 0) {
+            const take = Math.min(a.stash, chunk);
+            a.gold = (a.gold || 0) + take; a.stash -= take;
+          }
         }
       }
     } else if (k === 'court' && arrived) {

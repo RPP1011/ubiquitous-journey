@@ -917,7 +917,12 @@ export class Simulation {
           }
           if (!best) return null;
           const ben = best.benefit || {};
-          return { comfort: ben.comfort ?? 1, social: ben.social ?? 0, kind: best.buildKind || 'building' };
+          return {
+            comfort: ben.comfort ?? 1, social: ben.social ?? 0, kind: best.buildKind || 'building',
+            // home-banking reads these: standing in MY OWN home, over a CELLAR (the strongbox).
+            mine: best.ownerId != null && best.ownerId === a.id,
+            cellar: !!best.cellar,
+          };
         } catch { return null; }
       },
       granaryDraw(a) {

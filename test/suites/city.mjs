@@ -107,6 +107,14 @@ function cityGrowth(ok) {
   while (grid.grow()) grew++;
   ok(grid.size <= ((CITY.growth && CITY.growth.maxTiles) || 32) && !grid.grow(),
     `cityGrow: growth stops at the cap (size ${grid.size})`);
+
+  // CELLARS: a claim may DIG — baseLevel goes below ground, clamped at the grid's minLevel.
+  const dug = grid.claimPlot(1, 1, 2, ZONE.HOMES, 1);
+  ok(!!dug && dug.baseLevel === -1 && dug.topLevel >= 1,
+    `cityGrow: a cellared claim spans below ground (base=${dug && dug.baseLevel}, top=${dug && dug.topLevel})`);
+  const deep = grid.claimPlot(1, 1, 1, ZONE.HOMES, 99);
+  ok(!!deep && deep.baseLevel === grid.minLevel,
+    `cityGrow: digging clamps at the grid's minLevel (base=${deep && deep.baseLevel})`);
 }
 
 // THE TOWN PLAN (zones): the plaza stays open under any pressure; civic claims hug the

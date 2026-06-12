@@ -58,7 +58,7 @@ export interface ResolverFacade {
   // the TRUE benefit of the standing building the agent is AT (colocation-gated; null in the
   // open / at a razed shell) — act.ts scales the comfort restore by it and the agent learns
   // the felt quality onto its own place-belief (experience: the sanctioned truth→belief bridge).
-  placeBenefitAt?(a: Agent): { comfort: number; social: number; kind: string } | null;
+  placeBenefitAt?(a: Agent): { comfort: number; social: number; kind: string; mine?: boolean; cellar?: boolean } | null;
   // Action-grammar execution (docs/architecture/10): the GENERIC "moved" acquire mechanic + the
   // EMERGENT consequence + physical Affect. `take` moves value source→taker (conserved, no baked
   // reaction — the social meaning is the acquire row's data); `witnessDeed` folds a perceived wrong

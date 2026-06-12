@@ -82,17 +82,17 @@ export class Cities {
   // town. Returns the CityGrid.claimPlot result — { centerPos:{x,z}, yaw, tiles,
   // baseLevel, topLevel, tilesW, tilesD } — or null (city full / no such town).
   // Guarded so a bad townId can never throw inside the build commission.
-  claimPlot(townId: number, w: number, d: number, levels = 1, zone: string | null = null) {
+  claimPlot(townId: number, w: number, d: number, levels = 1, zone: string | null = null, cellars = 0) {
     try {
       const g = this.gridFor(townId);
       if (!g) return null;
-      let p = g.claimPlot(w, d, levels, zone);
+      let p = g.claimPlot(w, d, levels, zone, cellars);
       // SETTLEMENT GROWTH: a full town doesn't refuse the build — it grows a block-ring
       // (world positions preserved; see CityGrid.grow) and tries once more. The growth
       // cap (CITY.growth.maxTiles) is the real "city full". Chronicled: a town outgrowing
       // its bounds is a story.
       if (!p && CITY.growth && CITY.growth.enabled !== false && g.grow()) {
-        p = g.claimPlot(w, d, levels, zone);
+        p = g.claimPlot(w, d, levels, zone, cellars);
         // THE WALL FOLLOWS THE PLAN: a grown town's ring moves out to enclose the new
         // blocks (collision is per-town + dynamic; the visual re-lays browser-side).
         try {

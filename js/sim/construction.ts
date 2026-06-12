@@ -233,11 +233,14 @@ export class BuildSites {
     const cap = (CITY.growth && CITY.growth.homeMaxLevels) || 3;
     const wealthy2 = wealth >= 2 && r() < 0.35;
     const levels = Math.min(cap, dense ? 2 + (wealthy2 ? 1 : 0) : (wealthy2 ? 2 : 1));
+    // THE CELLAR (undercity): a dense town digs under its tall houses, and a wealthy owner
+    // digs a strongbox either way -- the room the home-banking stash lives in.
+    const cellars = (dense || wealth >= 2) ? 1 : 0;
     return {
       footprint: { w: 3 + r() * 2, d: 3 + r() * 2 },
       storeys: levels,
       // FOOTPRINT-IN-TILES — a 1×1 plot; storeys from wealth + town density.
-      tiles: { w: F.homeW || 1, d: F.homeD || 1, levels },
+      tiles: { w: F.homeW || 1, d: F.homeD || 1, levels, cellars },
       wealth,
       palette: (r() * 6) | 0,
       seed,
@@ -333,7 +336,7 @@ export class BuildSites {
       const p = this._paramsFor(BUILD_KIND.HOME, 1, seed, this.sim.cities.homesTight(town.id));
       // CLAIM A TILE PLOT from the town's CityGrid (replaces the Surveyor's lane math).
       const tp = p.tiles;
-      const plot = this.sim.cities.claimPlot(town.id, tp.w, tp.d, tp.levels, ZONE.HOMES);   // the residential blocks
+      const plot = this.sim.cities.claimPlot(town.id, tp.w, tp.d, tp.levels, ZONE.HOMES, tp.cellars || 0);   // the residential blocks
       if (!plot) return null;                                                          // city full: try later
       const site = this._makeSite({
         kind: BUILD_KIND.HOME, ownerId: agent.id, town: town.id, plot, params: p,
@@ -597,6 +600,7 @@ export class BuildSites {
       // raids can take it apart and ruin can release its plot.
       struct: site.struct,
       plotTiles: site.plotTiles,
+      cellar: !!(site.plot && site.plot.baseLevel < 0),   // the strongbox room (home banking reads it)
       sheltered: true,
       // perceivable liveness mirrors shelter: a finished, intact building reads alive=true,
       // a torched one alive=false. Perception writes the believed `sheltered` from this.
@@ -818,7 +822,7 @@ export class BuildSites {
       const seed = (rng() * 1e9) | 0;
       const p = this._paramsFor(BUILD_KIND.HOME, 1, seed, this.sim.cities.homesTight(town.id));
       const tp = p.tiles;
-      const plot = this.sim.cities.claimPlot(town.id, tp.w, tp.d, tp.levels, ZONE.HOMES);
+      const plot = this.sim.cities.claimPlot(town.id, tp.w, tp.d, tp.levels, ZONE.HOMES, tp.cellars || 0);
       if (!plot) return null;
       const site = this._makeSite({
         kind: BUILD_KIND.HOME, ownerId: owner ? owner.id : null, town: town.id, plot, params: p,

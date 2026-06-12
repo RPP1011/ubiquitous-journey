@@ -195,6 +195,15 @@ export const WEALTH = {
   // producer keeps it liquid. Read by trade.seedStash; only consulted when enabled.
   stashRatio: { tool: 0.6, potion: 0.5, default: 0.3 },
   minPurse: 8,                // never bank below this — an agent must keep coin to trade
+  // HOME BANKING (the cellar strongbox — act.ts, always-live, gated by OWNING a cellared
+  // home): resting at one's own cellar-home deposits surplus purse gold into the stash
+  // (conserved transfer; not on the body — robbery/corpse-loot can't reach it; escheat
+  // passes it to the heir) and withdraws when the purse runs low.
+  bank: {
+    keepPurse: 30,            // bank only the surplus above this walking-around money
+    chunk: 5,                 // gold moved per (2s-throttled) banking beat while resting
+    withdrawBelow: 10,        // a purse this thin draws savings back out
+  },
 };
 
 // --- the urchin: covert epistemic acquisition (Phase 4, Ex.5) -----------------

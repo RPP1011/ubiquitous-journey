@@ -70,7 +70,9 @@ export function generateShell(plot: Plot, opts: ShellOpts = {}): Structure {
     const dot = (t.tx - cx) * fx + (t.ty - cy) * fy;
     if (dot > bestDot) { bestDot = dot; door = t; }
   }
-  if (door) { const p = parts.get(key(door.tx, door.ty, plot.baseLevel)); if (p) p.type = PART.DOOR; }
+  // the door opens at GROUND level (a cellared building's baseLevel is below ground —
+  // nobody's front door is in the cellar).
+  if (door) { const p = parts.get(key(door.tx, door.ty, Math.max(0, plot.baseLevel))); if (p) p.type = PART.DOOR; }
 
   // roof cap: a roof part over each footprint tile at one level above the top storey.
   for (const t of plot.tiles) add(t.tx, t.ty, plot.topLevel + 1, PART.ROOF);

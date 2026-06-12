@@ -154,9 +154,13 @@ export class CityGrid {
   // (cities densify from the core out). `levels` = how tall (>=1); clamped to the grid's
   // vertical span. Returns { centerPos:{x,z}, yaw, tiles:[{tx,ty}], baseLevel, topLevel,
   // tilesW, tilesD } or null if the city is full. Stamps the footprint as BUILDING.
-  claimPlot(w: number, d: number, levels = 1, zone: Zone | null = null): PlotClaim | null {
+  claimPlot(w: number, d: number, levels = 1, zone: Zone | null = null, cellars = 0): PlotClaim | null {
     w = Math.max(1, w | 0); d = Math.max(1, d | 0);
     const topLevel = Math.min(this.maxLevel, Math.max(0, (levels | 0) - 1));
+    // CELLARS (the undercity): a building may DIG as well as rise — its span extends below
+    // ground to baseLevel (clamped at the grid's minLevel). The sim still lives on level 0;
+    // a cellar is storage mass under the house (the strongbox the owner banks into).
+    const baseLevel = Math.max(this.minLevel, -Math.max(0, cellars | 0));
     // gather candidate anchors, nearest-centre first (stable, deterministic ordering).
     // THE TOWN PLAN constrains them: a footprint may NEVER take a plaza tile (the square
     // stays open, hard), and a requested zone is a soft PREFERENCE — civic works hug the
@@ -183,9 +187,9 @@ export class CityGrid {
     const tiles: TileXY[] = [];
     for (let dy = 0; dy < d; dy++) for (let dx = 0; dx < w; dx++) { this._ground[this._idx(tx + dx, ty + dy)] = TILE.BUILDING; tiles.push({ tx: tx + dx, ty: ty + dy }); }
     const c = this.tileToWorld(tx + (w - 1) / 2, ty + (d - 1) / 2);
-    const rec = { tiles, baseLevel: 0, topLevel, id: this._buildings.length };
+    const rec = { tiles, baseLevel, topLevel, id: this._buildings.length };
     this._buildings.push(rec);
-    return { centerPos: c, yaw: this._faceRoad(tx, ty, w, d), tiles, baseLevel: 0, topLevel, tilesW: w, tilesD: d };
+    return { centerPos: c, yaw: this._faceRoad(tx, ty, w, d), tiles, baseLevel, topLevel, tilesW: w, tilesD: d };
   }
 
   // GROW the settlement by one block-ring per side (the town visibly expands outward).
