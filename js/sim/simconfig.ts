@@ -1138,6 +1138,8 @@ export const CITY = {
     tavernLevels: 2,              // the tavern rises two storeys
     granaryW: 2, granaryD: 1,     // the town granary: a long low store
     granaryLevels: 1,             // a single storey (a barn, not a hall)
+    hallW: 2, hallD: 2,           // a fellowship's guildhall: a 2×2 block like the tavern
+    hallLevels: 2,                // …and it too rises two storeys (a place of standing)
   },
   // RAID damage tuning — how a raider near a building takes its component shell apart.
   raid: {
@@ -1172,6 +1174,20 @@ export const GROUP_TYPES = {
   // (gathering on the believed anchor). Read in decide's loose-group block; tune here.
   guild:   { label: 'guild',   cohesion: 'loose',  combatant: false, maxFollowers: 3, pull: 1.5 },
   circle:  { label: 'circle',  cohesion: 'loose',  combatant: false, maxFollowers: 3, pull: 2.2 },
+};
+
+// --- THE GUILDHALL: a named fellowship gets a PLACE ---------------------------
+// An enduring, funded LOOSE group (guild/circle) commissions a HALL near the town
+// core (groups.js, the execution side) via the same public-works machinery the
+// tavern uses. On completion every member is stamped `groupHallId` and the loose-
+// group socialise pull converges on the HALL (a fixed point) instead of the
+// anchor's wandering person — which is what should RAISE the groupCohesion metric
+// (signals.ts): members now share one spot. Tune here, never in logic.
+export const HALL = {
+  minMembers: 3,      // anchor + followers a loose group must hold to deserve a hall
+  minAgeSecs: 90,     // …and have ENDURED this long since formation (stamped at first join)
+  woodCost: 6,        // WOOD the anchor banks into the site (a real inventory — conserved)
+  benefit: { comfort: 0.0, social: 1.0 },  // a hall is a social hub, not a bedroom
 };
 
 // --- group cohesion (Phase B2 metric reference) ------------------------------
@@ -1370,6 +1386,10 @@ export const MAP = {
     // the new affordance strings the belief-backed comfort path queries via map.nearest().
     rest:    ['safe', 'shelter', 'rest'], hut: ['safe', 'shelter', 'rest'],
     tavern:  ['crowd', 'safe', 'shelter', 'rest'],
+    // THE GUILDHALL: a fellowship's hall is a GATHERING place (crowd/social), like the
+    // tavern's social role — but deliberately NOT 'rest'/'shelter', so the belief-backed
+    // comfort path (map.nearest(['shelter','rest'])) never reroutes strangers to it.
+    guildhall: ['crowd', 'safe', 'gather', 'social'],
     home:    ['safe', 'conceal', 'shelter', 'rest', 'private'],
     granary: ['safe', 'larder'],   // the public larder — what the destitute's granary trip queries
 

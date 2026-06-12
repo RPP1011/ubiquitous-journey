@@ -163,6 +163,11 @@ export interface Agent {
   relics?: unknown[];
   homeBeliefId?: EntityId | null;
   _buildSiteId?: EntityId | null;
+  groupName?: string | null;          // the fellowship's coined name (groups.js _join — flavour)
+  groupHallId?: EntityId | null;      // THE GUILDHALL: my fellowship's hall (building/place id),
+                                      //   stamped by Groups on completion; decide reads it with
+                                      //   my OWN place-belief of that id (discovered by sight)
+  _groupFormedAt?: number | null;     // anchor-side: when this group formed (the hall endurance gate)
   _schemaGoalLock?: { kind: string; until: number } | null;
   _slain?: Set<EntityId>;
   _underground?: boolean;

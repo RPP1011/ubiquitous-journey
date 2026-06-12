@@ -32,7 +32,7 @@
 
 import * as THREE from 'three';
 import { rng } from './rng.js';
-import { BUILD, SURVEYOR, CITY, MAP } from './simconfig.js';
+import { BUILD, SURVEYOR, CITY, MAP, HALL } from './simconfig.js';
 import { bus, makeEvent } from '../rpg/events.js';
 import { terrainHeight } from '../arena.js';
 import { BEAT } from './chronicle.js';
@@ -54,8 +54,8 @@ type Building = any;    // a dynamic finished-building percept record (id 'B:n'/
 type Ctx = any;         // the build-tick context (only ctx.time is read); callers vary, kept loose
 
 // the affordance table (data-driven), so a registered public Place advertises its affordances
-// (a tavern shelter/rest, a granary larder). Viewed as a string-keyed record for the
-// kind-indexed lookup in _finalize.
+// (a tavern shelter/rest, a granary larder, a guildhall crowd/social). Viewed as a string-keyed
+// record for the kind-indexed lookup in _finalize.
 const MAP_AFF = (((MAP && MAP.affordances) || {}) as unknown) as Record<string, string[]>;
 import {
   generateShell, shelterReport, anyBurning, torch, strikeNearestWall, tickFire, MATERIAL,
@@ -65,11 +65,12 @@ import {
 // learn about buildings — BuildSites is itself the nearest()-style lookup. (These are
 // the BUILD-TYPE of a site/building, kept on `buildKind`; a finished building's `.kind`
 // is the PERCEPT kind so perception can file a place-belief about it.)
-export const BUILD_KIND = { HOME: 'home', TAVERN: 'tavern', GRANARY: 'granary' };
+export const BUILD_KIND = { HOME: 'home', TAVERN: 'tavern', GRANARY: 'granary', GUILDHALL: 'guildhall' };
 
-// is this BUILD type an owner-less PUBLIC work the town raises from its fund (wood + ambient
-// labour, never gold)? The tavern and the granary share the whole commission/labour path.
-const isPublicKind = (kind: string): boolean => kind === BUILD_KIND.TAVERN || kind === BUILD_KIND.GRANARY;
+// is this BUILD type an owner-less PUBLIC work raised through the shared commission/labour path
+// (wood + ambient labour, never gold)? The tavern and granary come from the town fund; the
+// guildhall is commissioned by a fellowship (its anchor banks the wood) but builds the same way.
+const isPublicKind = (kind: string): boolean => kind === BUILD_KIND.TAVERN || kind === BUILD_KIND.GRANARY || kind === BUILD_KIND.GUILDHALL;
 
 // BELIEF-BACKED HOUSING TEST (Phase 2a): is this agent unhoused, AS FAR AS IT KNOWS? Reads
 // ONLY the agent's OWN belief about its home (homeBelief) — never a truth-side Building. An
@@ -150,7 +151,7 @@ export class BuildSites {
   _acc: number;
   _pending: Building[];
   _displaced: Array<{ ownerId: unknown; town: unknown; plotPos: THREE.Vector3; at: number }>;
-  stats: { commissioned: number; completed: number; homes: number; taverns: number; granaries: number; granaryMeals: number };
+  stats: { commissioned: number; completed: number; homes: number; taverns: number; granaries: number; granaryMeals: number; halls: number };
 
   constructor(sim: Sim) {
     this.sim = sim;
@@ -166,7 +167,7 @@ export class BuildSites {
     // building presence ONLY — never an owner's beliefs (demand bookkeeping stays truth-side).
     this._displaced = [];
     // granaryMeals counts larder draws served (resolver.granaryDraw bumps it) — telemetry only.
-    this.stats = { commissioned: 0, completed: 0, homes: 0, taverns: 0, granaries: 0, granaryMeals: 0 };
+    this.stats = { commissioned: 0, completed: 0, homes: 0, taverns: 0, granaries: 0, granaryMeals: 0, halls: 0 };
     // No bus subscription: this module EMITS deeds (build), it doesn't consume
     // them, so a rebuilt world can't double-route XP through here. No mesh either.
   }
@@ -196,6 +197,17 @@ export class BuildSites {
         // FOOTPRINT-IN-TILES — a long low civic store, a single storey.
         tiles: { w: F.granaryW || 2, d: F.granaryD || 1, levels: F.granaryLevels || 1 },
         wealth: SURVEYOR.granaryWealth,
+        palette: (r() * 6) | 0,
+        seed,
+      };
+    }
+    if (kind === BUILD_KIND.GUILDHALL) {
+      // a fellowship's hall: tavern-grade (a public place of standing), fixed 2×2 block.
+      return {
+        footprint: { w: 5.5 + r() * 2, d: 5.5 + r() * 2 },
+        storeys: F.hallLevels || 2,
+        tiles: { w: F.hallW || 2, d: F.hallD || 2, levels: F.hallLevels || 2 },
+        wealth: SURVEYOR.tavernWealth,
         palette: (r() * 6) | 0,
         seed,
       };
@@ -299,9 +311,10 @@ export class BuildSites {
     } catch { return null; }
   }
 
-  // The Surveyor commissions a PUBLIC work (the town tavern / granary). Owner-less;
-  // townsfolk build it via their build goal + the small ambient town-labour accrual in
-  // tick. No gold changes hands — the town "fund" is wood + labour only.
+  // A PUBLIC work: the Surveyor commissions the town tavern / granary; Groups commissions a
+  // fellowship's GUILDHALL through the same path. Owner-less; townsfolk build it via their
+  // build goal + the small ambient town-labour accrual in tick. No gold changes hands — the
+  // town "fund" is wood + labour only (a hall's wood is banked by the group's anchor).
   commissionPublic(town: { id: unknown }, kind: string, _plotIgnored: unknown, ctx: Ctx): BuildSite | null {
     try {
       if (!town) return null;
@@ -314,11 +327,12 @@ export class BuildSites {
       const tp = p.tiles;
       const plot = this.sim.cities.claimPlot(town.id, tp.w, tp.d, tp.levels);
       if (!plot) return null;
+      const hall = kind === BUILD_KIND.GUILDHALL;
       const site = this._makeSite({
         kind, ownerId: null, town: town.id, plot, params: p,
         // a granary confers no needs benefit — its worth is the larder STOCK (the draw path).
-        woodNeeded: granary ? SURVEYOR.granaryWood : SURVEYOR.tavernWood,
-        benefit: granary ? { comfort: 0, social: 0 } : SURVEYOR.tavernBenefit, ctx,
+        woodNeeded: granary ? SURVEYOR.granaryWood : (hall ? HALL.woodCost : SURVEYOR.tavernWood),
+        benefit: granary ? { comfort: 0, social: 0 } : (hall ? HALL.benefit : SURVEYOR.tavernBenefit), ctx,
       });
       this._sites.push(site);
       this.stats.commissioned++;
@@ -337,9 +351,9 @@ export class BuildSites {
     // the claimed plot is a CityGrid claim: centerPos {x,z} (not a Vector3), yaw, tiles,
     // baseLevel/topLevel. Keep the tile claim so we can build the parts shell + release.
     const sitePlot = { tiles: plot.tiles, baseLevel: plot.baseLevel, topLevel: plot.topLevel, yaw: plot.yaw || 0 };
-    // generate the component shell now (pure + headless-safe): a public work (tavern/granary)
-    // is stone (grander, tougher), a home wood (cheaper, flammable). The struct is the
-    // destructible source.
+    // generate the component shell now (pure + headless-safe): a public work (tavern/granary/
+    // guildhall) is stone (grander, tougher), a home wood (cheaper, flammable). The struct is
+    // the destructible source.
     const material = isPublicKind(kind) ? MATERIAL.STONE : MATERIAL.WOOD;
     let struct = null;
     try { struct = generateShell(sitePlot, { material }); } catch { struct = null; }
@@ -393,9 +407,10 @@ export class BuildSites {
         const site = this._sites[i];
         if (site.done) continue;
 
-        // PUBLIC WORK (tavern/granary): abstracted town labour. While the town holds
-        // enough townsfolk, the work rises a little each tick (capped by the wood that
-        // passing builders have actually contributed — so the commodity loop holds).
+        // PUBLIC WORKS (tavern/granary/guildhall): abstracted town labour. While the town
+        // holds enough townsfolk, the work rises a little each tick (capped by the wood that
+        // passing builders have actually contributed — so the commodity loop holds; a hall's
+        // wood was banked up-front by the group's anchor, a real inventory).
         // A TOWN-FUNDED rebuild (the displacement backstop) rises the same way, so a
         // displaced owner's home is restored even if he never returns to build it.
         if ((site.ownerId == null && isPublicKind(site.kind)) || site.townFunded) {
@@ -574,9 +589,12 @@ export class BuildSites {
     }
 
     // narrative: name the house, file a chronicle beat, seed the owner's memory.
+    // (a GUILDHALL carries its fellowship's coined name — stamped on the site by Groups
+    // at commission — so the chronicle reads "The Hammerfast Guild raised its hall.")
     const hn = owner ? (owner.house ? `${owner.house} House` : `${owner.name}'s house`) : 'a new house';
     building.label = site.kind === BUILD_KIND.TAVERN ? 'the tavern'
-      : site.kind === BUILD_KIND.GRANARY ? 'the granary' : hn;
+      : site.kind === BUILD_KIND.GRANARY ? 'the granary'
+      : (site.kind === BUILD_KIND.GUILDHALL ? (site.groupName ? `the hall of ${site.groupName}` : 'the guildhall') : hn);
     const town = this._townOf(site.town);
     const townName = (town && town.name) || 'the town';
     try {
@@ -587,6 +605,9 @@ export class BuildSites {
         } else if (site.kind === BUILD_KIND.GRANARY) {
           this.sim.chronicle.note('build', null,
             `${townName} raised a granary — a public larder against famine.`);
+        } else if (site.kind === BUILD_KIND.GUILDHALL) {
+          this.sim.chronicle.note('build', null,
+            `${site.groupName ? site.groupName.charAt(0).toUpperCase() + site.groupName.slice(1) : 'A fellowship'} raised its hall in ${townName}.`);
         } else {
           this.sim.chronicle.note('build', site.ownerId,
             `${owner ? owner.name : 'A townsperson'} raised ${hn} in ${townName}.`);
@@ -605,20 +626,22 @@ export class BuildSites {
     this.stats.completed++;
     if (building.buildKind === BUILD_KIND.TAVERN) this.stats.taverns++;
     else if (building.buildKind === BUILD_KIND.GRANARY) this.stats.granaries++;
+    else if (building.buildKind === BUILD_KIND.GUILDHALL) this.stats.halls++;
     else this.stats.homes++;
 
     // PLACES-AS-STATIC-GEOGRAPHY (Phase 2a): register a finished PUBLIC work as a shared,
     // STATIC mental-map Place (position only, never `sheltered`) so the belief-backed paths
     // can reach it — the tavern via map.nearest(['shelter','rest']) (comfort), the granary
-    // via map.nearest(['larder']) (the destitute's draw trip). HOMES are deliberately NOT
-    // added to the shared map (a razed home must not poison shared geography — the owner
-    // reaches his home through his OWN belief, homeBeliefId). Guarded; never throws.
+    // via map.nearest(['larder']) (the destitute's draw trip); the hall advertises gather/
+    // social, NOT shelter/rest (see MAP.affordances). HOMES are deliberately NOT added to
+    // the shared map (a razed home must not poison shared geography — the owner reaches his
+    // home through his OWN belief, homeBeliefId). Guarded; never throws.
     try {
       if (isPublicKind(building.buildKind) && this.sim.map && typeof this.sim.map.add === 'function') {
-        const kind = building.buildKind;
-        const fallback = kind === BUILD_KIND.GRANARY ? ['larder'] : ['shelter', 'rest'];
-        this.sim.map.add(new Place(building.id, kind, building.pos,
-          (MAP_AFF[kind] || fallback), building.town));
+        const pk = building.buildKind;
+        const fallback = pk === BUILD_KIND.GRANARY ? ['larder'] : (pk === BUILD_KIND.GUILDHALL ? ['crowd', 'social'] : ['shelter', 'rest']);
+        this.sim.map.add(new Place(building.id, pk, building.pos,
+          (MAP_AFF[pk] || fallback), building.town));
       }
     } catch { /* the shared map is best-effort static geography */ }
   }

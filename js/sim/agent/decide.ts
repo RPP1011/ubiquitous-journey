@@ -516,10 +516,21 @@ export function decide(a: Agent, ctx: CognitionCtx): void {
   const gt = a.groupType ? GROUP_TYPES_T[a.groupType] : null;
   if (gt && !a.inParty && gt.cohesion === 'loose') {
     const pull = gt.pull || 1.6;
+    // THE GUILDHALL: a fellowship that raised a hall gathers THERE — a person is a wandering
+    // target; the hall is the fixed point the group can actually share. Own-state stamp
+    // (groupHallId, written by the execution side like groupName) + my OWN place-belief of
+    // that building (discovered BY SIGHT, the homeBeliefId pattern — a hall I've never laid
+    // eyes on, or believe razed, or whose belief has decayed stale, pulls nothing). The
+    // socialize candidate carries the believed hall position (fillSocialize honours toPos);
+    // with no hall the circle converges on the believed anchor exactly as before.
+    const hb = (a.groupHallId != null) ? a.beliefs.get(a.groupHallId) : null;
+    const hallPos = (hb && hb.sheltered !== false && hb.lastPos && hb.confidence >= SIM.actOnBeliefMin)
+      ? { x: hb.lastPos.x, z: hb.lastPos.z } : null;
     for (const c of cand) {
       if (c.kind === 'socialize') {
         c.score *= (a.groupType === 'circle' ? pull : 1.6);
-        if (a.groupType === 'circle' && c.withId == null && a.bandLeaderId != null) {
+        if (hallPos) { c.toPos = hallPos; c.withId = null; }
+        else if (a.groupType === 'circle' && c.withId == null && a.bandLeaderId != null) {
           const ab = a.beliefs.get(a.bandLeaderId);
           if (ab && ab.confidence >= SIM.actOnBeliefMin) c.withId = a.bandLeaderId;
         }

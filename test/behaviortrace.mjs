@@ -95,4 +95,9 @@ console.log(`\nBEHAVIOURAL SPREAD (mean pairwise goal-vector distance, 0..1): ${
 console.log(`LONG-TERM COMMITMENT:  ambition-aligned dwell = ${pct(meanAligned)}   ·   median top-goal budget = ${pct(median)}`);
 const gc = groupCohesion(sim);
 console.log(`GROUP COHESION (clusters acting alike, 0..1): ${gc.mean.toFixed(2)} over ${gc.groups} group(s)`);
+// THE GUILDHALL: how many fellowships raised a PLACE of their own this run (a fixed
+// gathering point is what should lift the cohesion line above) + who still holds one.
+const bst = sim.buildSites && sim.buildSites.stats;
+const stamped = sim.agents.filter((a) => a.alive && a.groupHallId != null).length;
+console.log(`GUILDHALLS RISEN: ${bst ? bst.halls : 0}   ·   members holding a hall stamp: ${stamped}`);
 sim.dispose?.();

@@ -18,9 +18,9 @@
 // Kept separate from the player's Party: this never touches a member whose leader
 // is the player, so recruited companions and emergent NPC groups coexist.
 
-import { BAND, GROUP_TYPES, GROUP_NAMES } from './simconfig.js';
+import { BAND, GROUP_TYPES, GROUP_NAMES, HALL } from './simconfig.js';
 import { rng } from './rng.js';
-import { isHomeBuilder } from './construction.js';
+import { isHomeBuilder, BUILD_KIND } from './construction.js';
 
 // `sim` (the owning Simulation — wave-2, still .js) and the agents (via their long-tail
 // band/group flags) are typed opaquely on purpose; behaviour is unchanged.
@@ -61,21 +61,28 @@ function pickType(L: Ag, F: Ag): string {
 export class Groups {
   sim: Sim;
   _acc: number;
+  // THE GUILDHALL: hall build-sites pending completion, keyed by the commissioning
+  // group's anchor id. Drained each tick (_stampFinishedHalls) — on completion every
+  // member is stamped `groupHallId` (execution side, like _join stamps groupName).
+  _hallSites: Map<unknown, Ag>;
 
-  constructor(sim: Sim) { this.sim = sim; this._acc = 0; }
+  constructor(sim: Sim) { this.sim = sim; this._acc = 0; this._hallSites = new Map(); }
 
   _playerId(): unknown { return this.sim.player ? this.sim.player.id : -1; }
   _eligible(a: Ag): boolean { return a && a.alive && a.autonomous && a.faction === 'townsfolk' && !a.watch && !isHomeBuilder(a); }
   _followersOf(id: unknown): Ag[] { return this.sim.agents.filter((x: Ag) => x.alive && x.bandLeaderId === id); }
   _isLeader(a: Ag): boolean { return this._followersOf(a.id).length > 0; }
 
-  // fixed-tick: dissolve broken groups, then (throttled) try to grow one
+  // fixed-tick: dissolve broken groups, then (throttled) try to grow one — and let
+  // an enduring, funded fellowship raise (then move into) its hall.
   tick(ctx: unknown, dt: number): void {
     this._prune();
+    this._stampFinishedHalls();
     this._acc += dt;
     if (this._acc < BAND.formEvery) return;
     this._acc = 0;
     this._form();
+    this._maybeRaiseHalls();
   }
 
   _form(): void {
@@ -136,6 +143,11 @@ export class Groups {
       const pool = (GROUP_NAMES as Record<string, string[]>)[type];
       if (!L.groupName && pool && pool.length) L.groupName = pool[(rng() * pool.length) | 0];
       F.groupName = L.groupName || null;
+      // THE GUILDHALL: stamp the group's FORMATION time on the anchor at first join (the
+      // endurance gate _maybeRaiseHalls ages against), and hand a late joiner the hall
+      // the fellowship already raised (own-state stamp, like groupName above).
+      if (L._groupFormedAt == null) L._groupFormedAt = this.sim.time || 0;
+      F.groupHallId = L.groupHallId || null;
       if (this.sim.sagas) this.sim.sagas.appendRound(
         { kind: 'fellowship', key: 'fellowship:' + type + ':' + L.id, principals: [L.id, F.id] },
         `${F.name} joined ${L.groupName || 'the ' + type} of ${L.name}.`);
@@ -170,6 +182,93 @@ export class Groups {
     } catch { return false; }
   }
 
+  // ── THE GUILDHALL: a named fellowship gets a PLACE ────────────────────────────
+  // A person is a wandering target; a hall makes the group feel real. A LOOSE group
+  // (guild/circle) that has ENDURED (≥ HALL.minMembers members for ≥ HALL.minAgeSecs
+  // since formation) and whose anchor holds the wood commissions a hall near the town
+  // core through the SAME public-works machinery the tavern uses (commissionPublic →
+  // the CityGrid plot + ambient town labour). The anchor BANKS its wood into the site
+  // (a real inventory, conserved — no minting). Execution side: this walks the roster
+  // legally; cognition only ever sees the own-state stamp + its own place-belief.
+  _maybeRaiseHalls(): void {
+    try {
+      const bs = this.sim.buildSites;
+      if (!bs || !bs.commissionPublic) return;
+      const now = this.sim.time || 0;
+      for (const L of this.sim.agents) {
+        if (!L.alive || L.controlled || !L.groupType || L.bandLeaderId != null) continue;
+        const gt = GROUP_TYPES_T[L.groupType];
+        if (!gt || gt.cohesion !== 'loose') continue;             // halls are a LOOSE-group thing
+        if (L.groupHallId != null || this._hallSites.has(L.id)) continue;   // has / awaits one
+        // ENDURANCE: stamp a formation time if none exists (pre-hall groups), then age-gate.
+        if (L._groupFormedAt == null) { L._groupFormedAt = now; continue; }
+        if ((now - L._groupFormedAt) < HALL.minAgeSecs) continue;
+        if (1 + this._followersOf(L.id).length < HALL.minMembers) continue; // not grown yet
+        const wood = (L.inventory && L.inventory.wood) || 0;
+        if (wood < HALL.woodCost) continue;                       // unfunded — keep gathering
+        const town = this._townOf(L.townId);
+        if (!town) continue;
+        const site = bs.commissionPublic(town, BUILD_KIND.GUILDHALL, null, { time: now });
+        if (!site) continue;                                      // city full — try later
+        // the anchor banks the hall's wood into the site (conserved commodity transfer).
+        L.inventory.wood = wood - HALL.woodCost;
+        site.woodHave = Math.min(site.woodNeeded, HALL.woodCost);
+        site.groupName = L.groupName || null;                     // the chronicle names the hall
+        this._hallSites.set(L.id, site);
+        // a round on the fellowship's saga: the ambition declared. Observer; guarded.
+        try {
+          if (this.sim.sagas) this.sim.sagas.appendRound(
+            { kind: 'fellowship', key: 'fellowship:' + L.groupType + ':' + L.id, principals: [L.id] },
+            `${L.groupName || 'the ' + L.groupType} of ${L.name} laid the foundations of a hall.`);
+        } catch { /* never throw */ }
+      }
+    } catch { /* never throw on the tick */ }
+  }
+
+  // Drain pending hall sites: when one finishes, stamp `groupHallId` (the building's
+  // percept/place id) on the anchor AND every current member — execution side, exactly
+  // like _join stamps groupName. Members still DISCOVER the hall by sight (the place-
+  // belief decide reads is filed by their own perception); the stamp only tells them
+  // which building is THEIRS. A group that dissolved mid-build forfeits its claim (the
+  // hall, if it still rises, persists as a town building — abandoned halls are flavour).
+  _stampFinishedHalls(): void {
+    if (!this._hallSites.size) return;
+    try {
+      const bs = this.sim.buildSites;
+      for (const [anchorId, site] of this._hallSites) {
+        const L = this.sim.agentsById.get(anchorId);
+        if (!L || !L.alive || !L.groupType) { this._hallSites.delete(anchorId); continue; }
+        if (!site.done) {
+          // ABANDONED (spliced from the active sites without finishing)? Drop the claim
+          // so an enduring group may commission again once re-funded.
+          if (bs && bs.siteById && !bs.siteById(site.id)) this._hallSites.delete(anchorId);
+          continue;
+        }
+        if (!site.building) { this._hallSites.delete(anchorId); continue; }
+        const hid = site.building.id;
+        L.groupHallId = hid;
+        for (const F of this._followersOf(anchorId)) F.groupHallId = hid;
+        this._hallSites.delete(anchorId);
+        // LEGIBILITY: the fellowship's saga gets its hall-raising round. (The chronicle
+        // beat — "X raised its hall in <town>" — is filed by construction._finalize.)
+        try {
+          if (this.sim.sagas) this.sim.sagas.appendRound(
+            { kind: 'fellowship', key: 'fellowship:' + L.groupType + ':' + L.id, principals: [L.id] },
+            `${L.groupName || 'the ' + L.groupType} of ${L.name} raised its hall.`);
+        } catch { /* never throw */ }
+      }
+    } catch { /* never throw on the tick */ }
+  }
+
+  // the anchor's town record (for the hall's plot claim). Guarded; falls back to town 0.
+  _townOf(townId: unknown): { id: unknown } | null {
+    try {
+      const towns = this.sim.towns || [];
+      for (const tw of towns) if (tw.id === townId) return tw;
+      return towns[0] || null;
+    } catch { return null; }
+  }
+
   _prune(): void {
     const pid = this._playerId();
     for (const F of this.sim.agents) {
@@ -186,8 +285,12 @@ export class Groups {
       } else if (F.groupType && F.bandLeaderId == null) {
         if (!F.alive || this._followersOf(F.id).length === 0) {
           // empty anchor: the fellowship has dwindled to one — close its tale + drop the label.
+          // The hall claim goes too (the building persists as a town building — abandoned
+          // halls are flavour); a pending site forfeits its stamp (_stampFinishedHalls guard).
           try { if (this.sim.sagas) this.sim.sagas.closeArc('fellowship:' + F.groupType + ':' + F.id, 'disbanded'); } catch { /* never throw */ }
           F.groupType = null; F.groupName = null;
+          F.groupHallId = null; F._groupFormedAt = null;
+          this._hallSites.delete(F.id);
         }
       }
     }
@@ -200,11 +303,13 @@ export class Groups {
     F.bandLeaderId = null;
     F.groupType = null;
     F.groupName = null;
+    F.groupHallId = null;   // the fellowship's hall is no longer this member's gathering point
   }
 
   // restore every NPC-group member (world teardown). Leaves the player's party alone.
   disband(): void {
     const pid = this._playerId();
     for (const F of this.sim.agents) if (F.bandLeaderId != null && F.bandLeaderId !== pid) this._revert(F);
+    this._hallSites.clear();
   }
 }

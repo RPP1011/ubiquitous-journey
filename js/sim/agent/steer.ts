@@ -324,10 +324,14 @@ function fillComfort(a: Agent, _ctx: CognitionCtx): Field | null {
 
 // SOCIALIZE — walk to a believed FRIEND and stand with them; with no friend known well
 // enough, fall back to the MARKET (the town's gathering place) so a newcomer still finds
-// company. The friend force is the belief lastPos (only when confidence clears knownConf —
-// a moved/dead friend leaves an empty spot and the need just doesn't fill); the market is a
+// company. THE GUILDHALL: decide may instead pin the gathering to a PLACE (toPos — the
+// believed position of the fellowship's hall, my own place-belief); honour that first,
+// so the group converges on its fixed point instead of chasing a wandering friend. The
+// friend force is the belief lastPos (only when confidence clears knownConf — a moved/
+// dead friend leaves an empty spot and the need just doesn't fill); the market is a
 // static POI. The on-arrival social restore + bond is the explicit verb in act.js. Walk.
 function fillSocialize(a: Agent, ctx: CognitionCtx): Field | null {
+  if (a.goal!.toPos) return attractField(a.goal!.toPos, false);
   const rel = (a.goal!.withId != null) ? a.beliefs.get(a.goal!.withId) : null;
   if (rel && rel.confidence > SOCIAL.knownConf) return attractField(rel.lastPos, false);
   const m = ctx.world.nearest(POI_KIND.MARKET, a.pos);
