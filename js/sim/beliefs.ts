@@ -265,6 +265,38 @@ export class BeliefStore implements IBeliefStore {
     this._garble(b, other, true);
   }
 
+  // PLACE HEARSAY (the city-architecture follow-on): adopt a neighbour's belief about a
+  // BUILDING, kept PLACE-SHAPED — "the tavern at Crowmoor is fine", "the shrine of Om was
+  // razed". Distinct from mergeFrom on purpose: a place has no reputation to garble — no
+  // standing, no hostility, no suspicion — only kind / where / shelter state / felt quality.
+  // The hearsay physics still hold: confidence falls off per mouth (gossipFalloff × cap),
+  // hops deepen, SIGHT ALWAYS WINS (a fresher own-belief is kept — hearsay never outranks
+  // eyes), and a TOLD quality lands damped (placeQualityDamp: hearing of a hearth is weaker
+  // than having sat at it). The one asymmetry: news of RUIN updates even a fresher-held
+  // 'intact' when the teller's sighting is NEWER — bad news travels.
+  mergePlaceFrom(other: BeliefState | null | undefined, src: unknown /* SOURCE.* */) {
+    if (!other || !other.placeKind) return;
+    const s = src as { tag: string; conf: number };
+    const incoming = Math.min(other.confidence * SIM.gossipFalloff, s.conf, SIM.gossipCap);
+    let b = this.map.get(other.subjectId);
+    if (b && b.confidence >= incoming) {
+      if (other.sheltered === false && b.sheltered !== false && (other.lastTick || 0) > (b.lastTick || 0)) b.sheltered = false;
+      return;
+    }
+    b = this._ensure(other.subjectId);
+    b.placeKind = other.placeKind;
+    b.placeGod = other.placeGod;
+    b.sheltered = other.sheltered;
+    b.lastPos.copy(other.lastPos);
+    b.lastTick = other.lastTick;
+    b.lastFaction = 'unknown';
+    b.confidence = incoming;
+    b.source = s.tag;
+    b.hops = Math.min(HEARSAY.maxHops, ((other.hops || 0) + 1));
+    if (other.benefitFelt != null)
+      b.benefitFelt = Math.max(b.benefitFelt || 0, other.benefitFelt * (HEARSAY.placeQualityDamp ?? 0.7));
+  }
+
   // The telephone game: distort the belief's CONTENT as it passes along.
   //  · MILD talk (ordinary goodwill/coolness, |standing|<chargeThresh) spreads
   //    undistorted and DAMPED, exactly as reputation always did — so the social

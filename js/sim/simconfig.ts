@@ -1532,6 +1532,10 @@ export const HEARSAY = {
   amplify: 0.22,          // how hard each retelling pushes a charged |standing| toward the extreme
   negBias: 1.6,           // bad news amplifies this much harder than good
   maxHops: 5,             // provenance-depth cap (5+ all read "a tale much retold")
+  // PLACE HEARSAY (mergePlaceFrom): building news travels place-shaped — no garbling
+  // (a place has no reputation to curdle), just kind/where/shelter/quality.
+  placeQualityDamp: 0.7,  // a TOLD benefitFelt lands at this fraction (hearing < having sat there)
+  placeGossipConf: 0.45,  // a teller only passes on places it still holds at least this confidently
   tipStanding: 0.85,      // a name blackened past this (by compounding retellings) can curdle…
   tipChancePerHop: 0.10,  // …into a FALSE hostility, this chance per hop past the first (capped 0.5)
   // DESTINATION-INTENT: the max time gap (s) between two sightings for the second to record an

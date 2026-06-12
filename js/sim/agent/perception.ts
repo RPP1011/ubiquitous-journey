@@ -8,7 +8,7 @@
 
 import { terrainHeight, concealmentAt } from '../../arena.js';
 import { inferDestination } from '../beliefs.js';
-import { SIM, SOURCE, BAND, COMMODITIES, ECON, MAP, SIGNALS, ESTEEM as WEALTHCUE, factionHostile } from '../simconfig.js';
+import { SIM, SOURCE, BAND, COMMODITIES, ECON, MAP, SIGNALS, ESTEEM as WEALTHCUE, HEARSAY, factionHostile } from '../simconfig.js';
 import { noteSnub } from '../signals.js';
 import { PERCEPT_KIND } from '../percept.js';
 import { STAGE, REASON } from '../trace.js';
@@ -231,12 +231,20 @@ export function gossipBeliefs(a: Agent, ctx: FullCtx): void {
     }
     for (const b of o.beliefs.all()) {
       if (b.subjectId === a.id) continue;   // don't gossip about me to myself
-      // Phase 2a: NEVER gossip PLACE-beliefs (buildings). mergeFrom copies only person-belief
-      // fields (not placeKind/sheltered), so a gossiped building belief would land as a MALFORMED
-      // person-belief keyed on a building percept-id — junk that consumes a slot in the recipient's
-      // bounded ~8-entry table and is never refreshable by sight of a person. A place is something
-      // you DISCOVER by going there (perception), not something hearsay files as a person.
-      if (b.placeKind) continue;
+      // PLACE-beliefs travel PLACE-SHAPED (mergePlaceFrom — the city-architecture follow-on),
+      // never through the person merge (which would land them as malformed person-beliefs).
+      // Only the PUBLIC kinds are worth the breath (and the listener's bounded table slots):
+      // "the tavern at Crowmoor is fine", "the shrine of Om was razed". A private home is
+      // nobody's news, and an unclassified 'building' carries nothing worth telling. The
+      // teller also only passes on places it still holds confidently (placeGossipConf) —
+      // stale half-memories don't propagate.
+      if (b.placeKind) {
+        if ((b.placeKind === 'tavern' || b.placeKind === 'shrine' || b.placeKind === 'granary' || b.placeKind === 'guildhall')
+            && b.confidence >= (HEARSAY.placeGossipConf ?? 0.45)) {
+          a.beliefs.mergePlaceFrom(b, SOURCE.TALKED);
+        }
+        continue;
+      }
       a.beliefs.mergeFrom(b, SOURCE.TALKED);
     }
     // RUMOURED PRICES: chatting also drifts my price beliefs toward this neighbour's —

@@ -84,6 +84,7 @@ export interface BeliefStore {
   all(): IterableIterator<BeliefState>;
   observe(subjectId: EntityId, faction: string | null, pos: Vector3, tick: number, hostile: boolean): BeliefState;
   mergeFrom(other: BeliefState, src: unknown): void;   // src is a SOURCE.* descriptor
+  mergePlaceFrom(other: BeliefState | null | undefined, src: unknown): void;   // place-shaped hearsay (buildings)
   plant(subjectId: EntityId, opts: PlantOpts): BeliefState;
   erase(subjectId: EntityId): void;
   decay(dt: number): void;

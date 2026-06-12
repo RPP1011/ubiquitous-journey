@@ -81,4 +81,34 @@ export function hearsayTest(ok) {
     }
     ok(!witnessTipped, 'hearsay: a first-hand belief is immune to the rumour-tip (seeing beats hearsay)');
   }
+
+  // 5 — PLACE HEARSAY (mergePlaceFrom): building news travels PLACE-SHAPED — kind/where/
+  //     shelter/quality, no standing/hostility to garble; a told quality lands damped;
+  //     sight always wins; and news of RUIN updates even a fresher-held 'intact'.
+  {
+    const teller = new BeliefStore(11);
+    const tb = teller.observe('B:9', 'unknown', { x: 30, y: 0, z: -5 }, 10, false);
+    tb.placeKind = 'tavern'; tb.sheltered = true; tb.benefitFelt = 1.0;
+
+    const listener = new BeliefStore(12);
+    listener.mergePlaceFrom(teller.get('B:9'), SOURCE.TALKED);
+    const lb = listener.get('B:9');
+    ok(!!lb && lb.placeKind === 'tavern' && lb.sheltered === true && lb.hops === 1
+      && lb.confidence < tb.confidence && !lb.hostile && (lb.standing || 0) === 0,
+      `hearsay: a told tavern lands PLACE-shaped (kind=${lb && lb.placeKind}, hops=${lb && lb.hops}, conf=${lb && lb.confidence.toFixed(2)})`);
+    ok(Math.abs((lb.benefitFelt || 0) - 1.0 * (HEARSAY.placeQualityDamp ?? 0.7)) < 1e-9,
+      `hearsay: a TOLD quality lands damped — hearing of a hearth < having sat at it (${lb.benefitFelt})`);
+
+    // sight wins: the listener later SEES the place (conf 1) — retelling can't degrade it…
+    listener.observe('B:9', 'unknown', { x: 30, y: 0, z: -5 }, 20, false);
+    lb.placeKind = 'tavern'; lb.sheltered = true;
+    listener.mergePlaceFrom(teller.get('B:9'), SOURCE.TALKED);
+    ok(lb.confidence === 1, 'hearsay: sight outranks place-talk (a fresher own-belief is kept)');
+
+    // …EXCEPT the news of ruin: a teller with a NEWER sighting of the razed shell flips
+    // the listener's stale 'intact' even though the listener's confidence is higher.
+    tb.sheltered = false; tb.lastTick = 30;
+    listener.mergePlaceFrom(teller.get('B:9'), SOURCE.TALKED);
+    ok(lb.sheltered === false, 'hearsay: news of RUIN travels — a newer razed-sighting flips a stale intact');
+  }
 }
