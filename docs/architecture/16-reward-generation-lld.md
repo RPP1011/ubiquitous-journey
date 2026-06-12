@@ -202,6 +202,14 @@ BINDINGS are real story facts. What is authored vs generated:
            personality: a.personality, tier: tierFor(a) } }
 ```
 
+**Stage 0b — encounter deed-tags** (doc 15 M0b): when the GrantContext carries an
+`improvised` feat, the deed-tags from WITHIN the encounter window (e.g. FLEE → CRAFTING
+→ KILL-with-crafted-instrument, diffed off the M0 start snapshot) JOIN the theme vote —
+the minting reflects what actually HAPPENED, not just who the agent was. The ambushed
+alchemist's grant comes out a craft-combat hybrid (`[Brewed at a Dead Run]`, provenance
+"mixed while the raider's footsteps closed", optionally a `while_carrying_ingredients`
+condition), never a generic warrior skill. Resourcefulness pays mostly in identity.
+
 **Stage 1 — THEME** (`SEAM_THEMES[seam]`, a data row): archetype weights (oath:kept →
 combat .7 / cunning .3, tilted by personality — a timid survivor's grant leans
 defensive, a bold one's leans reckless), the CONDITION candidates this seam offers

@@ -102,6 +102,22 @@ specced. Each M-rule gets a regression test in its build phase.
   exposed, and genuine exposure is priced by the sim itself (you can actually die).
   Caps/graces remain only where the exploited action is zero-risk by construction.
 
+- **M0b — potential is not margin; improvisation is a feat dimension.** (The ambushed-
+  alchemist test: unarmed, outclassed, but carrying the makings of a weapon — flees,
+  brews mid-flight, wins.) Two rulings: (a) the encounter-start margin snapshot counts
+  READINESS (weapons, healing stock), never POTENTIAL (raw materials, recipes known) —
+  carrying ingredients neither discounts a feat nor farms one; (b) at resolution, the
+  INSTRUMENT of victory is diffed against the start snapshot — an instrument that did
+  not exist at encounter start (crafted mid-flight, looted mid-melee, granted seconds
+  before) flags the feat `improvised`: a SMALL flat significance multiplier (~×1.25 —
+  M0's flat-reward principle must not erode into a cleverness slider), and the flag +
+  the encounter's deed-tags ride the GrantContext so the MINTING (doc 16) themes the
+  reward as what actually happened — the alchemist's grant is a craft-combat hybrid
+  ("[Brewed at a Dead Run]"), not a generic warrior skill. Resourcefulness pays mostly
+  in IDENTITY, modestly in size. Munchkin-safe by M0's own logic: the only way to farm
+  `improvised` is to genuinely enter fights without your tools — real risk, real feat.
+  (Prerequisites, honestly: field-crafting — produce() currently requires standing at a
+  site — and the items themselves; the pricing layer is ready before the deeds are.)
 - **M1 — refund stacking.** As drafted, conditions refunded additively: `vs_sworn_foe`
   60% + `while_faithful` 35% + `near_home` 25% = 120% — free power on an ability the
   munchkin engineers one corner-case scenario for. NERF: refunds MULTIPLY as retained
