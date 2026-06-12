@@ -58,6 +58,18 @@ function ensureCatalog() {
     .catch(() => { /* ir absent — generator already self-validates */ });
 }
 
+// MECHANICAL SIGNATURE of a spec — what the ability DOES, independent of id/name/
+// class flavour: each effect's op + rounded magnitude/duration + trigger, plus the
+// target / delivery kind / area kind. Two specs with equal signatures are the same
+// move under different names. Pure; exported for the direct suite test.
+export function abilitySignature(spec: AbilitySpec): string {
+  const h = spec.header;
+  const fx = (spec.effects || [])
+    .map((e) => `${e.op}:${Math.round((e.amount || 0) * 10) / 10}:${Math.round((e.dur || 0) * 10) / 10}:${e.when || ''}`)
+    .join('|');
+  return `${h.target}/${h.delivery.kind}/${h.area.kind}/${fx}`;
+}
+
 // The milestone tiers a class can cross, lowest first. Sorted defensively so we
 // fire 1 -> 5 -> 10 -> 20 in order regardless of config order; the tier INDEX
 // (1-based position) is what we hand the generator so power scales sanely (the
@@ -387,7 +399,25 @@ export class Progression {
   }
 
   // Mirror a spec onto Progression + the Agent and announce the grant.
+  // DUPLICATE-GRANT SUPPRESSION: multi-class agents kept receiving byte-identical
+  // generated specs under different ids from different classes (the generator mints
+  // from a few fixed archetype templates) and could rotate 2-3 identical slows on
+  // independent cooldowns. A grant whose MECHANICAL signature matches a held
+  // ability is skipped; if the newcomer is the higher tier of the same mechanics it
+  // replaces the held one instead. Guarded — the grant path never throws.
   _grantAbility(spec: AbilitySpec, lvl: number, now: number): void {
+    try {
+      const sig = abilitySignature(spec);
+      for (const held of this.abilities.values()) {
+        if (held.id === spec.id || abilitySignature(held) !== sig) continue;
+        if ((held.tier || 0) >= (spec.tier || 0)) return;     // keep the held one — skip the twin
+        // the newcomer out-tiers the same mechanics: drop the held duplicate, grant the new.
+        this.abilities.delete(held.id);
+        this.cooldowns.delete(held.id);
+        if (this.agent.abilities) this.agent.abilities.delete(held.id);
+        break;
+      }
+    } catch { /* never throw on the grant path (the freeze lesson) */ }
     this.abilities.set(spec.id, spec);
     this.cooldowns.set(spec.id, 0);
     this.agent.grantAbility?.(spec);       // mirror onto the Agent (UI + cast path)

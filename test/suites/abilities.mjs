@@ -12,6 +12,7 @@ import { ABILITY_CATALOG } from '../../js/rpg/abilities/catalog.js';
 import { goTo } from '../../js/sim/agent/movement.js';
 import { trySelfCastAbility, produce } from '../../js/sim/agent/act.js';
 import { ABILITY } from '../../js/rpg/rpgconfig.js';
+import { abilitySignature } from '../../js/rpg/progression.js';
 import { Agent } from '../../js/sim/agent.js';
 import { makeFighter } from '../harness.mjs';
 
@@ -94,6 +95,35 @@ export function proceduralAbilityTest(ok) {
   plantBeliefSignTest(ok);
   selfCastTest(ok);
   economyOpsTest(ok);
+  dupGrantTest(ok);
+}
+
+// ---- duplicate-grant suppression ----------------------------------------------
+// abilitySignature is the pure mechanical fingerprint (ops + rounded amounts/durs +
+// trigger + target/delivery/area kinds); _grantAbility skips a grant whose
+// signature is already held, replacing only when the newcomer out-tiers it.
+function dupGrantTest(ok) {
+  const mk = (id, tier, amount) => irSpec({
+    id, name: `[${id}]`, classKey: 'proc:x', tier,
+    header: { target: 'enemy', range: 6, cooldown: 5, area: { kind: 'self' }, delivery: { kind: 'instant' } },
+    effects: [irEffect('slow', { amount, dur: 2 })],
+  });
+  const s1 = mk('gen_a_slow', 1, 0.5), twin = mk('gen_b_slow', 1, 0.5), higher = mk('gen_c_slow', 2, 0.5);
+  ok(abilitySignature(s1) === abilitySignature(twin), 'dup: identical mechanics -> identical signature');
+  ok(abilitySignature(s1) !== abilitySignature(mk('gen_d_slow', 1, 0.3)),
+    'dup: different magnitude -> different signature');
+
+  const holder = fixtureAgent('Holder', 0, 0);
+  const prog = holder.progression;
+  prog._grantAbility(s1, 1, 0);
+  prog._grantAbility(twin, 1, 0);
+  ok(prog.abilities.size === 1 && holder.abilities.size === 1,
+    `dup: a byte-identical twin under a different id is NOT granted (held=${prog.abilities.size})`);
+  prog._grantAbility(higher, 5, 0);   // same mechanics, higher tier -> replaces
+  ok(prog.abilities.size === 1 && prog.abilities.has('gen_c_slow') && !prog.abilities.has('gen_a_slow'),
+    'dup: the higher tier of the same mechanics replaces the held one');
+  ok(holder.abilities.has('gen_c_slow') && !holder.abilities.has('gen_a_slow'),
+    'dup: the agent-side ability mirror follows the replacement');
 }
 
 // ---- the economy ops: trade_edge (haggle) + craft_boost (master_craft) -------
