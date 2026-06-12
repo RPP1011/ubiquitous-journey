@@ -1,124 +1,135 @@
-# 15 — Interesting ability generation (LLD, **design — to build**)
+# 15 — Narrative ability generation (LLD, **design — to build**)
 
-> Status: **DESIGN**. The integration fixes this plan assumes (slow consumed by locomotion,
-> `plant_belief` charm sign, NPC self-casts, haggle/master_craft hooks, duplicate-grant
-> suppression) are being landed separately; this doc specifies the **generator redesign**
-> that follows them. As-built today: `js/rpg/abilities/generate.ts` (3 fixed archetype
-> templates), audited 2026-06-12.
+> Status: **DESIGN, v2.** v1 of this doc specified a budgeted clause grammar — more
+> mechanical variety per tier. The critique that killed it as a spine: *mechanical*
+> variety is not *narrative* interest. A perfectly balanced, deduplicated `[Greater
+> Timber Cleave]` is still a stat-op; no one will ever tell a story about it. v2 keeps
+> the grammar as assembly MACHINERY (§6) and rebuilds the design around what this sim
+> is actually for: beliefs, oaths, grudges, gods, houses, and the chronicle.
+> The integration fixes (slow consumed, charm sign, NPC self/social casts,
+> haggle/master_craft hooks, dup suppression) land separately and are assumed.
 
-## 1. The findings this answers
+## 1. What "narratively interesting" means HERE
 
-A live audit (15 sim-min, seed 7; `test/scratch-abilityprobe.mjs`) measured:
+An ability earns its place by passing at least two of these, in this engine's terms:
 
-- 141/149 living NPCs hold abilities; 707 casts by 190 casters — the **plumbing works**
-  (grants, cooldowns, determinism, melee-rides-the-swing, resolver bridge).
-- But the generator mints from **three fixed templates** with coin-flip variety: every
-  utility-class t1 that rolls "control" is the byte-same slow under a different
-  seed-picked name (5 nouns × 6 adjectives per archetype). `[Lesser Gambit]`,
-  `[Lesser Sleight]`, `[Lesser Whisper]` are routinely one op wearing three names —
-  and a multi-class agent rotates 2–3 identical specs on independent cooldowns.
-- Tier scaling (1.18^t) under-delivers its adjectives ("Grand" ≈ 1.9× "Lesser").
-- The largest NPC cast block (340/707) was a **no-op** (`slow` had no consumer) — the
-  defining failure mode this design legislates against.
+1. **Born from story** — granted by a formative EVENT, not only a level grind. The
+   sim already folds the events: memory episodes (`assaulted`, `witnessed_death`,
+   `betrayed`, `home_lost`, `shunned`, `triumph`, `survived`), oath resolutions
+   (kept/abandoned), arc closes (`vendetta:fulfilled`, `warband:victorious`,
+   `rescue:freed`, `ragsToRiches:celebrated`), faith state, perils survived.
+2. **Makes story when used** — the effect lands on the DRAMA layer (beliefs, standing,
+   suspicion, fear, oaths, arcs), and a consequential cast files a chronicle beat.
+3. **Known about** — other agents hold BELIEFS about it ("they say Garrik never
+   misses"); prowess-reputation feeds real decisions (duel/recruit/caution/flee).
+4. **Teachable / inheritable** — a skill can travel master→apprentice, die with its
+   last holder, or run in a House — the graded-recipe machinery already does exactly
+   this for crafts (`recipeKnow.ts`: half-learned, forgotten, conserved tuition).
+5. **Conditioned on commitments** — it works only while the wielder's story-state
+   holds (faithful to the god, oaths kept, near the home hearth, against the sworn
+   foe). Losing it is a beat: "the [Om's Mercy] left her hands."
 
-## 2. Design rules
+The v1 acceptance metric ("≥12 distinct signatures") measured the wrong thing. The v2
+metric: **every generated ability can answer "where did you learn that?"** — and the
+answer is a real episode, a real teacher, or a real god, surfaced in the biography.
 
-1. **R1 — an op ships only with its consumer.** No effect may be added to the generator's
-   ingredient pool unless something in the sim demonstrably *reads* its output (the slow
-   lesson). The ingredient table names its consumer, the test asserts it.
-2. **R2 — names mirror mechanics.** Two specs with the same mechanical signature get the
-   same name everywhere; a name difference implies a mechanics difference. (Names derive
-   from the signature, so this is structural, not policed.)
-3. **R3 — budgeted composition.** A tier grants a power BUDGET; ingredients *spend* it.
-   Same tier ⇒ same budget ⇒ balance; different spends ⇒ genuinely different abilities.
-4. **R4 — tags are data rows.** A `TAG → ingredients` table (the verbs-are-data
-   convention): adding flavour for a new tag = adding a row, never editing builder code.
-5. **R5 — tiers add CLAUSES, not just numbers.** t1 is a plain op; t2 adds a rider; t3
-   upgrades the area/delivery; t4+ adds a condition or second rider. Progression reads as
-   *new behaviour*, not +18%.
-6. **R6 — determinism stands.** Seeded stream from `fnv1a(classKey|tier|salt)` as today;
-   no `Math.random`, no `Date`. Same identity ⇒ byte-identical spec (headless suite stays
-   reproducible).
+## 2. Grant seams: abilities born from events
 
-## 3. The grammar (replaces the 3 templates)
+Keep class milestones (the grind path). ADD event-born grants on the folds that already
+exist — a `NARRATIVE_GRANTS` data table (rows, not branches — the registry convention):
 
-A generated spec is assembled, not selected:
-
-```
-spec = FORM (target × delivery × area)
-     × PRIMARY op (+ amount, from budget)
-     × RIDER op (t2+: a second effect, `when`-conditioned)
-     × SPICE (t4+: a third clause or a form upgrade)
-```
-
-drawn by the seeded stream from **ingredient pools voted in by the class's tags**:
-
-| archetype (split from today's 3) | tag voters | primary pool | rider pool |
+| seam (already folded) | trigger row (example) | granted theme | provenance string |
 | --- | --- | --- | --- |
-| combat   | MELEE/KILL/RISK/BERSERK/DUEL | damage | knockback, slow*, stun, dash-in |
-| defensive| DEFENSE/HEAL/FLEE | shield, heal(self), heal(ally) | haste*, fear-calm (rally) |
-| craft    | SMITHING/CRAFTING/TOOLMAKING/FARMING/MINING/WOODCUT/FORAGE | produce-boost (master_craft hook) | tool-wear ease, gather haste* |
-| trade    | TRADE/PROFIT/HAGGLE/BARTER | price-edge (haggle hook) | scry |
-| social   | PERSUADE/CHARM/GOSSIP/LEAD | plant_belief(charm −) | scry, rally |
-| cunning  | DECEIVE/STEALTH | plant_belief(rumour +), mark | slow*, scry |
+| memory fold (deedRouter) | `survived` ep at <15% hp | defensive (second-wind-like) | "earned the day {culprit} nearly killed them" |
+| oath resolution (motivation) | avenge oath KEPT | combat rider vs the culprit's faction | "sworn over {victim}'s body" |
+| oath resolution | 3rd oath ABANDONED | cunning (scry/mark) — the faithless get sly | "learned what promises are worth" |
+| arc close (sagas) | `vendetta:fulfilled` | mark/pursuit theme | "the feud with {foe} taught it" |
+| arc close | `warband:victorious` (leader) | rally | "first raised at the march on {foe}" |
+| arc close | `rescue:freed` (rescuer) | heal/ward-other | "carried {captive} out alive" |
+| statusSensor | `ruined` (fall from grace) | trade/cunning | "poverty is a thorough teacher" |
+| faith | flock member at shrine raise | bless (faith-conditioned) | "given at the shrine of {god}" |
+| home | `home_lost` then rebuilt | hearth-ward (home-conditioned) | "no fire takes the second house" |
 
-`*` = consumers exist only after the integration fixes (slowFactor read by locomotion;
-`haste` is the same field with factor > 1 — **one mechanism, two ingredients**).
+Rules: one event-grant per agent per N sim-minutes (no spam); the grant FILES a
+chronicle beat + a `milestone`-grade memory; the provenance string is stored ON the
+spec instance (`spec.origin`) and read by biography/codex/obituary. The event grant
+reuses `generateAbility` machinery (§6) with the event supplying the theme + epithet —
+so determinism holds (seeded by agentId|eventKind|t, recorded on grant).
 
-**New ops admitted under R1** (each names its consumer):
-- `haste` — `slowFactor > 1` on the (now-consumed) movement-speed read.
-- `rally` — reduce `mood.fear` on allies in area (consumer: the fear reads in decide/flee;
-  the FAITH miracle already writes this field, so the channel is proven).
-- `mark` — raise the caster's *own* belief suspicion/track of the target (consumer: the
-  suspicion/avoid/pursuit paths; epistemically clean — writes the caster's mind only).
-- `produce-boost` / `price-edge` — the master_craft/haggle own-state hooks from the
-  integration batch, generalised into ingredients any craft/trade class can mint.
+## 3. Effects that make story (the drama-layer ingredient pool)
 
-**Explicit anti-pool** (no consumer ⇒ not admitted): weather, light, summons, teleport.
+Admitted under R1 (an op ships only with its consumer — the slow lesson stands):
 
-## 4. Budget math
+- `plant_belief` charm/rumour (consumers live: standing/suspicion/gossip; rumours then
+  GROW in the telling via hearsay garbling — a cast is a story seed, not a stat).
+- `mark` — own-belief suspicion/track of a target (consumers: avoid/pursuit/caution).
+- `rally` — lower allies' `mood.fear` in area (consumer: fear reads in decide/flee;
+  the faith miracle already writes this channel).
+- `bless`/`curse` — standing/fear/shield deltas **conditioned on faith state**
+  (consumer: FAITH; a curse on a believer whose god is strong may fizzle — god-checks).
+- `denounce` — a public plant_belief against a TARGET (area = crowd; consumer:
+  witnessDeed/notoriety/the accused arc — the Director's falseWitness becomes castable).
+- `oathbind` — arm an obligation on a consenting target via the LEDGER (consumer:
+  obligations.ts — a sworn bargain with a real lapse/default fold).
+- Anti-pool unchanged (weather/summons/teleport — no consumers, no story here).
 
-`B(t) = 30 · 1.35^(t−1)` (steeper than today's 1.18 — tiers should feel earned), clamped
-by `ir.LIMITS` at spend time. Ingredient costs come from a `GEN_COST` table (config-side,
-`rpgconfig.ts`): e.g. damage 1.0/pt, heal 1.1/pt, shield 0.9/pt, rider ops flat-cost by
-duration, area upgrades (self→cone→circle) multiply primary cost ×1.4/×1.8, projectile
-delivery ×1.2. The stream spends the budget greedily through the clause order (R5);
-leftover budget buys cooldown reduction (floor in LIMITS). Balance lives in ONE table.
+**Story-state `when` conditions** (all OWN-state/belief reads — epistemically clean):
+`while_faithful(god)`, `while_oaths_kept`, `vs_sworn_foe` (subjectId of a live avenge
+goal), `near_home` (homeBelief pos), `near_shrine(own god)`, `while_unhoused`,
+`while_poor/wealthy`. A condition is the character's commitment made mechanical —
+and its FAILURE is content: the chronicle notes the first time a cast fizzles because
+the wielder broke faith.
 
-## 5. Names from signatures (R2)
+## 4. Known about: prowess as belief
 
-`signature = hash(target, delivery.kind, area.kind, [op, round(amount), round(dur), when]…)`
-(the same canonical signature the duplicate-grant suppression uses — one function, shared).
+A new belief field `believedProwess` (0..1) on person-beliefs, folded from WITNESSED
+casts/kills (perception/combat bridge — never truth-read), gossiped like standing
+(garbling applies: prowess GROWS in the telling — "never misses" was two lucky bolts).
+Consumers (each asserted): warband `composeForce`/`warbandStrength` estimates, duel
+acceptance, caution's strategy surcharge vs a feared foe, flee thresholds. This makes
+an ability something that PRECEDES its wielder — reputation with teeth, and a false
+reputation is a story (the braggart whose [Peerless Strike] is hearsay).
 
-Name = `[TierAdj + Epithet + OpNoun]` where:
-- TierAdj: today's ladder (Lesser → Peerless);
-- OpNoun: from the PRIMARY op + form (damage+cone = "Cleave", damage+projectile = "Bolt",
-  shield = "Ward", produce-boost = "Craft", price-edge = "Bargain", plant_belief− =
-  "Charm", plant_belief+ = "Whisper", mark = "Eye", rally = "Banner"…);
-- Epithet: from the strongest VOTING tag ("Timber", "Harvest", "Forge", "Ledger",
-  "Silver", "Shadow"…) — identity shows in the name.
+## 5. Teachable skills: the recipe machinery, reused
 
-Identical signature ⇒ identical name (the noun/epithet derive from signature + tag vote,
-both deterministic) — so the world's three identical cleaves are all `[Greater Timber
-Cleave]`, and the codex/biography can say "knows [Greater Timber Cleave]" as a SHARED,
-diegetic skill. Distinct mechanics can no longer hide behind distinct names.
+A generated spec may be flagged `teachable`. Teaching rides `recipeKnow.ts` semantics
+EXACTLY (graded knowledge, practice, forgetting, conserved tuition): an apprentice
+half-knows `[The Frost Family Rendering]` until practiced; a House technique dies with
+its last practitioner (the chronicle can mourn it); learning.js's observe/ask/study
+verbs apply. This is the dynasty/mentorship arcs' missing payload — a thing of value
+that passes down lineages and can be LOST.
 
-## 6. Phased build (each phase gate-green, committed separately)
+## 6. Assembly machinery (v1, demoted to the engine room)
 
-| phase | content | gate |
+The budgeted clause grammar survives as HOW specs are built: FORM × PRIMARY × RIDER ×
+CONDITION drawn by seeded stream from tag/event-voted pools; budget `B(t)=30·1.35^(t−1)`
+with a `GEN_COST` table in `rpgconfig.ts`; mechanical-signature dedup shared with the
+grant-suppression fn; `ir.validate` at the trust boundary; determinism (no Math.random/
+Date). Names: class-milestone mints keep signature-derived names (`[Greater Timber
+Cleave]`, shared world-wide — R2); EVENT mints get event names from the provenance row
+(`[Vow of the Burned Hall]`) — uniqueness is the point there, so signature-sharing is
+deliberately waived for them (provenance is the dedup).
+
+## 7. Phases (each gate-green, committed separately)
+
+| phase | content | acceptance |
 | --- | --- | --- |
-| **P1** | grammar core behind the same `generateAbility(cls, tier)` API: archetype split, ingredient pools (existing ops only), budget table, signature-derived names; reuse the dedup signature fn | determinism test (same identity ⇒ byte-equal), `ir.validate` on every mint, **distinctness metric**: across the live class set, unique signatures ≥ 12 and names-per-signature = 1 (abilityprobe extension) |
-| **P2** | new ops `haste`/`rally`/`mark` + the craft/trade ingredient hooks (produce-boost, price-edge generalised) — each with its consumer named + asserted | per-op consumer tests (speed actually rises; fear actually falls; suspicion actually moves); no-op cast rate = 0 in the probe |
-| **P3** | shared-skill surfacing: classCodex/biography list known skills by name; (stretch) a skill as a `Know(topic)` so learning.js can teach/gossip it | UI read-only; epistemic scan clean |
+| **P1** | grammar core + story-state conditions on EXISTING ops; `spec.origin` provenance; biography/codex read it | every generated spec answers "where did you learn that?"; determinism + validate tests |
+| **P2** | `NARRATIVE_GRANTS` table on the memory/oath/arc/faith folds + chronicle beats; rate-limited | a 30-min seed-7 lifetrace digest shows ≥3 distinct event-born abilities with true provenance; grant beats in the chronicle |
+| **P3** | drama ops (`bless`/`curse`/`denounce`/`oathbind`) + `believedProwess` fold/gossip + consumers | per-op consumer asserts; prowess measurably shifts a duel/recruit decision in a fixture; no-op cast rate stays 0 |
+| **P4** | teachable skills via recipeKnow; House techniques; loss surfaced | a technique taught, practiced, forgotten, and mourned in a fixture run |
 
-**Eval tool**: promote `test/scratch-abilityprobe.mjs` → `test/abilityprobe.mjs` and extend
-it to print: distinct signatures, names-per-signature (must be 1), casts by op, and the
-no-op cast rate (must be 0). That probe is the acceptance test for "interesting": more
-distinct *behaviours* in the wild, not more names.
+**Eval**: promote the ability probe → `test/abilityprobe.mjs`, extended to print: % of
+held abilities with non-class provenance, grant-beat count, prowess-belief coverage,
+casts by op, no-op rate (0). The lifetrace digest is the real acceptance: an agent's
+life story should NAME its abilities and where they came from.
 
-## 7. Risks / non-goals
+## 8. Risks
 
-- **Balance** concentrates in `GEN_COST` — tune there, never in builder logic (CLAUDE.md).
-- Generation runs only at grant time (a few per agent-life) — perf is a non-issue.
-- No persistence concerns (nothing saves specs).
-- Non-goal: player-facing ability *acquisition* changes; milestones/tiers stay as built.
+- **Spam/balance**: event grants rate-limited + budgeted like milestone mints; GEN_COST
+  is the one balance table (tuning in config — CLAUDE.md).
+- **Epistemic cleanliness**: every condition/consumer reads OWN state or beliefs;
+  prowess folds on WITNESSED events through the existing perception/gossip bridges;
+  god-checks read FAITH truth only inside the faith system (execution), never in decide.
+- **Conflict with the running fix batch**: P-phases start after it lands; the signature
+  fn and haggle/master_craft hooks it adds are dependencies, not collisions.
