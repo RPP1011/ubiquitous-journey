@@ -7,7 +7,7 @@
 // Behaviour-preserving: verbatim bodies of the old Agent methods. No cycles —
 // imports config, pure helpers, motivation, and the occupation chooser.
 
-import { SIM, WEIGHT, ECON, COMMODITIES, GROUP_TYPES, LEGEND, SOCIAL, COMFORT, NOVELTY, BUILD, ESTEEM as WEALTH, ROMANCE, MOTIVE, ALMS, GRANARY, factionHostile } from '../simconfig.js';
+import { SIM, WEIGHT, ECON, COMMODITIES, GROUP_TYPES, LEGEND, SOCIAL, COMFORT, NOVELTY, BUILD, ESTEEM as WEALTH, ROMANCE, MOTIVE, ALMS, GRANARY, MIGRATE, factionHostile } from '../simconfig.js';
 import { updateAmbition, ambitionFavor, ambitionWantsFight, deriveGoals, pruneGoals } from '../motivation.js';
 import { chooseOccupation, laborValue } from './occupation.js';
 import { qualifyHome, isUnhoused } from '../construction.js';
@@ -356,6 +356,10 @@ export function decide(a: Agent, ctx: CognitionCtx): void {
         // base comfort pull from the deficit (urgent when critically low) — shared by
         // BOTH the home/tavern seek and the sightsee alternative, so they truly compete.
         let cBase = (1 - a.needs.comfort) * WEIGHT.comfort;
+        // A MOVER ENDURES THE ROAD (MIGRATE): a live journey intent damps the routine comfort
+        // pull — the journey-tracker probe watched the old town's tavern yank a migrant home
+        // over and over until the clock lapsed. The emergency boost below still punches through.
+        if (a._migrating) cBase *= (MIGRATE.roadHardship || 0.55);
         // A STARVING BODY DOESN'T CARE ABOUT A SOFT BED: critical hunger damps the comfort pull
         // hard, so the survival plan (forage/buy, the sate goal) can claim the body — the
         // residual-death probe found agents comfort-dwelling at home, a field 30m away, with a
@@ -462,6 +466,14 @@ export function decide(a: Agent, ctx: CognitionCtx): void {
     if (avoidPos) { push('avoid', SOCIAL.avoidWeight, { around: avoidPos }); avoiding = true; }
   }
   if (!inDanger) push('wander', WEIGHT.wander * (0.6 + P.curiosity));
+
+  // EMIGRATION JOURNEY (MIGRATE): an uprooting migrant marches for its new home town — the
+  // own-state intent features/migrate.js stamped after the agent weighed a land-is-cheap
+  // rumour for ITSELF. Pitched ABOVE a held plan even with its incumbent stickiness (the poor
+  // — exactly who emigrates — chronically hold a money plan that otherwise out-scores the road
+  // forever); urgent eat/flee/comfort-emergency still preempt — survival first, the march
+  // resumes next tick. Settlement is the deriver's arrival watch (resolver.relocate), never here.
+  if (!inDanger && a._migrating) push('migrate', WEIGHT.migrate, { toPos: { x: a._migrating.x, z: a._migrating.z } });
 
   // longer-term motivation tilts the short-term utility toward its preferred
   // action (e.g. an ambitious agent values 'work' more, a wanderer 'wander').

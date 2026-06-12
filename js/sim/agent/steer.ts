@@ -454,6 +454,21 @@ function fillFollow(a: Agent, ctx: CognitionCtx): Field | null {
   return { attractors: [{ pos: { x: tx, z: tz }, weight: STEER.wAttract }], run: gap > PARTY.catchUpDist };
 }
 
+// MIGRATE — an uprooting migrant HURRIES (RUN, like a bounty march: the road is
+// dangerous and the new life waits — at a walk the journey-tracker probe watched
+// the flee/comfort churn around a war-torn home town eat the whole journey clock)
+// toward its believed new home town, drifting onto the trade road for the long
+// haul (withRoad: movers travel the same arteries the caravans do). Own-state
+// target only (a._migrating, stamped by features/migrate.js after the agent
+// weighed a land-is-cheap rumour for itself). Arrival/settlement is the migrate
+// deriver's job (resolver.relocate) — locomotion is a field, the citizenship flip
+// is execution elsewhere. No verb.
+function fillMigrate(a: Agent, _ctx: CognitionCtx): Field | null {
+  const m = a._migrating;
+  if (!m) return null;
+  return withRoad(a, { x: m.x, z: m.z }, true);
+}
+
 /** goal.kind -> steer-fill. Indexed by an arbitrary kind in act.js (unknown -> wander). */
 export type SteerFill = (a: Agent, ctx: CognitionCtx) => Field | null;
 export const STEER_FILLS: Record<string, SteerFill> = {
@@ -479,4 +494,5 @@ export const STEER_FILLS: Record<string, SteerFill> = {
   seek_glory: fillSeekGlory,
   beg: fillMarket,        // a beggar heads for the crowd at the stalls; the plea is act's verb
   granary: fillComfort,   // walk to the known town larder (toPos, a static Place); the draw is act's verb
+  migrate: fillMigrate,   // an uprooting migrant walks the road to its new home town (settle = deriver)
 };
