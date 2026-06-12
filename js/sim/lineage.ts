@@ -473,10 +473,18 @@ export class Lineage {
 
   // record a `bond` episode (memory.js renders it "joined with X"). `rel` is kept
   // on the episode for the chronicle/biography to distinguish kin vs mentorship.
+  // SALIENCE BY WEIGHT OF THE TIE (the bond-crowding fix): a wedding or a child is
+  // formative (0.75, crosses ltmThreshold 0.6); an apprenticeship is workplace routine
+  // (0.5 — MTM only, fades). At a flat 0.7 the ~hundreds of apprenticeships a run
+  // churns out filled the 10-slot LTM ring and EVICTED every rarer memory — the median
+  // biography read "joined with X" four times and nothing else. The biography's bond
+  // scan reads MTM too, so fresh mentorships still show; they just stop being the only
+  // thing a life remembers.
   _bond(a: Ag, withId: unknown, t: number, rel: string): void {
     if (!a || !a.memory) return;
     try {
-      a.memory.record({ t, kind: 'bond', withId, rel, valence: 1, salience: 0.7 });
+      const formative = rel === 'mate' || rel === 'kin';
+      a.memory.record({ t, kind: 'bond', withId, rel, valence: 1, salience: formative ? 0.75 : 0.5 });
     } catch { /* never throw on the tick */ }
   }
 }

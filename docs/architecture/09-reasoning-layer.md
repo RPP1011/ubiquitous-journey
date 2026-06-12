@@ -164,7 +164,11 @@ Everything reasons off one private world-model per agent:
   harming me). Repeated engagement with **zero** observed animacy is what lets an agent
   *reason* that a believed-foe is actually inert (schema #6) — belief revision from
   contradicting evidence, not a truth-read.
-- **Episodic memory** (`memory.js`) — the autobiography; goals derive from it.
+- **Episodic memory** (`memory.js`) — the autobiography; goals derive from it. The
+  formative read `salient(k)` is **diversity-aware** (`MEMORY.kindRepeatDamp`): a repeat
+  of an already-picked episode kind competes at `salience × damp^n`, so one life's
+  formative set spans its rarer moments instead of (measured) four "joined with X"
+  bonds — the rings/decay/consolidation are untouched, only the selection.
 - **Own state** — needs, inventory, mastery, personality, ambition.
 - **Mental map** *(✓ landed, Phase 1)* — the agent's known **places**: town gates
   (computed from `TOWNS.wall`), POIs (`world.js`), landmarks (`arena.js`). A handful of

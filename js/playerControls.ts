@@ -68,8 +68,8 @@ interface PlayerControlsOpts {
 // player gather: which commodity each resource-node kind yields + its XP tags
 const GATHER: Record<string, string> = { field: 'food', forest: 'wood', mine: 'ore', meadow: 'herb' };
 const GATHER_TAGS: Record<string, string[]> = {
-  food: ['FARMING', 'ENDURANCE'], wood: ['WOODCUT', 'ENDURANCE'],
-  ore: ['MINING', 'ENDURANCE'], herb: ['FORAGE', 'ENDURANCE'],
+  // craft tag only — mirrors GOODS.tags (ENDURANCE dropped there: identity is what you make)
+  food: ['FARMING'], wood: ['WOODCUT'], ore: ['MINING'], herb: ['FORAGE'],
 };
 
 // 1-4 -> the player's known-ability slots

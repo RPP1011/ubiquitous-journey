@@ -368,7 +368,7 @@ export function buildStep(a: Agent, dt: number, ctx: CognitionCtx): void {
         a._produceAccum = (a._produceAccum || 0) + gained;
         while (a._produceAccum >= 1) {
           a._produceAccum -= 1;
-          bus.emit(mkEvent({ actorId: a.id, verb: 'produce', tags: ['ENDURANCE'], magnitude: 1, t: a._rpgNow }));
+          bus.emit(mkEvent({ actorId: a.id, verb: 'produce', tags: ['WOODCUT'], magnitude: 1, t: a._rpgNow }));   // felling wood IS woodcutting (identity = the craft)
         }
         return;                                                 // keep felling until stocked
       }

@@ -35,6 +35,7 @@
 import { DIRECTOR } from './simconfig.js';
 import { rng } from './rng.js';
 import { BEAT } from './chronicle.js';
+import { quietIndex } from './signals.js';
 import { clamp } from './director/util.js';
 import * as raids from './director/raids.js';
 import * as roll from './director/roll.js';
@@ -205,6 +206,22 @@ export class Director {
   _lvl(a: Ag): number { return (a.progression && a.progression.totalLevel) || 0; }
   _note(kind: string, id: unknown, text: string, arc?: unknown): void { try { if (this.sim.chronicle && this.sim.chronicle.note) this.sim.chronicle.note(kind, id, text, arc); } catch { /* */ } }
   _shuffle<T>(arr: T[]): T[] { const a = arr.slice(); for (let i = a.length - 1; i > 0; i--) { const j = (rng() * (i + 1)) | 0; const t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
+
+  // SPOTLIGHT CASTING (docs/architecture/13 F.quietIndex — its first consumer): order a
+  // candidate-protagonist pool so the LONG-UNNAMED tend to come first. Trope instigators fire
+  // on the FIRST matching constellation they scan, so a quiet-weighted ordering rotates the
+  // spotlight into the gray mass instead of re-casting whoever drama already found — without
+  // it, early arc-entry compounds (measured: 86% of multi-arc agents entered their first arc
+  // in the first third of a run). `spotlightJitter` seconds of uniform noise keep the pick
+  // stochastic: ties among the never-named rotate randomly, and a just-named agent is only
+  // outranked, never excluded. Read-only over the roster (observer layer — casting, not cognition).
+  _spotlight<T>(arr: T[]): T[] {
+    const now = this.sim.time || 0;
+    const j = DIRECTOR.spotlightJitter ?? 120;
+    const keyed = arr.map((a) => ({ a, k: quietIndex(this.sim, a as Ag, now) + j * rng() }));
+    keyed.sort((x, y) => y.k - x.k);
+    return keyed.map((x) => x.a);
+  }
 
   // idle, non-grouped townsfolk are the safe pool to nudge (we avoid disturbing
   // agents already busy in a party/group or fleeing).

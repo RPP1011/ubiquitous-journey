@@ -88,10 +88,32 @@ export class Memory implements IMemory {
 
   _fade(ring: Ring<Episode>, amt: number) { for (const ep of ring.items()) ep.salience = Math.max(0, ep.salience - amt); }
 
-  // the formative few (LTM, then MTM), strongest first — for goals + the biography
+  // the formative few (LTM, then MTM), strongest first — for goals + the biography.
+  // DIVERSITY-AWARE (the bond-crowding fix): a quiet life records the same episode kind
+  // over and over (three apprentices = three 'bond' eps at 0.7), and a plain top-k-by-
+  // salience returned four "joined with X" rows as the WHOLE formative set — every
+  // consumer (goal derivation, biography highlights, the life digest) saw a monoculture.
+  // A repeat of an already-picked kind now competes at salience × kindRepeatDamp^n, so
+  // the second bond weighs 0.42 and a rarer windfall/grief/reunion surfaces instead.
+  // The RINGS are untouched — storage, decay and the biography's bond scan are unchanged;
+  // only the formative SELECTION diversifies. O(k·n) over ≤26 items — trivial.
   salient(k = 5) {
-    return [...this.ltm.items(), ...this.mtm.items()]
-      .sort((a, b) => b.salience - a.salience).slice(0, k);
+    const pool = [...this.ltm.items(), ...this.mtm.items()];
+    const damp = MEMORY.kindRepeatDamp ?? 0.6;
+    const picked: Episode[] = [];
+    const kindN: Record<string, number> = {};
+    while (picked.length < k && pool.length) {
+      let bi = -1, bs = -Infinity;
+      for (let i = 0; i < pool.length; i++) {
+        const s = pool[i].salience * Math.pow(damp, kindN[pool[i].kind] || 0);
+        if (s > bs) { bs = s; bi = i; }
+      }
+      if (bi < 0) break;
+      const ep = pool.splice(bi, 1)[0];
+      kindN[ep.kind] = (kindN[ep.kind] || 0) + 1;
+      picked.push(ep);
+    }
+    return picked;
   }
   recent(k = 5) { return this.stm.items().slice(0, k); }
 }

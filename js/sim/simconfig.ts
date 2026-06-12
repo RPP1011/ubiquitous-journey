@@ -30,10 +30,14 @@ export const PROFESSIONS = {
 // believed price, proximity and the agent's ambition. Raw goods anyone can do;
 // crafted goods (tool, potion) require the inputs in inventory.
 export const GOODS = {
-  food:   { site: 'field',  raw: true,  inputs: null,            color: 0xe0c04a, tags: ['FARMING', 'ENDURANCE'] },
-  wood:   { site: 'forest', raw: true,  inputs: null,            color: 0x5f8f3a, tags: ['WOODCUT', 'ENDURANCE'] },
-  ore:    { site: 'mine',   raw: true,  inputs: null,            color: 0x9aa0a8, tags: ['MINING', 'ENDURANCE'] },
-  herb:   { site: 'meadow', raw: true,  inputs: null,            color: 0x8fbf6a, tags: ['FORAGE', 'ENDURANCE'] },
+  // raw goods carry ONLY their craft tag — identity is what you make. ENDURANCE used to ride
+  // every row, and as the one tag shared by all production it became most agents' TOP profile
+  // tag (measured: 88/140), blurring farmer/woodcutter/miner into a generic survivor/merchant
+  // mush (the class monoculture). A unit farmed is FARMING, full stop.
+  food:   { site: 'field',  raw: true,  inputs: null,            color: 0xe0c04a, tags: ['FARMING'] },
+  wood:   { site: 'forest', raw: true,  inputs: null,            color: 0x5f8f3a, tags: ['WOODCUT'] },
+  ore:    { site: 'mine',   raw: true,  inputs: null,            color: 0x9aa0a8, tags: ['MINING'] },
+  herb:   { site: 'meadow', raw: true,  inputs: null,            color: 0x8fbf6a, tags: ['FORAGE'] },
   tool:   { site: 'forge',  raw: false, inputs: { wood: 1, ore: 1 }, color: 0xcf6a2c, tags: ['SMITHING', 'CRAFTING', 'TOOLMAKING'] },
   potion: { site: 'hut',    raw: false, inputs: { herb: 1 },     color: 0x7fb0c0, tags: ['CRAFTING', 'SMITHING'] },
 };
@@ -113,9 +117,13 @@ export const ECON = {
   masteryChoiceWeight: 0.45,  // how much of the (steep) productivity edge feeds the occupation CHOICE — kept
                               //   well below 1 so mastery keeps a master LOYAL to its craft without herding the
                               //   whole town into the highest-value field (the edge lives mostly in throughput)
-  tradeDeedWeight: 0.35,      // IDENTITY weight of a routine buy/sell deed (vs 1.0 for a produce/craft
+  tradeDeedWeight: 0.15,      // IDENTITY weight of a routine buy/sell deed (vs 1.0 for a produce/craft
                               //   deed): trading is universal, so it's damped to let what an agent MAKES
-                              //   define its vocation/class — only a DEDICATED trader still reads as a Merchant
+                              //   define its vocation/class — only a DEDICATED trader still reads as a Merchant.
+                              //   0.35 wasn't enough once market dwell hit ~27% of all agent time: the market
+                              //   emits a STREAM of 3-tag deeds and TRADE still topped 98/146 profiles
+                              //   (merchant-primary 106/146). At 0.15 the TRADE-10 merchant bar needs ~2x
+                              //   the deals — a vocation, not a side effect of buying lunch
   // goods are scored by NET margin (price minus believed input costs), not gross
   // sticker price, so the town doesn't all chase the dearest good and bid its inputs
   // to the moon; and an agent's own unsold glut damps making more of it.
@@ -593,11 +601,12 @@ export const LEDGER = {
 // The bounds + timescales for sim.sagas. Tuning only; the store math lives in js/sim/arcs.ts.
 export const ARCS = {
   lapsedReopenSecs: 240,   // a key whose tale just LAPSED rests this long before re-opening (anti grudge-churn)
-  maxOpen: 192,          // hard cap on concurrently-open arcs (the WEAKEST incumbent evicted via close).
+  maxOpen: 256,          // hard cap on concurrently-open arcs (the WEAKEST incumbent evicted via close).
                          //   Sized UP from 96 when fellowships/warbands became long-lived (the endures +
-                         //   resolve-at-battle fixes): at 96 a 30-min trace evicted ~50 vendettas
-                         //   'crowded_out' — cap pressure, not stories ending. Eviction is the backstop,
-                         //   not a routine outcome.
+                         //   resolve-at-battle fixes), then again from 192 when spotlight casting spread
+                         //   arc entry across the roster (30 multi-arc agents; a nemesis raider alone
+                         //   carried ~55 vendetta keys and 38 were evicted 'crowded_out'). Eviction is
+                         //   the backstop, not a routine outcome.
   maxClosed: 320,        // ring of completed arcs the Gazette/UI read — sized so a populous town's
                          //   narrative HISTORY persists across a long session instead of churning out
                          //   in seconds (a 30-min trace produced ~100 real arcs post-churn-fix; 64 was
@@ -740,6 +749,9 @@ export const MEMORY = {
   consolidateEvery: 8,         // sim-seconds between consolidation passes
   mtmThreshold: 0.35,          // STM salience needed to consolidate into MTM
   ltmThreshold: 0.6,           // MTM salience needed to consolidate into LTM
+  kindRepeatDamp: 0.6,         // salient(): a repeat of an already-picked episode KIND competes at
+                               //   salience × this^n — keeps one life's formative set DIVERSE
+                               //   (four "joined with X" rows was the whole median biography)
   mtmDecay: 0.006,             // salience lost per sim-second in medium term (a memory lasts ~minutes,
                                //   not the ~15s the old 0.02 gave — "medium term" should mean minutes)
   ltmDecay: 0.00025,           // long-term is FORMATIVE + sticky: the old 0.004 erased even a 0.8
@@ -1726,12 +1738,19 @@ export const EPITHETS = {
 export const FAITH = {
   enabled: true,
   gods: ['Om', 'Blind Io', 'The Lady'],   // the pantheon (compete for believers)
-  bootFlock: 2,            // initial believers anointed to EACH god at first tick
+  bootFlock: 5,            // initial believers anointed to EACH god at first tick — each god
+                           //   starts VIABLE (at 2, the runners-up never built spread momentum
+                           //   and the pantheon collapsed to one god + a faithless mass)
   tickEvery: 3,            // sim-seconds between spread/doubt passes
   convertRange: 6,         // how near a believer must be to win a convert
   convertChance: 0.05,     // base per-pass chance to convert a nearby faithless soul
-  powerConvertBonus: 0.012,// + this per existing believer (bandwagon: great gods attract)
+  powerConvertBonus: 0.04, // + this per √believer (bandwagon, SUB-linear: each believer already
+                           //   rolls independently, so a linear bonus made one god sweep the town)
   doubtChance: 0.012,      // per-pass chance a believer lapses (apostasy)
+  crowdDoubtAt: 70,        // flock size at which crowding DOUBLES the lapse rate (a god grown
+                           //   great holds many in name only — the bandwagon's self-limiting term;
+                           //   25 was too fierce: it tipped HALF the town into faithlessness
+                           //   because conversion is range-limited while doubt is global)
   miracleEvery: 6,         // sim-seconds between miracles
   miracleHeal: 3,          // hp restored to a HURT believer (× flock-scale) — a BOON, not full
                            //   regen (the old value made the whole town near-unkillable)
@@ -1833,6 +1852,10 @@ export const DIRECTOR = {
   quietBias: 0.35,        // max added event chance after a long quiet stretch
   tropeKindCooldown: 110, // sim-seconds a trope KIND is benched after firing — forces the
                           // feed to rotate the whole catalog instead of looping greedy beats
+  spotlightJitter: 120,   // SPOTLIGHT CASTING noise (secs): candidate protagonists are ordered by
+                          //   quietIndex (time since last chronicle-named) + this much uniform jitter,
+                          //   so the long-unnamed get first crack at trope roles while the pick stays
+                          //   stochastic (0 ⇒ strict longest-quiet-first; large ⇒ uniform shuffle)
   tropeKindCooldownOverride: {
     // major beats with COMMON constellations need a longer leash, else (given tier-1
     // reach) they fire every cooldown and crowd the variety out. A betrayal should be

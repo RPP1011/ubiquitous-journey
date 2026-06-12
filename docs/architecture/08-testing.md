@@ -80,6 +80,14 @@ cohort, the famine profile, the belief-cap annihilation) — profile first, then
   oaths, irony signals, chronicle beats, obituary — into a readable life story),
   `--health-checks`, `--cohort <N>`. The mode flags **compose** (each prints its own
   section; the raw biography is the fallback when none is set).
+- **`test/distprobe.mjs`** — the roster-wide **distribution/homogeneity** audit: where
+  lifetrace asks "is one life rich?", distprobe asks "is interest *spread*, and are the
+  ordinary lives *distinct*?" Prints eventfulness quantiles + top-decile share + zeroes,
+  the top souls (class/watch/kills), three MEDIAN life summaries, and the homogeneity
+  histograms — primary class, held classes, top profile tag, faith, formative-memory
+  kinds, time-use by goal kind — plus an arc-churn detector and the arc-entry snowball
+  check. This is the tool that found (and re-measures) the merchant / Blind-Io /
+  bond-memory monocultures and the early-arc snowball.
 - **`test/health.mjs`** — the pure anomaly-check functions behind `--health-checks`:
   five **ratio-with-absolute-N-floor** heuristics (signalChurn, corpseBloat,
   salienceCollapse — a distribution test, not a mean — arcMonoculture,

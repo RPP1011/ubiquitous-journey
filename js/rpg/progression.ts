@@ -13,7 +13,7 @@
 
 import { RPG } from './rpgconfig.js';
 import {
-  matchClasses, proceduralName, proceduralKey, behaviorSum, CLASS_BY_KEY,
+  matchClasses, proceduralName, proceduralKey, behaviorSum, CLASS_BY_KEY, eventAffinity,
 } from './classes.js';
 import { significance, classMatchScore, xpFromEvent, xpForLevel } from './xp.js';
 import { bus, makeEvent } from './events.js';
@@ -134,7 +134,13 @@ export class Progression {
         const tmpl = CLASS_BY_KEY.get(cls.key);
         // procedural classes have no template; score them off behavior sum so
         // they still level, just diffusely.
-        const score = tmpl ? classMatchScore(this.behavior_profile, tmpl) : 0.3;
+        // EVENT-TAG AFFINITY (the all-XP-to-one-class fix): the profile match alone is
+        // event-blind — the sigmoid saturates and every deed's XP flowed to the same
+        // best-overall class (merchant, measured 103-118/140 primary). Weighting by the
+        // DEED's own tags routes a FARMING unit to [Farmer] and a sale to [Merchant]:
+        // levels now mirror what the agent actually did. A deed no held class claims
+        // (affinity 0 everywhere) defers its XP — same as the no-classes-yet case.
+        const score = tmpl ? classMatchScore(this.behavior_profile, tmpl) * eventAffinity(ev.tags, tmpl) : 0.3;
         if (score > 0) scored.push({ cls, score });
       }
       scored.sort((a, b) => b.score - a.score);

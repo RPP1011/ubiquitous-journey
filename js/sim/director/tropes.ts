@@ -109,7 +109,7 @@ export function _tropeReunion(d: Dir, folk: Ag[]): boolean {
   const T = DIRECTOR.tropes, now = d.sim.time;
   d._reunited = d._reunited || new Set();
   const housed = folk.filter((a) => a.house);
-  for (const A of d._shuffle(housed)) {
+  for (const A of d._spotlight(housed)) {
     for (const B of housed) {
       if (B === A || B.house !== A.house) continue;
       if (Array.isArray(A.kinIds) && A.kinIds.includes(B.id)) continue;     // not already close kin
@@ -132,7 +132,7 @@ export function _tropeReunion(d: Dir, folk: Ag[]): boolean {
 // bond — warm ONE side to break the symmetry; gossip + proximity carry the rest.
 export function _tropeUnlikelyFriendship(d: Dir, folk: Ag[]): boolean {
   const T = DIRECTOR.tropes;
-  for (const A of d._shuffle(folk)) {
+  for (const A of d._spotlight(folk)) {
     if (!A.beliefs || !A.beliefs.all) continue;
     for (const b of A.beliefs.all()) {
       const B = d.sim.agentsById.get(b.subjectId);
@@ -156,7 +156,7 @@ export function _tropeUnlikelyFriendship(d: Dir, folk: Ag[]): boolean {
 // heals it unless reinforced. The target's TRUTH is untouched (the epistemic split).
 export function _tropeFalseWitness(d: Dir, folk: Ag[]): boolean {
   const T = DIRECTOR.tropes;
-  const target = d._shuffle(folk).find((a: any) => a.faction === 'townsfolk');
+  const target = d._spotlight(folk).find((a: any) => a.faction === 'townsfolk');
   if (!target) return false;
   const near = folk.filter((a) => a !== target && a.pos.distanceTo(target.pos) <= (T.proximity || 26) * 1.5);
   if (near.length < 2) return false;
@@ -184,7 +184,7 @@ export function _tropeFavoredRise(d: Dir, folk: Ag[]): boolean {
   const T = DIRECTOR.tropes, now = d.sim.time;
   d._favored = d._favored || [];
   if (d._favored.some((f: any) => f && f.live)) return false;     // one rise at a time
-  const upstart = d._shuffle(folk).find((a: any) => a.faction === 'townsfolk');
+  const upstart = d._spotlight(folk).find((a: any) => a.faction === 'townsfolk');
   if (!upstart) return false;
   const near = folk.filter((a) => a !== upstart && a.pos.distanceTo(upstart.pos) <= (T.proximity || 26) * 1.5);
   if (near.length < 2) return false;
@@ -204,7 +204,7 @@ export function _tropeFavoredRise(d: Dir, folk: Ag[]): boolean {
 // false — the bond cools until decay heals it or it festers to a tragic split.
 export function _tropeMistakenJealousy(d: Dir, folk: Ag[]): boolean {
   const T = DIRECTOR.tropes;
-  for (const A of d._shuffle(folk)) {
+  for (const A of d._spotlight(folk)) {
     if (A.mateId == null || A._jealousUntil > d.sim.time) continue;
     const B = d.sim.agentsById.get(A.mateId);
     if (!B || !B.alive || !A.beliefs || !A.beliefs._ensure) continue;
@@ -225,7 +225,7 @@ export function _tropeMistakenJealousy(d: Dir, folk: Ag[]): boolean {
 // an enemy, the trust weaponized. A real shift (not a lie), and a lasting wound.
 export function _tropeBetrayal(d: Dir, folk: Ag[]): boolean {
   const T = DIRECTOR.tropes;
-  for (const A of d._shuffle(folk)) {
+  for (const A of d._spotlight(folk)) {
     if (A._betrayedAt) continue;
     // A betrayal cuts deepest along a DURABLE bond (kin, a mentor). Friendship is a last resort.
     const bonds = [];
@@ -259,7 +259,7 @@ export function _tropeBetrayal(d: Dir, folk: Ag[]): boolean {
 export function _tropeMiserReformed(d: Dir, folk: Ag[]): boolean {
   const T = DIRECTOR.tropes;
   const misers = folk.filter((a) => a.personality && a.personality.altruism < 0.25 && a.gold >= (T.miserGold || 40) && !a._miserReformed);
-  for (const M of d._shuffle(misers)) {
+  for (const M of d._spotlight(misers)) {
     const poor = folk.find((a) => a !== M && a.gold < 8 && a.pos.distanceTo(M.pos) <= (T.proximity || 26) * 1.5);
     if (!poor) continue;
     const gift = Math.min(T.miserGift || 15, Math.max(0, Math.floor(M.gold)));
@@ -278,7 +278,7 @@ export function _tropeMiserReformed(d: Dir, folk: Ag[]): boolean {
 // THE PRODIGAL'S RETURN (RECOVERY): a restless wanderer puts down roots at last,
 // coming home to the kin they'd left behind — a warm reunion, once per soul.
 export function _tropeProdigalReturn(d: Dir, folk: Ag[]): boolean {
-  for (const A of d._shuffle(folk)) {
+  for (const A of d._spotlight(folk)) {
     if (A._prodigalArc || !(A.ambition && A.ambition.kind === 'wanderlust') || !Array.isArray(A.kinIds)) continue;
     const kin = A.kinIds.map((id: any) => d.sim.agentsById.get(id)).find((k: any) => k && k.alive && k.faction === 'townsfolk');
     if (!kin) continue;
@@ -294,7 +294,7 @@ export function _tropeProdigalReturn(d: Dir, folk: Ag[]): boolean {
 // DEBT OF HONOUR REPAID (LOYALTY): one who was helped in their need repays it in
 // kind — a gift from their own purse (closed loop) and a warming of the bond.
 export function _tropeDebtRepaid(d: Dir, folk: Ag[]): boolean {
-  for (const A of d._shuffle(folk)) {
+  for (const A of d._spotlight(folk)) {
     if (A._debtRepaid || !A.memory || !A.memory.stm) continue;
     let saviour = null;
     try {
@@ -316,7 +316,7 @@ export function _tropeDebtRepaid(d: Dir, folk: Ag[]): boolean {
 // THE MENTOR'S PRIDE (LEGACY): a master takes quiet pride as the apprentice they
 // raised comes into their own — a warm bond to set against the rival-apprentice feud.
 export function _tropeMentorPride(d: Dir, folk: Ag[]): boolean {
-  for (const A of d._shuffle(folk)) {
+  for (const A of d._spotlight(folk)) {
     if (A.masterId == null || A._mentorPride) continue;
     const M = d.sim.agentsById.get(A.masterId);
     if (!M || !M.alive || M.faction !== 'townsfolk') continue;
@@ -355,7 +355,7 @@ export function _tropeTyrantMarket(d: Dir, folk: Ag[]): boolean {
   // a producer of a NON-FOOD staple (food gouging risks the starvation lesson) with
   // some wealth — a position to abuse.
   const tyrants = folk.filter((a) => a._trade && (a._trade === 'ore' || a._trade === 'wood' || a._trade === 'herb') && a.gold >= 20 && !a._tyrantAt);
-  for (const M of d._shuffle(tyrants)) {
+  for (const M of d._spotlight(tyrants)) {
     const near = folk.filter((a) => a !== M && a.pos.distanceTo(M.pos) <= (T.proximity || 26) * 1.5);
     if (near.length < 3) continue;
     let touched = 0;
@@ -403,7 +403,7 @@ export function _tropeHouseFeud(d: Dir, folk: Ag[]): boolean {
 export function _tropeStarCrossed(d: Dir, folk: Ag[]): boolean {
   if (!DIRECTOR.tropes.starCrossed) return false;
   const singles = folk.filter((a) => a.mateId == null && a.house && a._courtingId == null && !a.controlled);
-  for (const A of d._shuffle(singles)) {
+  for (const A of d._spotlight(singles)) {
     const B = singles.find((b) => b !== A && b.house !== A.house && areHousesFeuding(d.sim, A.house, b.house));
     if (!B) continue;
     A._courtingId = B.id; B._courtingId = A.id;
@@ -419,7 +419,7 @@ export function _tropeStarCrossed(d: Dir, folk: Ag[]): boolean {
 // deeds — the town comes to believe a tale the boaster can't yet back.
 export function _tropeBoastBackfires(d: Dir, folk: Ag[]): boolean {
   const T = DIRECTOR.tropes;
-  for (const A of d._shuffle(folk)) {
+  for (const A of d._spotlight(folk)) {
     if (A._boastAt > d.sim.time) continue;
     if (!(A.ambition && A.ambition.kind === 'renown')) continue;
     const near = folk.filter((o) => o !== A && o.pos.distanceTo(A.pos) <= (T.proximity || 26) * 1.5);
@@ -438,7 +438,7 @@ export function _tropeBoastBackfires(d: Dir, folk: Ag[]): boolean {
 // mutual rivalry (the apprenticeship pass already teaches them; the rivalry makes
 // them COMPETE, until one surpasses). Uses existing agents — no spawn, no scale.
 export function _tropeRivalApprentices(d: Dir, folk: Ag[], T: Tropes): boolean {
-  const masters = d._shuffle(folk.filter((a) => d._lvl(a) >= T.masterMinLevel));
+  const masters = d._spotlight(folk.filter((a) => d._lvl(a) >= T.masterMinLevel));
   for (const M of masters) {
     const apps = folk.filter((a) => a !== M && d._lvl(a) <= T.apprenticeMaxLevel &&
       a.pos.distanceTo(M.pos) <= T.proximity);
@@ -459,7 +459,7 @@ export function _tropeRivalApprentices(d: Dir, folk: Ag[], T: Tropes): boolean {
 export function _tropeFeud(d: Dir, folk: Ag[], T: Tropes): boolean {
   let best = null, worst = 0.1;          // most-negative existing pair found so far
   let fallback = null;
-  const F = d._shuffle(folk);
+  const F = d._spotlight(folk);
   for (const A of F) {
     for (const B of folk) {
       if (B === A || A.pos.distanceTo(B.pos) > T.proximity) continue;
@@ -491,7 +491,7 @@ export function _tropeFeud(d: Dir, folk: Ag[], T: Tropes): boolean {
 // into a sworn vendetta: latch the belief hostile so the avenge machinery can
 // pick it up. Only fires when an actual grievance exists (never manufactured).
 export function _tropeVendetta(d: Dir, folk: Ag[], T: Tropes): boolean {
-  for (const A of d._shuffle(folk)) {
+  for (const A of d._spotlight(folk)) {
     if (!A.beliefs || !A.beliefs.all) continue;
     for (const b of A.beliefs.all()) {
       if (!b || (b.standing > -0.35 && !b.hostile)) continue;   // a genuine grievance only
@@ -510,7 +510,7 @@ export function _tropeVendetta(d: Dir, folk: Ag[], T: Tropes): boolean {
 // faith most in need (reviving a dwindled/dead god); their proselytising spreads it.
 export function _tropeProphet(d: Dir, folk: Ag[], T: Tropes): boolean {
   if (!d.sim.faith || !d.sim.faith.anointProphet) return false;
-  const pool = d._shuffle(folk).sort((a: any, b: any) =>
+  const pool = d._spotlight(folk).sort((a: any, b: any) =>
     ((b.personality && b.personality.social_drive) || 0) - ((a.personality && a.personality.social_drive) || 0));
   const prophet = pool[0];
   if (!prophet) return false;

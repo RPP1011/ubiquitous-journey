@@ -58,15 +58,23 @@ export class Faith {
 
   // anoint a starting flock for each god once townsfolk exist, so several faiths
   // contend from the outset (the director revives any that later dwindle).
+  // EACH GOD BOOTS IN ITS OWN TOWN (the pluralism fix): conversion is proximity-bound
+  // (`convertRange`), so geography is the one moat a smaller god has — seeded into a
+  // shared pool, whichever god got an early lead swept the whole map (measured twice:
+  // 126/140 Blind Io, then 108/140 Om). Round-robin the pantheon across townIds and
+  // each town grows its own congregation; the borders stay contested, not the heartland.
   _bootstrap(): void {
     const folk = this._faithless();
     if (!folk.length) return;                 // town not spawned yet — try next tick
     this._booted = true;
-    let i = 0;
-    for (const god of FAITH.gods) {
-      for (let k = 0; k < (FAITH.bootFlock || 1) && i < folk.length; k++, i++) {
-        folk[i].faith = god;
-      }
+    const towns = [...new Set(folk.map((a: any) => a.townId).filter((t: unknown) => t != null))];
+    const gods = FAITH.gods;
+    let g = 0;
+    for (const god of gods) {
+      const home = towns.length ? towns[g % towns.length] : null;
+      const pool = home != null ? folk.filter((a: any) => a.townId === home && !a.faith) : folk.filter((a: any) => !a.faith);
+      for (let k = 0; k < (FAITH.bootFlock || 1) && k < pool.length; k++) pool[k].faith = god;
+      g++;
     }
   }
 
@@ -75,13 +83,17 @@ export class Faith {
   }
 
   // PROSELYTISE: each believer may win one nearby faithless soul. Conversion odds
-  // rise with the god's power (a thriving faith is contagious — bandwagon).
+  // rise with the god's power (a thriving faith is contagious — bandwagon) — but
+  // SUB-LINEARLY (√flock): each believer already rolls independently, so a linear
+  // per-believer bonus made total pull ~flock² and ONE god always swept the town
+  // (the Blind-Io monoculture: every digest read "keeps the faith of Blind Io").
+  // √flock keeps a great god ~2-3× a small god's pull, not ~30× — the pantheon contends.
   _spread(): void {
     const range2 = (FAITH.convertRange || 6) ** 2;
     for (const god of FAITH.gods) {
       const flock = this.believers(god);
       if (!flock.length) continue;            // a dead faith can't spread itself (needs a prophet)
-      const chance = Math.min(0.9, (FAITH.convertChance || 0) + flock.length * (FAITH.powerConvertBonus || 0));
+      const chance = Math.min(0.9, (FAITH.convertChance || 0) + Math.sqrt(flock.length) * (FAITH.powerConvertBonus || 0));
       for (const b of flock) {
         if (rng() > chance) continue;
         // nearest faithless townsperson within range
@@ -98,13 +110,18 @@ export class Faith {
   }
 
   // DOUBT: believers lapse at random — EXCEPT a small god's final believer, who
-  // stays loyal (so the faith survives as an ember and can be revived).
+  // stays loyal (so the faith survives as an ember and can be revived). CROWDING
+  // DOUBT (the monoculture's other half): a god grown great holds many believers in
+  // name only, and the nominal lapse faster — doubt scales up with flock size past
+  // `crowdDoubtAt`, the self-limiting term the runaway bandwagon lacked (Small Gods:
+  // belief spread thin is belief easily lost).
   _doubt(): void {
     for (const god of FAITH.gods) {
       const flock = this.believers(god);
       if (flock.length <= (FAITH.smallGodAt || 1)) continue;   // protect the last of the faithful
+      const lapse = (FAITH.doubtChance || 0) * (1 + flock.length / (FAITH.crowdDoubtAt || 25));
       for (const b of flock) {
-        if (rng() < (FAITH.doubtChance || 0)) { b.faith = null; this.stats.apostasies++; }
+        if (rng() < lapse) { b.faith = null; this.stats.apostasies++; }
       }
       this._noteTier(god);
     }

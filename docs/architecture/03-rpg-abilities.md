@@ -82,6 +82,11 @@ keeps accreting classes/levels. **Do not make Progression hard-depend on the cat
 - **`CLASS_TEMPLATES`** — 12 hand-authored classes (warrior, brawler, duelist, farmer,
   woodcutter, miner, blacksmith, merchant, speaker, trickster, hunter, survivor). Each
   is `{key, name, requirements: [[tag, threshold]…], score_tags: [[tag, weight]…]}`.
+  **Identity is what you make** (the merchant-monoculture fix): raw `GOODS` rows carry
+  ONLY their craft tag (ENDURANCE was on every row and became most agents' top tag,
+  blurring every producer into survivor/merchant mush), and `[Merchant]` requires
+  `TRADE 10` — every soul trades, so the low bar had made it the universal class
+  (measured: 103/140 primary); only a dedicated trader earns the name now.
 - `meetsRequirements` / `classMatchScore` (a sigmoid over the weighted dot of profile
   vs `score_tags`) / `matchClasses(profile, held)` → newly-qualifying grants, best
   first.

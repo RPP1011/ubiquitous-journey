@@ -51,6 +51,14 @@ in `combatEvents.js`) is unchanged: `raids.js` (waves/raider lifecycle/warlord/n
 `roles.js` (bodyguard/duel/protégé/guardian/legend/avenger), `caravans.js` (trade runs),
 `util.js` (`rand`/`clamp`).
 
+**Spotlight casting** (docs/architecture/13 F.`quietIndex`'s consumer): trope instigators
+fire on the *first* matching constellation they scan, so their candidate pools are ordered
+by `Director._spotlight` — `quietIndex` (sim-time since the agent was last chronicle-named)
+plus `DIRECTOR.spotlightJitter` seconds of uniform noise, longest-quiet first. The
+long-unnamed get first crack at trope roles, rotating the spotlight into the gray mass
+instead of re-casting whoever drama already found (measured before: 86% of multi-arc agents
+entered their first arc in the first third of a run). Observer-layer: casting, not cognition.
+
 Deep design notes: [`docs/director-levers.md`](../director-levers.md),
 [`docs/drama-plan.md`](../drama-plan.md), [`docs/trope-catalog.md`](../trope-catalog.md).
 
@@ -138,6 +146,13 @@ god's last believer, who stays loyal), and gods work **miracles** (heal + courag
 scaled by flock size — a belief → power → miracle → thrive → more-belief loop. An
 agent's faith is `a.faith`. A nearly-dead god can be revived by the Director anointing
 a prophet. Touches no gold.
+
+**The pantheon contends — the bandwagon is tamed** (the Blind-Io-monoculture fix): each
+believer already rolls conversion independently, so a *linear* per-believer bonus made
+total pull ~flock² and one god always swept the town (measured: 126/140 one god). The
+bandwagon bonus is now **per √believer** (`powerConvertBonus`), and **crowding doubt**
+(`crowdDoubtAt`) scales the lapse rate up with flock size — a god grown great holds many
+in name only. Great gods still dominate; they no longer extinguish the pantheon.
 
 ## Expeditions (`expeditions.js`, `EXPEDITION`)
 

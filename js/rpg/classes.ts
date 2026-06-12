@@ -42,8 +42,12 @@ export const CLASS_TEMPLATES: ClassTemplate[] = [
     requirements: [['SMITHING', 5]],
     score_tags:   [['SMITHING', 1.0], ['CRAFTING', 0.7], ['TOOLMAKING', 0.6]] },
 
+  // TRADE 10, not 5: every soul buys and sells (food, tools, inputs), so a low bar made
+  // [Merchant] the universal class (measured: 103/140 primary). Only a DEDICATED trader —
+  // many deals held against the profile's decay — earns the name; the casual seller reads
+  // as what they MAKE instead.
   { key: 'merchant',   name: '[Merchant]',
-    requirements: [['TRADE', 5]],
+    requirements: [['TRADE', 10]],
     score_tags:   [['TRADE', 1.0], ['PROFIT', 0.9], ['HAGGLE', 0.6], ['BARTER', 0.4]] },
 
   // [Mason] — earned by raising buildings (the Phase-1 construction deed emits
@@ -90,6 +94,24 @@ export function classMatchScore(profile: BehaviorProfile, template: ClassTemplat
   for (const [tag, w] of template.score_tags) dot += (profile[tag] || 0) * w;
   // center the logistic so a modest-but-clear profile lands above the gate
   return sigmoid(dot * 0.25 - 1.0);
+}
+
+// EVENT-TAG AFFINITY: how much THIS deed is the template's business — the matched
+// score_tags weight NORMALIZED by the template's total weight (0..1: "what fraction of
+// this identity does the deed exercise"). XP routing multiplies the profile match by it,
+// so a FARMING deed levels [Farmer] and a TRADE deed levels [Merchant]. Without it,
+// routing was whole-profile only — winner-take-all on a saturated sigmoid, every deed's
+// XP flowing to the same class (measured: 103-118/140 merchant-primary while production
+// tags topped most profiles). The normalization is load-bearing: a RAW sum re-favoured
+// merchant anyway, because a 3-tag sale matched 2.5 of merchant's weights while a 1-tag
+// produce matched 1.0 of farmer's — multi-tag deeds out-shouted focused ones.
+export function eventAffinity(tags: readonly string[], template: ClassTemplate): number {
+  let s = 0, total = 0;
+  for (const [tag, w] of template.score_tags) {
+    total += w;
+    if (tags.indexOf(tag) !== -1) s += w;
+  }
+  return total > 0 ? s / total : 0;
 }
 
 // Sum of all behavior weight a profile carries (the cheap "have they done
