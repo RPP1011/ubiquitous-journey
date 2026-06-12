@@ -438,8 +438,16 @@ export function decide(a: Agent, ctx: CognitionCtx): void {
     // is suppressed while that memory holds. Own state + static map only (epistemic split holds).
     if (a._granaryEmptyUntil == null || ctx.time >= a._granaryEmptyUntil) {
       const lp = ctx.map && ctx.map.nearest(['larder'], a.pos, a.townId);
-      if (lp) push('granary', ALMS.begWeight * (0.5 + (1 - a.needs.hunger)) + (GRANARY.drawBump || 0.05),
-        { toPos: { x: lp.pos.x, z: lp.pos.z } });
+      if (lp) {
+        let gw = ALMS.begWeight * (0.5 + (1 - a.needs.hunger)) + (GRANARY.drawBump || 0.05);
+        // EMERGENCY ROOM: a STARVING destitute (hunger inside the survival-nibble band) takes
+        // the larder OVER a live forage plan — at beg-tier weight the WEIGHT.plan candidate
+        // always won, and the probe watched dying paupers march past a stocked larder toward
+        // a cross-map field (21 destitute starved ~83m from town, 1 meal served). Pitched
+        // over plan, under the danger tier; a bare larder still falls back via _granaryEmptyUntil.
+        if (a.needs.hunger < (ECON.nibbleBelow || 0.25)) gw = Math.max(gw, GRANARY.urgentWeight || 1.6);
+        push('granary', gw, { toPos: { x: lp.pos.x, z: lp.pos.z } });
+      }
     }
   }
   // SOFT AVOIDANCE — "cross the street" (docs/architecture/13 §3 snubsFelt). A merely-SUSPECTED,

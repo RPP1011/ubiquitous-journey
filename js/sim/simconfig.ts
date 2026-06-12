@@ -1208,6 +1208,11 @@ export const GRANARY = {
   drawRange: 3.4,    // metres from the granary a draw lands (co-location, ~talkRange)
   drawEvery: 2,      // seconds between draw attempts while standing at the larder (throttle)
   drawBump: 0.05,    // candidate rank above the beg score (the civic answer wins the tie)
+  urgentWeight: 1.6, // STARVING (hunger < ECON.nibbleBelow): the larder is the emergency room —
+                     //   pitched over WEIGHT.plan (1.3) so a cross-map forage plan can't march a
+                     //   dying pauper past the town larder (the seed-31 probe found exactly that:
+                     //   21 destitute starved ~83m from town while the larders sat stocked),
+                     //   and under the danger/flee tier (survival from violence still wins)
   emptyMemory: 45,   // sim-seconds an agent remembers finding the larder bare (beg wins meanwhile)
 };
 

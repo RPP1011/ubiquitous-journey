@@ -254,7 +254,14 @@ export async function constructionTest(ok, { makeFighter, stubScene }) {
       seller.pos.set(mpoi.pos.x, 0, mpoi.pos.z);
       buyer.pos.set(mpoi.pos.x + 1, 0, mpoi.pos.z);
       seller.inventory.food = 10; seller.needs.hunger = 1;
-      buyer.inventory.food = 0; buyer.needs.hunger = 0.5; buyer.gold = Math.max(buyer.gold, 20);
+      buyer.inventory.food = 0; buyer.needs.hunger = 0.5; buyer.gold = Math.max(buyer.gold, 100);
+      // pin the price beliefs so OUR buyer always clears: the book is busy (other townsfolk at
+      // the stalls out-bid a modest belief — the seeded flake this retires), so the buyer bids
+      // the TOP of the book (10) and the seller asks the floor (1) — guaranteed overlap and
+      // first match, whatever the run's drifted beliefs look like.
+      seller.priceBeliefs.food = 1; buyer.priceBeliefs.food = 10;
+      // the tithe exempts a subsistence buyer's only meal, so the buyer must clear at least
+      // twice (holding a whole meal by the second unit) — loop runMarket until the stock moves.
       for (let i = 0; i < 8 && (granary.stock || 0) <= stock0; i++) runMarket(sim);
     }
     ok((granary.stock || 0) > stock0,
