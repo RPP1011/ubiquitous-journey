@@ -31,11 +31,13 @@ beliefs about you too. No build step — ES modules served over HTTP, Three.js v
 | 06 | [World, dungeons & player](06-world-dungeons.md) | terrain/biomes/POIs, the player + party, the deep-Y-offset dungeon isolation trick |
 | 07 | [UI & input](07-ui.md) | the read-only HUD panels, dialogue, the keymap |
 | 08 | [Testing & headless runtime](08-testing.md) | `bun test/headless.mjs`, the headless seam, what still needs a browser |
-| 09 | [The reasoning layer](09-reasoning-layer.md) | **target architecture** — belief-gated cognition at scale: the 3-tier execution hierarchy, the steering/potential-field composition, the `InteractionSchema` IR, destination-intent ToM, GOAP worked examples, and build-time enforcement that cognition cannot read truth |
+| 09 | [The reasoning layer](09-reasoning-layer.md) | **target architecture** — belief-gated cognition at scale: the 3-tier execution hierarchy, the steering/potential-field composition, the `InteractionSchema` IR, destination-intent ToM, GOAP worked examples, the **persistent-ambition layer** (idle time belongs to character; the deadlock lesson), and build-time enforcement that cognition cannot read truth |
 | 10 | [The action grammar & knowledge model](10-action-grammar.md) | **design** — the vocabulary the planner builds plans from: effects, the actions (generated from data tables) that produce them, the knowledge model (`Know(topic)` over facts carrying value/confidence/provenance/decay), how plans are built per-agent rather than from a shared tree, situation coverage, and the build order |
 | 10 (LLD) | [Action grammar — implementation spec](10-action-grammar-lld.md) | **low-level design** — the implementation companion to 10: module map, core data structures, and pseudocode for the backward-chainer, threshold composition, the knowledge model, the verb/deriver/effect-holds registries, the conserved resolver, the obligation ledger, and each feature module — plus the current implementation status & gaps |
 | 11 (LLD) | [Outcome-conditioned caution](11-outcome-conditioned-caution-lld.md) | **low-level design** — the burned-hand half of regret: a per-agent, per-strategy signed surcharge (`experience.ts` store + the `PLAN_OUTCOME` registry + `feltSurcharge` beside `confidenceSurcharge`) written when a watched theft-shaped act falls short / wastes a trip / nearly kills you, eroded by time and success. Gated `CAUTION.enabled`, day-one OFF |
-| 12 (LLD) | [Narrative tooling](12-narrative-tooling-lld.md) | **low-level design** — closing the emergent-arc gaps: a generic **arc/saga registry** (`arcs.ts`/`sim.sagas`) any emergent loop opens/appends/closes (generalising the Director `_recordSaga`), surfaced to chronicle/Gazette + assertable; plus a per-agent authoring API, a status-delta/failure sensor, a `believedWealth` belief field + wealth→esteem channel, a directed-assault/rescue executor, an enacted romance deriver, and generalised NPC notoriety + outlaw-warming. Branch-gated (no new day-one flags) |
+| 12 (LLD) | [Narrative tooling](12-narrative-tooling-lld.md) | **low-level design (now built)** — closing the emergent-arc gaps: a generic **arc/saga registry** (`arcs.ts`/`sim.sagas`) any emergent loop opens/appends/closes (generalising the Director `_recordSaga`; arcs now **lazy-open on the first real round** via `appendRound` — a never-escalated muster files no tale), surfaced to chronicle/Gazette + assertable; plus a per-agent authoring API, a status-delta/failure sensor (rags-to-riches celebrates once per life), a `believedWealth` belief field + wealth→esteem channel, a directed-assault/rescue executor, an enacted romance deriver, and generalised NPC notoriety + outlaw-warming |
+| 13 | [Narrative signals](13-narrative-signals.md) | the **signal catalog** (`js/sim/signals.ts`) story probes read: fold-on-event accumulators (gold/standing trends, snubsFelt, goal-dwell, deeds/oaths), dramatic-irony gaps, town climate — plus the design rules (write-only observer layer, every value names its probe) and the anti-catalog |
+| 14 | [The survival ladder](14-survival-economy.md) | **lethal hunger** and the economy of staying alive: the STARVE mechanic (townsfolk-only, captives exempt, escheat-conserved), the score-tier ladder — provisioning → rations → subsistence planning → the survival nibble → alms → the town granary — the named lessons (dormant-trigger, net-harmful-tithe), and the measured famine arc |
 
 Design/feature docs (the *why we built it this way*, deeper than this reference) live
 beside these in `docs/`: `goal-system.md`, `drama-plan.md`, `director-levers.md`,
@@ -105,19 +107,35 @@ to where it's explained in full.
 11. **Label redraws are cached** by a signature string (`Agent._updateLabel`); the
     canvas upload dominates per-frame cost at scale — don't defeat the cache. →
     [01](01-sim-spine.md)
+12. **Bounded forgetting is a survival mechanism** — `SIM.beliefsPerAgent` (25) is a
+    measured optimum, and the bound is the only throttle on how many enemies one mind
+    can hold: caps ≥ 100 annihilated the town (the hostile latch never cools).
+    Tie-retention is keyed on |standing| ONLY, never suspicion/hostile (the metastasis
+    lesson). → [02](02-epistemic-split.md)
+13. **Hunger is lethal, and survival competes on score** — the ladder's rungs are
+    score-tiered candidates (nibble excepted: no scorer at all), townsperson-gated and
+    captive-exempt; both famine regressions were tier mistakes, not missing mechanics.
+    → [14](14-survival-economy.md)
+14. **In the decide scorer, compete on score — never hard-gate on a state another
+    behaviour refills** (the deadlock lesson: the bored-yield gate left drifters with
+    novelty pinned at 0 and an ambition they never lived). → [09](09-reasoning-layer.md)
 
 ## Config locator (tune here, not in logic)
 
 | Domain | Where | Notable blocks |
 | --- | --- | --- |
 | Simulation behaviour | `js/sim/simconfig.js` | `SIM`, `WEIGHT`, `ECON`, `STEER` (Phase 2b steer-fill force weights + `fleeAway`; speeds/arrival/stand-off gaps reuse `SIM`/`SOCIAL`/`ECON`), `MOTIVE`, `MEMORY`, `HEARSAY`, `MAP`, `SCARECROW`, `SCHEMA` (InteractionSchema interpreter bounds — the catalogue itself is data in `schemas/catalogue.js`), `LOD` (Phase 3 amortized-cognition: `stride`, `fullFidelityBelow`, relevance radii/threshold — scheduling lives in `Simulation.update`/`_isRelevant`), `FACTIONS`, `FACTION_RELATIONS`, `PROFESSIONS`, `GOODS`, `COMMODITIES`, `BASE_PRICE`, `MONSTER`, `ROSTER`, `TOWNS`, `CAMPS`, `DUNGEON` |
-| Drama/society | `js/sim/simconfig.js` | `DIRECTOR`, `SEEDS`, `LINEAGE`, `HOUSES`, `EPITHETS`, `INTRIGUE`, `PATRICIAN`, `WATCH`, `DEFENSE`, `FAITH`, `EXPEDITION`, `CHRONICLE`, `GROUP_TYPES`, `BAND`, `PARTY` |
+| Drama/society | `js/sim/simconfig.js` | `DIRECTOR`, `SEEDS`, `LINEAGE`, `HOUSES`, `EPITHETS`, `INTRIGUE`, `PATRICIAN`, `WATCH`, `DEFENSE`, `FAITH`, `EXPEDITION`, `CHRONICLE`, `GROUP_TYPES`, `BAND`, `GROUP_NAMES`, `COHESION`, `PARTY`, `ARCS`, `SOCIAL` (incl. the soft-avoid berth) |
 | Economy/news | `js/sim/simconfig.js` | `ECON`, `REPORTER`, `GAZETTE`, `BOUNTY`, `ALERT`, `ARBITRAGE`; `REP` in `reputation.js`; `QUEST` in `quest/quest.js` |
+| Survival ladder | `js/sim/simconfig.js` | `STARVE`, `SUBSIST`, `ALMS`, `GRANARY`, `SURVEYOR.granary*`, `ECON.rationMul`/`nibbleBelow` → [14](14-survival-economy.md) |
+| Roads / steering | `js/sim/simconfig.js` | `STEER.wRoad`/`roadSnapDist`/`roadMinDist`/`roadAhead`, `TOWNS.wall.funnel` → [06](06-world-dungeons.md) |
+| Telemetry / signals | `js/sim/simconfig.js` | `SIGNALS` (snub calibration etc.), `TRACE` (+ `TRACE.health` thresholds for the eval health-checks) → [08](08-testing.md), [13](13-narrative-signals.md) |
 | RPG curves/caps | `js/rpg/rpgconfig.js` | `RPG` (class matching, XP, significance, tiers) |
 | Combat feel | `js/constants.js` | `TUNE`, `MODEL_YAW_OFFSET`, `ATTACK_CLIP`, `CLIP` |
 
 Also note: the starting townsfolk count is the `ROSTER` block in `simconfig.js`
-(`[{ n: 23 }]`); `simulation.js` only sums and consumes it (`spawn`).
+(`[{ n: 23 }]`), spawned as a **full cohort per town** — four `TOWNS.centers` ⇒ 96
+spawn (`simulation.js` `spawn`; dense cores, not one town spread thin — measured).
 
 ## Run & develop
 

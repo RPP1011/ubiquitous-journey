@@ -210,7 +210,8 @@ the field.
 
 ### The belief table *is* the potential field *(✓ landed, Phase 2b)*
 
-Each belief contributes a force; steering is the weighted sum over my ≤8 beliefs + ≤8 known
+Each belief contributes a force; steering is the weighted sum over my ≤k beliefs
+(`SIM.beliefsPerAgent`, 25 — the measured optimum, [02](02-epistemic-split.md)) + known
 places — **O(k), trivially cheap, and belief-gated by construction** (the field is literally
 made of beliefs). As built, `steer()` (`js/sim/agent/steer.js`) is exactly this weighted sum: every
 force `pos` comes from the agent's own `beliefs.*.lastPos`, its own-state targets, the static
@@ -632,6 +633,78 @@ tier-1 (amortized), tier-3 per frame is just *steer + maybe a verb*.
 
 ---
 
+## The persistent-ambition layer *(✓ landed, structural goals B1)* — idle time belongs to character
+
+What an agent does when **nothing is urgent** is where character shows — and before
+this layer, ~36% of the town spent it drifting on `wander`
+(`test/behaviortrace.mjs`, [08](08-testing.md)).
+
+**The core insight (proven by a failed coefficient sweep):** `ambitionFavor`
+(`motivation.ts`) only **multiplies a candidate that already exists**. When no
+enemy/opportunity is in sight, nothing competes with the tiny wander floor — so no
+amount of weight-tuning could make an ambitious agent live its ambition. The fix
+creates the candidate:
+
+- **The deriver** (`js/sim/features/ambition_goals.ts`, a registered `DERIVERS` row —
+  verbs-are-data, like every feature) stamps the agent's standing ambition ACTIVITY on
+  own-state each cognition tick: `a._ambitionIntent` via `AMBITION_ACTIVITY_KIND` —
+  wealth/mastery → `work`, renown → `seek_glory`, wanderlust → `sightsee`, belonging →
+  `socialize`. Four reuse an *existing measured behaviour*; `seek_glory` is the one
+  new kind — a march to the frontier prowl band (`MOTIVE.gloryFrontierMin` ×
+  `ARENA_RADIUS`) where the existing fight candidate fires on contact (a renown-seeker
+  proves itself in battle, not by standing at a worksite). The fallback resolves **at
+  stamp time** so every reader sees one already-actionable kind: a `work` ambition on
+  a non-worker (`!canWork` — a watch guard, a child) becomes `seek_glory` (combatant)
+  or `sightsee` — never a dead letter.
+- **Why own-state, NOT the goal stack:** the stack carries *specific, completing*
+  intentions whose lifecycle the planner owns ("the stack drains to empty on
+  completion" is a tested invariant); a perpetual standing goal would never drain.
+  The intent lives BESIDE the stack; `decide()` reads it to mint the candidate.
+- **The candidate** (`decide.ts` `topAmbitionGoal`): pushed AFTER the `ambitionFavor`
+  loop (it *is* the ambition's expression — no double-scaling), scaled by the matching
+  OWN personality drive (`WEIGHT.ambition × (MOTIVE.ambitionDriveFloor +
+  ambitionDrive(a))` — drive-proportional, so a half-hearted soul still drifts to
+  leisure while a driven one genuinely lives its ambition), and **clamped below
+  `WEIGHT.plan − 0.05`** — a live memory-derived plan (avenge/repay/seek_fortune)
+  always out-ranks it, survival/needs are pitched higher, and it yields to a live
+  soft-avoid berth. Wander is now structurally the LAST resort.
+- **The steer-fill**: `fillSeekGlory` joins `STEER_FILLS` (own-state + static map
+  only; in the epistemic scan). `socialize` carries the believed friend as `withId`.
+- **The fallbacks resume the ambition, not wander**: `act.ts`'s broken-off-fight
+  fallback and `decideParty`'s lost-leader fallback both read `_ambitionIntent` — a
+  follower whose belief-track of its leader decays lives its OWN ambition (the single
+  biggest drift pool the trace found). The gate: `seek_glory` yields until provisioned
+  (`food ≥ 1`) — **no campaign without rations** ([14](14-survival-economy.md)).
+
+**THE DEADLOCK LESSON — boredom competes on score, NEVER as a gate.** The first cut
+hard-gated the ambition candidate off while `bored` (novelty < `seekBelow`), intending
+the sightsee outing to claim the window. But an agent whose outing keeps getting
+interrupted (a frontier fighter, every trip cut short) never refills novelty, sits
+"bored" forever, and the suppressed candidate let idle time fall through to wander —
+the trace found drifters with novelty PINNED at 0 and a stamped intent they never
+lived (one held `intent=seek_glory` yet spent 1115 s wandering vs 33 s at the
+frontier). Now the deficit-scaled sightsee candidate simply out-scores a half-hearted
+soul's activity and loses to a driven one. Generalise the lesson: in this scorer, a
+**hard gate on a state another behaviour is supposed to refill is a deadlock waiting
+to happen** — let candidates compete.
+
+Personality reaches the layer through two channels (`609b7cd` tuning): the
+ambition-assignment weights (temperament predicts the drawn life-goal ~5× harder) and
+the **need drains** (social/novelty drain ×0.35..×1.65 with the matching trait — the
+deficit is what *fires* the socialize/sightsee candidates; score-only multipliers
+proved too weak because the candidate rarely existed to be scaled).
+
+**Measured** (seeds 31/77, 1200 s, `behaviortrace`): dominant-wander 36% → 11% → **0%**
+after the deadlock fix; ambition-aligned dwell 16% → 30–37%; risk→flee properly
+negative (−0.35 — boldness legible in *flight*); risk→fight+glory 0.37–0.57;
+behaviorCollapse 0.06 (no goal lock-in — the layer creates commitment, not stuckness).
+Epistemically clean throughout: the deriver reads only own state; the scan stays at 0.
+
+The *group* counterpart (joint pulls, hearth shelter, named fellowships) is in
+[04 — Groups](04-drama-society.md).
+
+---
+
 ## The situation library (the design bar for the catalogue)
 
 What the schema catalogue must cover **out of the box**, organised by the substrate each
@@ -762,11 +835,16 @@ retirement path is a design decision; an unnamed one is a regression.
 
 ## Scalability engineering
 
-The cost model at ~100 agents × `SIM.tickHz` × 8 beliefs × ~15 cheap rules ≈ low tens of
-thousands of O(1) evals/sec — trivial — **provided** these hold:
+The cost model at ~100 agents × `SIM.tickHz` × k beliefs (`SIM.beliefsPerAgent`, 25) ×
+~15 cheap rules ≈ low-hundreds-of-thousands of O(1) evals/sec — trivial — **provided**
+these hold:
 
 - **Bounded belief tables** — O(k) per agent → O(N·k) total. The single biggest lever, and
-  the enforcement guarantees it (no roster scans are expressible).
+  the enforcement guarantees it (no roster scans are expressible). k = 25 is a **measured**
+  optimum, and not only for cost ([02](02-epistemic-split.md): caps ≥100 annihilate the
+  town — bounded forgetting is a survival mechanism). Belief **decay** is
+  stride-amortized (`SIM.beliefDecayStride`, keyed on the stable agent id) so the bigger
+  table holds the scaling gate.
 - **Lazy + cached inference** — compute intent/destination *when a decision needs it*, cache
   on the belief with a TTL, invalidate on contradicting perception. Never re-infer every tick.
 - **LOD / amortization** *(✓ landed, Phase 3)* — cognition is tiered by relevance:

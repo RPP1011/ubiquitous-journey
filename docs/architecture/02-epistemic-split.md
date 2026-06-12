@@ -63,7 +63,58 @@ friendly.
 
 `BeliefStore` is the spec's per-`(observer → subject)` N² table: each observer holds a
 bounded map of `subjectId → BeliefState`. Bounded by `SIM.beliefsPerAgent`; overflow
-evicts the least-certain, stalest entry.
+evicts the least-certain, stalest entry (a home place is never evicted).
+
+### The bound is a MEASURED optimum — and a survival mechanism
+
+`SIM.beliefsPerAgent` is **25**, and that number is measured, not guessed
+(`test/beliefsweep.mjs`: caps 12/25/50/100/175/300 × seeds 31/77, scoring
+trait→behaviour legibility, group cohesion, table fill, and ms/frame per arm):
+
+- **Tables PIN at the cap at every size** — minds always saturate, so the cap IS the
+  curator of what an agent keeps in mind.
+- **12 was too small** for a ~100-soul town: crowded-market churn evicted any
+  unremarkable neighbour within ticks, quietly throttling every standing-based social
+  behaviour (the alms post-mortem — a donor literally could not keep the pauper in
+  mind long enough to pay it; [14](14-survival-economy.md)).
+- **50 cost ~40% more ms/frame and measured WORSE on every legibility axis.**
+- **Cap ≥ 100 ANNIHILATES the town** (~80 souls → 0–4 survivors): the hostile latch
+  never cools, and the bound was the only throttle on how many enemies one mind can
+  hold — hostility metastasizes until everyone fights everyone. **Bounded forgetting
+  is a survival mechanism: feuds die because minds are finite.** (Recorded future
+  work: a "feuds cool" latch decay would make mind-size a free parameter; today the
+  bound does that job.)
+- 25 wins outright: risk→fight+glory 0.57, social→socialize 0.27, cohesion 0.17, a
+  healthy town, and the scaling gate's margins recover.
+
+### Decay is non-uniform (ties consolidate, places persist)
+
+Uniform decay is just wrong: confidence fades by **what the subject is to the
+believer** (`BeliefStore.decay`):
+
+- A real **tie** (|standing| → 1, beloved or blood-enemy) fades up to
+  `(1 + SIM.tieRetention)`× slower — relationships consolidate, acquaintances churn.
+  **Keyed on standing ONLY, never on suspicion or the hostile flag** (the metastasis
+  lesson): rumour-fed fear of *strangers* must fade or town-wide hostility never
+  cools; the one who actually wronged or loved you stays in mind, so vendettas stay
+  *personal*.
+- A **place** (`placeKind`) fades `(1 + SIM.placeRetention)`× slower: buildings don't
+  walk — only their believed *state* (sheltered) changes, rarely. This is the
+  decay-side of the never-evict-home precedent: the homecoming's stale home-intact
+  belief persists until SIGHT revises it, while a torched tavern unvisited long enough
+  still goes uncertain.
+- A **prop/scarecrow** carries no `placeKind` and keeps person-rate fade — being
+  mistaken for a person is its entire job.
+
+Suspicion keeps its own schedule; price beliefs are separate machinery.
+
+Decay is also **stride-amortized** (`SIM.beliefDecayStride`, 4): every fade is linear
+in dt, so decaying each agent every Kth tick at K×dt is *exactly* equivalent in total
+fade at 1/K the walks (what let the table grow past 12 without failing the scaling
+gate). The stride is **keyed on the stable agent id, never the array index** — the
+reaper splices the roster, and an index-keyed stride reshuffled every agent's slot per
+splice, producing uneven staleness that measurably worsened survival decisions (59
+starved → 40 once keyed on id).
 
 `BeliefState` fields:
 
@@ -109,7 +160,9 @@ That ordering is the epistemic split in motion:
    can know about*, not just who you can hit. Writes `o.disguiseFaction || o.faction`
    — disguise is laundered into belief here.
 2. **`beliefs.decay(step)`** — confidence and suspicion fade, so unrefreshed knowledge
-   grows uncertain and eventually drops out of the bounded table.
+   grows uncertain and eventually drops out of the bounded table. The fade is
+   **non-uniform** (ties consolidate, places persist — see above) and stride-amortized
+   keyed on the stable agent id.
 3. **`gossipBeliefs(ctx)`** — adopt a friendly neighbour's *higher-confidence*
    beliefs. Merge confidence is capped (`min(other.conf × SIM.gossipFalloff, …,
    SIM.gossipCap)`), `hops` increments (capped at `HEARSAY.maxHops`), and the content

@@ -27,7 +27,7 @@ mint gold.
 | Faith | `faith.js` | `FAITH` | belief-powered small gods |
 | Expeditions | `expeditions.js` | `EXPEDITION` | NPC adventuring parties that delve |
 | Chronicle/Biography | `chronicle.js`, `biography.js` | `CHRONICLE` | world history feed + per-agent bios |
-| Groups | `groups.js` | `GROUP_TYPES`, `BAND` | generic group/band membership |
+| Groups | `groups.js` | `GROUP_TYPES`, `BAND`, `GROUP_NAMES`, `COHESION` | named groups/bands that live their bond |
 
 ## Director (`director.js`, `DIRECTOR`)
 
@@ -158,16 +158,52 @@ longer-lived `_legends` saga of the truly momentous, with a `_dedupe` window and
 never influences behaviour. `biography.js` exposes `agentBiography()`/`agentDrive()`
 for per-agent narrative summaries. Surfaced by the [Chronicle UI](07-ui.md) (`N`).
 
-## Groups (`groups.js`, `GROUP_TYPES`/`BAND`)
+## Groups (`groups.js`, `GROUP_TYPES`/`BAND`/`GROUP_NAMES`/`COHESION`)
 
 Parties-as-AI generalised beyond the player. Townsfolk with mutual positive
 belief-standing who are near each other associate into a **warband** (roam + fight),
 **hearth** (stick together, flee danger), **guild** (same primary class, loose
 professional cluster), or **circle** (friends, loose social cluster). "Travel" groups
-flip `inParty` and reuse `Agent._followLeader` pointed at their own leader (no new AI
-fork); "loose" groups are just an affiliation tag biasing behaviour. Members' mutual
-affinity grows while grouped (capped). Never touches a player-led party — that's
-[`party.js`](06-world-dungeons.md).
+flip `inParty` and reuse the follow path pointed at their own leader (no new AI fork);
+"loose" groups are an affiliation tag. Members' mutual affinity grows while grouped
+(capped). Never touches a player-led party — that's [`party.js`](06-world-dungeons.md).
+
+**Groups LIVE their bond (Phase B2)** — membership was nearly inert (a flat socialize
+×1.6 nudge + a relations tag); now each type pulls members toward the group's *life*,
+tuned per type via `GROUP_TYPES[type].pull` (config, not logic):
+
+- A **circle** gathers — its socialize candidate gets the pull (2.2), and a member
+  with no chosen friend **converges on the believed anchor**: its OWN belief of its
+  OWN `bandLeaderId` (the `resolveLeaderRef` pattern, no roster read; the anchor
+  itself stays put as the gathering point). Belief-gated convergence — a member whose
+  track of the anchor decays drifts off, honestly.
+- A **guild** works its shared trade — the work candidate gets the pull (1.5; the
+  craft IS the bond) and keeps the fraternise nudge.
+- A **hearth** shelters TOGETHER — `decideParty`'s flee resolves to the shelter/rest
+  place nearest the *believed* leader (own belief + the static map; `fillFlee` already
+  honours a `toPos`), so the pair converges on ONE refuge instead of scattering.
+
+**Named fellowships with saga arcs (Phase B3)** — a fresh emergent group coins a NAME
+at formation (`GROUP_NAMES` pools, drawn via the seeded `rng()`; flavour only, no
+mechanics), and every join files a round on a `fellowship` saga arc — **lazy-open via
+`SagaStore.appendRound`** (a never-joined group files no tale; the warband-muster
+churn lesson), keyed `fellowship:<type>:<anchor>` (disjoint from the recruiter's
+warband muster arc). Dissolution — leader gone, or dwindled to one — closes it
+`'disbanded'`. A band/guild/circle is now a CHARACTER in the chronicle ("Aldric joined
+the Hearthside Circle of Wenna"). Observer-layer only; guarded.
+
+**The instrument**: `groupCohesion(sim)` (`js/sim/signals.ts`) is the truth-side
+observer metric — per group ≥ 2 members, `clamp01(1 − meanPairwiseDist /
+COHESION.refDist) × coActFrac` — printed by `test/behaviortrace.mjs`
+([08](08-testing.md)). Honest history: at B2-landing it read 0.09/0.05 (the pull lost
+to comfort/market/ambition too often); driving personality through the **need drains**
+(social×social_drive, novelty×curiosity — score-only multipliers proved too weak
+because the candidate rarely existed to be scaled) lifted it to ~0.23, ~2× the
+pre-B2 baseline.
+
+The idle-time *individual* counterpart — an agent pursuing its standing ambition
+instead of wandering — is the persistent-ambition layer in
+[09](09-reasoning-layer.md).
 
 ## Cross-cutting invariants
 
