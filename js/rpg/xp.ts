@@ -60,6 +60,14 @@ export function significance(ev: ActionEvent, prog: SigProgress, now: number): S
   const novel = ev.tags.length > 0 && !prog._comboSeen.has(cKey);
   if (novel) mult *= RPG.sigNovelComboMult;
 
+  // STAKES ARE DILUTED BY COMPANY (only when the deed carries an allies count — the
+  // combat folds attach it; a forge deed never does): a solo feat amplifies, a deed
+  // done in a crowd divides. mult /= (1 + allies x dilution); allies=0 => x sigSoloMult.
+  if (typeof ev.allies === 'number') {
+    mult *= ev.allies <= 0 ? (RPG.sigSoloMult || 1)
+      : 1 / (1 + ev.allies * (RPG.sigAllyDilution || 0));
+  }
+
   // risk / kill emphasis
   if (ev.tags.includes('KILL')) mult *= RPG.sigKillMult;
   if (ev.tags.includes('RISK')) {

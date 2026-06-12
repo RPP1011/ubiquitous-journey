@@ -10,7 +10,7 @@ import type { ActionEvent, ActionEventSpec, EventBus as IEventBus } from '../../
 //   { actorId:number, verb:string, tags:string[], magnitude:number,
 //     targetId?:number, t:number }
 // Use makeEvent to normalise tags + default magnitude/time.
-export function makeEvent({ actorId, verb, tags = [], magnitude = 1, targetId, t }: ActionEventSpec): ActionEvent {
+export function makeEvent({ actorId, verb, tags = [], magnitude = 1, targetId, t, allies }: ActionEventSpec): ActionEvent {
   return {
     actorId,
     verb,
@@ -18,6 +18,7 @@ export function makeEvent({ actorId, verb, tags = [], magnitude = 1, targetId, t
     magnitude,
     targetId,
     t: t ?? 0,
+    allies,
   };
 }
 

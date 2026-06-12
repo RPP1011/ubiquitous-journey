@@ -29,6 +29,7 @@ export type Verb = KnownVerb | (string & {});
  *  (abilities/interpreter.emitCast) emits raw FLAVOUR tags ('CAST'/'FORCE'/…) directly, so
  *  the honest type is `string[]`; consumers (progression/xp) re-sanitize for the profile. */
 export interface ActionEvent {
+  allies?: number;             // allied combatants beside the actor at deed time (stakes dilution; combat deeds only)
   actorId: EntityId;
   verb: Verb;
   tags: string[];
@@ -40,6 +41,7 @@ export interface ActionEvent {
 
 /** The spec accepted by makeEvent/emit (tags un-sanitized, magnitude/t defaulted). */
 export interface ActionEventSpec {
+  allies?: number;             // allied combatants beside the actor at deed time (stakes dilution; combat deeds only)
   actorId: EntityId;
   verb: Verb;
   tags?: string[];

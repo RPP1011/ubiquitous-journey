@@ -32,7 +32,23 @@ export const RPG = {
   sigRiskMult: 1.5,          // an event tagged RISK (scaled by magnitude)
   sigGrindHalfLifeSec: 30,   // identical deeds within this window decay toward..
   sigGrindFloor: 0.25,       // ..this floor (repetition is worth less)
+  // STAKES ARE DILUTED BY COMPANY (M0 applied to levelling): a combat deed done beside
+  // allies is worth less per soul — slaying a horror alone and last-hitting it in a mob
+  // of a hundred are vastly different feats. Identity (behavior_profile) is NOT diluted
+  // (hunting in a band still makes you a warrior); only the XP significance is. Applied
+  // only when the deed carries an `allies` count (combat folds attach it; crafting never).
+  sigSoloMult: 1.5,          // a TRUE solo combat deed (allies=0) is amplified
+  sigAllyDilution: 0.2,      // mult /= (1 + allies x this): 4 comrades halve it, 100 bury it
   sigCap: 4.0,               // clamp the combined multiplier
+
+  // --- LEVELS BUY REAL POWER (the gap-closer) -------------------------------
+  // Levels previously added ZERO combat power (TUNE.damage flat) — a level-24 veteran and
+  // a level-1 farmhand swung the same sword, so no amount of solo levelling could close
+  // the gap that party size opens. Base swing damage now scales with TOTAL level, capped.
+  levelDamagePerLevel: 0.04, // +4% base swing damage per total level…
+  levelDamageCap: 2.5,       // …to a 2.5x ceiling (level ~37). Offence-only by design:
+                             //   maxHealth is a global constant consumed as fractions in
+                             //   ~20 places — defence scales via abilities/shields instead
 
   // --- narrative beats (the GRIND-IMMUNE xp channel) ------------------------
   // The "what a character has LIVED" axis. Routine produce/buy/sell stays the

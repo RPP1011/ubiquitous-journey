@@ -129,9 +129,22 @@ export function onCombatEvents(sim: Sim, events: CombatEv[]): void {
     }
     const risk = Math.max(0, Math.min(1, (A.threat ? 0.3 : 0) + (T.threat || 0.3)));
     const tags = ev.type === 'dead' ? ['MELEE', 'KILL', 'RISK'] : ['MELEE', 'RISK'];
+    // STAKES ARE DILUTED BY COMPANY: count the attacker's living allied combatants in
+    // support range and attach it to the deed — significance (xp.ts) divides by company
+    // and amplifies the true solo feat. Execution-layer roster read (this IS the combat
+    // bridge); identity tags above stay undiluted.
+    let allies = 0;
+    try {
+      const r2 = 12 * 12;
+      for (const o of sim.agents) {
+        if (o === A || !o.alive || !o.pos) continue;
+        if (o.faction !== A.faction && o.bandLeaderId !== A.id && A.bandLeaderId !== o.id) continue;
+        if (o.pos.distanceToSquared(A.pos) <= r2) allies++;
+      }
+    } catch { /* never throw on the tick */ }
     bus.emit(makeEvent({
       actorId: A.id, verb: ev.type === 'dead' ? 'kill' : 'strike', tags,
-      targetId: T.id, magnitude: risk, t: sim.time,
+      targetId: T.id, magnitude: risk, t: sim.time, allies,
     }));
 
     // a NEMESIS brought down at last — a communal triumph (the recurring boss falls).

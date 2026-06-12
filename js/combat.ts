@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { rng } from './sim/rng.js';
 import { TUNE } from './constants.js';
+import { RPG } from './rpg/rpgconfig.js';
 import { EFFECTS } from './rpg/abilities/effects.js';
 import type { Fighter, CombatEvent } from '../types/sim.js';
 import type { CastCtx } from '../types/sim.js';
@@ -53,6 +54,12 @@ export function resolveCombat(
       // ability-less / professionless fighters (monsters, unarmed player swings).
       const spec = attacker.pendingSpec;
       const aAgent = attacker.agent, tAgent = target.agent;
+      // LEVELS BUY REAL POWER: the base swing scales with the attacker's TOTAL level
+      // (RPG.levelDamagePerLevel, capped) — before this, levels added ZERO combat power
+      // and no amount of solo levelling could close the gap a big party opens. Offence-
+      // only by design (maxHealth is a global constant consumed as fractions everywhere).
+      const lvl = (aAgent && aAgent.progression && aAgent.progression.totalLevel) || 0;
+      const swingDmg = TUNE.damage * Math.min(RPG.levelDamageCap || 2.5, 1 + lvl * (RPG.levelDamagePerLevel || 0));
       let result;
       if (spec && aAgent && tAgent) {
         // pick the spec's damage effect; if none, fall back to flat damage.
@@ -74,11 +81,11 @@ export function resolveCombat(
             }
           }
         } else {
-          result = target.takeHit(TUNE.damage, attacker.dir);
+          result = target.takeHit(swingDmg, attacker.dir);
         }
         attacker.pendingSpec = null;   // one spec consumed per swing
       } else {
-        result = target.takeHit(TUNE.damage, attacker.dir);
+        result = target.takeHit(swingDmg, attacker.dir);
       }
 
       events.push({ type: result === 'blocked' ? 'blocked' : (result === 'dead' ? 'dead' : 'hit'),
