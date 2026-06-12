@@ -898,6 +898,28 @@ export class Simulation {
       // meal a granary serves files a chronicle beat (legibility). Returns true on a served
       // meal — false (empty/far/none built) lets the act arm stamp the agent's own bare-larder
       // memory so its next decide falls back to begging. Guarded; never throws on the tick.
+      // THE PLACE'S TRUE BENEFIT where the agent actually stands (colocation-gated, like
+      // granaryDraw): the standing building under/beside the agent reports its benefit +
+      // kind, or null in the open. Execution-side ground truth — act.ts scales the comfort
+      // restore by it, and the agent LEARNS the felt quality onto its OWN place-belief
+      // (experience is the sanctioned truth→belief bridge). A razed building confers nothing.
+      placeBenefitAt(a) {
+        try {
+          if (!a || !a.alive || !sim.buildSites || !sim.buildSites._buildings) return null;
+          let best = null, bestD = Infinity;
+          for (const b of sim.buildSites._buildings) {
+            if (!b || b.sheltered === false || !b.pos) continue;
+            const fp = b.footprint || {};
+            const reach = Math.max(fp.w || 3, fp.d || 3) / 2 + 2.2;
+            const dx = b.pos.x - a.pos.x, dz = b.pos.z - a.pos.z;
+            const d2 = dx * dx + dz * dz;
+            if (d2 <= reach * reach && d2 < bestD) { bestD = d2; best = b; }
+          }
+          if (!best) return null;
+          const ben = best.benefit || {};
+          return { comfort: ben.comfort ?? 1, social: ben.social ?? 0, kind: best.buildKind || 'building' };
+        } catch { return null; }
+      },
       granaryDraw(a) {
         try {
           if (!a || !a.alive || !sim.buildSites) return false;

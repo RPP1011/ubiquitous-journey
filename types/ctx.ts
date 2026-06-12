@@ -55,6 +55,10 @@ export interface ResolverFacade {
   deliverTo(from: Agent, toId: EntityId, payload: { item?: string; n?: number; gold?: number }): boolean;
   solicitAlms?(beggar: Agent): number;   // carry a beggar's plea to bystanders' _pleas mailboxes (Inform)
   granaryDraw?(a: Agent): boolean;       // serve ONE meal from the town granary's civic stock (co-location-gated)
+  // the TRUE benefit of the standing building the agent is AT (colocation-gated; null in the
+  // open / at a razed shell) — act.ts scales the comfort restore by it and the agent learns
+  // the felt quality onto its own place-belief (experience: the sanctioned truth→belief bridge).
+  placeBenefitAt?(a: Agent): { comfort: number; social: number; kind: string } | null;
   // Action-grammar execution (docs/architecture/10): the GENERIC "moved" acquire mechanic + the
   // EMERGENT consequence + physical Affect. `take` moves value source→taker (conserved, no baked
   // reaction — the social meaning is the acquire row's data); `witnessDeed` folds a perceived wrong

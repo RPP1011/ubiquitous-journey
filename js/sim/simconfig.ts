@@ -1024,6 +1024,13 @@ export const COMFORT = {
                               //   short visit actually tops the need up before the agent drifts off
                               //   to a market/social pull (else comfort limit-cycles around the cap)
   tavernSocialRate: 0.45,     // social ALSO restored per sec while at a tavern
+  // BELIEVED-BEST comfort routing (decide.ts nearestComfortSource, the homeless path):
+  // among the places an agent KNOWS OF (its own place-beliefs), the felt quality
+  // (benefitFelt, stamped by experience in act.ts) competes with the kind's CULTURAL
+  // PRIOR — everyone knows what a tavern is for; a shrine is solace only to its own
+  // faithful — discounted by distance over `sourceRange` metres.
+  kindPrior: { tavern: 1.0, shrine: 0.65 },
+  sourceRange: 40,
   // the `comfort` decide candidate fires when comfort dips below this AND a
   // home/tavern is reachable; weighted by WEIGHT.comfort.
   seekBelow: 0.55,

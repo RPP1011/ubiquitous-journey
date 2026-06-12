@@ -147,10 +147,15 @@ export function perceive(a: Agent, ctx: FullCtx): void {
 function perceiveBuilding(a: Agent, o: PerceivedThing, ctx: FullCtx): void {
   try {
     const bb = a.beliefs.observe(o.id, 'unknown', o.pos, ctx.time, false);
-    // classify the place (home if it's mine, else tavern/guildhall if dressed as one, else a building).
+    // classify the place (home if it's mine, else by what it's dressed as — every civic kind
+    // is recognisable on sight: a tavern's hearth, a shrine's spire, the granary's long store).
     bb.placeKind = (o.ownerId === a.id) ? 'home'
       : ((o.buildKind === 'tavern' || o.benefitKind === 'tavern') ? 'tavern'
-        : (o.buildKind === 'guildhall' ? 'guildhall' : 'building'));
+        : (o.buildKind === 'guildhall' ? 'guildhall'
+          : (o.buildKind === 'shrine' ? 'shrine'
+            : (o.buildKind === 'granary' ? 'granary' : 'building'))));
+    // a shrine wears its god openly (the banner/idol is the percept surface, like ownerId).
+    if (o.buildKind === 'shrine') bb.placeGod = (o as { god?: string }).god || null;
     const wasSheltered = bb.sheltered;
     bb.sheltered = (o.alive !== false);                 // believed shelter = perceivable liveness
     // discover MY OWN home by sight: bind the home-belief id the first time I lay eyes on it.

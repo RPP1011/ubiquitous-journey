@@ -321,9 +321,52 @@ export async function constructionTest(ok, { makeFighter, stubScene }) {
     if (shrine) {
       ok(shrine.god === 'Om' && /shrine of Om/.test(shrine.label || ''),
         `construction: the shrine carries its god (god=${shrine.god}, label="${shrine.label}")`);
-      ok((sim.buildSites.shrinesFor('Om') || []).length >= 1 && (sim.buildSites.shrinesFor('The Lady') || []).length === 0,
+      // (another town's congregation may have organically raised a DIFFERENT god a shrine over
+      // the live run — assert scoping against a god that cannot exist, not against the pantheon)
+      ok((sim.buildSites.shrinesFor('Om') || []).some((s) => s.id === shrine.id)
+        && (sim.buildSites.shrinesFor('NoSuchGod') || []).length === 0,
         'construction: shrinesFor finds the god\'s standing shrine (and only its own)');
       ok(sim.buildSites.hasShrine(town0.id), 'construction: one shrine per town (hasShrine latches)');
+    }
+
+    // ── 5d. benefits are REAL, LEARNED, and ROUTED by belief ─────────────────────
+    // A building's `benefit` finally does something: the resolver reports the TRUE benefit
+    // where one stands; resting there restores comfort scaled by it AND stamps the felt
+    // quality onto the rester's OWN place-belief (experience — the sanctioned truth→belief
+    // bridge); and the comfort routing picks the believed-best source, so a faithful soul
+    // prefers its god's near shrine and SKIPS a place it believes razed.
+    if (shrine) {
+      const { act } = await import('../../js/sim/agent/act.js');
+      const { nearestComfortSource } = await import('../../js/sim/agent/decide.js');
+      const { Agent } = await import('../../js/sim/agent.js');
+      const pilgrim = new Agent(makeFighter('knight', {}), {
+        id: 9450, name: 'Pilgrim', profession: null, faction: 'townsfolk',
+        personality: { risk_tolerance: 0.5, altruism: 0.5, ambition: 0.5, social_drive: 0.5 },
+      });
+      pilgrim.faith = 'Om';
+      pilgrim.fighter.root.position.set(shrine.pos.x, 0, shrine.pos.z);
+      const ben = sim._cogResolver().placeBenefitAt(pilgrim);
+      ok(!!ben && ben.kind === 'shrine' && Math.abs((ben.comfort ?? 0) - (SURVEYOR.shrineBenefit.comfort)) < 1e-9,
+        `construction: the resolver reads the place's TRUE benefit underfoot (kind=${ben && ben.kind}, comfort=${ben && ben.comfort})`);
+
+      const pb = pilgrim.beliefs.observe(shrine.id, 'unknown', shrine.pos, sim.time, false);
+      pb.placeKind = 'shrine'; pb.placeGod = 'Om'; pb.sheltered = true;
+      pilgrim.goal = { kind: 'comfort', toPos: { x: shrine.pos.x, z: shrine.pos.z }, srcKind: 'shrine' };
+      pilgrim.needs.comfort = 0.2;
+      const c0 = pilgrim.needs.comfort;
+      for (let i = 0; i < 30; i++) act(pilgrim, 1 / 60, sim._ctx());
+      ok(pilgrim.needs.comfort > c0, `construction: resting at the shrine restores comfort, scaled by its true benefit (${c0.toFixed(2)} -> ${pilgrim.needs.comfort.toFixed(2)})`);
+      ok((pb.benefitFelt || 0) >= SURVEYOR.shrineBenefit.comfort - 1e-9,
+        `construction: the pilgrim LEARNED the felt quality onto its own belief (benefitFelt=${pb.benefitFelt})`);
+
+      const tpos = shrine.pos.clone(); tpos.x += 70;
+      const tb = pilgrim.beliefs.observe('B:test-tavern', 'unknown', tpos, sim.time, false);
+      tb.placeKind = 'tavern'; tb.sheltered = true;
+      const pick1 = nearestComfortSource(pilgrim, sim._ctx());
+      ok(!!pick1 && pick1.kind === 'shrine', `construction: a faithful soul routes comfort to ITS god's near shrine (${pick1 && pick1.kind})`);
+      pb.sheltered = false;   // learned by sight: the spire was razed
+      const pick2 = nearestComfortSource(pilgrim, sim._ctx());
+      ok(!!pick2 && pick2.kind === 'tavern', `construction: a place believed RAZED is skipped — the believed tavern wins (${pick2 && pick2.kind})`);
     }
   }
 

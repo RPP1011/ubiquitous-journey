@@ -60,6 +60,8 @@ export class BeliefState implements IBeliefState {
   animacyTally: AnimacyTally | null;
   placeKind: string | null;
   sheltered: boolean | null;
+  placeGod: string | null;
+  benefitFelt: number | null;
   captive: boolean;
   inertEvidence: number;
   inert: boolean;
@@ -101,9 +103,15 @@ export class BeliefState implements IBeliefState {
     // (liveness evidence is cumulative). A scarecrow re-perceived forever never gains one.
     this.animacyTally = null;
     // PLACE-as-percept fields (Phase 2a, places-as-percepts) — null for a person-belief.
-    // placeKind: 'building'|'home'|'tavern'; sheltered: believed shelter state (true/false).
+    // placeKind: 'building'|'home'|'tavern'|'shrine'|'granary'|'guildhall'; sheltered: believed
+    // shelter state (true/false). placeGod: whose shrine I believe this is (perceived off the
+    // building's surface). benefitFelt: the comfort quality I have EXPERIENCED here (0..1,
+    // stamped by act.ts while resting — my own lived experience, never a truth-read) — the
+    // believed-best comfort routing weighs it against the cultural prior for the kind.
     this.placeKind = null;
     this.sheltered = null;
+    this.placeGod = null;
+    this.benefitFelt = null;
     // CAPTIVE (the rescue arc): believed-held — perception sets it true when I SEE a subject whose
     // ground-truth `_held` is set (a captive), false otherwise. The affect deriver reads ONLY this
     // belief (never `_held`) to form a goalFree, preserving the epistemic split. Off by default.

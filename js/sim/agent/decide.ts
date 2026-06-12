@@ -662,11 +662,33 @@ function pickSuspectToAvoid(a: Agent): { x: number; z: number } | null {
 // homecoming so it never loops toward a vanished home forever. The fallback is a STATIC
 // shelter/rest Place from the shared mental map (a tavern/rest site) — never a live read.
 // Returns { pos, kind } or null. Guarded; never throws.
-function nearestComfortSource(a: Agent, ctx: CognitionCtx): { pos: Vector3; kind: string } | null {
+export function nearestComfortSource(a: Agent, ctx: CognitionCtx): { pos: Vector3; kind: string } | null {
   try {
     const hb = a.homeBeliefId != null ? a.beliefs.get(a.homeBeliefId) : null;
     if (hb && hb.sheltered !== false && hb.lastPos && hb.confidence >= SIM.actOnBeliefMin)
       return { pos: hb.lastPos, kind: 'home' };                 // believed-intact, still-fresh home
+    // BELIEVED-BEST SOURCE (the homeless path): among the places I KNOW OF — my own
+    // place-beliefs, never the roster — weigh what I've FELT there (benefitFelt, stamped by
+    // experience in act.ts) against the kind's cultural prior (everyone knows what a tavern
+    // is for; a shrine is solace only to its OWN faithful), discounted by distance. A place
+    // I believe razed (sheltered=false, learned by sight) is skipped — beliefs can do what
+    // the static map can't. Falls back to the static tavern/rest Place when I know nothing.
+    const priors = (COMFORT.kindPrior || {}) as Record<string, number>;
+    const myGod = (a as { faith?: string }).faith;
+    let best: { pos: Vector3; kind: string } | null = null, bestS = 0;
+    for (const pb of a.beliefs.all()) {
+      if (!pb.placeKind || pb.sheltered === false || !pb.lastPos) continue;
+      if (pb.confidence < SIM.actOnBeliefMin) continue;
+      let prior = 0;
+      if (pb.placeKind === 'tavern') prior = priors.tavern ?? 1;
+      else if (pb.placeKind === 'shrine' && pb.placeGod && myGod === pb.placeGod) prior = priors.shrine ?? 0.65;
+      else continue;                                            // halls/granaries are not rest stops
+      const q = Math.max(pb.benefitFelt || 0, prior);
+      const dx = pb.lastPos.x - a.pos.x, dz = pb.lastPos.z - a.pos.z;
+      const s = q / (1 + Math.sqrt(dx * dx + dz * dz) / (COMFORT.sourceRange || 40));
+      if (s > bestS) { bestS = s; best = { pos: pb.lastPos, kind: pb.placeKind } }
+    }
+    if (best) return best;
     const t = ctx.map && ctx.map.nearest(['shelter', 'rest'], a.pos, a.townId);
     return t ? { pos: t.pos, kind: 'tavern' } : null;           // STATIC tavern/rest Place
   } catch { return null; }

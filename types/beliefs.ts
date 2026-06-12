@@ -43,8 +43,10 @@ export interface BeliefState {
   hops: number;                     // provenance depth (0 = first-hand)
   rumorBorn: boolean;               // hostility curdled from gossip, not witnessed
   animacyTally: AnimacyTally | null;
-  placeKind: string | null;         // 'building'|'home'|'tavern' — null for a person-belief
+  placeKind: string | null;         // 'building'|'home'|'tavern'|'shrine'|'granary'|'guildhall' — null for a person-belief
   sheltered: boolean | null;        // believed shelter state of a place-belief
+  placeGod: string | null;          // whose shrine I believe this is (perceived surface field)
+  benefitFelt: number | null;       // comfort quality EXPERIENCED here (0..1; act.ts stamps while resting)
   captive: boolean;                 // believed-held: perception sets it from a seen _held subject (CAPTIVE → free deriver)
   inertEvidence: number;            // higher-order reasoning scalar (schema #6)
   inert: boolean;                   // revised "proven harmless" (overrides hostile + faction prior)

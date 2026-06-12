@@ -129,11 +129,32 @@ export function act(a: Agent, dt: number, ctx: CognitionCtx): void {
     } else if (k === 'work' && arrived) {
       produce(a, dt);
     } else if (k === 'comfort' && arrived) {
-      // restore comfort; a tavern also tops up social (and feeds belonging warmth).
-      a.needs.comfort = clamp01((a.needs.comfort ?? 1) + COMFORT.restoreRate * dt);
-      if (goal.srcKind === 'tavern') {
+      // restore comfort — SCALED by the place's TRUE benefit where one stands (the resolver's
+      // colocation-gated read; null in the open / at a static rest POI keeps the old flat
+      // rate). A building's `benefit` is finally REAL: a hearth restores fully, a shrine's
+      // quiet solace less so — and whatever the soul FELT here it LEARNS onto its own
+      // place-belief (`benefitFelt`, throttled), the experience the believed-best comfort
+      // routing in decide.ts weighs against the kind's cultural prior.
+      const ben = (ctx.resolver && ctx.resolver.placeBenefitAt) ? ctx.resolver.placeBenefitAt(a) : null;
+      const cMul = ben ? Math.max(0.4, ben.comfort ?? 1) : 1;
+      a.needs.comfort = clamp01((a.needs.comfort ?? 1) + COMFORT.restoreRate * dt * cMul);
+      if (ben && (ben.social || 0) > 0) {
+        a.needs.social = clamp01(a.needs.social + COMFORT.tavernSocialRate * dt * ben.social);
+        if (ben.kind === 'tavern') a.life.social += COMFORT.tavernSocialRate * dt;   // the hearth feeds belonging
+      } else if (goal.srcKind === 'tavern') {
+        // a static rest POI (hut/rest site, not a building) keeps its old social trickle.
         a.needs.social = clamp01(a.needs.social + COMFORT.tavernSocialRate * dt);
-        a.life.social += COMFORT.tavernSocialRate * dt;   // tavern colocation feeds belonging
+        a.life.social += COMFORT.tavernSocialRate * dt;
+      }
+      const aa = a as Agent & { _benefitStampAt?: number };   // own-state throttle stamp (ad-hoc field)
+      if (ben && goal.toPos && (a._rpgNow || 0) - (aa._benefitStampAt ?? -Infinity) > 2) {
+        aa._benefitStampAt = a._rpgNow || 0;
+        // stamp MY OWN place-belief for where I rest (bounded scan ≤ beliefsPerAgent).
+        for (const pb of a.beliefs.all()) {
+          if (!pb.placeKind || !pb.lastPos) continue;
+          const dx = pb.lastPos.x - goal.toPos.x, dz = pb.lastPos.z - goal.toPos.z;
+          if (dx * dx + dz * dz <= 9) { pb.benefitFelt = Math.max(pb.benefitFelt || 0, ben.comfort ?? 0); break; }
+        }
       }
     } else if (k === 'court' && arrived) {
       // STAR-CROSSED, ENACTED (docs/architecture/12 §8): lingering beside the believed sweetheart
