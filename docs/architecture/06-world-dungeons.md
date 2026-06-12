@@ -96,6 +96,51 @@ follow). **No AI fork.** Dismiss restores the stashed flags. `Party.prune()` dro
 dead each frame. This is the same machinery as NPC [Groups](04-drama-society.md), just
 with the player as leader — and Groups never touches a player-led member.
 
+## Settlements: the town plan (`js/world/cityGrid.ts`, `js/sim/cities.ts`, `js/sim/surveyor.ts`, `js/sim/construction.ts`; `CITY`/`SURVEYOR`/`BUILD`)
+
+Each town owns a **CityGrid** (pure data + math, headless-safe): a discrete tile fabric
+(`CITY.tile` m/tile) with a **road lattice** (every `block`-th line a street), on which a
+building claims a tile **footprint + a vertical span of levels**. On top of the lattice
+sits the **town plan** — three ZONES derived from tile position (`zoneOf`, never stored):
+
+- **PLAZA** (`CITY.zone.plazaR`): a central open square — **no plot may ever take a plaza
+  tile** (hard). The one inviolate rule of the plan.
+- **CIVIC** (`zone.civicDepth` tiles past the plaza): public works *prefer* it, so the
+  heart of town reads as a square ringed by its institutions.
+- **HOMES**: the residential blocks beyond. Zone preference is **soft** — a crowded town
+  still builds (`claimPlot(w, d, levels, zone)` falls back out-of-band before failing).
+
+**Growth + density** (the settlement actually develops): a full grid **grows a block-ring
+per side** (`grow()`, up to `CITY.growth.maxTiles`) — the shift-by-`block` remap preserves
+the lattice phase AND every standing building's exact world position (tile records mutate
+in place, so held plot references stay valid). Before sprawl comes **density**: when the
+homes band runs tight (`zoneFreeFrac < growth.denseBelow`) new homes rise an extra storey
+(cap `growth.homeMaxLevels`). `ascii()` renders the plan headless ('#' street, 'o' plaza,
+digits = storeys) — `bun test/buildprobe.mjs` prints it plus zone-adherence/storeys/
+routing metrics per town.
+
+**Five build kinds** (`construction.ts BUILD_KIND`), all paid in wood + labour (closed
+money loop): private **homes** (commissioned by a chronically-uncomfortable wealthy owner,
+discovered by sight — doc 09), and four public works — the **tavern** (hearth: comfort +
+social), **granary** (the civic larder, doc 14), a fellowship's **guildhall** (doc 04),
+and the **shrine**: once a town's dominant god holds `SURVEYOR.shrineMinFlock` local
+faithful, the congregation raises its god a spire in the civic band (the building carries
+`god`; faith's miracles work `FAITH.shrineMiracleBoost` harder on faithful within
+`shrineRange` of a STANDING shrine — a razed one confers nothing). With per-town god
+seeding, each town tends to raise a different god's shrine.
+
+**Benefits are real, learned, and routed by belief**: `resolver.placeBenefitAt(a)` reports
+the standing building underfoot's true `{comfort, social, kind}` (colocation-gated);
+`act.ts` scales the comfort/social restore by it and stamps the **felt quality** onto the
+rester's OWN place-belief (`benefitFelt` — lived experience, the sanctioned truth→belief
+bridge); `decide.ts nearestComfortSource` then picks the **believed-best** source — felt
+quality vs the kind's cultural prior (`COMFORT.kindPrior`: everyone knows what a tavern is
+for; a shrine is solace only to its own faithful), distance-discounted, skipping places
+believed razed. Static `map.nearest(['shelter','rest'])` remains the know-nothing fallback.
+Buildings are component shells (`buildingParts.ts`: per-part hp/material/fire) so raids
+take them apart and shelter loss kills the benefit; the epistemic rules around discovery
+are in [09](09-reasoning-layer.md).
+
 ## Dungeons (`js/world/dungeon.js`, `js/world/dungeonManager.js`, `DUNGEON`)
 
 Daggerfall-style procedural tile mazes, and the cleverest spatial trick in the codebase.
