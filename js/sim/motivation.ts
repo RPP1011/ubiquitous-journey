@@ -10,7 +10,7 @@
 // omniscient world truth). Progress is measured from lightweight per-agent
 // counters (agent.life) plus the gold/level the agent genuinely holds.
 
-import { MOTIVE, SIM } from './simconfig.js';
+import { MOTIVE, SIM, OATHS } from './simconfig.js';
 import { rng } from './rng.js';
 import { RPG } from '../rpg/rpgconfig.js';
 import { goalAvenge, goalSeekFortune, goalRepay, goalGrieve, goalDelve } from './planner.js';
@@ -41,6 +41,12 @@ function swearOath(a: Agent, kind: string, targetId: unknown): void {
     m.set(k, { resolved: false });
     while (m.size > 32) { const oldest = m.keys().next().value; if (oldest === undefined) break; m.delete(oldest); }  // bounded
     foldOathSworn(a, kind);
+    // OATH ECONOMICS (OATHS config): the vow's weight LANDS when taken — an immediate
+    // comfort hit — and the live-oath counter arms the held-and-honoured economy in
+    // drainNeeds (gnaw on comfort, courage against fear, purpose against boredom).
+    a._liveOaths = (a._liveOaths || 0) + 1;
+    if (a.needs && typeof a.needs.comfort === 'number')
+      a.needs.comfort = Math.max(0, a.needs.comfort - (OATHS.swearComfortCost || 0));
   } catch { /* never throw on the tick */ }
 }
 function resolveOath(a: Agent, kind: string, targetId: unknown, reason: 'kept' | 'abandoned'): void {
@@ -50,6 +56,22 @@ function resolveOath(a: Agent, kind: string, targetId: unknown, reason: 'kept' |
     if (!rec || rec.resolved) return;  // not a live sworn oath — don't count a phantom (re-derivation) resolution
     rec.resolved = true;
     foldOathPop(a, kind, reason);
+    a._liveOaths = Math.max(0, (a._liveOaths || 0) - 1);   // the vow no longer gnaws (or steels)
+    if (reason === 'abandoned') {
+      // FORSWORN — the permanent scar: each broken vow lowers the comfort CEILING for
+      // life (OATHS.forswornCapStep, applied in drainNeeds), marks the biography, and
+      // files a FORMATIVE memory (salience above the LTM bar — a life remembers the
+      // word it broke). Own-state only; OTHERS learning of it (the social leak) is the
+      // betrayal-as-choice feature, deliberately separate.
+      if (a.life) a.life.forsworn = (a.life.forsworn || 0) + 1;
+      if (a.memory && typeof a.memory.record === 'function') {
+        try { a.memory.record({ t: 0, kind: 'forsworn', withId: targetId as EntityId, valence: -1, salience: 0.75 }); } catch { /* */ }
+      }
+    } else if (a.mood) {
+      // a vow KEPT: the vindicated walk tall — fear breaks (on top of the closure
+      // XP/triumph the goal pop already pays).
+      a.mood.fear = Math.max(0, (a.mood.fear || 0) * 0.4);
+    }
   } catch { /* never throw on the tick */ }
 }
 import { runDerivers, runPlanOutcome } from './exec/registry.js';

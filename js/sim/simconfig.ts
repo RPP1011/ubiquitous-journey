@@ -405,6 +405,22 @@ export const WEIGHT = {
 // choice over many ticks, so agents live visible arcs instead of only servicing
 // immediate needs. Targets are tuned to be reachable within a play session; on
 // fulfilment the agent rolls a fresh ambition. See js/sim/motivation.js.
+// --- OATH ECONOMICS (js/sim/motivation.ts swearOath/resolveOath + agent.drainNeeds) ----
+// An oath is a COMFORT LOAN with a courage coupon: taking it costs peace of mind and the
+// unresolved vow gnaws — but while the word is HELD AND HONOURED it pays continuously
+// (fear damps faster, boredom slower: a sworn life has purpose). Keeping it lifts the
+// gnaw and pays the existing closure XP/triumph; BREAKING it scars permanently — each
+// forsworn vow lowers the comfort CEILING for life (the forsworn sleep poorly), feeds
+// the biography ("twice forsworn") and a formative memory. All own-state; tuning here.
+export const OATHS = {
+  swearComfortCost: 0.08,   // the vow's weight lands when taken (immediate comfort hit)
+  gnawComfortMul: 1.25,     // comfort drains this much faster while a sworn oath is unresolved
+  liveFearDamp: 0.5,        // EXTRA fear decay per sec while sworn (courage of the committed)
+  livePurposeMul: 0.6,      // novelty (boredom) drain multiplier while sworn — purpose fills a life
+  forswornCapStep: 0.06,    // PERMANENT comfort-ceiling loss per broken oath…
+  forswornCapFloor: 0.45,   // …bounded: the forsworn sleep poorly, not impossibly
+};
+
 export const MOTIVE = {
   pull: 1.0,             // global scale on how hard an ambition tilts utility
   reassignGrace: 6,      // sim-seconds before a freshly-set ambition can complete

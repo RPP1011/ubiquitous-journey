@@ -20,6 +20,7 @@ import { foldLoss, noteSnub, lossReasonShare, snubsFelt, goldTrend, sampleGold,
 import { statusSensor } from '../../js/sim/statusSensor.js';
 import { deriveGoals, pruneGoals } from '../../js/sim/motivation.js';
 import { goalAssault } from '../../js/sim/planner.js';
+import { OATHS } from '../../js/sim/simconfig.js';
 import { gossipBeliefs } from '../../js/sim/agent/perception.js';
 import { SagaStore } from '../../js/sim/arcs.js';
 import { BeliefState, BeliefStore } from '../../js/sim/beliefs.js';
@@ -583,6 +584,49 @@ export function oathArcResolutionTest(ok, { makeFighter, stubScene }) {
   const tK = oaths(avK).avenge || {};
   ok(tK.kept === 1 && !tK.abandoned && avK.memory.recent(20).some((e) => e.kind === 'triumph'),
     `resolution W4: a genuine kill resolves the oath KEPT with its triumph memory (kept=${tK.kept | 0})`);
+
+  // W6 — OATH ECONOMICS: the vow costs to take, PAYS WHILE HELD (courage + purpose +
+  // the gnaw), and scars permanently when broken (the forsworn comfort ceiling).
+  {
+    const sw = add('Sworn');
+    sw.memory.mtm.push({ t: 0, kind: 'assaulted', withId: 9005, valence: -1, salience: 1 });
+    sw.needs.comfort = 0.9;
+    deriveGoals(sw, ctx);                     // swears -> the vow's weight lands
+    ok((sw._liveOaths || 0) === 1 && Math.abs(sw.needs.comfort - (0.9 - OATHS.swearComfortCost)) < 1e-9,
+      `resolution W6a: swearing costs comfort and arms the live-oath counter (comfort ${sw.needs.comfort.toFixed(2)}, live=${sw._liveOaths})`);
+
+    // held-and-honoured: fear damps faster and boredom builds slower than for the unsworn.
+    const un = add('Unsworn');
+    for (const x of [sw, un]) { x.mood.fear = 0.8; x.needs.novelty = 0.8; x.needs.comfort = 0.6; }
+    // pin personalities so the trait-scaled novelty drains match.
+    sw.personality.curiosity = 0.5; un.personality.curiosity = 0.5;
+    for (let i = 0; i < 60; i++) { sw.drainNeeds(1 / 60); un.drainNeeds(1 / 60); }
+    ok(sw.mood.fear < un.mood.fear && sw.needs.novelty > un.needs.novelty && sw.needs.comfort < un.needs.comfort,
+      `resolution W6b: a held vow pays courage+purpose while it gnaws (fear ${sw.mood.fear.toFixed(2)}<${un.mood.fear.toFixed(2)}, novelty ${sw.needs.novelty.toFixed(2)}>${un.needs.novelty.toFixed(2)}, comfort ${sw.needs.comfort.toFixed(2)}<${un.needs.comfort.toFixed(2)})`);
+
+    // broken: the goal expires -> oath abandoned -> permanent ceiling + the formative memory.
+    for (const g of sw.goals) if (g.kind === 'avenge') g.expiresAt = -1;
+    pruneGoals(sw, ctx);
+    ok((sw.life.forsworn || 0) === 1 && (sw._liveOaths || 0) === 0,
+      `resolution W6c: an abandoned oath marks the agent FORSWORN and lifts the gnaw (forsworn=${sw.life.forsworn})`);
+    ok(sw.memory.stm.items().some((e) => e.kind === 'forsworn'),
+      'resolution W6d: breaking the word files a formative memory');
+    sw.needs.comfort = 1;
+    sw.drainNeeds(1 / 60);
+    const cap = Math.max(OATHS.forswornCapFloor, 1 - OATHS.forswornCapStep);
+    ok(sw.needs.comfort <= cap + 1e-9,
+      `resolution W6e: the forsworn sleep poorly — comfort is ceilinged for life (${sw.needs.comfort.toFixed(2)} <= ${cap.toFixed(2)})`);
+
+    // kept: no scar — and fear breaks (the vindicated walk tall).
+    const kp = add('Keeper');
+    kp.memory.mtm.push({ t: 0, kind: 'assaulted', withId: 9006, valence: -1, salience: 1 });
+    deriveGoals(kp, ctx);
+    kp.mood.fear = 0.9;
+    kp._slain = new Set([9006]);
+    pruneGoals(kp, ctx);
+    ok((kp.life.forsworn || 0) === 0 && kp.mood.fear < 0.5 && (kp._liveOaths || 0) === 0,
+      `resolution W6f: a vow KEPT leaves no scar and breaks fear (fear=${kp.mood.fear.toFixed(2)})`);
+  }
 
   // W5 — a living fellowship re-arms its arc TTL: endurance is not a lapse.
   const anchor = add('Anch'); const member = add('Memb');

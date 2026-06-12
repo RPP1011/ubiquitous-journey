@@ -170,6 +170,7 @@ export interface Agent {
   _groupFormedAt?: number | null;     // anchor-side: when this group formed (the hall endurance gate)
   _schemaGoalLock?: { kind: string; until: number } | null;
   _slain?: Set<EntityId>;
+  _liveOaths?: number;                // sworn-and-unresolved oath count (oath economics: gnaw/courage/purpose)
   _underground?: boolean;
   _barrierSide?: number;
   sim?: unknown;                      // back-ref to the owning Simulation (opaque; city grid only)

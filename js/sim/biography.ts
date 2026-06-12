@@ -38,6 +38,10 @@ export function agentBiography(a: Ag, sim: Sim): string[] {
     else if (a.watch && sim && sim.watch && sim.watch.captain === a) role.push('Captain of the Watch');
     else if (a.watch) role.push('a watchman of the town');
     if (a.spy && a.disguiseFaction) role.push('(unbeknownst to all, a spy)');
+    // the FORSWORN mark (oath economics): broken vows are part of who one became.
+    const forsworn = (a.life && a.life.forsworn) || 0;
+    if (forsworn === 1) role.push('once forsworn');
+    else if (forsworn > 1) role.push(`${forsworn === 2 ? 'twice' : forsworn === 3 ? 'thrice' : forsworn + ' times'} forsworn`);
     if (role.length) lines.push(role.join(', '));
     if (a.faith) lines.push(`keeps the faith of ${a.faith}`);
 

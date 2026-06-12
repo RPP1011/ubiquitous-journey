@@ -9,7 +9,7 @@ import { BeliefStore } from './beliefs.js';
 import { rng } from './rng.js';
 import {
   PROFESSIONS, COMMODITIES, BASE_PRICE, ECON,
-  SIM, COMFORT, BUILD, NOVELTY, SCHEMA, WEALTH, RECIPES, STARVE,
+  SIM, COMFORT, BUILD, NOVELTY, SCHEMA, WEALTH, RECIPES, STARVE, OATHS,
   factionHostile,
 } from './simconfig.js';
 import { Progression } from '../rpg/progression.js';
@@ -282,6 +282,13 @@ export class Agent {
   drainNeeds(dt: number): void {
     this.needs.hunger = clamp01(this.needs.hunger - SIM.hungerDrain * dt);
     this.needs.energy = clamp01(this.needs.energy - SIM.energyDrain * dt);
+    // OATH ECONOMICS (OATHS config, armed by swearOath/resolveOath): while a sworn oath
+    // is HELD AND HONOURED the vow pays continuously — courage (extra fear decay) and
+    // purpose (boredom drains slower, via the novelty multiplier below) — while it GNAWS
+    // at comfort (the comfort drain multiplier). The reward is for KEEPING the word, not
+    // a lump sum at resolution. All own-state; one counter read.
+    const sworn = (this._liveOaths || 0) > 0;
+    if (sworn) this.mood.fear = Math.max(0, this.mood.fear - (OATHS.liveFearDamp || 0) * dt);
     // PERSONALITY LIVES THROUGH THE NEEDS: the social and novelty drains scale with the matching
     // trait (×0.35..×1.65, neutral 0.5 → ×1), so a gregarious soul gets lonely — and a curious one
     // bored — up to ~5× faster than its opposite. The need deficit is what FIRES the socialize/
@@ -290,7 +297,8 @@ export class Agent {
     const Pd = this.personality || {};
     this.needs.social = clamp01(this.needs.social - SIM.socialDrain * (0.35 + 1.3 * (Pd.social_drive ?? 0.5)) * dt);
     // NOVELTY drains too (boredom builds) — relieved by sightseeing (act.sightseeStep).
-    if (NOVELTY.enabled) this.needs.novelty = clamp01((this.needs.novelty ?? 1) - SIM.noveltyDrain * (0.35 + 1.3 * (Pd.curiosity ?? 0.5)) * dt);
+    // A sworn life has PURPOSE: boredom builds slower while an oath is held (OATHS.livePurposeMul).
+    if (NOVELTY.enabled) this.needs.novelty = clamp01((this.needs.novelty ?? 1) - SIM.noveltyDrain * (0.35 + 1.3 * (Pd.curiosity ?? 0.5)) * (sworn ? (OATHS.livePurposeMul || 1) : 1) * dt);
     // MASTERY does NOT drain — a learned craft stays learned. Commitment compounds over a
     // lifetime: a specialist's edge only ever grows, and a long-practised trade is a
     // permanent moat newcomers must out-WORK (not just out-wait) to rival.
@@ -298,7 +306,8 @@ export class Agent {
     // capped LOW each tick — that ceiling is the standing demand pressure that
     // makes building a home worthwhile. A housed agent (this.home set) has no cap.
     if (COMFORT.enabled) {
-      this.needs.comfort = clamp01((this.needs.comfort ?? 1) - COMFORT.drain * dt);
+      // the GNAW: an unresolved vow eats at comfort (the take-and-hold cost of an oath).
+      this.needs.comfort = clamp01((this.needs.comfort ?? 1) - COMFORT.drain * (sworn ? (OATHS.gnawComfortMul || 1) : 1) * dt);
       // UNHOUSED CAP — now belief-backed (homeBelief): an agent that holds no believed-intact
       // home is capped low (the demand pressure). A torched home it has DISCOVERED (sheltered
       // belief flipped false by perception) re-caps it, exactly as losing the truth-side home
@@ -306,6 +315,15 @@ export class Agent {
       const hb = this.homeBelief();
       if ((!hb || hb.sheltered === false) && this.needs.comfort > COMFORT.unhousedCap)
         this.needs.comfort = COMFORT.unhousedCap;
+      // THE FORSWORN SLEEP POORLY — the permanent scar of broken vows: each forsworn oath
+      // lowers the comfort CEILING for life (bounded at forswornCapFloor). A cap, like the
+      // unhoused cap above: a standing pressure, not a drain — the forsworn can be content,
+      // never fully at peace.
+      const forsworn = (this.life && this.life.forsworn) || 0;
+      if (forsworn > 0) {
+        const cap = Math.max(OATHS.forswornCapFloor || 0.45, 1 - forsworn * (OATHS.forswornCapStep || 0.06));
+        if (this.needs.comfort > cap) this.needs.comfort = cap;
+      }
       // chronic-demand streak: track how long comfort has sat at/below the qualify
       // line (read by qualifyHome via _comfortLowSince). Only working townsfolk bother.
       if (this.canWork && this.needs.comfort <= BUILD.qualifyComfort) {

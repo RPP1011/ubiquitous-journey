@@ -126,6 +126,7 @@ export function memoryPhrase(ep: Episode, nameOf?: ((id: number | string) => str
     case 'bloodshed':       return who ? `killed ${who}` : 'spilled blood';
     case 'assaulted':       return who ? `was attacked by ${who}` : 'was attacked';
     case 'witnessed_death': return who ? `saw ${who} fall` : 'witnessed a death';
+    case 'forsworn':        return who ? `forsook their vow against ${who}` : 'broke their sworn word';
     case 'survived':        return who ? `survived ${who}'s onslaught` : 'cheated death';
     case 'windfall':        return `struck it rich at the ${ep.place || 'market'}`;
     case 'milestone':       return ep.label ? `became a ${ep.label}` : 'came into their own';
