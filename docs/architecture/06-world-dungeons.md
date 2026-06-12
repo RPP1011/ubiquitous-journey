@@ -141,6 +141,29 @@ Buildings are component shells (`buildingParts.ts`: per-part hp/material/fire) s
 take them apart and shelter loss kills the benefit; the epistemic rules around discovery
 are in [09](09-reasoning-layer.md).
 
+**Place hearsay** (`BeliefStore.mergePlaceFrom`): building news travels by gossip,
+PLACE-SHAPED — kind/where/shelter/quality, no standing to garble. Only the public kinds
+are told, a told quality lands damped (`HEARSAY.placeQualityDamp`), sight always wins,
+and news of RUIN flips even a fresher-held 'intact' (bad news travels). The believed-best
+comfort routing consumes it for free — an agent can prefer a tavern it has only heard of.
+
+**The wall follows the plan** (`walls.ts wallRadiusFor`): the town ring's radius derives
+from the CityGrid half-extent + `TOWNS.wall.margin` (per-town, enclosing the whole plan)
+and MOVES OUT when the grid grows (`Cities` → `setWallRadiusFromGrid` + browser-side
+`rebuildWalls`). The four evenly-spaced gates sit on the lattice's axis streets; the tuned
+radial collision/funnel model is unchanged. `TOWNS.wall.radius` is the no-grid fallback.
+
+**Plaza furniture**: each town raises a **well** at the plaza's shoulder (`world.ts
+makeWell`, a POI) — a `crowd`/`safe`/`water` Place, the square's non-commercial anchor
+(the market POI holds the plaza centre).
+
+**Cellars + the home strongbox**: `claimPlot(..., cellars)` digs below ground (clamped at
+`CITY.minLevel`; the shell's door stays at ground level). A dense town digs under its tall
+houses, a wealthy owner either way — and **home banking** (`act.ts`, `WEALTH.bank`) makes
+the cellar matter: resting at one's own cellared home moves surplus purse gold into the
+stash (conserved transfer; not on the body — robbery/corpse-loot can't reach it; escheat
+passes it to the heir) and draws it back when the purse runs thin.
+
 ## Dungeons (`js/world/dungeon.js`, `js/world/dungeonManager.js`, `DUNGEON`)
 
 Daggerfall-style procedural tile mazes, and the cleverest spatial trick in the codebase.
