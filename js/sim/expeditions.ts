@@ -17,6 +17,7 @@ import { isHomeBuilder } from './construction.js';
 import { ARENA_RADIUS } from '../arena.js';
 import { TUNE } from '../constants.js';
 import { rng } from './rng.js';
+import { bus, makeEvent } from '../rpg/events.js';
 
 // `sim` (the owning Simulation — wave-2, still .js) and the expedition Agents (captains +
 // followers, via their expedition/band flags) are typed opaquely on purpose; behaviour
@@ -61,7 +62,10 @@ export class Expeditions {
   _lvl(a: Ag): number { return (a && a.progression && a.progression.totalLevel) || 0; }
   _brave(a: Ag): boolean {
     return a && a.alive && a.autonomous && a.faction === 'townsfolk' && !a.watch && !a.reporter &&
-      !a.inParty && a.expedition == null && a.expeditionOf == null && !isHomeBuilder(a);
+      !a.inParty && a.expedition == null && a.expeditionOf == null && !isHomeBuilder(a) &&
+      // PROVISIONED: the company marches on its stomach — no rations, no place in the line
+      // (the seek_glory no-campaign-without-rations precedent, applied to the whole party).
+      (a.inventory && (a.inventory.food || 0) >= (EXPEDITION.provisionFood || 0));
   }
 
   // raise a new company when one is warranted (off cooldown, under the cap, a worthy
@@ -114,15 +118,20 @@ export class Expeditions {
     this._lastForm = this.sim.time;
 
     const who = cap.name + (followers.length ? ` and ${followers.length} companion${followers.length > 1 ? 's' : ''}` : '');
-    // choose the adventure: DOWN into the deep (the dungeons), or out into the wilds.
-    if (rng() < (EXPEDITION.delveChance ?? 0.7)) {
-      this._descend(cap, who);
-    } else {
-      const ang = rng() * Math.PI * 2;
-      const r = ARENA_RADIUS * (EXPEDITION.targetRing || 0.78);
-      cap.expedition.target = new THREE.Vector3(Math.cos(ang) * r, 0, Math.sin(ang) * r);
-      this._note(`${who} set out on an expedition into the wilds.`);
-    }
+    cap.expedition.who = who;
+    // EXPLORE fold marks: distance marched on expedition becomes EXPLORE deeds (per member).
+    cap.expedition.distMark = new Map(members.map((m: Ag) => [m.id, (m.life && m.life.dist) || 0]));
+    // choose the adventure — and MARCH there either way (the journey is real; the old
+    // delve teleport skipped it). A delve party heads for a MOUTH of the deep on the
+    // outer ring and only descends on arrival.
+    const delvePlanned = rng() < (EXPEDITION.delveChance ?? 0.7);
+    const ang = rng() * Math.PI * 2;
+    const r = ARENA_RADIUS * (delvePlanned ? (EXPEDITION.delveRing || 0.55) : (EXPEDITION.targetRing || 0.78));
+    cap.expedition.target = new THREE.Vector3(Math.cos(ang) * r, 0, Math.sin(ang) * r);
+    cap.expedition.delvePlanned = delvePlanned;
+    this._note(delvePlanned
+      ? `${who} set out for a mouth of the deep.`
+      : `${who} set out on an expedition into the wilds.`);
   }
 
   // DELVE — descend the party into an isolated underground pocket and loose the
@@ -130,6 +139,7 @@ export class Expeditions {
   // everything else, so it's isolated by distance (the dungeon spatial trick).
   _descend(cap: Ag, who: string): void {
     const E = cap.expedition;
+    E.mouth = (E.target && E.target.clone) ? E.target.clone() : null;   // where the survivors climb out
     E.delve = true; E.phase = 'delve';
     E.horrorIds = [];
     const Y = EXPEDITION.delveDepth || -900;
@@ -189,13 +199,17 @@ export class Expeditions {
   _advance(cap: Ag): void {
     const E = cap.expedition;
     if (!E) return;
+    this._foldExplore(E);                 // distance marched -> EXPLORE deeds (all phases)
     if (E.delve) { this._advanceDelve(cap); return; }
     // the captain fell — a doomed expedition (resolved from the survivors' side).
     if (!cap.alive) { this._end(cap, 'captainLost'); return; }
     const now = this.sim.time;
 
     if (E.phase === 'out') {
-      if (cap.pos.distanceTo(E.target) < 14) { E.phase = 'hunt'; E.huntUntil = now + (EXPEDITION.huntSecs || 60); }
+      if (cap.pos.distanceTo(E.target) < 14) {
+        if (E.delvePlanned) { E.delvePlanned = false; this._descend(cap, E.who || cap.name); return; }
+        E.phase = 'hunt'; E.huntUntil = now + (EXPEDITION.huntSecs || 60);
+      }
       return;
     }
     if (E.phase === 'hunt') {
@@ -208,13 +222,23 @@ export class Expeditions {
     }
   }
 
-  // the delve runs until the deep is CLEARED, time runs out, or the party is wiped.
+  // the delve runs until the deep is CLEARED, time runs out, the party is wiped — or the
+  // CAPTAIN CALLS THE RETREAT: losses past retreatBelow, or his own blood past retreatHp.
+  // "None climbed back into the light" is now a decision that failed, not a timer.
   _advanceDelve(cap: Ag): void {
     const E = cap.expedition;
     const now = this.sim.time;
+    const total = (E.members || []).length || 1;
     const aliveMembers = E.members.filter((m: any) => m && m.alive).length;
     const horrorsLeft = (E.horrorIds || []).filter((id: any) => { const h = this.sim.agentsById.get(id); return h && h.alive; }).length;
-    if (horrorsLeft === 0 || now >= (E.delveUntil || 0) || aliveMembers === 0) {
+    const capHp = (cap.alive && cap.fighter) ? cap.fighter.health / (TUNE.maxHealth || 100) : 0;
+    const retreat = aliveMembers > 0 && horrorsLeft > 0 &&
+      ((aliveMembers / total) < (EXPEDITION.retreatBelow || 0.67) || capHp < (EXPEDITION.retreatHp || 0.35));
+    if (retreat) {
+      this.stats.retreats = (this.stats.retreats || 0) + 1;
+      E.retreated = true;
+    }
+    if (horrorsLeft === 0 || now >= (E.delveUntil || 0) || aliveMembers === 0 || retreat) {
       this._endDelve(cap, horrorsLeft === 0);
     }
   }
@@ -227,13 +251,25 @@ export class Expeditions {
     const fallen = members.filter((m: any) => m && !m.alive);
     const kills = Math.max(0, this._killCount(survivors) - (E.killsAt0 || 0));
     this.stats.slain += kills;
-    // bring the survivors back into the light (the town core); free everyone's flags.
-    for (const m of survivors) { m.fighter.root.position.set(rand(-6, 6), 0, rand(-6, 6)); m._underground = false; this._restore(m); }
+    // the survivors CLIMB OUT AT THE MOUTH and must still MARCH HOME (the return leg is
+    // real — a company can win its relic below and lose someone on the road back).
+    const mouth = E.mouth || CORE;
+    for (const m of survivors) { m.fighter.root.position.set(mouth.x + rand(-3, 3), 0, mouth.z + rand(-3, 3)); m._underground = false; }
     for (const m of fallen) { m._underground = false; }
     // any horrors still lurking crawl back into the dark (despawn — gold-neutral anyway).
     for (const id of (E.horrorIds || [])) this._despawnHorror(this.sim.agentsById.get(id));
-    cap.expedition = null;
-    this.active = this.active.filter((c) => c !== cap);
+
+    if (!survivors.length) {
+      // a wiped company resolves below — nothing climbs out.
+      for (const m of members) this._restore(m);
+      cap.expedition = null;
+      this.active = this.active.filter((c) => c !== cap);
+    } else {
+      // the tale of the DEEP is told at the mouth; the homeward leg resolves at _end('home')
+      // (E.resolved keeps it from double-counting the stats there).
+      E.delve = false; E.resolved = true; E.phase = 'return';
+      E.target = CORE.clone ? CORE.clone() : CORE;
+    }
 
     if (!survivors.length) {
       this.stats.losses++;
@@ -241,7 +277,12 @@ export class Expeditions {
     } else if (fallen.length) {
       this.stats.losses++;
       const names = fallen.map((m: any) => m.name).join(' and ');
-      this._note(`${cap.name}'s company climbs back from the deep, ${kills} horror${kills === 1 ? '' : 's'} slain — but ${names} was left below.`);
+      this._note(E.retreated
+        ? `${cap.name} called the retreat — ${kills} horror${kills === 1 ? '' : 's'} slain, but the deep keeps ${names}.`
+        : `${cap.name}'s company climbs back from the deep, ${kills} horror${kills === 1 ? '' : 's'} slain — but ${names} was left below.`);
+    } else if (E.retreated) {
+      this.stats.losses++;
+      this._note(`${cap.name} called the retreat — the company climbs back whole, the deep unconquered.`);
     } else {
       this.stats.triumphs++;
       const relic = cleared && rng() < (EXPEDITION.relicChance ?? 0.6);
@@ -262,6 +303,17 @@ export class Expeditions {
     const members = E.members || [cap];
     const survivors = members.filter((m: any) => m && m.alive);
     const fallen = members.filter((m: any) => m && !m.alive);
+
+    // a RESOLVED delve marching home: the deep's tale was told at the mouth (_endDelve)
+    // — the homeward arrival just disbands (no double-counted stats, a quiet beat).
+    if (E.resolved) {
+      for (const m of members) this._restore(m);
+      cap.expedition = null;
+      this.active = this.active.filter((c) => c !== cap);
+      if (how === 'home') this._note(`${cap.name}'s company is home from the deep.`);
+      else { this.stats.losses++; this._note(`${cap.name} fell on the road home from the deep.`); }
+      return;
+    }
     const kills = Math.max(0, this._killCount(survivors) - (E.killsAt0 || 0));
     this.stats.slain += kills;
 
@@ -295,6 +347,30 @@ export class Expeditions {
       m._expRestore = null;
     }
     m.expeditionOf = null;
+  }
+
+  // DISTANCE MARCHED -> EXPLORE deeds: every exploreDeedDist metres a living member has
+  // walked since the last fold emits one EXPLORE deed (the emitter the explorer identity
+  // was missing — nothing in the sim folded EXPLORE before this). life.dist is the
+  // existing odometer; the per-member mark map keeps the fold incremental + bounded.
+  _foldExplore(E: Ag): void {
+    try {
+      if (!E || !E.distMark) return;
+      const per = EXPEDITION.exploreDeedDist || 40;
+      for (const m of E.members || []) {
+        if (!m || !m.alive || !m.life) continue;
+        const mark = E.distMark.get(m.id) ?? m.life.dist;
+        let walked = (m.life.dist || 0) - mark;
+        let deeds = 0;
+        while (walked >= per && deeds < 4) { walked -= per; deeds++; }   // bounded per pass
+        if (deeds > 0) {
+          E.distMark.set(m.id, (m.life.dist || 0) - walked);
+          for (let i = 0; i < deeds; i++) {
+            bus.emit(makeEvent({ actorId: m.id, verb: 'explore', tags: ['EXPLORE'], magnitude: 1, t: this.sim.time }));
+          }
+        }
+      }
+    } catch { /* never throw on the tick */ }
   }
 
   _note(text: string): void { try { if (this.sim.chronicle && this.sim.chronicle.note) this.sim.chronicle.note('legend', -15, text); } catch { /* */ } }

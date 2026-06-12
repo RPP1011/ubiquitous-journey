@@ -1870,6 +1870,18 @@ export const EXPEDITION = {
   relicChance: 0.6,        // chance a delve that CLEARS the deep returns bearing a relic
   minTownPop: 18,          // don't muster a company (risking lives in the deep) from a town
                            //   already below this — it needs everyone at home
+  // --- PROPER QUESTS (the expedition-archetype work): march, provision, retreat, explore ---
+  provisionFood: 1,        // a member must CARRY this much food to join (the company marches on
+                           //   its stomach — provisioning is a real choice, M0-priceable)
+  delveRing: 0.55,         // how far out the delve MOUTH lies (× ARENA_RADIUS): the company
+                           //   MARCHES there and back — the journey is real, only the descent
+                           //   into the pocket is a teleport (climbing into a hole)
+  retreatBelow: 0.67,      // the captain CALLS THE RETREAT when the alive fraction drops below
+                           //   this — "none climbed back" becomes a choice that failed, not a timer
+  retreatHp: 0.35,         // …or when his own health fraction does (the coward who lives)
+  exploreDeedDist: 40,     // an EXPLORE deed folds per this many metres marched on expedition —
+                           //   one of the two emitters that finally make the explorer identity
+                           //   reachable (the other: a sightsee outing fully taken in, act.ts)
 };
 
 // --- NARRATIVE SEEDING: plant initial conditions that GROW into known tropes ---

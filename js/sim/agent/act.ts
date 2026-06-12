@@ -215,7 +215,14 @@ export function act(a: Agent, dt: number, ctx: CognitionCtx): void {
       a.life.social += SIM.socializeRate * dt * 0.3;   // a touch of belonging
       // hold at the sight until boredom is genuinely topped up, THEN pick a fresh one
       // (so it doesn't bounce off the instant it arrives). Wanderlust feeds via life.dist.
-      if ((a.needs.novelty ?? 1) >= NOVELTY.satisfiedAt) a.sightTarget = null;
+      if ((a.needs.novelty ?? 1) >= NOVELTY.satisfiedAt) {
+        a.sightTarget = null;
+        // A SIGHT FULLY TAKEN IN is an EXPLORE deed — one per completed outing. This (with
+        // the expedition march fold) is the emitter the explorer identity was missing:
+        // nothing in the sim ever folded EXPLORE, so the hunter class and every explorer
+        // archetype were unreachable. Wanderlust finally becomes who you are.
+        bus.emit(mkEvent({ actorId: a.id, verb: 'explore', tags: ['EXPLORE'], magnitude: 1, t: a._rpgNow }));
+      }
     } else if (k === 'hide' && arrived) {
       a.fighter.setMoving(0);   // go to ground: stand still at the concealing place
     }

@@ -22,6 +22,7 @@ import { obligationsTest } from './suites/obligations.mjs';
 import { seedingTest, romanceTest } from './suites/seeding.mjs';
 import { arcsTest, arcsE2ETest } from './suites/arcs.mjs';
 import { signalsTest, wealthTest, outlawTest, whitelistTest, catalogTest, catalogTailTest, gossipSnubTest, softAvoidTest, oathArcResolutionTest } from './suites/signals.mjs';
+import { expeditionTest } from './suites/expeditions.mjs';
 import { executionTest } from './suites/execution.mjs';
 // Action-grammar EXECUTION suites (docs/architecture/10) — one per feature worktree, pre-registered
 // so each fills its own file with zero shared edits. Stubs are no-ops until filled.
@@ -74,6 +75,7 @@ gossipSnubTest(ok);   // Task A: gossip-about-self feeds snubsFelt (docs/archite
 wealthTest(ok);
 outlawTest(ok, helpers);
 oathArcResolutionTest(ok, helpers);   // forgetting ≠ keeping; the march is not the warband outcome
+expeditionTest(ok, helpers);   // proper quests: march / provision / retreat / explore
 softAvoidTest(ok, helpers);   // Task B: suspicion-gated soft-avoidance ("cross the street", doc 13 §3)
 whitelistTest(ok);
 catalogTest(ok);
