@@ -398,9 +398,10 @@ burn-per-use that no cap/decay brake survives, converging every fighter on cowar
 caution is a real feature, but its outcome signal must come from the fighter's own resolution
 (won / fled / health fraction lost), not from this trigger — and once it exists, `attack` can be
 admitted with `expectedYield` semantics of its own. Until then, out. **That win/loss signal is built
-by [12-LLD §7]** — the directed-assault executor's `marched`/`routed` resolution is exactly this
+by [12-LLD §7]** — the directed-assault's `victorious`/`routed` resolution is exactly this
 per-engagement outcome, and [12] step 5 emits it **through this doc's own `PLAN_OUTCOME` registry**
-(`marched` ≈ a `windfall`/landed step, `routed` ≈ `peril`, health-fraction in the `evt`). So admitting
+(`victorious` ≈ a `windfall`/landed step — fired at the battle's RESOLUTION (the assault pop on a
+genuine kill), never at the march commitment — `routed` ≈ `peril`, health-fraction in the `evt`). So admitting
 `attack` here is just registering a second `PLAN_OUTCOME` handler on an emission that already fires —
 no new carrier to build. (The shipped peril trigger,
 `mood.fear` while a *watched* step is active, is safe precisely because `attack` is not watched —

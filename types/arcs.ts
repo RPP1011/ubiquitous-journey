@@ -40,6 +40,7 @@ export interface SagaStore {
   openArc(opts: ArcOpenOpts): Arc | null;
   appendRound(opts: ArcOpenOpts, text?: string): Arc | null;
   appendBeat(key: string, tag: string, text?: string): Arc | null;
+  touchArc(key: string): Arc | null;
   closeArc(key: string, outcome: string, text?: string): Arc | null;
   findArc(key: string): Arc | null;
   recentClosed(maxAgeSecs?: number): Arc[];

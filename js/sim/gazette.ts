@@ -432,13 +432,17 @@ function sagaArticle(b: BriefView): ArticleProse {
     };
   }
   if (s.sagaKind === 'warband') {
-    if (s.outcome === 'marched') return {
-      headline: cap(`The Banner Rises: ${s.a} Marches a War-Band`),
-      body: `${cap(s.a)} gathered followers to their banner — ${s.rounds || 'a'} strong by the end — and led them against the foe they had named. The town has not seen such a muster in a long while.`,
+    if (s.outcome === 'victorious') return {
+      headline: cap(`The Banner Triumphant: ${s.a}'s War-Band Prevails`),
+      body: `${cap(s.a)} gathered followers to their banner and led them against the foe they had named — and the foe was brought down. The town has not seen such a muster carried through in a long while.`,
     };
-    return {
+    if (s.outcome === 'routed') return {
       headline: cap(`A War-Band Scattered: ${s.a}'s Muster Breaks`),
       body: `${cap(s.a)} called followers to a banner and marched — but the foe proved the stronger, and the band broke and scattered. Ambition, it seems, musters faster than it conquers.`,
+    };
+    return {
+      headline: cap(`A Banner Furled: ${s.a}'s Campaign Comes to Nothing`),
+      body: `${cap(s.a)} raised a band and named a foe, but the quarry was never run to ground. The followers drifted back to their trades, and the banner was put away unbloodied.`,
     };
   }
   if (s.sagaKind === 'ragsToRiches') {

@@ -191,7 +191,12 @@ mechanics), and every join files a round on a `fellowship` saga arc — **lazy-o
 churn lesson), keyed `fellowship:<type>:<anchor>` (disjoint from the recruiter's
 warband muster arc). Dissolution — leader gone, or dwindled to one — closes it
 `'disbanded'`. A band/guild/circle is now a CHARACTER in the chronicle ("Aldric joined
-the Hearthside Circle of Wenna"). Observer-layer only; guarded.
+the Hearthside Circle of Wenna"). **A living fellowship is not a lapsed tale** (the
+endures fix): the group keeper re-arms every living group's open arc on its formation
+cadence (`SagaStore.touchArc` — TTL only, no beat), because a fellowship files rounds
+only on joins, so a stable group that stopped recruiting used to read as a story that
+petered out (`'lapsed'`) while its hall still stood. Only real dissolution files an
+ending. Observer-layer only; guarded.
 
 **The instrument**: `groupCohesion(sim)` (`js/sim/signals.ts`) is the truth-side
 observer metric — per group ≥ 2 members, `clamp01(1 − meanPairwiseDist /

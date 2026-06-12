@@ -98,7 +98,7 @@ construction.
 | signal | shape | write site | probes / tropes |
 | --- | --- | --- | --- |
 | `deedLedger(a)` | counts + first/last timestamps by tag (thefts, kills, rescues, gifts, frees) | the deed/witness fold (truth side of `witnessDeed`) | feeds `esteemTruthGap`; epithet generation ("thrice a rescuer"); the Gazette obituary writes itself |
-| `oaths(a)` | narrative-weight goals (avenge/repay/court/rescue) with **pop reason** recorded | `deriveGoals` push + `pruneGoals` pop (rule 4) | kept-vs-abandoned ratio: "a man of his word" / "the faithless" — character as a measured quantity |
+| `oaths(a)` | narrative-weight goals (avenge/repay/court/rescue) with **pop reason** recorded | `deriveGoals` push + `pruneGoals` pop (rule 4) — and a hunt that pops via mere belief decay (`believedDead` with no `_slain` stamp: the quarry was *forgotten*, not slain) resolves `'abandoned'`, never `'kept'` | kept-vs-abandoned ratio: "a man of his word" / "the faithless" — character as a measured quantity |
 | `perilsSurvived(a)` | count of `peril` outcomes + combat flees below a health fraction | `PLAN_OUTCOME` peril + the flee fold | "nine lives"; feeds burnedVeteran open and the veteran's Gazette colour |
 | `firsts(a)` | timestamps of first kill / theft / love / threshold-crossing | the respective folds, genuinely one-shot (no hysteresis needed here) | biography beats; the corruption arc measured from `firstTheft` onward |
 | `outOfCharacterActs(a)` | count of acts taken only because widen/desperation crossed the agent's own disposition gate | the gate-crossing site (lands with the conscience-cost feature; the counter is specced now) | the *fall* arc's fuel gauge — and the atonement arc's debt, before moral regret even ships |

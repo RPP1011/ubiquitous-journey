@@ -366,21 +366,39 @@ export function pruneGoals(a: Agent, ctx: CognitionCtx | null): void {
     if (typeof g.predicate === 'function') {
       try {
         if (g.predicate(a, ctx)) {
+          // FORGETTING IS NOT VENGEANCE (lifetrace finding): the avenge/assault predicate
+          // (believedDead) is ALSO satisfied when the belief merely DECAYED away — the hunt
+          // ends either way, but only a _slain-stamped quarry is a settled grudge. A faded
+          // one pops with NO triumph memory, NO closure xp, and the oath resolved ABANDONED,
+          // so "kept" measures word actually kept, not quarries forgotten.
+          const hunt = g.kind === 'avenge' || g.kind === 'assault';
+          const forgotten = hunt && !(a._slain && g.subjectId != null && a._slain.has(g.subjectId));
           // closure on completion (memory <-> goals feedback): a satisfied goal
           // popping here — e.g. an avenge goal whose subject died via the reactive
           // `fight` path rather than the planner's give/pay step — still records a
           // closure/triumph memory, so the biography reflects the resolution
           // however it was reached. Guarded; never throws on the tick.
-          if (a.memory && typeof a.memory.record === 'function') {
-            try {
-              a.memory.record({
-                t: now, kind: g.kind === 'avenge' ? 'triumph' : 'closure',
-                withId: g.subjectId, valence: 1, salience: 0.5,
-              });
-            } catch { /* never throw */ }
+          if (!forgotten) {
+            if (a.memory && typeof a.memory.record === 'function') {
+              try {
+                a.memory.record({
+                  t: now, kind: g.kind === 'avenge' ? 'triumph' : 'closure',
+                  withId: g.subjectId, valence: 1, salience: 0.5,
+                });
+              } catch { /* never throw */ }
+            }
+            awardGoalClosureXP(a, g, now, 0.5);   // narrative-beat xp for the closure
           }
-          awardGoalClosureXP(a, g, now, 0.5);   // narrative-beat xp for the closure
-          if (OATH_KINDS.has(g.kind as string)) resolveOath(a, g.kind as string, g.subjectId, 'kept');   // an oath KEPT (§13 E.oaths)
+          if (OATH_KINDS.has(g.kind as string)) resolveOath(a, g.kind as string, g.subjectId, forgotten ? 'abandoned' : 'kept');   // §13 E.oaths
+          // WARBAND ARC RESOLUTION (docs/architecture/12 §3.5): the recruiter leaves the
+          // march OPEN; the leader's assault popping on a genuine kill is the victory that
+          // closes it — and the march's win signal for caution ([11] §8) fires HERE, at the
+          // resolution, not at the commitment. (The leader falling closes it 'routed' on the
+          // combat bridge; a quarry that slips away leaves the arc to the TTL sweep.)
+          if (g.kind === 'assault' && !forgotten && ctx && ctx.arcs) {
+            try { ctx.arcs.closeArc('warband:' + a.id, 'victorious', `${a.name}'s war-band saw its quarry brought down.`); } catch { /* never throw */ }
+            try { runPlanOutcome(a, ctx, { status: 'windfall', step: { prim: 'attack', bind: {} }, goal: g }); } catch { /* never throw */ }
+          }
           // TRACE (write-only): the goal's predicate became satisfied — it pops. Own-state.
           // note() is internally guarded (never throws); a.trace always exists on an Agent.
           a.trace.note(ST.GOAL, RS.GOAL_POPPED, {

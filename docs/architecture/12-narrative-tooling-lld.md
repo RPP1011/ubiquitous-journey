@@ -262,7 +262,7 @@ escalation, close at the closure) — no new behaviour, just the registry calls 
 | --- | --- | --- | --- | --- |
 | **Vendetta** | `motivation.ts:deriveGoals` — when an `assaulted` (or `witnessed_death`) episode pushes `goalAvenge(withId)`, `openArc({kind:'vendetta', key:arcKey('vendetta',a.id,withId), principals:[a.id,withId]})`. | each retaliatory blow between the pair: `combatEvents.ts:onCombatEvents` (the `dead`/`attacked` fold) appends a `round` (which **re-arms `expiry`**, §3.3) when actor+target are an open vendetta pair. | the avenge-goal pop **carries its reason** (§3.5a): a *satisfied* pop (the kill landed) → `closeArc(key,'fulfilled')`; an *expired* pop does **not** close — it leaves the arc for `sweep` → `lapsed`. | partial→**full** (emergent vendettas now produce a closed saga, not just beats) |
 | **Rags-to-Riches** | the wealth ambition (`motivation.ts:AMBITIONS.wealth`) crossing its first threshold, OR the urchin/trade gold climbing past `RAGS.openGold`: open in `updateAmbition`. | each `RAGS.stepGold` crossing appends a `round` ("doubled their purse"). | the believed-wealth **recognition** (§6) crossing a **deference-mass** bar (count of perceivers warmed past a bar, or summed `believedWealth` mass — NOT net mean standing, §6) → `closeArc('celebrated')`; or `ruined` (§5) → `closeArc('ruined')`. | partial→**full** (the closing "town esteems them for being rich" beat needs §6) |
-| **Warband muster** | `recruiter.ts` muster deriver pushing `goalMuster` → `openArc({kind:'warband', key:'warband:'+a.id, principals:[a.id]})`. | each `joinWarband` success (`groups.ts:joinWarband`) appends a `round` ("N now ride with them"). | the `assault` executor (§7) resolving the march on the foe → `closeArc('marched'|'routed')`; or `lapsed`. | partial→**full** (needs §7 to *reach* the confrontation) |
+| **Warband muster** | `recruiter.ts` muster deriver pushing `goalMuster` → `openArc({kind:'warband', key:'warband:'+a.id, principals:[a.id]})`. | each `joinWarband` success (`groups.ts:joinWarband`) appends a `round` ("N now ride with them"); the march itself files a round (it is the story's beginning, NOT its outcome). | the battle's resolution: the leader's assault-goal pop on a **genuine kill** (`_slain`-stamped, `pruneGoals`) → `closeArc('victorious')`; the leader falling (combat bridge) → `closeArc('routed')`; a quarry that slips away (belief faded) leaves the arc to `sweep` → `lapsed`. | **full** |
 | **Rescue** | `affect.ts` rescue deriver pushing `goalFree(captiveId)` → `openArc({kind:'rescue', key:'rescue:'+captiveId, principals:[a.id, captiveId]})`. | the clear-the-guards subgoal (§7) striking the captor appends a `round`. | the freed captive's perception dropping `b.captive` (the `goalFree` predicate, `affect.ts`) → `closeArc('freed')`; captive dies → `closeArc('died')`. | partial→**full** (rescue currently wanders; §7's guard-clear makes it resolve) |
 | **Burned-Veteran retire/relapse** | the experience store (`experience.ts`) — when `feltSurcharge('burgle'|'rob')` first crosses `BURNED.retireSurcharge` (a thief who's been burned enough to stop), `openArc({kind:'burnedVeteran', key:'burned:'+a.id, principals:[a.id]})`; the status-delta sensor (§5) is the natural trigger. | a relapse (a fresh theft after the burn) appends a `round`. | the surcharge decaying back below threshold → `closeArc('reformed')`; a relapse-and-thrive → `closeArc('relapsed')`. | partial→**full** (needs §5 to observe the retire crossing) |
 | **Dynasty depth** | `lineage.ts:_surpass` first surpass within a house → `openArc({kind:'dynasty', key:'dynasty:'+houseId, principals:[student,master]})`. | each further surpass / mentorship in the line appends a `round`. | the house reaching `DYNASTY.depth` generations → `closeArc('established')`. | partial (a structural depth metric exists in `depthMetrics.ts`); arc makes it legible |
@@ -276,7 +276,10 @@ them (it is the same classification `cautionWaste` keys on in [11-LLD §4.4]). *
 must read that reason**, or a grudge that quietly cools closes its saga as `'fulfilled'` and the
 Gazette reports a vengeance that never happened (review 2). The rule, stated once for all closers:
 
-- **satisfied → the success outcome** (`fulfilled`/`freed`/`marched`/`celebrated`).
+- **satisfied → the success outcome** (`fulfilled`/`freed`/`victorious`/`celebrated`) — and for the
+  hunt goals (avenge/assault) *satisfied* means a **genuine `_slain`-stamped kill**: `believedDead`
+  is also true when the belief merely decayed away, and a quarry forgotten is an oath `'abandoned'`
+  and an arc left to lapse, never a success (forgetting is not vengeance).
 - **expired → do NOT close on the pop.** Leave the arc open; `sweep` closes it `'lapsed'` once
   `expiry` passes. (Combined with the `appendBeat`→`expiry` re-arm, a feud with fresh blows stays
   open; only a feud that has actually gone quiet for `openTtl` lapses.)
@@ -561,14 +564,14 @@ that resolves the trope.
    path** — `decideParty`/`enemyNearLeader` (`decide.ts:438`) already makes followers fight whatever
    the leader engages, so the executor just steers the leader to the believed foe's `lastPos` and
    commits combat (`goTo` + the combat seam). Closes the `warband` arc on resolution
-   (`marched`/`routed`). No AI fork — it reuses `decideParty`.
+   (`victorious`/`routed`). No AI fork — it reuses `decideParty`.
 
-   > **The `marched`/`routed` outcome IS [11-LLD §8]'s combat win/loss signal (synergy 2).** That
+   > **The `victorious`/`routed` outcome IS [11-LLD §8]'s combat win/loss signal (synergy 2).** That
    > resolution — did the band win the engagement or break — is precisely the *fighter's own
    > win/fled/health-fraction-lost* signal [11] §8 named as **`attack`'s admission ticket to the
    > watched set** ("its outcome signal must come from the fighter's own resolution … once it exists,
    > `attack` can be admitted"). **The carrier already exists: [11]'s `PLAN_OUTCOME` registry.** The
-   > assault's resolution IS an outcome event — `marched` ≈ a landed/`windfall` step, `routed` ≈
+   > assault's resolution IS an outcome event — `victorious` ≈ a landed/`windfall` step, `routed` ≈
    > `peril`, with the health-fraction in the `evt` — so the executor emits it through `runPlanOutcome`
    > like any watched step, never a private boolean. The `warband` arc-close hook subscribes today; when
    > `attack` is later admitted to caution, caution's existing `PLAN_OUTCOME` handler subscribes to the
@@ -772,7 +775,7 @@ leaves `bunx tsc --noEmit && bunx tsc` clean and `bun test/headless.mjs` green, 
 | **2** | **Vendetta hooks** — open/append/close at the `deriveGoals` avenge derive, the combat retaliation fold, the avenge-goal pop (carrying its **pop reason** — §3.5a). The cheapest proof the registry detects an emergent arc end-to-end. | small | Vendetta → **full** |
 | **3** | **Status-delta sensor** (§5) + the three memory kinds. Depends on **[13] `goldFast/Slow` + `lossReason`** (the trend EWMAs + involuntary ring the RUIN test reads) and **`snubsFelt`** (the `slandered` memory's only legal input). Sequence the [13] priority-cut items 1–2 alongside this step. | medium | Fall-from-Grace, Burned-Veteran → **full** |
 | **4** | **Believed-wealth field + recognition channel** (§6). Closes Rags-to-Riches; refines `estimateHaul`. **Synergy 1:** on landing, swap [11-LLD §5] `relevantConfidence(burgle/rob)` from its `assoc.conf` proxy to `wealthConf` — completes caution's attribution rule (one line, [11] §12 limit 4). | medium | Rags-to-Riches → **full**; completes [11] attribution |
-| **5** | **Directed-assault + rescue guard-clear** (§7). Resolves the muster/rescue confrontations. **Synergy 2:** spec the `marched`/`routed` resolution as a **reusable per-engagement win/loss signal** — it is [11-LLD §8]'s admission ticket for watching `attack` (a second customer); don't bury it in the executor. | medium | Warband, Rescue → **full**; supplies [11]'s combat outcome signal |
+| **5** | **Directed-assault + rescue guard-clear** (§7). Resolves the muster/rescue confrontations. **Synergy 2:** spec the `victorious`/`routed` resolution as a **reusable per-engagement win/loss signal** — it is [11-LLD §8]'s admission ticket for watching `attack` (a second customer); don't bury it in the executor. | medium | Warband, Rescue → **full**; supplies [11]'s combat outcome signal |
 | **6** | **Generalised NPC notoriety + outlaw warming + RECRUIT reads it** (§9). The outlaw arc. **Depends on step 4** (`believedWealth`): the "robs the rich" warming conjunct (§9.2 / review 5) needs it — this dependency was previously unstated. | medium | Outlaw Hero → **full** |
 | **7** | **Per-agent authoring API** (§4). Unblocks deterministic scenarios + designed protagonists. | medium | (testability + scripting) |
 | **8** | **Romance deriver + court STEER fill** (§8). Enacts Star-Crossed. | small | Star-Crossed → **lived** |

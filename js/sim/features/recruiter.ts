@@ -12,8 +12,7 @@
 // warmed candidate into a marching ally) reuses the SAME band machinery the player's Party uses
 // (the WARBAND follow-through); the belief half proves the no-foreign-write boundary.
 
-import { registerExecutor, registerDeriver, registerEffectHolds, runPlanOutcome } from '../exec/registry.js';
-import type { OutcomeEvt } from '../exec/registry.js';
+import { registerExecutor, registerDeriver, registerEffectHolds } from '../exec/registry.js';
 import { goalMuster, goalAssault, recordBelieves, complianceOf, stepTargetPos } from '../planner.js';
 import { RECRUIT, WARBAND, SIM } from '../simconfig.js';
 import { steer } from '../agent/steer.js';
@@ -105,8 +104,8 @@ registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
   if (!a || a.controlled || !a.canWork || a.faction === 'monster' || !a.beliefs) return;
   if (a.inParty || a.bandLeaderId != null) return;                   // a follower doesn't raise its own band
   // IDEMPOTENT (life-trace finding): once this leader is already MARCHING (holds a goalAssault), the
-  // deriver MUST no-op — otherwise it re-opens + re-closes the warband arc 'marched' EVERY cognition
-  // tick, churning ~1000 spurious arcs over a soak. One muster → one march → one closed arc. (Mustering
+  // deriver MUST no-op — otherwise it re-files the march round on the warband arc EVERY cognition
+  // tick, churning ~1000 spurious rounds over a soak. One muster → one march → one resolution. (Mustering
   // — a live goalMuster — still re-runs each tick to upgrade to the march; openArc is idempotent then.)
   if (Array.isArray(a.goals) && a.goals.some((g) => g.kind === 'assault')) return;
   const bold = a.personality ? (a.personality.risk_tolerance || 0) : 0;
@@ -132,11 +131,13 @@ registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
     const g = goalAssault(foe.subjectId);
     g.priority = 0.7; g.from = 'warleader'; g.expiresAt = now + 120;
     a.pushGoal(g, ctx);
-    // the march IS the escalation — lazily open the arc on this round, then close it 'marched'.
-    if (ctx && ctx.arcs) { ctx.arcs.appendArcRound(arcOpts, `${a.name} marched their war-band on the foe.`); ctx.arcs.closeArc('warband:' + a.id, 'marched'); }
-    // emit the marched outcome through PLAN_OUTCOME ([11] §8's second customer — synergy 2): the band
-    // committing to battle is the win/loss signal caution will read once `attack` joins the watched set.
-    try { runPlanOutcome(a, ctx as CognitionCtx, { status: 'windfall', step: { prim: 'attack', bind: {} } } as unknown as OutcomeEvt); } catch { /* never throw */ }
+    // the march IS the escalation — lazily open the arc on this round, but DON'T close it: a
+    // march is the story's beginning, not its outcome. The arc resolves where the battle does —
+    // 'victorious' when the leader's assault pops on a genuine kill (pruneGoals), 'routed' when
+    // the leader falls (the combat bridge), or 'lapsed' by the TTL sweep when the campaign
+    // peters out. The win/loss PLAN_OUTCOME ([11] §8 synergy 2) fires at those resolutions too,
+    // never at the commitment (marching is not yet a windfall).
+    if (ctx && ctx.arcs) ctx.arcs.appendArcRound(arcOpts, `${a.name} marched their war-band on the foe.`);
   } else {
     // still too weak alone — raise the force first.
     const g = goalMuster(target);

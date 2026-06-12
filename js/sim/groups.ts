@@ -81,8 +81,30 @@ export class Groups {
     this._acc += dt;
     if (this._acc < BAND.formEvery) return;
     this._acc = 0;
+    this._touchLivingArcs();
     this._form();
     this._maybeRaiseHalls();
+  }
+
+  // A LIVING FELLOWSHIP IS NOT A LAPSED TALE (the endures fix): the registry's sweep lapses any
+  // open arc whose TTL runs out, but a fellowship only files rounds on JOINS — so a stable group
+  // that stopped recruiting used to read as a story that petered out ('lapsed') while its hall
+  // still stood. On the same throttled cadence as formation, re-arm the open arc of every group
+  // that still has a living anchor + follower; real dissolution still files 'disbanded' in
+  // _prune. Observer-layer bookkeeping only; guarded (never throws on the tick).
+  _touchLivingArcs(): void {
+    const sagas = this.sim.sagas;
+    if (!sagas || typeof sagas.touchArc !== 'function') return;
+    try {
+      const seen = new Set<string>();
+      for (const F of this.sim.agents) {
+        if (!F.alive || F.controlled || F.bandLeaderId == null) continue;
+        const L = this.sim.agentsById.get(F.bandLeaderId);
+        if (!L || !L.alive || !L.groupType) continue;
+        const key = 'fellowship:' + L.groupType + ':' + L.id;
+        if (!seen.has(key)) { seen.add(key); sagas.touchArc(key); }
+      }
+    } catch { /* never throw on the tick */ }
   }
 
   _form(): void {

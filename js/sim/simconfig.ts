@@ -593,7 +593,11 @@ export const LEDGER = {
 // The bounds + timescales for sim.sagas. Tuning only; the store math lives in js/sim/arcs.ts.
 export const ARCS = {
   lapsedReopenSecs: 240,   // a key whose tale just LAPSED rests this long before re-opening (anti grudge-churn)
-  maxOpen: 96,           // hard cap on concurrently-open arcs (the WEAKEST incumbent evicted via close)
+  maxOpen: 192,          // hard cap on concurrently-open arcs (the WEAKEST incumbent evicted via close).
+                         //   Sized UP from 96 when fellowships/warbands became long-lived (the endures +
+                         //   resolve-at-battle fixes): at 96 a 30-min trace evicted ~50 vendettas
+                         //   'crowded_out' — cap pressure, not stories ending. Eviction is the backstop,
+                         //   not a routine outcome.
   maxClosed: 320,        // ring of completed arcs the Gazette/UI read — sized so a populous town's
                          //   narrative HISTORY persists across a long session instead of churning out
                          //   in seconds (a 30-min trace produced ~100 real arcs post-churn-fix; 64 was

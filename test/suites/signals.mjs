@@ -18,6 +18,8 @@ import { foldLoss, noteSnub, lossReasonShare, snubsFelt, goldTrend, sampleGold,
   cohesion, presumedDead, loversCrossed, rumourDepth, noteBeat, quietIndex,
   noteWitness, witnessSet, triangleHints } from '../../js/sim/signals.js';
 import { statusSensor } from '../../js/sim/statusSensor.js';
+import { deriveGoals, pruneGoals } from '../../js/sim/motivation.js';
+import { goalAssault } from '../../js/sim/planner.js';
 import { gossipBeliefs } from '../../js/sim/agent/perception.js';
 import { SagaStore } from '../../js/sim/arcs.js';
 import { BeliefState, BeliefStore } from '../../js/sim/beliefs.js';
@@ -523,6 +525,76 @@ export function outlawTest(ok, { makeFighter, stubScene }) {
   sim.onCombatEvents([{ type: 'dead', attacker: { agent: poorBold, id: poorBold.id }, target: { agent: kindRich, id: kindRich.id } }]);
   ok(sim.sagas.recentClosed().some((x) => x.kind === 'warband' && x.outcome === 'routed'),
     'outlaw O5: a war-leader cut down closes the warband arc routed');
+  sim.dispose();
+}
+
+// ---- oath & warband-arc RESOLUTION semantics (forgetting ≠ keeping; the march is not the outcome) ----
+// W1 a leader's assault popping on a GENUINE kill (_slain) closes the warband arc 'victorious';
+// W2 an assault popping by mere belief decay (quarry forgotten) leaves the arc OPEN for the TTL sweep;
+// W3 an avenge oath whose quarry was merely forgotten resolves 'abandoned' — and writes NO triumph;
+// W4 a genuine kill still resolves the avenge oath 'kept', with its triumph memory;
+// W5 a LIVING fellowship's keeper re-arms its arc TTL (touchArc) so endurance no longer reads 'lapsed'.
+export function oathArcResolutionTest(ok, { makeFighter, stubScene }) {
+  const world = new World(stubScene);
+  const sim = new Simulation(stubScene, world, { makeFighter });
+  let nid = 9100;
+  const pers = { risk_tolerance: 0.5, altruism: 0.5, ambition: 0.5, social_drive: 0.3 };
+  const add = (name, cfg = {}) => {
+    const a = new Agent(makeFighter('knight', {}), { id: nid++, name, profession: null, personality: pers, faction: 'townsfolk', ...cfg });
+    sim.agents.push(a); sim.agentsById.set(a.id, a); return a;
+  };
+  const ctx = sim._ctx();
+
+  // W1 — genuine kill: the assault pops via _slain -> the warband arc closes 'victorious'.
+  const ledV = add('Vict');
+  sim.sagas.appendRound({ kind: 'warband', key: 'warband:' + ledV.id, principals: [ledV.id] }, 'rode');
+  ledV.pushGoal(goalAssault(9001), ctx);
+  ledV._slain = new Set([9001]);
+  pruneGoals(ledV, ctx);
+  ok(sim.sagas.recentClosed().some((x) => x.key === 'warband:' + ledV.id && x.outcome === 'victorious'),
+    'resolution W1: an assault popping on a genuine kill closes the warband arc victorious');
+
+  // W2 — forgotten quarry: the assault pops via belief decay (no _slain, no belief) -> NO phantom
+  // victory; the arc stays open for the sweep to lapse.
+  const ledF = add('Fade');
+  sim.sagas.appendRound({ kind: 'warband', key: 'warband:' + ledF.id, principals: [ledF.id] }, 'rode');
+  ledF.pushGoal(goalAssault(9002), ctx);
+  pruneGoals(ledF, ctx);
+  ok(!ledF.goals.some((g) => g.kind === 'assault') && sim.sagas.findArc('warband:' + ledF.id) != null,
+    'resolution W2: a quarry that merely faded pops the goal but leaves the arc to the TTL sweep (no phantom victory)');
+
+  // W3 — the avenge oath of a FORGOTTEN quarry resolves 'abandoned' (and writes no triumph memory).
+  // Seed the assaulted episode straight into MTM (salient() reads ltm+mtm; STM needs a consolidation tick).
+  const avF = add('Oath');
+  avF.memory.mtm.push({ t: 0, kind: 'assaulted', withId: 9003, valence: -1, salience: 1 });
+  deriveGoals(avF, ctx);                    // swears the avenge oath off the assaulted memory
+  ok((oaths(avF).avenge || {}).sworn === 1, 'resolution W3a: the assaulted memory swears an avenge oath');
+  pruneGoals(avF, ctx);                     // no belief, no _slain -> believedDead via decay = forgotten
+  const tF = oaths(avF).avenge || {};
+  ok(tF.abandoned === 1 && !tF.kept && !avF.memory.recent(20).some((e) => e.kind === 'triumph'),
+    `resolution W3b: forgetting the quarry resolves the oath ABANDONED, not kept (kept=${tF.kept | 0} abandoned=${tF.abandoned | 0})`);
+
+  // W4 — a genuine kill still resolves the oath 'kept', with its triumph memory.
+  const avK = add('Kept');
+  avK.memory.mtm.push({ t: 0, kind: 'assaulted', withId: 9004, valence: -1, salience: 1 });
+  deriveGoals(avK, ctx);
+  avK._slain = new Set([9004]);             // the combat bridge stamped the kill
+  pruneGoals(avK, ctx);
+  const tK = oaths(avK).avenge || {};
+  ok(tK.kept === 1 && !tK.abandoned && avK.memory.recent(20).some((e) => e.kind === 'triumph'),
+    `resolution W4: a genuine kill resolves the oath KEPT with its triumph memory (kept=${tK.kept | 0})`);
+
+  // W5 — a living fellowship re-arms its arc TTL: endurance is not a lapse.
+  const anchor = add('Anch'); const member = add('Memb');
+  anchor.groupType = 'circle'; member.groupType = 'circle'; member.bandLeaderId = anchor.id;
+  sim.sagas.appendRound({ kind: 'fellowship', key: 'fellowship:circle:' + anchor.id, principals: [anchor.id, member.id] }, 'joined');
+  const fArc = sim.sagas.findArc('fellowship:circle:' + anchor.id);
+  const armedAt = fArc.expiry;
+  sim.time += 100;                          // a quiet stretch — no joins, no rounds
+  sim.groups._touchLivingArcs();
+  ok(fArc.expiry > armedAt && fArc.closedAt == null,
+    `resolution W5: the keeper re-arms a living fellowship's TTL (expiry ${armedAt.toFixed(0)} -> ${fArc.expiry.toFixed(0)})`);
+
   sim.dispose();
 }
 

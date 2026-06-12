@@ -164,6 +164,19 @@ export class SagaStore implements ISagaStore {
     } catch { return null; }
   }
 
+  // TOUCH — re-arm a living tale's TTL WITHOUT filing a beat (the fellowship-endures fix): a
+  // stable group that simply stopped recruiting is NOT a petered-out story, so its keeper touches
+  // the arc while the principals still stand and only real dissolution ('disbanded') or genuine
+  // quiet after they're gone files an ending. No beat, no note, no round — just the expiry.
+  touchArc(key: string): Arc | null {
+    try {
+      const arc = this._open.get(key);
+      if (!arc || arc.closedAt != null) return null;
+      arc.expiry = this._now() + ARCS.openTtl;
+      return arc;
+    } catch { return null; }
+  }
+
   // CLOSE — UNCONDITIONAL (review 1): always closes + moves to the _closed ring, so eviction/sweep
   // can never be declined. Caller-specific guards (mutual-feud) live at the call site, not here.
   closeArc(key: string, outcome: string, text?: string): Arc | null {
