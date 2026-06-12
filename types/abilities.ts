@@ -8,7 +8,8 @@ import type { FullCtx } from './ctx.js';
 /** Effect ops (EFFECT_OPS). */
 export type EffectOp =
   | 'damage' | 'heal' | 'stun' | 'slow' | 'knockback' | 'dash' | 'shield'
-  | 'plant_belief' | 'scry';
+  | 'plant_belief' | 'scry'
+  | 'trade_edge' | 'craft_boost';   // economy ops: own-state windows on the CASTER
 
 /** Area kinds (AREA_KINDS). */
 export type AreaKind = 'self' | 'circle' | 'cone' | 'line';

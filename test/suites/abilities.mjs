@@ -10,7 +10,8 @@ import { castSpec } from '../../js/rpg/abilities/interpreter.js';
 import { slowMul, abilityStatus } from '../../js/rpg/abilities/effects.js';
 import { ABILITY_CATALOG } from '../../js/rpg/abilities/catalog.js';
 import { goTo } from '../../js/sim/agent/movement.js';
-import { trySelfCastAbility } from '../../js/sim/agent/act.js';
+import { trySelfCastAbility, produce } from '../../js/sim/agent/act.js';
+import { ABILITY } from '../../js/rpg/rpgconfig.js';
 import { Agent } from '../../js/sim/agent.js';
 import { makeFighter } from '../harness.mjs';
 
@@ -92,6 +93,41 @@ export function proceduralAbilityTest(ok) {
   slowWindowTest(ok);
   plantBeliefSignTest(ok);
   selfCastTest(ok);
+  economyOpsTest(ok);
+}
+
+// ---- the economy ops: trade_edge (haggle) + craft_boost (master_craft) -------
+// haggle opens a bargaining window the trade ask/bid honour (harder ask, softer
+// bid — the clearing midpoint shifts, both parties still exchange the same price);
+// master_craft opens a produce-speed window produce() honours. Both expire.
+function economyOpsTest(ok) {
+  // HAGGLE: cast stamps the window; ask/bid shift inside it, recover after.
+  const m = fixtureAgent('Merchant', 0, 0);
+  m.gold = 100;
+  ok(castSpec(ABILITY_CATALOG.haggle, m, { agents: [m], time: 50 }) === true, 'haggle: cast fired');
+  ok((m._haggleEdgeUntil || 0) === 62, `haggle: bargaining window stamped (until=${m._haggleEdgeUntil})`);
+  m.priceBeliefs.food = 10;
+  m._simNow = 50;                                 // inside the window
+  const ask = m.askPrice('food'), bid = m.bidPrice('food');
+  ok(ask > 10 && bid < 10, `haggle: harder bargain inside the window (ask=${ask}, bid=${bid})`);
+  m._simNow = 63;                                 // expired
+  ok(m.askPrice('food') === 10 && m.bidPrice('food') === 10, 'haggle: ask/bid recover after expiry');
+
+  // MASTER CRAFT: cast stamps the window; produce runs craftBoostMul faster inside it.
+  const smith = fixtureAgent('Smith', 0, 0);
+  ok(castSpec(ABILITY_CATALOG.master_craft, smith, { agents: [smith], time: 50 }) === true, 'master_craft: cast fired');
+  ok((smith._craftBoostUntil || 0) === 60, `master_craft: boost window stamped (until=${smith._craftBoostUntil})`);
+  const yieldOf = (boosted) => {
+    const w = fixtureAgent('Worker', 0, 0);
+    w._trade = 'wood'; w._simNow = 50;
+    if (boosted) w._craftBoostUntil = 60;
+    const before = w.inventory.wood || 0;
+    produce(w, 0.2);
+    return (w.inventory.wood || 0) - before;
+  };
+  const fast = yieldOf(true), slow2 = yieldOf(false);
+  ok(slow2 > 0 && Math.abs(fast - slow2 * ABILITY.craftBoostMul) < 1e-9,
+    `master_craft: produce speed x${ABILITY.craftBoostMul} inside the window (${fast.toFixed(3)} vs ${slow2.toFixed(3)} units)`);
 }
 
 // ---- NPC self-cast on the survival path --------------------------------------

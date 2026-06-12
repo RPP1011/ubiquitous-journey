@@ -68,7 +68,7 @@ export function castSpec(spec: AbilitySpec, caster: Agent, ctx: CastCtx | null):
     if (!fn) continue;
     if (e.chance < 1 && rng() > e.chance) continue;
 
-    if (e.op === 'heal' || e.op === 'shield' || e.op === 'dash') {
+    if (CASTER_OPS.has(e.op)) {
       // caster-affecting ops ignore the foe list
       if (gateTrigger(e, caster, caster, false, now)) landed = fn(e, caster, caster, ctx) || landed;
       continue;
@@ -120,11 +120,14 @@ function runChained(spec: AbilitySpec, primary: AbilityEffect, caster: Agent, ta
     if (!gateTrigger(e, caster, target, true, now)) continue;
     if (e.chance < 1 && rng() > e.chance) continue;
     const fn = EFFECTS[e.op];
-    if (fn) fn(e, caster, e.op === 'heal' || e.op === 'shield' || e.op === 'dash' ? caster : target, ctx);
+    if (fn) fn(e, caster, CASTER_OPS.has(e.op) ? caster : target, ctx);
   }
 }
 
 // ---- target resolution by area + range over the agent list ------------------
+// ops that act on the CASTER regardless of the resolved foe list (self-buffs +
+// the economy windows) — routed to the caster wherever effects dispatch.
+const CASTER_OPS = new Set<EffectOp>(['heal', 'shield', 'dash', 'trade_edge', 'craft_boost']);
 // ops that harm a target — never applied to allies (friendly-fire guard above)
 const HOSTILE_OPS = new Set<EffectOp>(['damage', 'stun', 'slow', 'knockback']);
 

@@ -7,6 +7,7 @@
 // rpg event bus only.
 
 import { GOODS, COMMODITIES, ECON, WEALTH } from '../simconfig.js';
+import { ABILITY } from '../../rpg/rpgconfig.js';
 import { bus, makeEvent } from '../../rpg/events.js';
 import type { Agent, CognitionCtx, ActionEventSpec, ActionEvent } from '../../../types/sim.js';
 
@@ -106,8 +107,25 @@ export function wantQty(a: Agent, c: string): number {
   return 0;
 }
 export function sellQty(a: Agent, c: string): number { return Math.max(0, Math.floor(a.surplus(c))); }
-export function askPrice(a: Agent, c: string): number { return a.priceBeliefs[c]; }
-export function bidPrice(a: Agent, c: string): number { return Math.min(a.priceBeliefs[c], a.gold); }   // can't bid more than you hold
+
+// THE HAGGLE EDGE (the trade_edge ability op): while my OWN bargaining window is
+// open (_haggleEdgeUntil, vs the per-frame sim-time stamp) I drive a harder bargain
+// — ask a few percent MORE, bid a few percent LESS (ABILITY.haggleEdge; clamped to
+// priceBounds). CLOSED MONEY LOOP by construction: the market still clears at the
+// bid/ask MIDPOINT exchanged by BOTH parties (market.js), so the edge only shifts
+// the price they agree on — never the amounts transferred. The risk is real too: a
+// harder ask/bid can lose the match entirely. Own-state read only (belief-clean).
+const haggling = (a: Agent): boolean => (a._haggleEdgeUntil || 0) > (a._simNow || 0);
+
+export function askPrice(a: Agent, c: string): number {
+  const p = a.priceBeliefs[c];
+  return haggling(a) ? Math.min(ECON.priceBounds[1], +(p * (1 + (ABILITY.haggleEdge || 0))).toFixed(2)) : p;
+}
+export function bidPrice(a: Agent, c: string): number {
+  let p = a.priceBeliefs[c];
+  if (haggling(a)) p = Math.max(ECON.priceBounds[0], +(p * (1 - (ABILITY.haggleEdge || 0))).toFixed(2));
+  return Math.min(p, a.gold);   // can't bid more than you hold
+}
 
 export function applyBuy(a: Agent, c: string, price: number): void {
   a.inventory[c] += 1; a.gold -= price; a.learnPrice(c, price, ECON.priceLearn); a._tradeFlash = 0.6;

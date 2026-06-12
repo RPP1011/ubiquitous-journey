@@ -84,20 +84,24 @@ const read_mind = A({
 });
 
 // ---- ECONOMY -----------------------------------------------------------------
-// economy abilities express as social/insight ops (no price hook in this engine);
-// their real payoff is the tags they grant + the cast event the economy/quest
-// systems can listen for. Magnitude carries the favour size.
+// economy abilities act through the caster-side economy ops: trade_edge opens a
+// bargaining window trade.js ask/bid honour (magnitude in ABILITY.haggleEdge),
+// craft_boost opens a produce-speed window produce() honours (ABILITY.craftBoostMul).
+// Durations ride on the spec; the cast event still feeds the economy/quest systems.
 const haggle = A({
   id: 'haggle', name: '[Haggle]', classKey: 'merchant', tier: 1,
   header: { target: 'any', range: 5, cooldown: 8, area: { kind: 'self' }, delivery: { kind: 'instant' } },
-  effects: [effect('plant_belief', { amount: -0.2, tags: ['BARTER', 'PROFIT'] })],
+  effects: [
+    effect('plant_belief', { amount: -0.2, tags: ['BARTER', 'PROFIT'] }),   // a little charm with the counterparty
+    effect('trade_edge', { amount: 0, dur: 12, tags: ['BARTER'] }),         // the real mechanic: the bargaining window
+  ],
   grantsTags: ['TRADE', 'BARTER', 'PROFIT'],
 });
 
 const master_craft = A({
   id: 'master_craft', name: '[Master Craft]', classKey: 'blacksmith', tier: 2,
   header: { target: 'self', range: 0, cooldown: 20, area: { kind: 'self' }, delivery: { kind: 'instant' } },
-  effects: [effect('shield', { amount: 30, dur: 8, tags: ['CRAFT', 'TEMPER'] })],
+  effects: [effect('craft_boost', { amount: 0, dur: 10, tags: ['CRAFT', 'TEMPER'] })],
   grantsTags: ['CRAFT', 'PRODUCE', 'MASTERY'],
 });
 

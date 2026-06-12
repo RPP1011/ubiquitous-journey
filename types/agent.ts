@@ -187,6 +187,9 @@ export interface Agent {
   _simNow?: number;                   // sim time stamped EVERY frame at the top of act() — the
                                       //   clock ability windows (slow/haggle/craft-boost, stamped
                                       //   with ctx.time) are compared against off the hot path
+  _haggleEdgeUntil?: number;          // haggle's bargaining window (trade_edge op): trade ask/bid
+                                      //   drive a harder bargain while _simNow < this
+  _craftBoostUntil?: number;          // master_craft's produce-speed window (craft_boost op)
   _produceAccum: number;              // fractional production awaiting a whole-unit deed emit
   _smithTimer: number;
   toolWear: number;

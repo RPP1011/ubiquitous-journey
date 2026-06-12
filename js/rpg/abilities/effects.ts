@@ -140,6 +140,28 @@ export const EFFECTS: Record<EffectOp, EffectFn> = {
     return true;
   },
 
+  // --- economy ops: own-state windows on the CASTER other systems read ------
+  // THE HAGGLE EDGE: open a bargaining window (an expiry stamp on the caster's own
+  // state). trade.js ask/bid read it to drive a harder bargain while it lasts; the
+  // edge magnitude lives in config (ABILITY.haggleEdge), the duration on the spec.
+  // Conserved by construction: the edge only shifts the bid/ask midpoint BOTH
+  // parties exchange — no gold is minted or burned. Ignores `target` entirely.
+  trade_edge(e, caster, _target, ctx) {
+    if (!caster || !caster.alive) return false;
+    const now = ctx?.time || 0;
+    caster._haggleEdgeUntil = Math.max(caster._haggleEdgeUntil || 0, now + (e.dur || 0));
+    return true;
+  },
+
+  // MASTER CRAFT: open a produce-speed window on the caster's own state. act.js
+  // produce() multiplies its skillMul by ABILITY.craftBoostMul while it lasts.
+  craft_boost(e, caster, _target, ctx) {
+    if (!caster || !caster.alive) return false;
+    const now = ctx?.time || 0;
+    caster._craftBoostUntil = Math.max(caster._craftBoostUntil || 0, now + (e.dur || 0));
+    return true;
+  },
+
   // read a target's mind: copy what THEY believe about others into the CASTER's
   // store (capped second-hand confidence). Pure information; never damages.
   scry(e, caster, target) {

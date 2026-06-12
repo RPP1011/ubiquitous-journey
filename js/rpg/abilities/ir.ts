@@ -14,7 +14,8 @@
 //   header.area     = { kind:'self'|'circle'|'cone'|'line', r?, deg?, len? }   (Area)
 //   header.delivery = { kind:'instant'|'projectile'|'zone', speed?, radius? }  (Delivery)
 //   header.target   = 'self'|'enemy'|'ally'|'any'                              (who range scans)
-//   effect.op       = damage|heal|stun|slow|knockback|dash|shield|plant_belief|scry  (Effect)
+//   effect.op       = damage|heal|stun|slow|knockback|dash|shield|plant_belief|scry
+//                     |trade_edge|craft_boost                                       (Effect)
 //   effect.when     = null|'on_hit'|'on_kill'|'target_hp_below'|'caster_hp_below'     (Trigger)
 //   effect.amount   = number used by the op (damage N, heal N, knockback meters …)
 //   effect.dur      = seconds (stun/slow/shield duration)
@@ -33,6 +34,7 @@ import type {
 export const EFFECT_OPS: readonly EffectOp[] = [
   'damage', 'heal', 'stun', 'slow', 'knockback', 'dash', 'shield',
   'plant_belief', 'scry',
+  'trade_edge', 'craft_boost',   // economy: caster-side windows (haggle / master_craft)
 ];
 export const AREA_KINDS: readonly AreaKind[] = ['self', 'circle', 'cone', 'line'];
 export const DELIVERY_KINDS: readonly DeliveryKind[] = ['instant', 'projectile', 'zone'];

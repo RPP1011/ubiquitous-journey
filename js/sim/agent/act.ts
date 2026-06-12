@@ -26,7 +26,7 @@ import { classifyYield } from '../experience.js';
 import { masteryMul } from './occupation.js';
 import { collideWalls } from '../walls.js';
 import type {
-  Agent, CognitionCtx, PlanStep, PlanBind, Goal, EntityId, AbilitySpec, FighterDir, ActionEventSpec, ActionEvent,
+  Agent, CognitionCtx, PlanStep, PlanBind, Goal, EntityId, AbilitySpec, EffectOp, FighterDir, ActionEventSpec, ActionEvent,
 } from '../../../types/sim.js';
 
 type OutcomeStatus = 'shortfall' | 'neutral' | 'windfall' | 'peril' | 'waste';
@@ -133,7 +133,14 @@ export function act(a: Agent, dt: number, ctx: CognitionCtx): void {
       } catch { /* never throw on the tick */ }
     } else if (k === 'rest' && arrived) {
       a.needs.energy = clamp01(a.needs.energy + SIM.restRate * dt);
+    } else if (k === 'market' && arrived) {
+      // THE STALL PATTER: standing at the market with a ready haggle-type spec, cast
+      // it — the trade_edge window hardens my ask/bid for a while. One guarded hook.
+      tryBuffCast(a, ctx, 'trade_edge', a._haggleEdgeUntil);
     } else if (k === 'work' && arrived) {
+      // A MASTER AT THE BENCH: starting work with a ready master_craft-type spec,
+      // cast it — the craft_boost window speeds produce(). One guarded hook.
+      tryBuffCast(a, ctx, 'craft_boost', a._craftBoostUntil);
       produce(a, dt);
     } else if (k === 'comfort' && arrived) {
       // restore comfort — SCALED by the place's TRUE benefit where one stands (the resolver's
@@ -301,7 +308,10 @@ export function produce(a: Agent, dt: number): void {
   // it forges faster and gathers more per second, several-fold a novice. This is what lets
   // a master flood its field cheaply and makes it nearly impossible for a low-mastery unit
   // to compete there. 1.0 for a novice, growing uncapped with mastery for a grandmaster.
-  const skillMul = masteryMul(a, output);
+  let skillMul = masteryMul(a, output);
+  // MASTER CRAFT (the craft_boost ability op): an open produce-speed window on my
+  // own state multiplies throughput. One guarded read vs the per-frame time stamp.
+  if ((a._craftBoostUntil || 0) > (a._simNow || 0)) skillMul *= (ABILITY.craftBoostMul || 1);
   if (g.inputs) {
     // RECIPE GATE (own-state): a crafted good is producible only if I KNOW its recipe.
     // ALWAYS-LIVE. Guarded for the freeze lesson: a professionless agent's `recipes` is an
@@ -580,6 +590,25 @@ export function tryCastAbility(a: Agent, target: Agent, dist: number, ctx: Cogni
     if (ctx.resolver && ctx.resolver.cast) return ctx.resolver.cast(spec, a);
     return castSpec(spec, a, ctx);
   } catch { return false; }   // never throw on the tick
+}
+
+// THE BUFF HOOK (NPC self-use of the economy specs — haggle at the stall,
+// master_craft at the bench). If a held spec carries `op` and is ready, cast it via
+// the resolver bridge (interpreter owns the cooldown). Skips while the buff window
+// (`activeUntil`, vs ctx.time) is still open — no per-frame ability scan while
+// buffed. Own state + own abilities only; fully guarded (the freeze lesson).
+function tryBuffCast(a: Agent, ctx: CognitionCtx, op: EffectOp, activeUntil: number | undefined): void {
+  try {
+    if (!a.abilities || a.abilities.size === 0 || !ctx.resolver || !ctx.resolver.cast) return;
+    const now = ctx.time || 0;
+    if ((activeUntil || 0) > now) return;          // window already open — nothing to do
+    for (const spec of a.abilities.values()) {
+      if (!spec || !spec.effects || !spec.effects.some((e) => e.op === op)) continue;
+      if (onCooldown(a, spec, now)) continue;
+      ctx.resolver.cast(spec, a);
+      return;
+    }
+  } catch { /* never throw on the tick */ }
 }
 
 // THE SURVIVAL CAST (NPC self-use of defensive specs). When badly hurt (own health

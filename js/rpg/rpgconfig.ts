@@ -71,6 +71,12 @@ export const ABILITY = {
   selfCastHpFrac: 0.5,   // in combat, below this health fraction an NPC spends its
                          //   cast cadence on a READY self-targeted heal/shield spec
                          //   (second_wind etc.) instead of an offensive one
+  haggleEdge: 0.05,      // haggle's bargaining window (trade_edge op): ask this
+                         //   fraction MORE / bid this fraction LESS while it lasts.
+                         //   Shifts only the bid/ask midpoint both parties exchange
+                         //   (conserved); a harder bargain can also lose the match.
+  craftBoostMul: 1.6,    // master_craft (craft_boost op): produce-speed multiplier
+                         //   while the window is open
 };
 
 // Sigmoid used by the class matcher + significance shaping. Stable for large |x|.
