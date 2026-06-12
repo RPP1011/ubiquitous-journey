@@ -298,6 +298,35 @@ export async function constructionTest(ok, { makeFighter, stubScene }) {
     }
   }
 
+  // ── 5c. the SHRINE — a congregation's civic work, named for its god ──────────
+  // Drive the commission directly (unit-style, RNG-free): anoint a flock past the
+  // shrineMinFlock gate in town 0, run the surveyor's shrine pass, force-finalize, and
+  // assert the building carries its god (label + the faith lookup shrinesFor finds it).
+  {
+    const { SURVEYOR } = await import('../../js/sim/simconfig.js');
+    const town0 = sim.towns[0];
+    const folk0 = sim.agents.filter((a) => a.alive && !a.controlled && a.faction === 'townsfolk' && a.townId === town0.id);
+    for (let i = 0; i < Math.min(folk0.length, (SURVEYOR.shrineMinFlock || 8) + 2); i++) folk0[i].faith = 'Om';
+    sim.surveyor._maybeCommissionShrine(town0, sim._ctx());
+    let shrine = (sim.buildSites._buildings || []).find((b) => b.buildKind === 'shrine' && b.town === town0.id);
+    if (!shrine) {
+      const site = (sim.buildSites._sites || []).find((s) => s.kind === 'shrine' && s.town === town0.id);
+      if (site) {
+        site.woodHave = site.woodNeeded; site.progress = 1;
+        sim.buildSites.tick(sim._ctx(), 0.5);
+        shrine = (sim.buildSites._buildings || []).find((b) => b.buildKind === 'shrine' && b.town === town0.id);
+      }
+    }
+    ok(!!shrine, `construction: the congregation raised a shrine (surveyed=${sim.surveyor.stats.shrines})`);
+    if (shrine) {
+      ok(shrine.god === 'Om' && /shrine of Om/.test(shrine.label || ''),
+        `construction: the shrine carries its god (god=${shrine.god}, label="${shrine.label}")`);
+      ok((sim.buildSites.shrinesFor('Om') || []).length >= 1 && (sim.buildSites.shrinesFor('The Lady') || []).length === 0,
+        'construction: shrinesFor finds the god\'s standing shrine (and only its own)');
+      ok(sim.buildSites.hasShrine(town0.id), 'construction: one shrine per town (hasShrine latches)');
+    }
+  }
+
   // ── 6. every NPC still has a comfort need, a goal, and a valid ambition ──────
   ok(sim.agents.every((a) => (a.alive ? (a.needs && typeof a.needs.comfort === 'number') : true)),
     'construction: every living agent has a comfort need');

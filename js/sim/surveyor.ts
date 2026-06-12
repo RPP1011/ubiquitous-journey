@@ -36,13 +36,13 @@ interface Cursor { lane: number; ring: number; }
 export class Surveyor {
   sim: Sim;
   _acc: number;
-  stats: { plots: number; taverns: number; granaries: number };
+  stats: { plots: number; taverns: number; granaries: number; shrines: number };
   _cursors: Map<number, Cursor>;
 
   constructor(sim: Sim) {
     this.sim = sim;
     this._acc = 0;
-    this.stats = { plots: 0, taverns: 0, granaries: 0 };
+    this.stats = { plots: 0, taverns: 0, granaries: 0, shrines: 0 };
     // per-town lane cursors for next-free-slot bookkeeping. Keyed by town id →
     // { lane, ring }; lazily created the first time a town hands out a plot. The
     // cursor only HINTS where to start scanning — the real reject test is the
@@ -175,6 +175,37 @@ export class Surveyor {
     this.stats.granaries++;
   }
 
+  // commission ONE shrine per town — raised by the CONGREGATION, not the town fund's
+  // need for shelter: once the town's DOMINANT god holds enough local faithful, they
+  // build their god a holy place (same wood+labour public path; the shrine carries the
+  // god's name and faith.ts works its miracles harder on holy ground). With per-town
+  // god seeding (faith._bootstrap) each town tends to raise a DIFFERENT god's shrine —
+  // civic architecture that tells you whose town you're in.
+  _maybeCommissionShrine(town: Town, ctx: FullCtx) {
+    if (!SURVEYOR.shrineEnabled) return;
+    const bs = this.sim.buildSites;
+    if (!bs || !bs.commissionPublic) return;
+    if (bs.hasShrine && bs.hasShrine(town.id)) return;    // one shrine per town
+    // the dominant god among THIS town's living faithful (ground truth — execution layer).
+    const byGod = new Map<string, number>();
+    const agents = ctx.agents || this.sim.agents || [];
+    for (let i = 0; i < agents.length; i++) {
+      const a = agents[i];
+      // `faith` is a faith.ts own-state flag (a god name) — not on the shared Agent type.
+      const faith = (a as { faith?: string }).faith;
+      if (a.alive && !a.controlled && a.faction === 'townsfolk' && a.townId === town.id && faith)
+        byGod.set(faith, (byGod.get(faith) || 0) + 1);
+    }
+    let god: string | null = null, flock = 0;
+    for (const [g, n] of byGod) if (n > flock) { flock = n; god = g; }
+    if (!god || flock < (SURVEYOR.shrineMinFlock || 8)) return;   // no congregation yet
+
+    const plot = this.allocatePlot(town, { w: 4, d: 4 });
+    if (!plot) return;
+    bs.commissionPublic(town, 'shrine', plot, ctx, { god });
+    this.stats.shrines = (this.stats.shrines || 0) + 1;
+  }
+
   // fixed-tick: survey each town for the public works it lacks (tavern, granary).
   // Self-throttled and fully guarded — never throws or stalls the loop (freeze lesson).
   // Inert until a town is actually spawned (bare controlled sub-sims get nothing).
@@ -188,6 +219,7 @@ export class Surveyor {
       for (let i = 0; i < towns.length; i++) {
         this._maybeCommissionTavern(towns[i], ctx);
         this._maybeCommissionGranary(towns[i], ctx);
+        this._maybeCommissionShrine(towns[i], ctx);
       }
     } catch { /* never throw on the tick */ }
   }

@@ -138,11 +138,25 @@ export class Faith {
       if (power <= 0) continue;
       const scale = Math.min(1, power / (FAITH.greatGodAt || 8));   // 0..1 by flock size
       const heal = (FAITH.miracleHeal || 0) * (0.4 + 0.6 * scale);
+      // HOLY GROUND: a god's miracles work harder on faithful near its STANDING shrine
+      // (the congregation's civic build, construction.shrinesFor — a razed shrine confers
+      // nothing). This is WHY a flock raises one. Guarded; no shrines ⇒ no boost.
+      let shrines: { pos: { x: number; z: number } }[] = [];
+      try { shrines = (this.sim.buildSites && this.sim.buildSites.shrinesFor) ? this.sim.buildSites.shrinesFor(god) : []; } catch { /* */ }
+      const r2 = (FAITH.shrineRange || 14) ** 2;
+      const boost = FAITH.shrineMiracleBoost || 1.6;
       let worked = false;
       for (const b of flock) {
+        let mul = 1;
+        if (shrines.length && b.pos) {
+          for (const sh of shrines) {
+            const dx = b.pos.x - sh.pos.x, dz = b.pos.z - sh.pos.z;
+            if (dx * dx + dz * dz <= r2) { mul = boost; break; }
+          }
+        }
         const f = b.fighter;
-        if (f && f.alive && f.health < maxH) { f.health = Math.min(maxH, f.health + heal); worked = true; }
-        if (b.mood && b.mood.fear > 0) { b.mood.fear = Math.max(0, b.mood.fear - (FAITH.miracleCourage || 0) * (0.4 + 0.6 * scale)); }
+        if (f && f.alive && f.health < maxH) { f.health = Math.min(maxH, f.health + heal * mul); worked = true; }
+        if (b.mood && b.mood.fear > 0) { b.mood.fear = Math.max(0, b.mood.fear - (FAITH.miracleCourage || 0) * (0.4 + 0.6 * scale) * mul); }
       }
       if (worked) this.stats.miracles++;
     }

@@ -1122,6 +1122,12 @@ export const SURVEYOR = {
   granaryMinPop: 10,          // commission the town larder once the town holds this many townsfolk
   granaryWood: 10,            // WOOD a granary costs (the same town fund — wood + labour, never gold)
   granaryWealth: 1,           // cosmetic wealth tier (a plain civic store, not a grand hall)
+  // --- the SHRINE: a congregation's civic work (one per town, names its god) ---
+  shrineEnabled: true,
+  shrineMinFlock: 8,          // the town's DOMINANT god needs this many local faithful to raise one
+  shrineWood: 8,              // a modest build — a spire, not a hall
+  shrineWealth: 2,            // but finely made (cosmetic tier for buildingGen)
+  shrineBenefit: { comfort: 0.7, social: 0.4 },  // a quiet place of solace (below the tavern's pull)
 };
 
 // --- city tile grid (Z-levelled) --------------------------------------------
@@ -1181,6 +1187,8 @@ export const CITY = {
     granaryLevels: 1,             // a single storey (a barn, not a hall)
     hallW: 2, hallD: 2,           // a fellowship's guildhall: a 2×2 block like the tavern
     hallLevels: 2,                // …and it too rises two storeys (a place of standing)
+    shrineW: 1, shrineD: 1,       // a god's shrine: a single tile…
+    shrineLevels: 2,              // …rising two storeys (a spire over the civic band)
   },
   // RAID damage tuning — how a raider near a building takes its component shell apart.
   raid: {
@@ -1433,6 +1441,9 @@ export const MAP = {
     guildhall: ['crowd', 'safe', 'gather', 'social'],
     home:    ['safe', 'conceal', 'shelter', 'rest', 'private'],
     granary: ['safe', 'larder'],   // the public larder — what the destitute's granary trip queries
+    // THE SHRINE: a god's holy place — 'sanctify' (faith reads it; deliberately NOT
+    // shelter/rest, so the comfort path never reroutes strangers to another god's spire).
+    shrine:  ['safe', 'sanctify'],
 
     frontier:['exit'],       // the heading-extension fallback place
   },
@@ -1775,6 +1786,10 @@ export const FAITH = {
   miracleCourage: 0.35,    // fear the miracle quells in the faithful
   smallGodAt: 1,           // ≤ this many believers ⇒ a "small god" (last believer is loyal)
   greatGodAt: 8,           // ≥ this many ⇒ a "great god" (a chronicle milestone)
+  // THE SHRINE (a congregation's civic build — SURVEYOR.shrine*): a god's miracles work
+  // HARDER on faithful near its standing shrine — holy ground, the reason a flock raises one.
+  shrineRange: 14,         // metres from the shrine within which the boost applies
+  shrineMiracleBoost: 1.6, // miracle heal/courage multiplier on holy ground
 };
 
 // --- EXPEDITIONS: NPC adventuring parties (js/sim/expeditions.js) --------------
