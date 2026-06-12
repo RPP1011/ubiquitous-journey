@@ -19,7 +19,7 @@
 import { World } from '../../js/sim/world.js';
 import { Simulation } from '../../js/sim/simulation.js';
 import { resolveCombat } from '../../js/combat.js';
-import { COMFORT, BUILD, SURVEYOR, SCHEMA } from '../../js/sim/simconfig.js';
+import { COMFORT, BUILD, SURVEYOR, SCHEMA, HALL, COMMODITIES } from '../../js/sim/simconfig.js';
 import { AMBITIONS } from '../../js/sim/motivation.js';
 import { isUnhoused } from '../../js/sim/construction.js';
 
@@ -229,14 +229,171 @@ export async function constructionTest(ok, { makeFighter, stubScene }) {
   ok(sim.agents.filter((a) => !a.controlled).every(validAmbition),
     'construction: every NPC still has a valid ambition');
 
+  // ── 7. THE GUILDHALL: an enduring, funded fellowship raises a hall ───────────
+  // Hand-assemble a loose GUILD around a living anchor (deterministic — the emergent
+  // formation RNG is taken out, the same pinning technique as the builder above), age
+  // it past the endurance gate, fund the anchor's wood, and assert the whole arc:
+  // commission (the anchor's wood banked into the site, conserved) → completion +
+  // the groupHallId stamp on anchor AND members → a member's socialize CONVERGES on
+  // the hall (decide pins toPos off its OWN place-belief) → disband clears the stamp.
+  await guildhallPhase(ok, sim, dt);
+
   // ── info ─────────────────────────────────────────────────────────────────────
   const st = sim.buildSites.stats;
   console.log(`INFO  construction: commissioned=${st.commissioned} completed=${st.completed} ` +
-    `homes=${st.homes} taverns=${st.taverns} (surveyor plots=${sim.surveyor.stats.plots} taverns=${sim.surveyor.stats.taverns})`);
+    `homes=${st.homes} taverns=${st.taverns} halls=${st.halls} (surveyor plots=${sim.surveyor.stats.plots} taverns=${sim.surveyor.stats.taverns})`);
   if (builder && builder.homeBeliefId != null && !isUnhoused(builder)) {
     // Phase 2a: report from the finished-building record (found by id), not a truth-side home.
     const h = (sim.buildSites._buildings || []).find((b) => b.id === builder.homeBeliefId);
     if (h) console.log(`INFO  construction: ${builder.name} raised ${h.label || (h.buildKind + ' #' + h.id)} ` +
       `— footprint ${h.footprint.w.toFixed(1)}×${h.footprint.d.toFixed(1)}, storeys ${h.storeys}, wealth ${h.wealth}`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// THE GUILDHALL phase (section 7) — runs inside the live construction sim.
+// ---------------------------------------------------------------------------
+async function guildhallPhase(ok, sim, dt) {
+  const frame = () => {
+    sim.update(dt);
+    for (const f of sim.fighters) f.update(dt);
+    const ev = resolveCombat(sim.fighters, sim.isHostile.bind(sim), sim._ctx());
+    if (ev.length) sim.onCombatEvents(ev);
+  };
+
+  // three WORKING townsfolk of the MAIN town (its pop carries the ambient public-works
+  // labour, the same gate the tavern uses; canWork because the socialize candidate we
+  // assert on lives in the economic scheduler). By this point in the suite most folk
+  // have emergently grouped, so we also accept a FOLLOWERLESS loose tag-holder and
+  // re-roll it into our fixture group (its old tag is just an affiliation label).
+  const pool = sim.agents.filter((a) => a.alive && !a.controlled && a.autonomous && a.canWork &&
+    a.faction === 'townsfolk' && a.townId === 0 && !a.inParty && a.bandLeaderId == null &&
+    !a.watch && !a.expedition && !a.caravanRun && !a.arbitrage && !a.bounty &&
+    a.groupHallId == null && sim.agents.every((x) => x.bandLeaderId !== a.id));
+  if (pool.length < 3) { ok(true, 'guildhall: SKIP — fewer than 3 free townsfolk this run (RNG edge)'); return; }
+  const [L, F1, F2] = pool;
+  // assemble the guild the way _join would (flags only; loose groups don't follow).
+  L.groupType = 'guild'; L.groupName = 'the Hammerfast Guild';
+  // formed "long ago" RELATIVE TO NOW — the endurance gate is decisively open (a flat 0
+  // left the age marginal against minAgeSecs at this point in the suite's timeline).
+  L._groupFormedAt = sim.time - HALL.minAgeSecs - 10;
+  for (const [i, F] of [F1, F2].entries()) {
+    F.bandLeaderId = L.id; F.groupType = 'guild'; F.groupName = L.groupName; F.partySlot = i;
+  }
+
+  // PIN: keep the trio alive and the membership flags intact for the build window (a
+  // wandering recruiter/warband or a stray blade re-rolling the group would make this
+  // gate flake — the same RNG-removal pinning the builder above uses). Liveness only +
+  // the very flags we hand-set; the hall mechanics themselves are never touched.
+  const pinGroup = () => {
+    for (const A of [L, F1, F2]) {
+      if (!A.alive) continue;
+      A.fighter.health = Math.max(A.fighter.health, 80);
+      A.needs.hunger = Math.max(A.needs.hunger, 0.8);
+      A.inParty = false; A.groupType = 'guild'; A.groupName = L.groupName;
+    }
+    L.bandLeaderId = null;
+    if (F1.alive) F1.bandLeaderId = L.id;
+    if (F2.alive) F2.bandLeaderId = L.id;
+  };
+
+  // ── 7a. commission: the enduring, funded group lays the foundations ──────────
+  // We watch for L's OWN pending hall site (groups._hallSites is keyed by anchor id) —
+  // organic fellowships elsewhere may legitimately raise halls of their own now.
+  let site = null;
+  for (let i = 0; i < 600 && !site && L.groupHallId == null; i++) {
+    pinGroup();
+    // keep the anchor FUNDED until ITS commission fires (it can sell its wood at market
+    // mid-window — the funding itself is what's under test, not the anchor's thrift).
+    if (!sim.groups._hallSites.has(L.id)) L.inventory.wood = Math.max(L.inventory.wood || 0, HALL.woodCost);
+    frame();   // groups._maybeRaiseHalls runs on the ~1.5s form cadence
+    site = sim.groups._hallSites.get(L.id) || null;
+  }
+  ok(!!site || L.groupHallId != null, 'guildhall: an enduring, funded fellowship commissioned a hall');
+  if (!site && L.groupHallId == null) return;
+  if (site) ok(site.woodHave >= HALL.woodCost - 1e-6,
+    `guildhall: the anchor banked its wood into the site (woodHave=${site.woodHave} >= ${HALL.woodCost})`);
+
+  // ── 7b. completion stamps groupHallId on the anchor AND members ──────────────
+  for (let i = 0; i < 9000 && L.groupHallId == null; i++) { pinGroup(); frame(); }
+  ok(L.groupHallId != null, `guildhall: the finished hall was stamped on the anchor (groupHallId=${L.groupHallId})`);
+  ok(F1.groupHallId === L.groupHallId && F2.groupHallId === L.groupHallId,
+    'guildhall: every member carries the same groupHallId stamp');
+  const hall = (sim.buildSites._buildings || []).find((b) => b.id === L.groupHallId);
+  ok(!!hall && hall.buildKind === 'guildhall',
+    `guildhall: the stamped id resolves to a finished guildhall building (${hall && hall.label})`);
+  if (!hall) return;
+
+  // ── 7c. a member's socialize CONVERGES ON THE HALL ────────────────────────────
+  // First, DISCOVERY BY SIGHT: stand the member within vision of the hall and run real
+  // frames until its OWN perception files the place-belief (never a telepathic write).
+  // Then assert the decision itself with a DIRECT decide() call (the seeding-suite
+  // romeo.decide pattern) under fully pinned needs — deterministic: no wandering
+  // monster, market haul or courtship can claim the window between frames.
+  const schemaWas = SCHEMA.enabled;
+  SCHEMA.enabled = false;
+  let converged = false;
+  try {
+    const M = F1;
+    M.pos.set(hall.pos.x + 6, M.pos.y, hall.pos.z + 6);
+    M.fighter.root.position.copy(M.pos);
+    for (let i = 0; i < 600; i++) {            // discovery: perception files the hall place-belief
+      pinGroup();
+      if (Math.hypot(M.pos.x - hall.pos.x, M.pos.z - hall.pos.z) > 14) {
+        M.pos.set(hall.pos.x + 6, M.pos.y, hall.pos.z + 6);   // position only — beliefs untouched
+        M.fighter.root.position.copy(M.pos);
+      }
+      frame();
+      const hb = M.beliefs.get(M.groupHallId);
+      if (hb && hb.placeKind && hb.sheltered !== false) break;
+    }
+    ok(!!M.beliefs.get(M.groupHallId), 'guildhall: the member DISCOVERED its hall by sight (own place-belief filed)');
+    // pin the scheduler so socialize is the live want, strip every role/override that
+    // pre-empts it (the freeCivilian pattern, minus the band flags our fixture owns),
+    // purge person-beliefs (no believed threat → no danger suppression), then decide.
+    pinGroup();
+    M.watch = false; M.combatant = false; M.expedition = null; M.caravanRun = null;
+    M.arbitrage = null; M.bounty = null; M.spy = null; M.reporter = false;
+    M._held = null; M._duelWith = null; M.avengerOf = null; M._courtingId = null;
+    M.personality.social_drive = 0.9;          // a sociable soul (score isolation, like the builder pin)
+    // …whose ambition FAVOURS company: a wealth/mastery soul's ambitionFavor deflates
+    // socialize (×0.7) and inflates work (×1.7), which can out-score the gathering for
+    // the whole window — the same RNG-removal as the rest of the pin (we assert the
+    // hall CONVERGENCE mechanic, not which ambition the lottery dealt this agent).
+    M.ambition = { kind: 'belonging', label: 'belong', progress: 0, t0: sim.time, revenge: false,
+      base: { mkills: M.life.monsterKills, dist: M.life.dist, social: M.life.social, gold: M.gold, level: 0 } };
+    M.needs.social = 0.05;                     // starved of company → socialize wins
+    M.needs.hunger = 0.95; M.needs.energy = 0.95;
+    M.needs.comfort = 0.95; M.needs.novelty = 0.95;
+    // no haul to sell, fed + tooled: keeps the urgency-scaled `market` candidate from
+    // out-pulling socialize (the same competing-candidate isolation as the builder pin).
+    for (const c of COMMODITIES) M.inventory[c] = 0;
+    M.inventory.food = 2; M.inventory.tool = 1;
+    M._schemaGoalLock = null;
+    try {                                       // purge person-beliefs (keep PLACE beliefs — the hall!)
+      const store = M.beliefs && M.beliefs.map;
+      if (store) for (const [key, bel] of store) { if (!(bel && bel.placeKind)) store.delete(key); }
+    } catch { /* test-only isolation */ }
+    M.goal = { kind: 'wander' };
+    for (let i = 0; i < 8 && !converged; i++) { // a few cognition ticks (sticky-goal tolerance)
+      M.decide(sim._cognitionCtx());
+      if (M.goal && M.goal.kind === 'socialize' && M.goal.toPos &&
+          Math.hypot(M.goal.toPos.x - hall.pos.x, M.goal.toPos.z - hall.pos.z) < 3) converged = true;
+    }
+  } finally {
+    SCHEMA.enabled = schemaWas;
+  }
+  ok(converged, 'guildhall: a member\'s socialize converges ON THE HALL (toPos = its own believed hall position)');
+
+  // ── 7d. disband clears the stamp (the hall persists as a town building) ───────
+  sim.groups._revert(F1);
+  ok(F1.groupHallId == null, 'guildhall: a reverted member loses its groupHallId stamp');
+  // revert EVERY remaining follower (the organic _form pass may have recruited extras
+  // into our fixture guild over the build window), then prune directly + synchronously
+  // so _form can't re-staff the group mid-check.
+  for (const F of sim.groups._followersOf(L.id)) sim.groups._revert(F);
+  sim.groups._prune();
+  ok(L.groupHallId == null, 'guildhall: the dwindled anchor\'s stamp is cleared on dissolution');
+  ok((sim.buildSites._buildings || []).some((b) => b.buildKind === 'guildhall'),
+    'guildhall: the abandoned hall persists as a town building (flavour, not despawn)');
 }

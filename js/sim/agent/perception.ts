@@ -147,9 +147,10 @@ export function perceive(a: Agent, ctx: FullCtx): void {
 function perceiveBuilding(a: Agent, o: PerceivedThing, ctx: FullCtx): void {
   try {
     const bb = a.beliefs.observe(o.id, 'unknown', o.pos, ctx.time, false);
-    // classify the place (home if it's mine, else tavern if dressed as one, else a building).
+    // classify the place (home if it's mine, else tavern/guildhall if dressed as one, else a building).
     bb.placeKind = (o.ownerId === a.id) ? 'home'
-      : ((o.buildKind === 'tavern' || o.benefitKind === 'tavern') ? 'tavern' : 'building');
+      : ((o.buildKind === 'tavern' || o.benefitKind === 'tavern') ? 'tavern'
+        : (o.buildKind === 'guildhall' ? 'guildhall' : 'building'));
     const wasSheltered = bb.sheltered;
     bb.sheltered = (o.alive !== false);                 // believed shelter = perceivable liveness
     // discover MY OWN home by sight: bind the home-belief id the first time I lay eyes on it.

@@ -32,7 +32,7 @@
 
 import * as THREE from 'three';
 import { rng } from './rng.js';
-import { BUILD, SURVEYOR, CITY, MAP } from './simconfig.js';
+import { BUILD, SURVEYOR, CITY, MAP, HALL } from './simconfig.js';
 import { bus, makeEvent } from '../rpg/events.js';
 import { terrainHeight } from '../arena.js';
 import { BEAT } from './chronicle.js';
@@ -53,8 +53,9 @@ type Building = any;    // a dynamic finished-building percept record (id 'B:n'/
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Ctx = any;         // the build-tick context (only ctx.time is read); callers vary, kept loose
 
-// the affordance table (data-driven), so a registered tavern Place advertises shelter/rest.
-const MAP_AFF = (MAP && MAP.affordances) || {};
+// the affordance table (data-driven), so a registered tavern Place advertises shelter/rest
+// (and a guildhall crowd/social). Indexed by build kind, so it's typed as a string record.
+const MAP_AFF = ((MAP && MAP.affordances) || {}) as Record<string, string[]>;
 import {
   generateShell, shelterReport, anyBurning, torch, strikeNearestWall, tickFire, MATERIAL,
 } from '../world/buildingParts.js';
@@ -63,7 +64,7 @@ import {
 // learn about buildings — BuildSites is itself the nearest()-style lookup. (These are
 // the BUILD-TYPE of a site/building, kept on `buildKind`; a finished building's `.kind`
 // is the PERCEPT kind so perception can file a place-belief about it.)
-export const BUILD_KIND = { HOME: 'home', TAVERN: 'tavern' };
+export const BUILD_KIND = { HOME: 'home', TAVERN: 'tavern', GUILDHALL: 'guildhall' };
 
 // BELIEF-BACKED HOUSING TEST (Phase 2a): is this agent unhoused, AS FAR AS IT KNOWS? Reads
 // ONLY the agent's OWN belief about its home (homeBelief) — never a truth-side Building. An
@@ -144,7 +145,7 @@ export class BuildSites {
   _acc: number;
   _pending: Building[];
   _displaced: Array<{ ownerId: unknown; town: unknown; plotPos: THREE.Vector3; at: number }>;
-  stats: { commissioned: number; completed: number; homes: number; taverns: number };
+  stats: { commissioned: number; completed: number; homes: number; taverns: number; halls: number };
 
   constructor(sim: Sim) {
     this.sim = sim;
@@ -159,7 +160,7 @@ export class BuildSites {
     // grace window, the TOWN re-commissions the rebuild on his behalf. Reads ground-truth
     // building presence ONLY — never an owner's beliefs (demand bookkeeping stays truth-side).
     this._displaced = [];
-    this.stats = { commissioned: 0, completed: 0, homes: 0, taverns: 0 };
+    this.stats = { commissioned: 0, completed: 0, homes: 0, taverns: 0, halls: 0 };
     // No bus subscription: this module EMITS deeds (build), it doesn't consume
     // them, so a rebuilt world can't double-route XP through here. No mesh either.
   }
@@ -177,6 +178,17 @@ export class BuildSites {
         storeys: 2,
         // FOOTPRINT-IN-TILES (CityGrid claim) — a grander 2×2..3×3 block, 2 storeys.
         tiles: { w: (F.tavernW || 2) + (r() < 0.5 ? 1 : 0), d: (F.tavernD || 2) + (r() < 0.5 ? 1 : 0), levels: F.tavernLevels || 2 },
+        wealth: SURVEYOR.tavernWealth,
+        palette: (r() * 6) | 0,
+        seed,
+      };
+    }
+    if (kind === BUILD_KIND.GUILDHALL) {
+      // a fellowship's hall: tavern-grade (a public place of standing), fixed 2×2 block.
+      return {
+        footprint: { w: 5.5 + r() * 2, d: 5.5 + r() * 2 },
+        storeys: F.hallLevels || 2,
+        tiles: { w: F.hallW || 2, d: F.hallD || 2, levels: F.hallLevels || 2 },
         wealth: SURVEYOR.tavernWealth,
         palette: (r() * 6) | 0,
         seed,
@@ -273,9 +285,10 @@ export class BuildSites {
     } catch { return null; }
   }
 
-  // The Surveyor commissions a PUBLIC work (the town tavern). Owner-less; townsfolk
-  // build it via their build goal + the small ambient town-labour accrual in tick.
-  // No gold changes hands — the town "fund" is wood + labour only.
+  // The Surveyor commissions a PUBLIC work (the town tavern — or, via Groups, a
+  // fellowship's GUILDHALL). Owner-less; townsfolk build it via their build goal +
+  // the small ambient town-labour accrual in tick. No gold changes hands — the town
+  // "fund" is wood + labour only (a hall's wood is banked by the group's anchor).
   commissionPublic(town: { id: unknown }, kind: string, _plotIgnored: unknown, ctx: Ctx): BuildSite | null {
     try {
       if (!town) return null;
@@ -287,9 +300,11 @@ export class BuildSites {
       const tp = p.tiles;
       const plot = this.sim.cities.claimPlot(town.id, tp.w, tp.d, tp.levels);
       if (!plot) return null;
+      const hall = kind === BUILD_KIND.GUILDHALL;
       const site = this._makeSite({
         kind, ownerId: null, town: town.id, plot, params: p,
-        woodNeeded: SURVEYOR.tavernWood, benefit: SURVEYOR.tavernBenefit, ctx,
+        woodNeeded: hall ? HALL.woodCost : SURVEYOR.tavernWood,
+        benefit: hall ? HALL.benefit : SURVEYOR.tavernBenefit, ctx,
       });
       this._sites.push(site);
       this.stats.commissioned++;
@@ -308,9 +323,9 @@ export class BuildSites {
     // the claimed plot is a CityGrid claim: centerPos {x,z} (not a Vector3), yaw, tiles,
     // baseLevel/topLevel. Keep the tile claim so we can build the parts shell + release.
     const sitePlot = { tiles: plot.tiles, baseLevel: plot.baseLevel, topLevel: plot.topLevel, yaw: plot.yaw || 0 };
-    // generate the component shell now (pure + headless-safe): a tavern is stone (grander,
-    // tougher), a home wood (cheaper, flammable). The struct is the destructible source.
-    const material = (kind === BUILD_KIND.TAVERN) ? MATERIAL.STONE : MATERIAL.WOOD;
+    // generate the component shell now (pure + headless-safe): a tavern/guildhall is stone
+    // (grander, tougher), a home wood (cheaper, flammable). The struct is the destructible source.
+    const material = (kind === BUILD_KIND.TAVERN || kind === BUILD_KIND.GUILDHALL) ? MATERIAL.STONE : MATERIAL.WOOD;
     let struct = null;
     try { struct = generateShell(sitePlot, { material }); } catch { struct = null; }
     return {
@@ -363,12 +378,13 @@ export class BuildSites {
         const site = this._sites[i];
         if (site.done) continue;
 
-        // PUBLIC TAVERN: abstracted town labour. While the town holds enough
-        // townsfolk, the tavern rises a little each tick (capped by the wood that
-        // passing builders have actually contributed — so the commodity loop holds).
+        // PUBLIC WORKS (tavern + a fellowship's guildhall): abstracted town labour.
+        // While the town holds enough townsfolk, the work rises a little each tick
+        // (capped by the wood actually contributed — so the commodity loop holds; a
+        // hall's wood was banked up-front by the group's anchor, a real inventory).
         // A TOWN-FUNDED rebuild (the displacement backstop) rises the same way, so a
         // displaced owner's home is restored even if he never returns to build it.
-        if ((site.ownerId == null && site.kind === BUILD_KIND.TAVERN) || site.townFunded) {
+        if ((site.ownerId == null && (site.kind === BUILD_KIND.TAVERN || site.kind === BUILD_KIND.GUILDHALL)) || site.townFunded) {
           this._townLabour(site, ctx, dt);
         }
 
@@ -536,8 +552,11 @@ export class BuildSites {
     }
 
     // narrative: name the house, file a chronicle beat, seed the owner's memory.
+    // (a GUILDHALL carries its fellowship's coined name — stamped on the site by Groups
+    // at commission — so the chronicle reads "The Hammerfast Guild raised its hall.")
     const hn = owner ? (owner.house ? `${owner.house} House` : `${owner.name}'s house`) : 'a new house';
-    building.label = site.kind === BUILD_KIND.TAVERN ? 'the tavern' : hn;
+    building.label = site.kind === BUILD_KIND.TAVERN ? 'the tavern'
+      : (site.kind === BUILD_KIND.GUILDHALL ? (site.groupName ? `the hall of ${site.groupName}` : 'the guildhall') : hn);
     const town = this._townOf(site.town);
     const townName = (town && town.name) || 'the town';
     try {
@@ -545,6 +564,9 @@ export class BuildSites {
         if (site.kind === BUILD_KIND.TAVERN) {
           this.sim.chronicle.note('build', null,
             `${townName} raised a tavern — a hearth for the town to gather.`);
+        } else if (site.kind === BUILD_KIND.GUILDHALL) {
+          this.sim.chronicle.note('build', null,
+            `${site.groupName ? site.groupName.charAt(0).toUpperCase() + site.groupName.slice(1) : 'A fellowship'} raised its hall in ${townName}.`);
         } else {
           this.sim.chronicle.note('build', site.ownerId,
             `${owner ? owner.name : 'A townsperson'} raised ${hn} in ${townName}.`);
@@ -561,17 +583,22 @@ export class BuildSites {
     if (typeof document !== 'undefined') this._attachMesh(building);
 
     this.stats.completed++;
-    if (building.buildKind === BUILD_KIND.TAVERN) this.stats.taverns++; else this.stats.homes++;
+    if (building.buildKind === BUILD_KIND.TAVERN) this.stats.taverns++;
+    else if (building.buildKind === BUILD_KIND.GUILDHALL) this.stats.halls++;
+    else this.stats.homes++;
 
-    // PLACES-AS-STATIC-GEOGRAPHY (Phase 2a): register a finished TAVERN as a shared, STATIC
-    // mental-map Place (position only, never `sheltered`) so the belief-backed comfort path
-    // can reach the town hearth via map.nearest(['shelter','rest']). HOMES are deliberately
-    // NOT added to the shared map (a razed home must not poison shared geography — the owner
-    // reaches his home through his OWN belief, homeBeliefId). Guarded; never throws.
+    // PLACES-AS-STATIC-GEOGRAPHY (Phase 2a): register a finished TAVERN (and a fellowship's
+    // GUILDHALL) as a shared, STATIC mental-map Place (position only, never `sheltered`) so
+    // the belief-backed comfort path can reach the town hearth via map.nearest(['shelter',
+    // 'rest']) — the hall advertises gather/social, NOT shelter/rest (see MAP.affordances).
+    // HOMES are deliberately NOT added to the shared map (a razed home must not poison shared
+    // geography — the owner reaches his home through his OWN belief, homeBeliefId). Guarded.
     try {
-      if (building.buildKind === BUILD_KIND.TAVERN && this.sim.map && typeof this.sim.map.add === 'function') {
-        this.sim.map.add(new Place(building.id, 'tavern', building.pos,
-          (MAP_AFF.tavern || ['shelter', 'rest']), building.town));
+      if ((building.buildKind === BUILD_KIND.TAVERN || building.buildKind === BUILD_KIND.GUILDHALL)
+          && this.sim.map && typeof this.sim.map.add === 'function') {
+        const pk = building.buildKind;
+        this.sim.map.add(new Place(building.id, pk, building.pos,
+          (MAP_AFF[pk] || (pk === 'tavern' ? ['shelter', 'rest'] : ['crowd', 'social'])), building.town));
       }
     } catch { /* the shared map is best-effort static geography */ }
   }

@@ -169,6 +169,19 @@ fork); "loose" groups are just an affiliation tag biasing behaviour. Members' mu
 affinity grows while grouped (capped). Never touches a player-led party — that's
 [`party.js`](06-world-dungeons.md).
 
+**The Guildhall (`HALL`).** A named fellowship gets a PLACE: a loose group that has
+endured (≥ `HALL.minMembers` members for ≥ `HALL.minAgeSecs` since formation) and
+whose anchor holds `HALL.woodCost` wood commissions a `guildhall` near the town core
+through the same public-works machinery as the tavern (`commissionPublic` → CityGrid
+plot + ambient town labour; the anchor's wood is banked into the site — conserved, no
+minting). On completion Groups stamps `groupHallId` on the anchor and every member
+(execution side, like `groupName`); cognition only ever reads the own-state stamp plus
+the member's OWN place-belief of that building (discovered by sight, the `homeBeliefId`
+pattern), so decide's loose-group block converges the socialize candidate on the HALL
+(`toPos`, honoured by `fillSocialize`) instead of the anchor's wandering person — a
+fixed gathering point that measurably lifts `groupCohesion` (signals.ts). Dissolution
+clears the stamps; the hall persists as a town building (abandoned halls are flavour).
+
 ## Cross-cutting invariants
 
 1. **No minting.** Raiders, reporters, and gazetteers spawn with 0 gold; dowries are
