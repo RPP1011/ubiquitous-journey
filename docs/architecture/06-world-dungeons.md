@@ -8,8 +8,23 @@
 
 `arena.js` builds the terrain mesh and biomes; `world.js` owns the points of interest.
 
-- `ARENA_RADIUS` bounds the whole map. Movement clamps **x/z only** — Y is left free,
-  which is the structural trick the dungeons exploit (below).
+- `ARENA_RADIUS` bounds the whole map — **600 m since the Phase A expansion**
+  (~1.1 km², up from 0.32 km²/r=320, which held two towns 210 m apart — one Skyrim
+  city district; Gothic 1, the genre's proof that DENSE beats sparse, is ~1 km²).
+  Landmarks, monster camps and the seek_glory prowl band all scale **off the radius**
+  (×0.32..×0.92), so the frontier band (270..552 m) stays wilderness beyond the
+  settled core. Movement clamps **x/z only** — Y is left free, which is the
+  structural trick the dungeons exploit (below).
+- **Four towns** (`TOWNS` in `simconfig.ts`): Eastmarket (ironhill — ore+wood rich,
+  herb-poor), Crowmoor (green — herb rich, ore+wood-poor), Highford (breadbasket —
+  food+wood rich, ore-poor), Saltwick (delvers' — ore+herb rich, wood-poor). All
+  centres sit within ~250 m of origin with varied inter-town distances (210–460 m), so
+  caravans get real routes and each town surpluses what another lacks — genuine
+  comparative advantage ([05](05-economy-news.md)). `ROSTER` is **per town** (4 × 23 ⇒
+  96 spawn, growing to ~140+). Measured at landing (seed 31, 1200 s): all four towns
+  alive, pop 96→142, gold conserved to the coin; noted watch items — the bigger
+  distances re-stress the [survival ladder](14-survival-economy.md), and population
+  skews toward the origin town (lineage density compounding — emergent urbanization).
 - `BIOME` / `findBiomeSpot(biome, minR, maxR)` place sites in biome rings; `regionAt(x,
   z)` classifies a region (which sets monster danger — town stays safer, the frontier
   is dangerous). `terrainHeight(x, z)` is procedural elevation (browser-visual; settles
@@ -23,6 +38,41 @@
 
 See [05](05-economy-news.md) for the multi-town `TOWNS` layout and walls
 ([04](04-drama-society.md)) that sit on this terrain.
+
+## Roads (`js/sim/roads.ts`, `STEER.wRoad`)
+
+The four towns are linked by **visible roads that long-range travellers actually
+follow** — travel becomes legible (caravans bunch on routes; ambush geography emerges
+from geometry, not open-field straight lines).
+
+- **The graph is static shared geography** (like `LANDMARKS`; in the epistemic scan):
+  a minimum spanning set over `TOWNS.centers` (Kruskal at module init — 3 segments for
+  4 towns) plus `roadPull(x, z, tx, tz, maxDist)`, a guarded distance-to-segment query
+  returning the nearest on-route point biased **ahead** along the segment toward the
+  destination (progress-gated — never a backward yank, never NaN).
+- **Steering preference, not a rail** (`agent/steer.ts` `withRoad()`): the long-range
+  fills (caravan / arbitrage / expedition / market-haul) blend a SECOND, weaker
+  attractor (`STEER.wRoad` 0.55 < `wAttract` 1.0) toward the road point — only on legs
+  beyond `STEER.roadMinDist` with a road within `STEER.roadSnapDist`. The true target
+  stays the PRIMARY attractor, so facing/arrival are unchanged and corners get cut
+  naturally. This is the **first live use of `steer()`'s weighted-sum substrate**
+  ([09](09-reasoning-layer.md)).
+- **The wall-funnel fix** (`movement.ts`, `TOWNS.wall.funnel` = 40 m): the gate
+  waypoint of a walled destination now overrides a mover's heading only within the
+  funnel distance. Before, a walled destination 200 m ahead flattened the whole march
+  into a forced straight line at the far gate — **silently defeating the blended field**
+  (measured: identical trajectories with the blend on/off until this fix).
+  `collideWalls` still hard-blocks the ring at any range; near-doorway funnelling is
+  unchanged.
+- Visuals are dirt ribbon strips draped over `terrainHeight` per segment, browser-only
+  (`typeof document` guard, like the walls/defenses meshes).
+
+Measured (kinematic probe, blend ON vs `roadMinDist=Infinity` baseline): a direct
+route tracks the road 2.9 m vs 6.6 m mean; a route with **no direct road** (T2→T3,
+past the hub) 5.3 m vs 30.0 m (max 13.7 vs 57.9) — **5.7× closer for +2.5% travel
+time**. Gated by `test/suites/roads.mjs` (graph connectivity via union-find, roadPull
+guards, fill blending — road weaker, short hops stay single-attractor — and a steered
+route walk: zero heading reversals, no NaN, arrives, mean off-route 2.7 m).
 
 ## The player (`js/player.js`, `js/commander.js`, `js/playerControls.js`)
 

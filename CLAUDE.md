@@ -91,8 +91,9 @@ npm/import-from-CDN; keep everything local and import-mapped.
 > per-cluster docs: `01-sim-spine`, `02-epistemic-split`, `03-rpg-abilities`,
 > `04-drama-society`, `05-economy-news`, `06-world-dungeons`, `07-ui`, `08-testing`,
 > `09-reasoning-layer`. The **action-grammar / knowledge model** is `10-action-grammar` (+ its LLD),
-> outcome-conditioned **caution** is `11-outcome-conditioned-caution-lld`, and the (designed,
-> unbuilt) emergent-arc detection + authoring tooling is `12-narrative-tooling-lld`. SLM/LLM
+> outcome-conditioned **caution** is `11-outcome-conditioned-caution-lld`, the (built)
+> emergent-arc/saga registry + authoring tooling is `12-narrative-tooling-lld` (signal catalog:
+> `13-narrative-signals`), and lethal hunger + the survival ladder is `14-survival-economy`. SLM/LLM
 > opportunities: `docs/slm-opportunities.md`. The summary below is the quickstart; those docs are
 > the full as-built spec — keep them updated when you change architecture (not just tuning).
 

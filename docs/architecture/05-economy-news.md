@@ -76,14 +76,18 @@ Both are bus subscribers that tally per-world activity for tests and the UI.
 
 ## Multi-town world (`TOWNS` in `simconfig.js`)
 
-The world is **multiple dense towns**, each with a core, a radius, its own home band,
-defenses, watch, and population cap, linked by wilderness and inter-town caravans;
-`ARENA_RADIUS` bounds the whole map (x/z clamp; y is cosmetic). Each agent has a
-`townAnchor` and clamps to its home town's radius. Towns **specialise** for comparative
-advantage (e.g. Eastmarket ore/wood-rich herb-poor; Crowmoor the inverse) — but only on
-non-essential goods; every town keeps enough fields to self-feed, because a food deficit
-is fatal (the [eat-survival lesson](../../CLAUDE.md)). This price divergence between
-towns is exactly what makes news and arbitrage worth acting on.
+The world is **four dense towns** (Phase A: Eastmarket, Crowmoor, Highford, Saltwick —
+see [06](06-world-dungeons.md) for the layout, profiles, and the road graph linking
+them), each with a core, a radius, its own home band, defenses, watch, and population
+cap, linked by wilderness, roads, and inter-town caravans; `ARENA_RADIUS` (600) bounds
+the whole map (x/z clamp; y is cosmetic). Each agent has a `townAnchor` and clamps to
+its home town's radius. Towns **specialise** for comparative advantage (e.g.
+Eastmarket ore/wood-rich herb-poor; Crowmoor the inverse) — but only on non-essential
+goods; every town keeps enough fields to self-feed, because **hunger is now lethal**
+(the [survival ladder](14-survival-economy.md) — which also adds the granary tithe, a
+tax *in kind* on provisioning food clears at the market, exempting a pauper's only
+meal). This price divergence between towns is exactly what makes news and arbitrage
+worth acting on.
 
 ## Journalism: information as a resource
 
