@@ -75,8 +75,9 @@ export const EFFECTS: Record<EffectOp, EffectFn> = {
     return true;
   },
 
-  // mark a movement-slow window the agent locomotion can read (sim multiplies
-  // moveSpeed when ctx.time < slowUntil; harmless if unread — purely additive).
+  // mark a movement-slow window the agent locomotion reads: the shared stepper
+  // (agent/movement.js _stepAlong) and the combat pursuit (agent/act.js combatStep)
+  // multiply their speed by slowFactor while now < slowUntil (via slowMul below).
   slow(e, caster, target, ctx) {
     const tf = target?.fighter;
     if (!tf || !tf.alive) return false;
@@ -151,4 +152,13 @@ export const EFFECTS: Record<EffectOp, EffectFn> = {
 // without importing the whole module surface.
 export function abilityStatus(fighter: StatusFighter | null | undefined): AbilityStatusBag | null {
   return fighter?._abilityStatus || null;
+}
+
+// The movement-speed multiplier a slow window imposes at sim-time `now` (1 when
+// unslowed/expired). ONE cheap guarded read for the per-frame movement path (the
+// freeze lesson: no deref chains, never throws). `now` must be the same clock the
+// slow op stamped (ctx.time, the sim time).
+export function slowMul(fighter: StatusFighter | null | undefined, now: number): number {
+  const st = fighter?._abilityStatus;
+  return (st && now < st.slowUntil) ? (st.slowFactor ?? 0.5) : 1;
 }

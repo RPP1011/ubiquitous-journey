@@ -12,6 +12,7 @@ import { ARENA_RADIUS } from '../../arena.js';
 import { POI_KIND } from '../world.js';
 import { GOODS, ECON, SIM, SOCIAL, BAND, BUILD, COMFORT, NOVELTY, RECIPES, CAUTION, ROMANCE , ALMS, GRANARY, WEALTH } from '../simconfig.js';
 import { castSpec, onCooldown } from '../../rpg/abilities/interpreter.js';
+import { slowMul } from '../../rpg/abilities/effects.js';
 import { isMelee } from '../../rpg/abilities/ir.js';
 import { bus, makeEvent } from '../../rpg/events.js';
 import { awardGoalClosureXP } from '../motivation.js';
@@ -52,6 +53,11 @@ const randDir = (): FighterDir => DIRS[(rng() * 4) | 0];
 
 // --- act ---------------------------------------------------------------------
 export function act(a: Agent, dt: number, ctx: CognitionCtx): void {
+  // per-frame sim-time stamp, BEFORE any early return (the sim calls act on every
+  // agent each frame, controlled included) — the clock ability windows stamped with
+  // ctx.time (slow/haggle/craft-boost) are compared against where no ctx flows
+  // (movement stepper, trade ask/bid, produce).
+  a._simNow = ctx.time || 0;
   if (!a.alive || a.controlled) return;
   // CAPTIVE (the rescue arc): a held captive does not act — it stands fast where its captor left
   // it (no work, no wander, no flight). Only `free` (its bonds cut) lifts `_held`.
@@ -515,7 +521,8 @@ export function combatStep(a: Agent, dt: number, ctx: CognitionCtx): void {
     if (f.state !== 'attack' && f.state !== 'stagger') {
       // speedMul lets a NEMESIS boss outrun fleeing prey (a relentless hunter you
       // can't simply outrun — so a hero has to STAND and fight it); 1 for everyone else.
-      const sp = SIM.runSpeed * (a.speedMul || 1);
+      // slowMul honours an active ability slow window (frost bolt etc.) on the chase too.
+      const sp = SIM.runSpeed * (a.speedMul || 1) * slowMul(f, ctx.time || 0);
       const px = a.pos.x, pz = a.pos.z;
       a.pos.x += (dx / dist) * sp * dt; a.pos.z += (dz / dist) * sp * dt;
       const r = Math.hypot(a.pos.x, a.pos.z);

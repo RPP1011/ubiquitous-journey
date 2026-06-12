@@ -9,6 +9,7 @@
 import { ARENA_RADIUS, terrainHeight, barrierAt } from '../../arena.js';
 import { SIM, CITY, TOWNS } from '../simconfig.js';
 import { collideWalls, gateWaypoint } from '../walls.js';
+import { slowMul } from '../../rpg/abilities/effects.js';
 import type { Agent } from '../../../types/sim.js';
 
 /** A minimal {x,z} (+optional y) destination — a belief lastPos, a POI, an own point. */
@@ -89,6 +90,10 @@ export function _stepAlong(a: Agent, hx: number, hz: number, effTarget: XZ | nul
   const here = barrierAt(a.pos.x, a.pos.z);
   if (here === 1) sp *= SIM.waterSpeedMul;
   else if (here === 2) sp *= SIM.ravineSpeedMul;
+  // ABILITY SLOW: an active slow window (frost bolt / control casts, stamped on the
+  // fighter status by the slow op) cuts speed by its slowFactor. One guarded read
+  // against the per-frame sim-time stamp (a._simNow); 1 when unslowed — exact no-op.
+  sp *= slowMul(a.fighter, a._simNow || 0);
   const step = sp * dt;
   const px = a.pos.x, pz = a.pos.z;    // last (wall-free) position, for the slide
   a.pos.x += ux * step;

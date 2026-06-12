@@ -184,6 +184,9 @@ export interface Agent {
   groupType: string | null;
   _trade: string | null;              // the good currently being made (null until first pick)
   _rpgNow: number;                    // sim time stamped each decide() (event timestamp)
+  _simNow?: number;                   // sim time stamped EVERY frame at the top of act() — the
+                                      //   clock ability windows (slow/haggle/craft-boost, stamped
+                                      //   with ctx.time) are compared against off the hot path
   _produceAccum: number;              // fractional production awaiting a whole-unit deed emit
   _smithTimer: number;
   toolWear: number;

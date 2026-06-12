@@ -5,7 +5,25 @@
 // scale with tier, and the same (classKey,tier) is byte-stable (determinism).
 
 import { generateAbility } from '../../js/rpg/abilities/generate.js';
-import { validate as validateSpec } from '../../js/rpg/abilities/ir.js';
+import { validate as validateSpec, spec as irSpec, effect as irEffect } from '../../js/rpg/abilities/ir.js';
+import { castSpec } from '../../js/rpg/abilities/interpreter.js';
+import { slowMul } from '../../js/rpg/abilities/effects.js';
+import { goTo } from '../../js/sim/agent/movement.js';
+import { Agent } from '../../js/sim/agent.js';
+import { makeFighter } from '../harness.mjs';
+
+// a minimal standalone agent fixture (no Simulation needed — movement + the cast
+// interpreter only read the agent itself + the ctx handed in).
+let _nid = 9000;
+function fixtureAgent(name, x, z, cfg = {}) {
+  const a = new Agent(makeFighter('knight', {}), {
+    id: _nid++, name, profession: null,
+    personality: { risk_tolerance: 0.5, social_drive: 0.5, ambition: 0.5, altruism: 0.5, curiosity: 0.5 },
+    faction: 'townsfolk', ...cfg,
+  });
+  a.fighter.root.position.set(x, 0, z);
+  return a;
+}
 
 export function proceduralAbilityTest(ok) {
   const tiers = [1, 5, 10, 20];   // RPG.tierLevels
@@ -68,4 +86,41 @@ export function proceduralAbilityTest(ok) {
   try { fallback = generateAbility({ classKey: 'proc:weird', tags: [] }, 3); } catch { threw = true; }
   ok(!threw && fallback && validateSpec(fallback),
     'procgen: empty-tag class still yields a valid spec (no throw)');
+
+  slowWindowTest(ok);
+}
+
+// ---- the slow op is REAL (movement honours the window) ----------------------
+// Cast a pure-slow spec at a fixture target, then drive the target's locomotion
+// through the shared stepper (goTo -> _stepAlong): while sim-time sits inside the
+// slow window the step shrinks by slowFactor; past expiry it fully recovers.
+function slowWindowTest(ok) {
+  const caster = fixtureAgent('Chiller', 0, 2, { faction: 'monster' });
+  const target = fixtureAgent('Runner', 0, 0);
+  const slowSpec = irSpec({
+    id: 'test_slow', name: '[Test Chill]', classKey: 'proc:test',
+    header: { target: 'enemy', range: 6, cooldown: 1, area: { kind: 'self' }, delivery: { kind: 'instant' } },
+    effects: [irEffect('slow', { amount: 0.4, dur: 3 })],
+  });
+  ok(validateSpec(slowSpec), 'slow: the fixture slow spec passes ir.validate()');
+
+  const cast = castSpec(slowSpec, caster, { agents: [caster, target], time: 100 });
+  ok(cast === true, 'slow: cast landed on the hostile fixture target');
+  ok(slowMul(target.fighter, 100) === 0.4, 'slow: slowMul reads 0.4 inside the window');
+  ok(slowMul(target.fighter, 103.5) === 1, 'slow: slowMul reads 1 past expiry');
+
+  // step the body once INSIDE the window, then once PAST it (same start, same path,
+  // same terrain) — the displacement ratio must be exactly the slowFactor.
+  const dt = 0.1;
+  const stepFrom = (simNow) => {
+    target.fighter.root.position.set(0, 0, 0);
+    target._simNow = simNow;
+    goTo(target, { x: 40, z: 0 }, dt);
+    return Math.hypot(target.pos.x, target.pos.z);
+  };
+  const slowed = stepFrom(100);      // inside the 100..103 window
+  const free = stepFrom(103.5);      // expired
+  ok(slowed > 0 && free > 0, `slow: the fixture actually moved (slowed=${slowed.toFixed(3)}m, free=${free.toFixed(3)}m)`);
+  ok(Math.abs(slowed - free * 0.4) < 1e-9,
+    `slow: in-window speed is slowFactor x normal (${slowed.toFixed(3)} vs ${free.toFixed(3)}m per step)`);
 }
