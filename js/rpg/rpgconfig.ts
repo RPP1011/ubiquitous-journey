@@ -65,6 +65,14 @@ export const RPG = {
   tierLevels: [1, 5, 10, 20],
 };
 
+// --- NPC ability USE (the cast hooks in js/sim/agent/act.js) -----------------
+// Tuning for when an NPC actually spends a cast on something other than an attack.
+export const ABILITY = {
+  selfCastHpFrac: 0.5,   // in combat, below this health fraction an NPC spends its
+                         //   cast cadence on a READY self-targeted heal/shield spec
+                         //   (second_wind etc.) instead of an offensive one
+};
+
 // Sigmoid used by the class matcher + significance shaping. Stable for large |x|.
 export function sigmoid(x: number): number {
   if (x >= 0) { const z = Math.exp(-x); return 1 / (1 + z); }

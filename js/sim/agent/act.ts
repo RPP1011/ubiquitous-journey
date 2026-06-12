@@ -13,6 +13,7 @@ import { POI_KIND } from '../world.js';
 import { GOODS, ECON, SIM, SOCIAL, BAND, BUILD, COMFORT, NOVELTY, RECIPES, CAUTION, ROMANCE , ALMS, GRANARY, WEALTH } from '../simconfig.js';
 import { castSpec, onCooldown } from '../../rpg/abilities/interpreter.js';
 import { slowMul } from '../../rpg/abilities/effects.js';
+import { ABILITY } from '../../rpg/rpgconfig.js';
 import { isMelee } from '../../rpg/abilities/ir.js';
 import { bus, makeEvent } from '../../rpg/events.js';
 import { awardGoalClosureXP } from '../motivation.js';
@@ -510,12 +511,17 @@ export function combatStep(a: Agent, dt: number, ctx: CognitionCtx): void {
   // geometrically on whatever body is there. Guarded: ability-less / no-real-target -> no-op.
   if (a._castCd <= 0) {
     a._castCd = 0.4 + rng() * 0.4;
-    // a spec resolves on a REAL body, so casting requires the target to be a perceived
-    // live agent — the resolver returns it ONLY when vision-confirmed (a belief about a
-    // scarecrow returns null and simply can't be cast at; the melee swing below still
-    // lands geometrically on whatever body is actually there).
-    const realTarget = ctx.resolver ? ctx.resolver.castTarget(a, targetId) : null;
-    if (realTarget) tryCastAbility(a, realTarget, dist, ctx);
+    // SURVIVAL FIRST: badly hurt and holding a READY self-targeted heal/shield spec
+    // (second_wind) -> spend this cast cadence on staying alive instead of attacking.
+    // Own state + own abilities only; fully guarded (ability-less monsters no-op).
+    if (!trySelfCastAbility(a, ctx)) {
+      // a spec resolves on a REAL body, so casting requires the target to be a perceived
+      // live agent — the resolver returns it ONLY when vision-confirmed (a belief about a
+      // scarecrow returns null and simply can't be cast at; the melee swing below still
+      // lands geometrically on whatever body is actually there).
+      const realTarget = ctx.resolver ? ctx.resolver.castTarget(a, targetId) : null;
+      if (realTarget) tryCastAbility(a, realTarget, dist, ctx);
+    }
   }
   if (dist > reach) {
     if (f.state !== 'attack' && f.state !== 'stagger') {
@@ -574,6 +580,40 @@ export function tryCastAbility(a: Agent, target: Agent, dist: number, ctx: Cogni
     if (ctx.resolver && ctx.resolver.cast) return ctx.resolver.cast(spec, a);
     return castSpec(spec, a, ctx);
   } catch { return false; }   // never throw on the tick
+}
+
+// THE SURVIVAL CAST (NPC self-use of defensive specs). When badly hurt (own health
+// under ABILITY.selfCastHpFrac — config, not logic) cast a READY self-targeted spec
+// carrying a heal or shield effect, through the same resolver bridge / interpreter
+// cooldown as offensive casts. Reads ONLY own state + own abilities (no roster, no
+// target). Fully guarded so the fixed tick can NEVER throw on an ability-less /
+// professionless / ctx-less agent (the freeze lesson). True if a spec fired.
+export function trySelfCastAbility(a: Agent, ctx: CognitionCtx): boolean {
+  try {
+    if (!ctx || !a.abilities || a.abilities.size === 0) return false;
+    const f = a.fighter;
+    if (!f || !f.alive) return false;
+    if (f.health >= TUNE.maxHealth * (ABILITY.selfCastHpFrac || 0.5)) return false;
+    const spec = bestSelfAbility(a, ctx.time || 0);
+    if (!spec) return false;
+    // EXECUTION: the interpreter owns validation + the cooldown burn; the resolver
+    // bridge hands it the full sim ctx (self-casts scan no roster, but the path is
+    // uniform with offensive casts). Resolver-less callers (tests) fall back direct.
+    if (ctx.resolver && ctx.resolver.cast) return ctx.resolver.cast(spec, a);
+    return castSpec(spec, a, ctx);
+  } catch { return false; }   // never throw on the tick
+}
+
+// The first READY self-targeted spec with a heal/shield effect. Survival specs are
+// rare (most agents hold 0-1), so first-ready is the whole policy.
+export function bestSelfAbility(a: Agent, now: number): AbilitySpec | null {
+  for (const spec of a.abilities.values()) {
+    if (!spec || !spec.header || spec.header.target !== 'self') continue;
+    if (!spec.effects || !spec.effects.some((e) => e.op === 'heal' || e.op === 'shield')) continue;
+    if (onCooldown(a, spec, now)) continue;
+    return spec;
+  }
+  return null;
 }
 
 // Pick the best READY offensive spec for the current engagement. Offensive =

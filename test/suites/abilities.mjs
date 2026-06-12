@@ -7,8 +7,10 @@
 import { generateAbility } from '../../js/rpg/abilities/generate.js';
 import { validate as validateSpec, spec as irSpec, effect as irEffect } from '../../js/rpg/abilities/ir.js';
 import { castSpec } from '../../js/rpg/abilities/interpreter.js';
-import { slowMul } from '../../js/rpg/abilities/effects.js';
+import { slowMul, abilityStatus } from '../../js/rpg/abilities/effects.js';
+import { ABILITY_CATALOG } from '../../js/rpg/abilities/catalog.js';
 import { goTo } from '../../js/sim/agent/movement.js';
+import { trySelfCastAbility } from '../../js/sim/agent/act.js';
 import { Agent } from '../../js/sim/agent.js';
 import { makeFighter } from '../harness.mjs';
 
@@ -89,6 +91,38 @@ export function proceduralAbilityTest(ok) {
 
   slowWindowTest(ok);
   plantBeliefSignTest(ok);
+  selfCastTest(ok);
+}
+
+// ---- NPC self-cast on the survival path --------------------------------------
+// A badly hurt agent holding a ready self-targeted heal/shield spec casts it (the
+// combatStep survival hook calls trySelfCastAbility on the cast cadence); a hale
+// one keeps its cooldown; an ability-less monster never throws.
+function selfCastTest(ok) {
+  const sw = ABILITY_CATALOG.second_wind;
+
+  const hurt = fixtureAgent('Bleeder', 0, 0);
+  hurt.grantAbility(sw);
+  hurt.fighter.health = 30;
+  const did = trySelfCastAbility(hurt, { time: 5 });
+  ok(did === true, 'self-cast: a hurt warrior with second_wind casts it');
+  ok(hurt.fighter.health > 30, `self-cast: health restored (30 -> ${hurt.fighter.health.toFixed(0)})`);
+  const st = abilityStatus(hurt.fighter);
+  ok(!!st && st.shield > 0, `self-cast: shield armed (${st && st.shield})`);
+  ok(trySelfCastAbility(hurt, { time: 5.1 }) === false, 'self-cast: cooldown holds (no instant re-cast)');
+
+  const hale = fixtureAgent('Hale', 5, 0);
+  hale.grantAbility(sw);
+  const hp0 = hale.fighter.health;
+  ok(trySelfCastAbility(hale, { time: 5 }) === false, 'self-cast: a healthy warrior does NOT cast');
+  ok(hale.fighter.health === hp0, 'self-cast: healthy warrior untouched');
+
+  // a hurt ability-less monster (profession null, empty abilities) is a clean no-op.
+  const mob = fixtureAgent('Mob', 9, 0, { faction: 'monster' });
+  mob.fighter.health = 10;
+  let threw = false, r = null;
+  try { r = trySelfCastAbility(mob, { time: 5 }); } catch { threw = true; }
+  ok(!threw && r === false, 'self-cast: ability-less monster is a guarded no-op (never throws)');
 }
 
 // ---- plant_belief sign semantics ---------------------------------------------
