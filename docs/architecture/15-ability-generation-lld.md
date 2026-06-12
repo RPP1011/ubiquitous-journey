@@ -334,6 +334,15 @@ We attacked the design as a min-maxer (player or emergent NPC dynamics — the f
 lessons prove the sim "discovers" reward loops statistically). Exploits found, nerfs
 specced. Each M-rule gets a regression test in its build phase.
 
+- **M0 — the pricing principle (preferred over caps).** Where a grant rewards a FEAT,
+  gate qualification on **risk genuinely borne**, not on counters: feat significance is
+  discounted by the safety margin held at ENCOUNTER START (own-state snapshot — the
+  caution system's `_snap` pattern), and the reward per qualifying feat stays FLAT.
+  Preparation doesn't weaken an earned feat — it makes feats harder to QUALIFY, which
+  is the self-balancing economics: the only way to qualify is to genuinely walk in
+  exposed, and genuine exposure is priced by the sim itself (you can actually die).
+  Caps/graces remain only where the exploited action is zero-risk by construction.
+
 - **M1 — refund stacking.** As drafted, conditions refunded additively: `vs_sworn_foe`
   60% + `while_faithful` 35% + `near_home` 25% = 120% — free power on an ability the
   munchkin engineers one corner-case scenario for. NERF: refunds MULTIPLY as retained
@@ -344,12 +353,14 @@ specced. Each M-rule gets a regression test in its build phase.
   kept-ratio < 0.2 over ≥5 resolved oaths across ≥20 sim-min, **once per life**. (And
   abandonment should eventually leak reputation — the betrayal-as-choice feature; noted,
   out of scope here.)
-- **M3 — engineered keeps.** Farm grants by provoking weak foes into assaulting you,
-  then killing them (oath:kept every graceSec). NERFS: (a) per-seam LIFETIME cap (1-2
-  grants), global grace across ALL seams; (b) the keep must be PROPORTIONATE — the
-  culprit's threat (level/faction) gates the grant row, a goblin grudge mints nothing;
-  (c) bind `vs_sworn_foe` to the SUBJECT-ID, never the culprit's faction (§5b's
-  "culprit's faction" rider is rescinded — faction-wide bonuses are munchkin gold).
+- **M3 — engineered keeps (M0 applied).** Farm grants by provoking weak foes into
+  assaulting you, then killing them. NERFS: (a) the keep is RISK-PRICED, not capped:
+  significance discounts by the relative threat actually faced (own believed strength +
+  band vs the culprit's — the `warbandStrength`/prowess estimates) — a goblin grudge
+  prices to ~0, a keep against an outclassing foe pays in full, repeatably; (b) the M8
+  same-moment grace; (c) bind `vs_sworn_foe` to the SUBJECT-ID, never the culprit's
+  faction (§5b's "culprit's faction" rider is rescinded — faction-wide bonuses are
+  munchkin gold).
 - **M4 — oathbind usury, and an architecture violation.** As drafted ("arms a repay-
   obligation on BOTH ledgers") a speaker farms strangers at the market for 5g pacts —
   and worse, it WRITES A FOREIGN MIND, violating the Inform pattern (the recruiter
@@ -357,10 +368,18 @@ specced. Each M-rule gets a regression test in its build phase.
   target perceives (`_offers`-style mailbox); the target's OWN evaluation (standing,
   surplus, personality) accepts or declines; only acceptance arms both ledgers. The
   munchkin patch and the epistemic patch are the same patch.
-- **M5 — survived-farming.** Tank a weak monster to 10% hp, potion up, repeat. NERF:
-  the survived-grant keys on the existing `perilsSurvived` fold (which has its own
-  gates), requires a real threat (attacker outclasses or nearly killed you — health
-  fraction AND attacker strength), lifetime cap 1.
+- **M5 — survived-farming (M0 applied; the lifetime cap is RESCINDED).** Tank a weak
+  monster to 10% hp, potion up, repeat — the exploit is the SAFETY MARGIN, not the
+  repetition. Feat significance:
+  `S = nearDeathDepth × (1 − mitigationMargin)`, where
+  `mitigationMargin = clamp01(potionStockAtEncounterStart × healPerPotion / maxHealth)`
+  (snapshot on combat entry, the `_snap` pattern — START stock, so draining potions
+  mid-fight cannot manufacture exposure). Grant qualifies at `S ≥ threshold`; reward
+  per qualifying feat is FLAT and repeatable — the thrice-ambushed pauper genuinely
+  accrues a "nine lives" arc; the potion-cycler's runs price to ~0. The inverse play
+  ("go in naked to qualify") is self-balancing: carrying no healing means the death
+  risk is REAL — that is the feat. Rides the `perilsSurvived` fold; the M8 same-moment
+  grace still applies.
 - **M6 — murder-by-rumour economics.** `denounce` → town turns hostile → target dies →
   loot the purse. This is legitimate CONTENT (the false-witness arc, emergent!) but
   needs counterplay: a denounce cast is itself PERCEIVABLE (witnesses remember who
