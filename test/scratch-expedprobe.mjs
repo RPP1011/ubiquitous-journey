@@ -13,6 +13,9 @@ setSeed(SEED);
 // crank the cadence so a 30-min run yields a sample (serial — the delve pocket is shared).
 EXPEDITION.formEvery = 20; EXPEDITION.formChance = 1; EXPEDITION.delveChance = 1;
 EXPEDITION.captainMinLevel = 2; EXPEDITION.partySize = 4; EXPEDITION.delveSecs = 45;
+EXPEDITION.delveRing = 0.3;   // shorter (but real) marches so a 30-min run still yields a sample
+// outcome axes for the new structure: retreats + march-phase deaths
+
 
 const world = new World(stubScene);
 const sim = new Simulation(stubScene, world, { makeFighter, seed: SEED });
@@ -81,7 +84,7 @@ while (sim.time < 1800) {
     }
   }
 }
-console.log(`expeditions mounted=${sim.expeditions.stats.mounted} triumphs=${sim.expeditions.stats.triumphs} losses=${sim.expeditions.stats.losses} horrors slain=${sim.expeditions.stats.slain}`);
+console.log(`expeditions mounted=${sim.expeditions.stats.mounted} triumphs=${sim.expeditions.stats.triumphs} losses=${sim.expeditions.stats.losses} retreats=${sim.expeditions.stats.retreats || 0} horrors slain=${sim.expeditions.stats.slain}`);
 const S = records.filter((r) => r.survived), F = records.filter((r) => !r.survived);
 const mean = (xs, k) => xs.length ? (xs.reduce((t, r) => t + r[k], 0) / xs.length) : 0;
 console.log(`members tracked=${records.length}  survived=${S.length}  fell=${F.length}`);

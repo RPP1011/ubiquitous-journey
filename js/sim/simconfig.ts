@@ -1876,9 +1876,12 @@ export const EXPEDITION = {
   delveRing: 0.55,         // how far out the delve MOUTH lies (× ARENA_RADIUS): the company
                            //   MARCHES there and back — the journey is real, only the descent
                            //   into the pocket is a teleport (climbing into a hole)
-  retreatBelow: 0.67,      // the captain CALLS THE RETREAT when the alive fraction drops below
-                           //   this — "none climbed back" becomes a choice that failed, not a timer
-  retreatHp: 0.35,         // …or when his own health fraction does (the coward who lives)
+  retreatBelow: 0.99,      // the captain CALLS THE RETREAT on FIRST BLOOD (alive fraction below
+                           //   this) — "none climbed back" becomes a choice that failed, not a timer
+  retreatHp: 0.4,          // …or when the PARTY's mean health fraction drops below this. Keyed to
+                           //   the COMPANY, never the captain's own hp — the probe proved a captain-
+                           //   keyed bell is silenced by his own sustain (self-healing captains
+                           //   pressed on while their parties died: sustain became a death trap)
   exploreDeedDist: 40,     // an EXPLORE deed folds per this many metres marched on expedition —
                            //   one of the two emitters that finally make the explorer identity
                            //   reachable (the other: a sightsee outing fully taken in, act.ts)

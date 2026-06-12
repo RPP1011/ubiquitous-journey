@@ -229,11 +229,20 @@ export class Expeditions {
     const E = cap.expedition;
     const now = this.sim.time;
     const total = (E.members || []).length || 1;
-    const aliveMembers = E.members.filter((m: any) => m && m.alive).length;
+    const alive = E.members.filter((m: any) => m && m.alive);
+    const aliveMembers = alive.length;
     const horrorsLeft = (E.horrorIds || []).filter((id: any) => { const h = this.sim.agentsById.get(id); return h && h.alive; }).length;
-    const capHp = (cap.alive && cap.fighter) ? cap.fighter.health / (TUNE.maxHealth || 100) : 0;
+    // THE CAPTAIN READS HIS COMPANY, not his own wounds (the probe's inversion lesson: a
+    // retreat bell keyed to the captain's hp is SILENCED by his own sustain — self-healing
+    // captains pressed on while their parties died, and "weak enough to bail early" became
+    // the survival meta). Retreat on FIRST BLOOD (aliveFrac < retreatBelow) or when the
+    // PARTY's mean blood runs low (retreatHp on the company, captain included).
+    const maxH = TUNE.maxHealth || 100;
+    let meanHp = 0;
+    for (const m of alive) meanHp += (m.fighter ? m.fighter.health : 0) / maxH;
+    meanHp = aliveMembers ? meanHp / aliveMembers : 0;
     const retreat = aliveMembers > 0 && horrorsLeft > 0 &&
-      ((aliveMembers / total) < (EXPEDITION.retreatBelow || 0.67) || capHp < (EXPEDITION.retreatHp || 0.35));
+      ((aliveMembers / total) < (EXPEDITION.retreatBelow || 0.99) || meanHp < (EXPEDITION.retreatHp || 0.4));
     if (retreat) {
       this.stats.retreats = (this.stats.retreats || 0) + 1;
       E.retreated = true;

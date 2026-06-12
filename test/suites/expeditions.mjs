@@ -51,9 +51,10 @@ export function expeditionTest(ok, { makeFighter, stubScene }) {
   ok(!!E.mouth && Math.hypot(E.mouth.x, E.mouth.z) > 10,
     'expedition E3b: the mouth (the ascent point) is remembered out on the ring');
 
-  // E4 — the captain bleeds below retreatHp: the RETREAT is called; survivors climb out
-  // at the mouth and the company marches home (phase return), books kept once.
-  cap.fighter.health = (EXPEDITION.retreatHp || 0.35) * 100 * 0.5;   // well below the line
+  // E4 — the COMPANY bleeds below retreatHp (the captain reads his company, never just
+  // his own wounds): the RETREAT is called; survivors climb out at the mouth and the
+  // company marches home (phase return), books kept once.
+  for (const m of [cap, f1, f2]) m.fighter.health = (EXPEDITION.retreatHp || 0.4) * 100 * 0.5;
   exp._advanceDelve(cap);
   ok((exp.stats.retreats || 0) === 1 && E.resolved === true && E.phase === 'return' && E.delve === false,
     `expedition E4a: the captain calls the retreat — and the company turns for home (retreats=${exp.stats.retreats})`);
