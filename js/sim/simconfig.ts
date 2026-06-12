@@ -117,6 +117,12 @@ export const ECON = {
   masteryChoiceWeight: 0.45,  // how much of the (steep) productivity edge feeds the occupation CHOICE — kept
                               //   well below 1 so mastery keeps a master LOYAL to its craft without herding the
                               //   whole town into the highest-value field (the edge lives mostly in throughput)
+  // THE TOOLSET RULE (planner produce + act.produce): production requires a TOOLSET; a
+  // SITE is just the permanent, non-consumable one. A crafted good may be made AFIELD
+  // when a portable toolset (a tool) is in the pack — slower, and the tool wears per
+  // unit (the field-craft the ambushed-alchemist scenario needs; docs 15 M0b).
+  fieldCraftMul: 0.5,         // afield smithing-timer rate (the bench you didn't haul)
+  fieldCraftWear: 0.5,        // tool wear PER UNIT crafted afield (at-site crafting stays wear-free)
   tradeDeedWeight: 0.15,      // IDENTITY weight of a routine buy/sell deed (vs 1.0 for a produce/craft
                               //   deed): trading is universal, so it's damped to let what an agent MAKES
                               //   define its vocation/class — only a DEDICATED trader still reads as a Merchant.

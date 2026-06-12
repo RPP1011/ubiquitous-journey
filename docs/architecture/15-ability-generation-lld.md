@@ -116,8 +116,10 @@ specced. Each M-rule gets a regression test in its build phase.
   ("[Brewed at a Dead Run]"), not a generic warrior skill. Resourcefulness pays mostly
   in IDENTITY, modestly in size. Munchkin-safe by M0's own logic: the only way to farm
   `improvised` is to genuinely enter fights without your tools — real risk, real feat.
-  (Prerequisites, honestly: field-crafting — produce() currently requires standing at a
-  site — and the items themselves; the pricing layer is ready before the deeds are.)
+  (Prerequisites: field-crafting is BUILT — the toolset rule: production requires a
+  TOOLSET, a site is merely the permanent non-consumable one; a carried tool crafts
+  afield, slower + wearing (`ECON.fieldCraftMul`/`fieldCraftWear`, planner waives the
+  at(site) leg). The explosive-potion item itself remains future.)
 - **M1 — refund stacking.** As drafted, conditions refunded additively: `vs_sworn_foe`
   60% + `while_faithful` 35% + `near_home` 25% = 120% — free power on an ability the
   munchkin engineers one corner-case scenario for. NERF: refunds MULTIPLY as retained

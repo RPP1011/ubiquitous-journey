@@ -519,7 +519,13 @@ export const PRIMITIVES: Primitive[] = [
     exec: acquireExec('gather'),
   },
 
-  // produce: effect have(output)+1 ; precond at(site) + profession + inputs
+  // produce: effect have(output)+1 ; precond TOOLSET + profession + inputs.
+  // THE TOOLSET RULE: production requires a TOOLSET — the site is merely the permanent,
+  // non-consumable one bolted to the ground. A CRAFTED good's at(site) leg is therefore
+  // WAIVED when the agent already holds the portable toolset (a tool in the pack): the
+  // chainer prepends no goto, and the executor crafts AFIELD at a price (slower + the
+  // tool wears — act.produce). Raw goods always keep the node: the field IS the
+  // resource, not a workbench. Own-state read (my inventory) — belief-clean.
   {
     name: 'produce',
     effectMatches(sg, _bind, agent) {
@@ -529,7 +535,9 @@ export const PRIMITIVES: Primitive[] = [
       return { name: 'produce', good: sg.good, n: sg.n, site: prof.site, inputs: prof.inputs || null };
     },
     precondition(agent, ctx, bind) {
-      const pre = [Atom.at(bind.site as string)];
+      const pre: SubAtom[] = [];
+      const portable = !!(bind.inputs && agent.inventory && (agent.inventory.tool || 0) >= 1);
+      if (!portable) pre.push(Atom.at(bind.site as string));
       if (bind.inputs) for (const c in bind.inputs) pre.push(Atom.have(c, bind.inputs[c]));
       return pre;
     },

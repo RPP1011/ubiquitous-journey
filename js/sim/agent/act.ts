@@ -298,10 +298,17 @@ export function actControlled(a: Agent, dt: number, ctx: CognitionCtx): void {
 // crafted good (inputs present) converts inputs->output on a timer; a raw good
 // accrues over time, tool-boosted + tool-wearing. Guarded: a missing/invalid
 // trade is a no-op (never throws on the tick — the freeze lesson).
-export function produce(a: Agent, dt: number): void {
+// THE TOOLSET RULE (`atSite`): production requires a TOOLSET. The site is the permanent,
+// non-consumable one — at it, everything below is byte-identical to before. AFIELD, a
+// crafted good gates on the PORTABLE toolset (a tool in the pack), runs slower
+// (ECON.fieldCraftMul) and WEARS the tool per unit (ECON.fieldCraftWear) — the
+// consumable counterpart of the anvil you didn't haul along. A raw good can never be
+// made afield: the field IS the resource, not a workbench.
+export function produce(a: Agent, dt: number, atSite = true): void {
   const output = a._trade;
   const g = output ? GOODS_T[output] : null;
   if (!g || !output) { a.fighter.setMoving(0); return; }
+  if (!atSite && !g.inputs) { a.fighter.setMoving(0); return; }   // no field to gather from
   const inv = a.inventory;
   a.fighter.setMoving(0);
   // INCREASING RETURNS TO MASTERY: a seasoned maker is far more productive at its craft —
@@ -322,16 +329,25 @@ export function produce(a: Agent, dt: number): void {
       maybeRediscover(a, output, dt);     // Phase-4 stub: rate 0 on day one ⇒ never fires
       a.fighter.setMoving(0); return;
     }
+    // AFIELD: the portable toolset gates — no tool in the pack, no craft (the planner
+    // only waives the site leg when one is held, but it may have worn out en route).
+    if (!atSite && (inv.tool || 0) < 1) { a.fighter.setMoving(0); return; }
     // crafted good: convert inputs -> output on the smithing timer
     const inputs = g.inputs;
     const has = Object.keys(inputs).every((c) => (inv[c] || 0) >= inputs[c]);
     if (has) {
-      a._smithTimer += dt;
+      a._smithTimer += dt * (atSite ? 1 : (ECON.fieldCraftMul || 0.5));   // afield work is slower
       if (a._smithTimer >= ECON.smithSecsPerTool / skillMul) {
         a._smithTimer = 0;
         for (const c in inputs) inv[c] -= inputs[c];
         if ((inv[output] || 0) < ECON.maxStack) inv[output] = (inv[output] || 0) + 1;
         a.mastery[output] = (a.mastery[output] || 0) + 1;   // practice deepens mastery
+        // afield, the PORTABLE toolset wears per unit (the site never does — it is the
+        // permanent, non-consumable toolset; this keeps tool demand throughput-coupled).
+        if (!atSite) {
+          a.toolWear += (ECON.fieldCraftWear || 0.5);
+          while (a.toolWear >= 1 && inv.tool > 0) { a.toolWear -= 1; inv.tool -= 1; }
+        }
         // a crafted good is a discrete crafting deed
         bus.emit(mkEvent({
           actorId: a.id, verb: 'forge', tags: OUTPUT_TAGS[output] || ['CRAFTING'],
@@ -820,7 +836,17 @@ registerExecutor('attack', (a, step, dt, ctx) => {
   if (bel && bel.confidence >= SIM.actOnBeliefMin) { a.goal!.targetId = b.target; combatStep(a, dt, ctx); }
   else { const tp = stepTargetPos(a, ctx, { subjectId: b.target }); if (tp) steer(a, { attractors: [{ pos: tp }] }, dt); else a.fighter.setMoving(0); }
 });
-registerExecutor('produce', (a, _step, dt) => { produce(a, dt); });
+registerExecutor('produce', (a, step, dt, ctx) => {
+  // THE TOOLSET RULE: the site is just the permanent toolset — standing at it crafts as
+  // ever (full speed, wear-less). AFIELD (the planner waived the at(site) leg because a
+  // portable toolset is in the pack) the craft runs at field price: produce() gates on
+  // the tool, slows the timer, and wears the tool per unit. atSite = within reach of the
+  // step's believed/static site position; an unresolvable site reads as afield (the tool
+  // gate still protects correctness).
+  const sitePos = stepTargetPos(a, ctx, (step.bind || {}).site as string);
+  const atSite = !!sitePos && a.pos.distanceTo(sitePos as THREE.Vector3) <= (SIM.arriveDist || 1.5) + 1.5;
+  produce(a, dt, atSite);
+});
 registerExecutor('consume', (a, step, dt) => {
   const item = (step.bind || {}).item;
   if (item && (a.inventory[item] || 0) >= 1 && a.needs.hunger < 1) {

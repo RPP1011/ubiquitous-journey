@@ -7,6 +7,7 @@ import { World } from '../../js/sim/world.js';
 import { Agent } from '../../js/sim/agent.js';
 import { plan, goalRepay, goalSeekFortune, goalAvenge, goalSteal, goalSate, goalLearn, goalMuster,
   goalFree, goalWreck, ACQUIRE, Atom, stepEffectHolds, recordBelieves, believesConf, complianceOf } from '../../js/sim/planner.js';
+import { produce } from '../../js/sim/agent/act.js';
 
 export function plannerSelfTest(ok, { makeFighter, stubScene }) {
   const P = () => ({ risk_tolerance: 0.5, social_drive: 0.5, ambition: 0.5, altruism: 0.5, curiosity: 0.5 });
@@ -386,4 +387,49 @@ export function plannerSelfTest(ok, { makeFighter, stubScene }) {
   let threw = false;
   try { plan(farmer, { atoms: [{ pred: 'nonsense' }] }, ctx); } catch { threw = true; }
   ok(!threw, 'planner: junk goal does not throw');
+
+  // ── THE TOOLSET RULE: a site is just the permanent toolset ─────────────────────
+  // A crafter HOLDING the portable toolset (a tool) plans a crafted good WITHOUT the
+  // at(site) leg (field-crafting); without one, the goto(site) leg is back. Raw goods
+  // always keep their node (the field IS the resource). Execution: afield crafting is
+  // tool-gated, slower, and wears the tool; at-site is byte-identical to before.
+  {
+    const alch = mk('Alchemist');
+    alch.profession = 'apothecary'; alch._trade = 'potion';
+    alch.recipes = new Set(['potion']);
+    for (const c in alch.inventory) alch.inventory[c] = 0;
+    alch.inventory.herb = 2; alch.inventory.tool = 1;
+    alch.pos.set(120, 0, 120);                       // far from every hut
+
+    const withTool = plan(alch, { atoms: [Atom.have('potion', 1)] }, ctx);
+    ok(!!withTool && withTool.steps.length === 1 && withTool.steps[0].prim === 'produce',
+      `planner: a held toolset waives the site — the plan crafts IN PLACE (${withTool && withTool.steps.map((s) => s.prim).join('>')})`);
+
+    alch.inventory.tool = 0;
+    const noTool = plan(alch, { atoms: [Atom.have('potion', 1)] }, ctx);
+    ok(!!noTool && noTool.steps.some((s) => s.prim === 'goto'),
+      `planner: no toolset -> the site leg returns (${noTool && noTool.steps.map((s) => s.prim).join('>')})`);
+
+    // raw goods never field-craft: a farmer with a tool still plans through the node.
+    const rawFarmer = mk('RawFarmer');
+    rawFarmer.profession = 'farmer'; rawFarmer._trade = 'food';
+    for (const c in rawFarmer.inventory) rawFarmer.inventory[c] = 0;
+    rawFarmer.inventory.tool = 1;
+    rawFarmer.pos.set(120, 0, 120);
+    const pRaw = plan(rawFarmer, { atoms: [Atom.have('food', 1)] }, ctx);
+    ok(!!pRaw && pRaw.steps.some((s) => s.prim === 'goto' || s.prim === 'gather'),
+      'planner: a raw good keeps its node — no field-gathering wheat from nowhere');
+
+    // EXECUTION (act.produce afield): tool-gated, produces, and wears the tool.
+    alch.inventory.tool = 1; alch.inventory.herb = 2;
+    alch._smithTimer = 0; alch.toolWear = 0;
+    const before = alch.inventory.potion || 0;
+    for (let i = 0; i < 60 * 60 && (alch.inventory.potion || 0) <= before; i++) produce(alch, 1 / 60, false);
+    ok((alch.inventory.potion || 0) > before, `planner: afield crafting PRODUCES with the portable toolset (potion=${alch.inventory.potion})`);
+    ok(alch.inventory.tool === 0 || alch.toolWear > 0, `planner: the portable toolset WEARS afield (tool=${alch.inventory.tool}, wear=${alch.toolWear})`);
+    alch.inventory.tool = 0; alch.inventory.herb = 2; alch._smithTimer = 0;
+    const b2 = alch.inventory.potion || 0;
+    for (let i = 0; i < 60 * 30; i++) produce(alch, 1 / 60, false);
+    ok((alch.inventory.potion || 0) === b2, 'planner: afield with NO toolset crafts nothing (the gate holds)');
+  }
 }
