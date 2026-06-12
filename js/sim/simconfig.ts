@@ -265,7 +265,11 @@ export const TOWNS = {
   // the heading; collideWalls still hard-blocks the ring at any range. Without this
   // gate, a 200m march at a walled town centre was a forced straight line at the
   // far gate, which silently defeated the road-pull blend (and any future field).
-  wall: { radius: 16, thickness: 2, height: 5, gates: 4, gateWidth: 8, funnel: 40 },
+  // radius is the NO-GRID FALLBACK only: with CITY.enabled the wall derives from the
+  // CityGrid's half-extent + `margin` (walls.ts wallRadiusFor) so the ring encloses the
+  // whole town plan, and Cities moves it out when the grid grows. Gates stay 4 evenly-
+  // spaced (gate 0 faces +x) — the lattice's axis streets exit through them.
+  wall: { radius: 16, thickness: 2, height: 5, gates: 4, gateWidth: 8, funnel: 40, margin: 4 },
 };
 
 // THE GAZETTE / REPORTER — a roaming "gazetteer" agent interviews newsworthy

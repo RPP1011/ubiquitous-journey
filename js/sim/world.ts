@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { ARENA_RADIUS, BIOME, findBiomeSpot, regionAt, REGIONS, LANDMARKS, terrainHeight } from '../arena.js';
 import { TOWNS } from './simconfig.js';
-import { buildWalls } from './walls.js';
+import { buildWalls, resetWallRadii } from './walls.js';
 import { rng } from './rng.js';
 import type { World as IWorld, Poi, Vec2Like } from '../../types/sim.js';
 
@@ -90,7 +90,9 @@ export class World implements IWorld {
       const cx = centers[ti][0], cz = centers[ti][1];
       this._buildTown(cx, cz, tr, ti === 0, ti);
     }
-    // stone walls ringing each town core (browser-visual; collision is config-pure)
+    // stone walls ringing each town's BUILT plan (radius derives from the CityGrid extent;
+    // a fresh world must not inherit a previous run's grown radii — module singleton).
+    resetWallRadii();
     buildWalls(this.scene);
     // a deep-frontier landmark set (browser-visual) — placed once over the world.
     this._buildLandmarks();

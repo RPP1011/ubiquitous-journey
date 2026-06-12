@@ -18,7 +18,7 @@
 
 import * as THREE from 'three';
 import { terrainHeight } from '../arena.js';
-import { TOWNS } from './simconfig.js';
+import { TOWNS, CITY } from './simconfig.js';
 
 // CONTAINED THREE TYPE-VIEW (the vendored three.module.js leaves Object3D transform props
 // — .position/.rotation/.matrix — as runtime getters tsc can't see, and over-narrows the
@@ -55,25 +55,48 @@ const T3 = THREE as unknown as T3Shape;
 
 // the wall config block (loosely keyed — TOWNS.wall is an optional sub-config object).
 const WALL = ((TOWNS && TOWNS.wall) || {}) as Record<string, number>;
-const RADIUS = WALL.radius || 0;                 // ring radius from each town centre (0 = disabled)
 const HALF = (WALL.thickness || 2) / 2;          // collision band half-thickness
 const HEIGHT = WALL.height || 5;
 const THICK = WALL.thickness || 2;
 const GATES = WALL.gates || 4;                    // count of evenly-spaced gate gaps
-const GATE_HALF = RADIUS ? ((WALL.gateWidth || 8) / 2) / RADIUS : 0;   // gate half-angle (rad, arc≈width)
 const UNDERGROUND_Y = -50;                        // below this y the mover is in a dungeon: walls don't apply
+
+// GRID-ALIGNED RADIUS (the city-architecture follow-on): the wall rings the BUILT town. Its
+// default derives from the CityGrid's half-extent + a margin (so the whole plan — plaza,
+// civic band, homes blocks — sits INSIDE the wall; the old hand-set 16 m ring cut through
+// the middle of the 64 m grid), and Cities bumps it per town when the grid GROWS a block-
+// ring (setWallRadiusFromGrid), so the wall always encloses the plan. The four evenly-
+// spaced gates already sit on the lattice's axis streets (gate 0 faces +x). The tuned
+// RADIAL collision/funnel model is untouched — only the radius became per-town + dynamic.
+// `TOWNS.wall.radius` remains the no-grid fallback; 0 disables walls entirely.
+const MARGIN = WALL.margin ?? 4;
+const _radii = new Map<number, number>();
+function defaultRadius(): number {
+  if (CITY && CITY.enabled && CITY.gridTiles) return (CITY.gridTiles / 2) * (CITY.tile || 4) + MARGIN;
+  return WALL.radius || 0;
+}
+export function wallRadiusFor(i: number): number { return _radii.get(i) ?? defaultRadius(); }
+export function setWallRadiusFromGrid(i: number, sizeTiles: number, tileM: number): void {
+  const r = (sizeTiles / 2) * (tileM || 4) + MARGIN;
+  if (Number.isFinite(r) && r > 0) _radii.set(i, r);
+}
+// a fresh world must not inherit a previous run's grown radii (the module is a singleton
+// across the many Simulations a test process builds). Called from the World constructor.
+export function resetWallRadii(): void { _radii.clear(); }
 
 function centers(): number[][] {
   return (TOWNS && TOWNS.centers && TOWNS.centers.length) ? TOWNS.centers : [[0, 0]];
 }
 
-// Is the angle (rad) aligned with one of this ring's gate gaps?
-function inGate(ang: number): boolean {
+// Is the angle (rad) aligned with one of this ring's gate gaps? (gate half-angle scales
+// with the ring radius so the door stays gateWidth metres wide as the town grows)
+function inGate(ang: number, R: number): boolean {
+  const gateHalf = R ? ((WALL.gateWidth || 8) / 2) / R : 0;
   for (let g = 0; g < GATES; g++) {
     const ga = (g / GATES) * Math.PI * 2;
     let d = Math.abs(ang - ga);
     if (d > Math.PI) d = Math.PI * 2 - d;
-    if (d < GATE_HALF) return true;
+    if (d < gateHalf) return true;
   }
   return false;
 }
@@ -88,13 +111,14 @@ function inGate(ang: number): boolean {
 // null when no wall lies between the two points. Pure config — headless-safe.
 const _wp = { x: 0, z: 0 };
 export function gateWaypoint(px: number, pz: number, tx: number, tz: number): { x: number; z: number } | null {
-  if (!RADIUS) return null;
   const cs = centers();
   for (let i = 0; i < cs.length; i++) {
+    const R = wallRadiusFor(i);
+    if (!R) continue;
     const cx = cs[i][0], cz = cs[i][1];
     const rp = Math.hypot(px - cx, pz - cz);
     const rt = Math.hypot(tx - cx, tz - cz);
-    const pIn = rp < RADIUS, tIn = rt < RADIUS;
+    const pIn = rp < R, tIn = rt < R;
     if (pIn === tIn) continue;                        // both same side: this ring isn't between them
     // exit toward the gate nearest the OUTSIDE endpoint (so we surface near the goal)
     const outAng = pIn ? Math.atan2(tz - cz, tx - cx) : Math.atan2(pz - cz, px - cx);
@@ -108,7 +132,7 @@ export function gateWaypoint(px: number, pz: number, tx: number, tz: number): { 
     }
     // aim a touch past the doorway on the mover's far side so it fully clears the
     // band before goTo re-locks onto the real target (next frame, path is clear).
-    const wr = RADIUS + (pIn ? 1 : -1) * (HALF + 2.5);
+    const wr = R + (pIn ? 1 : -1) * (HALF + 2.5);
     _wp.x = cx + Math.cos(bestGa) * wr;
     _wp.z = cz + Math.sin(bestGa) * wr;
     return _wp;
@@ -128,18 +152,20 @@ export function gateWaypoint(px: number, pz: number, tx: number, tz: number): { 
 // pos.{x,z}; leaves y alone.
 const EPS = 0.05;
 export function collideWalls(pos: { x: number; y: number; z: number }, px: number, pz: number): void {
-  if (!RADIUS || pos.y < UNDERGROUND_Y) return;
+  if (pos.y < UNDERGROUND_Y) return;
   const cs = centers();
   for (let i = 0; i < cs.length; i++) {
+    const R = wallRadiusFor(i);
+    if (!R) continue;
     const cx = cs[i][0], cz = cs[i][1];
     const pr = Math.hypot(px - cx, pz - cz);
     const nx = pos.x - cx, nz = pos.z - cz;
     const nr = Math.hypot(nx, nz);
-    if ((pr < RADIUS) === (nr < RADIUS)) continue;   // didn't cross this ring this step
-    if (inGate(Math.atan2(nz, nx))) continue;        // crossed at a gate: allowed
+    if ((pr < R) === (nr < R)) continue;             // didn't cross this ring this step
+    if (inGate(Math.atan2(nz, nx), R)) continue;     // crossed at a gate: allowed
     // blocked: keep the new angle (lets the tangential slide continue), pull the
     // radius back to just outside the band on the side we came from.
-    const r = pr < RADIUS ? RADIUS - HALF - EPS : RADIUS + HALF + EPS;
+    const r = pr < R ? R - HALF - EPS : R + HALF + EPS;
     const k = r / (nr || 1);
     pos.x = cx + nx * k;
     pos.z = cz + nz * k;
@@ -151,11 +177,14 @@ export function collideWalls(pos: { x: number; y: number; z: number }, px: numbe
 // headless (no document) and when walls are disabled. Stone is instanced — the
 // whole perimeter of both towns is two InstancedMeshes plus a handful of towers.
 export function buildWalls(scene: SceneLike): Obj3DLike | undefined {
-  if (typeof document === 'undefined' || !RADIUS || !scene) return;
+  if (typeof document === 'undefined' || !scene) return;
   const cs = centers();
+  let maxR = 0;
+  for (let i = 0; i < cs.length; i++) maxR = Math.max(maxR, wallRadiusFor(i));
+  if (!maxR) return;
   const SEGS = 96;                                  // angular resolution of the ring
   const dθ = (Math.PI * 2) / SEGS;
-  const segLen = RADIUS * dθ * 1.12;               // chord + overlap so corners don't gap
+  const segLen = maxR * dθ * 1.12;                 // chord + overlap so corners don't gap
   const bodies: Mat4Like[] = [], crenels: Mat4Like[] = [];   // instance matrices
   const dummy = new T3.Object3D();
   const towerGroup = new T3.Group();
@@ -163,12 +192,15 @@ export function buildWalls(scene: SceneLike): Obj3DLike | undefined {
   const towerMat = new T3.MeshStandardMaterial({ color: 0x837b70, roughness: 1, flatShading: true });
 
   for (let i = 0; i < cs.length; i++) {
+    const R = wallRadiusFor(i);
+    if (!R) continue;
     const cx = cs[i][0], cz = cs[i][1];
+    const gateHalf = ((WALL.gateWidth || 8) / 2) / R;
     let k = 0;
     for (let s = 0; s < SEGS; s++) {
       const θ = s * dθ;
-      if (inGate(θ)) continue;                       // gate gap: no stone
-      const x = cx + Math.cos(θ) * RADIUS, z = cz + Math.sin(θ) * RADIUS;
+      if (inGate(θ, R)) continue;                    // gate gap: no stone
+      const x = cx + Math.cos(θ) * R, z = cz + Math.sin(θ) * R;
       const baseY = safeHeight(x, z);
       // local +Z lies along the radial (depth = thickness), +X along the wall (length)
       dummy.position.set(x, baseY + HEIGHT / 2, z);
@@ -186,8 +218,8 @@ export function buildWalls(scene: SceneLike): Obj3DLike | undefined {
     for (let g = 0; g < GATES; g++) {
       const ga = (g / GATES) * Math.PI * 2;
       for (const e of [-1, 1]) {
-        const a = ga + e * (GATE_HALF + dθ * 0.5);
-        const x = cx + Math.cos(a) * RADIUS, z = cz + Math.sin(a) * RADIUS;
+        const a = ga + e * (gateHalf + dθ * 0.5);
+        const x = cx + Math.cos(a) * R, z = cz + Math.sin(a) * R;
         const t = new T3.Mesh(towerGeo, towerMat);
         t.position.set(x, safeHeight(x, z) + (HEIGHT + 2.2) / 2, z);
         t.castShadow = true; t.receiveShadow = true;
@@ -206,7 +238,22 @@ export function buildWalls(scene: SceneLike): Obj3DLike | undefined {
   if (crenelMesh) group.add(crenelMesh);
   group.add(towerGroup);
   scene.add(group);
+  _lastGroup = group; _lastScene = scene;
   return group;
+}
+
+// re-lay the wall meshes after a town GROWS (Cities calls this browser-side): drop the old
+// group and raise the rings at the new per-town radii. Headless no-op like buildWalls.
+let _lastGroup: Obj3DLike | null = null;
+let _lastScene: SceneLike | null = null;
+export function rebuildWalls(scene?: SceneLike): void {
+  try {
+    const sc = (scene || _lastScene) as (SceneLike & { remove?: (o: unknown) => void }) | null;
+    if (!sc) return;
+    if (_lastGroup && sc.remove) sc.remove(_lastGroup);
+    _lastGroup = null;
+    buildWalls(sc);
+  } catch { /* visuals are best-effort */ }
 }
 
 function makeInstanced(geo: unknown, mat: unknown, mats: Mat4Like[]): Obj3DLike | null {

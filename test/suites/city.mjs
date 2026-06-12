@@ -18,6 +18,8 @@
 // stubScene}) suite signature; synchronous (no meshes, no awaits).
 
 import { CityGrid, TILE, ZONE } from '../../js/world/cityGrid.js';
+import { wallRadiusFor, setWallRadiusFromGrid, resetWallRadii, collideWalls } from '../../js/sim/walls.js';
+import { TOWNS } from '../../js/sim/simconfig.js';
 import {
   generateShell, shelterReport, strikeNearestWall, torch, tickFire, anyBurning,
   settle, damagePart, PART, MATERIAL,
@@ -42,7 +44,36 @@ export function cityTest(ok, { makeFighter, stubScene } = {}) {
   cityGridInvariants(ok);
   cityZoning(ok);
   cityGrowth(ok);
+  cityWalls(ok);
   buildingPartsRaid(ok);
+}
+
+// GRID-ALIGNED WALLS: the ring's default radius derives from the grid extent (the whole
+// plan sits inside the wall), an off-gate crossing is blocked while the axis-street gate
+// passes, and a GROWN town's ring moves out — the old wall line stops blocking.
+function cityWalls(ok) {
+  resetWallRadii();
+  const expect = (CITY.gridTiles / 2) * CITY.tile + (TOWNS.wall.margin ?? 4);
+  const R = wallRadiusFor(0);
+  ok(R === expect, `cityWalls: the default radius derives from the grid extent (${R} = ${CITY.gridTiles}/2·${CITY.tile}+${TOWNS.wall.margin ?? 4})`);
+
+  const [cx, cz] = TOWNS.centers[0];
+  const a = Math.PI / 4;                              // 45°: safely between the axis gates
+  const inX = cx + Math.cos(a) * (R - 2), inZ = cz + Math.sin(a) * (R - 2);
+  const blocked = { x: cx + Math.cos(a) * (R + 2), y: 0, z: cz + Math.sin(a) * (R + 2) };
+  collideWalls(blocked, inX, inZ);
+  ok(Math.hypot(blocked.x - cx, blocked.z - cz) < R, 'cityWalls: an off-gate crossing is blocked (parked inside the ring)');
+
+  const through = { x: cx + R + 2, y: 0, z: cz };     // the +x axis gate = the lattice street exit
+  collideWalls(through, cx + R - 2, cz);
+  ok(Math.hypot(through.x - cx, through.z - cz) > R, 'cityWalls: the axis-street gate lets the body through');
+
+  setWallRadiusFromGrid(0, CITY.gridTiles + 2 * CITY.block, CITY.tile);
+  ok(wallRadiusFor(0) > R, `cityWalls: a grown town's ring moves out with the plan (${R} -> ${wallRadiusFor(0)})`);
+  const freed = { x: cx + Math.cos(a) * (R + 2), y: 0, z: cz + Math.sin(a) * (R + 2) };
+  collideWalls(freed, inX, inZ);                      // the same off-gate step across the OLD line
+  ok(Math.hypot(freed.x - cx, freed.z - cz) > R, 'cityWalls: the old wall line no longer blocks after growth');
+  resetWallRadii();
 }
 
 // SETTLEMENT GROWTH: a full grid grows a block-ring per side — and the shift-by-block

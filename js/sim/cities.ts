@@ -26,6 +26,7 @@
 import { CityGrid } from '../world/cityGrid.js';
 import { CITY } from './simconfig.js';
 import { BEAT } from './chronicle.js';
+import { setWallRadiusFromGrid, rebuildWalls } from './walls.js';
 import type { FullCtx } from '../../types/sim.js';
 
 // `Simulation` lives in another cluster (still .js) and `CityGrid` is an untyped
@@ -92,10 +93,16 @@ export class Cities {
       // its bounds is a story.
       if (!p && CITY.growth && CITY.growth.enabled !== false && g.grow()) {
         p = g.claimPlot(w, d, levels, zone);
+        // THE WALL FOLLOWS THE PLAN: a grown town's ring moves out to enclose the new
+        // blocks (collision is per-town + dynamic; the visual re-lays browser-side).
+        try {
+          setWallRadiusFromGrid(townId, g.size, g.tile);
+          if (typeof document !== 'undefined') rebuildWalls();
+        } catch { /* walls are best-effort */ }
         try {
           const town = (this.sim.towns || []).find((t: any) => t && t.id === townId);
           if (this.sim.chronicle) this.sim.chronicle.note(BEAT.BUILD, null,
-            `${(town && town.name) || 'The town'} has outgrown its old bounds — new streets are laid beyond the edge.`);
+            `${(town && town.name) || 'The town'} has outgrown its old bounds — new streets are laid beyond the edge, and the wall moves with them.`);
         } catch { /* chronicle is best-effort flavour */ }
       }
       return p;

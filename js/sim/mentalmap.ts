@@ -17,6 +17,7 @@
 import * as THREE from 'three';
 import { LANDMARKS } from '../arena.js';
 import { TOWNS, MAP } from './simconfig.js';
+import { wallRadiusFor } from './walls.js';
 import type {
   Place as IPlace, MentalMap as IMentalMap, World, Town, Vec2Like,
 } from '../../types/sim.js';
@@ -97,10 +98,14 @@ export class MentalMap implements IMentalMap {
   _addTowns(towns: Town[] | null | undefined) {
     if (!towns || !towns.length) return;
     const wall = (TOWNS && TOWNS.wall) || {};
-    const R = wall.radius || 0;
     const gates = wall.gates || 0;
     for (const town of towns) {
       if (!town || !town.center) continue;
+      // GRID-ALIGNED WALLS: the gate Places sit at the town's ACTUAL (grid-derived) wall
+      // radius at world build. The map stays static by design — if the town later grows,
+      // its ring moves out but the gate ANGLES are unchanged, so steering at a (now-inner)
+      // gate Place still crosses the wall through the same doorway.
+      const R = wallRadiusFor(town.id as number) || wall.radius || 0;
       const cx = town.center.x, cz = town.center.z, t = town.id;
       this.add(new Place(`T:${t}:centre`, 'town', new THREE.Vector3(cx, 0, cz),
         (MAP.affordances && MAP.affordances.town) || [], t));
