@@ -37,8 +37,10 @@
 >   go-to-ground, doubt-the-mask, flee-the-brawl, no-threat-no-response — all six now drive
 >   behaviour: flee/fight set the active goal directly, and the dispositions hide/shadow/avoid are
 >   ALSO direct schema-set goals with the act.js executor, not inert stack entries), and
->   **places-as-percepts**: buildings (the agent's own home + taverns) are perceivable percepts
->   with a *believed* `sheltered` state and a `placeKind`, affordances gained `shelter`/`rest`,
+>   **places-as-percepts**: buildings (the agent's own home + the public works, taverns and
+>   granaries) are perceivable percepts
+>   with a *believed* `sheltered` state and a `placeKind`, affordances gained `shelter`/`rest`
+>   (and the granary's `larder` — the destitute's draw trip, the public larder against famine),
 >   and **both [known debts](#known-debts--leaks-the-gate-cannot-catch) are RETIRED** (home state
 >   is now discovered by sight/decay, the comfort branch is belief-backed). The **homecoming gate**
 >   (`test/suites/homecoming.mjs`) passes: a miner with a stale home-intact belief walks home,
