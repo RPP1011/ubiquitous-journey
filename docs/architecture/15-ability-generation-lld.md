@@ -328,6 +328,66 @@ held abilities with non-class provenance, grant-beat count, prowess-belief cover
 casts by op, no-op rate (0). The lifetrace digest is the real acceptance: an agent's
 life story should NAME its abilities and where they came from.
 
+## 8a. The munchkin audit (adversarial pass — these are BINDING rules, M1-M10)
+
+We attacked the design as a min-maxer (player or emergent NPC dynamics — the famine
+lessons prove the sim "discovers" reward loops statistically). Exploits found, nerfs
+specced. Each M-rule gets a regression test in its build phase.
+
+- **M1 — refund stacking.** As drafted, conditions refunded additively: `vs_sworn_foe`
+  60% + `while_faithful` 35% + `near_home` 25% = 120% — free power on an ability the
+  munchkin engineers one corner-case scenario for. NERF: refunds MULTIPLY as retained
+  cost (0.4 × 0.65 × 0.75 ≈ 0.20), hard cap 70% total, **max 2 conditions per spec**.
+- **M2 — oath-ditch farming.** Abandoning an oath is FREE (let it expire, 120s), and the
+  "faithless get sly" row paid out at 3 abandons — so the optimal play was swear-and-hide
+  ×3 for a free scry. NERF: the faithless grant keys on the CHARACTER, not the count —
+  kept-ratio < 0.2 over ≥5 resolved oaths across ≥20 sim-min, **once per life**. (And
+  abandonment should eventually leak reputation — the betrayal-as-choice feature; noted,
+  out of scope here.)
+- **M3 — engineered keeps.** Farm grants by provoking weak foes into assaulting you,
+  then killing them (oath:kept every graceSec). NERFS: (a) per-seam LIFETIME cap (1-2
+  grants), global grace across ALL seams; (b) the keep must be PROPORTIONATE — the
+  culprit's threat (level/faction) gates the grant row, a goblin grudge mints nothing;
+  (c) bind `vs_sworn_foe` to the SUBJECT-ID, never the culprit's faction (§5b's
+  "culprit's faction" rider is rescinded — faction-wide bonuses are munchkin gold).
+- **M4 — oathbind usury, and an architecture violation.** As drafted ("arms a repay-
+  obligation on BOTH ledgers") a speaker farms strangers at the market for 5g pacts —
+  and worse, it WRITES A FOREIGN MIND, violating the Inform pattern (the recruiter
+  precedent: no side writes the other's mind). REDESIGN: oathbind is an OFFER the
+  target perceives (`_offers`-style mailbox); the target's OWN evaluation (standing,
+  surplus, personality) accepts or declines; only acceptance arms both ledgers. The
+  munchkin patch and the epistemic patch are the same patch.
+- **M5 — survived-farming.** Tank a weak monster to 10% hp, potion up, repeat. NERF:
+  the survived-grant keys on the existing `perilsSurvived` fold (which has its own
+  gates), requires a real threat (attacker outclasses or nearly killed you — health
+  fraction AND attacker strength), lifetime cap 1.
+- **M6 — murder-by-rumour economics.** `denounce` → town turns hostile → target dies →
+  loot the purse. This is legitimate CONTENT (the false-witness arc, emergent!) but
+  needs counterplay: a denounce cast is itself PERCEIVABLE (witnesses remember who
+  spoke); the accused arc's exoneration path ('told') then curdles standing/snubs back
+  onto the denouncer, and rumour provenance (`rumorBorn`, hops) survives for the
+  Patrician/watch to read. Long cooldown + notoriety cost on cast. The munchkin can
+  still do it — once, at real risk, which is a story. That is the design goal.
+- **M7 — prowess bragging.** `believedProwess` grows in the telling; a braggart casts
+  flashy abilities in crowds to inflate reputation. KEEP IT (the braggart is content)
+  but add the deflation asymmetry: a WITNESSED defeat/flee crushes believedProwess
+  (down-weight ×3 vs up), so a faked reputation carries real risk of a public nosedive
+  (and the mockery beat writes itself). Casts with no landed effect fold NOTHING.
+- **M8 — multi-fold stacking.** One dramatic moment fires several folds (witnessed_death
+  + oath + arc close) → several grants. NERF: global per-agent grant grace (one event
+  grant per N sim-min across all seams) + salience priority (the most specific seam
+  wins, tier-1-style ordering).
+- **M9 — NPC fizzle-spam.** With `requires` conditions live, the NPC cast path must
+  preflight them (cheap own-state reads) BEFORE burning a cooldown, or the no-op cast
+  rate regresses — the metric the integration batch just zeroed stays a gate.
+- **M10 — boost inflation.** Teaching `produce_boost` techniques to everyone inflates
+  production. Partially self-balancing (recipe decay unpracticed; tool wear scales with
+  throughput — the closed-loop coupling), plus: GEN_COST caps boost magnitude, and a
+  technique's grade gates its multiplier (a half-learned rendering is a weak one).
+- **Codified, was luck:** grant seams key ONLY on truth-anchored folds downstream of the
+  combat bridge's `!A || !T` prop guard — never on raw goal-pops or planted beliefs
+  (a believed-person Scarecrow must never mint a grant; pinned by test).
+
 ## 8. Risks
 
 - **Spam/balance**: event grants rate-limited + budgeted like milestone mints; GEN_COST
