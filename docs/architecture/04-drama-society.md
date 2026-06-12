@@ -19,6 +19,7 @@ mint gold.
 | Director | `director.js` | `DIRECTOR` | drama seed engine (points budget + tropes) |
 | Seeding | `seeding.js` | `SEEDS` | plant initial relationship constellations at build |
 | Lineage | `lineage.js` | `LINEAGE` | births, apprenticeship, reconciliation |
+| Migration | `migration.js` + `features/migrate.js` | `MIGRATE` | the emigration valve against multi-town population skew |
 | Houses/Epithets | `houses.js` | `HOUSES`, `EPITHETS` | surnames, dynastic feuds, earned names |
 | Intrigue | `intrigue.js` | `INTRIGUE` | disguise, stealth, spies, false rumours |
 | Patrician | `patrician.js` | `PATRICIAN` | diegetic peacekeeper, brokers truces |

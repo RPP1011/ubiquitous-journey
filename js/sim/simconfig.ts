@@ -1545,6 +1545,43 @@ export const LINEAGE = {
                             //   once one has already surpassed the other (the strife is settled)
 };
 
+// --- MIGRATION: the emigration valve against population skew ------------------
+// In a multi-town world the birth loop compounds wherever couples get a head start
+// (dense towns breed more — rich-get-richer; measured by test/townprobe.mjs: at
+// 1200s one boom town can hold ~2/3 of the world while another bears NO children).
+// The valve is diegetic and EMERGENT, not a quota: a truth-side census pass
+// (js/sim/migration.js — observer layer, like the Director) notices a CROWDED town
+// and lets word reach a few of its people that land is cheap in the SPARSEST one —
+// an Inform (the recruiter-offer / alms-plea mailbox pattern, `_prospects`). The
+// agent then DECIDES off its OWN state alone (features/migrate.js): only the poor,
+// unhoused, unwed and restless/ambitious are tempted; they provision rations first
+// (the no-campaign-without-rations precedent), walk the journey as an ordinary
+// goal-stack plan, and only ON ARRIVAL does execution flip their citizenship
+// (resolver.relocate). The rooted — housed, wedded, timid — stay. Rare by design.
+export const MIGRATE = {
+  enabled: true,
+  tickEvery: 10,            // sim-seconds between census passes (self-throttled)
+  // --- the census (truth-side aggregate; never drives a decision directly) ---
+  crowdRatio: 1.2,          // a town at/above mean×this is CROWDED (rumour source)
+  sparseRatio: 0.85,        // a town at/below mean×this is land-cheap (rumour destination)
+  minGap: 6,                // and the two must differ by at least this many heads (anti-flutter)
+  rumoursPerPass: 2,        // at most this many prospects stamped per pass (bounded)
+  rumourChance: 0.3,        // per-candidate-ear chance the word reaches THEM this pass
+  // --- the prospect mailbox (own-state Inform, pruned in cognition) ---
+  prospectTtl: 60,          // sim-seconds an unacted prospect lingers before lapsing
+  prospectCap: 2,           // mailbox bound (oldest dropped)
+  // --- who is tempted (own state + personality; the rooted never qualify) ---
+  poorGold: 14,             // only an agent poorer than this has nothing keeping it (circumstance)
+  wanderlustMin: 0.55,      // curiosity at/above which the RESTLESS are tempted…
+  ambitionMin: 0.7,         // …or ambition at/above (the strivers chase the open plot)
+  acceptChance: 0.5,        // one weighing per prospect: even a tempted soul may decide to stay
+  provisionFood: 2,         // no journey without rations — the road is a map-length from a meal
+  // --- the journey + settlement ---
+  priority: 0.65,           // migrate goal priority (a plan, not a panic — flee/eat still preempt)
+  journeySecs: 300,         // give up the road after this long (stay a citizen of the old town)
+  settleRadius: 25,         // within this of the new town centre = arrived → relocate (execution)
+};
+
 // --- THE PATRICIAN: a diegetic peace-keeper (Discworld's Vetinari) ------------
 // The Director CAUSES drama (feuds, sparks, raids); the Patrician is the in-world
 // counterforce that keeps it from boiling over — each cycle it finds the town's

@@ -77,6 +77,12 @@ export interface ResolverFacade {
   // (the same path the player's Party uses). NOT a foreign-mind write — the candidate asked to join
   // itself. `cap` bounds the leader's band. Returns whether the follower actually joined.
   joinBand(follower: Agent, leaderId: EntityId, cap: number): boolean;
+  // MIGRATION SETTLEMENT (the emigration valve): the EXECUTION half of a migrant's arrival —
+  // the agent DECIDED to relocate in cognition (its own perceived prospect + own state,
+  // features/migrate.ts) and WALKED there; this flips its citizenship (townId/townAnchor/
+  // townRadius) to the town it now stands in. Truth-side town lookup; chronicle notes the
+  // move. Returns whether it settled. (Optional like solicitAlms — stub facades omit it.)
+  relocate?(a: Agent, townId: number): boolean;
   buildSite: BuildSiteFacade;
 }
 

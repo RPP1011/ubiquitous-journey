@@ -52,6 +52,7 @@ export const BEAT = {
   PATRICIAN: 'patrician', // the Patrician brokered a peace (Vetinari)
   LEGEND: 'legend',       // a hero is hailed or a foe becomes a dread nemesis (epithets)
   UNION: 'union',         // a marriage — a wedding / a cross-House alliance (romance)
+  MIGRATION: 'migration', // a townsperson uproots for a sparser town (the emigration valve)
   BUILD: 'build',         // a building raised — a home founded, a tavern, the town grows
   // emergent-arc beats (docs/architecture/12) — the registry files these on open/round/close.
   RUIN: 'ruin',           // an agent's fortunes collapse (fall-from-grace; the status sensor)

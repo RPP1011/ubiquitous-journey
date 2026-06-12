@@ -189,6 +189,9 @@ export interface Agent {
   _comfortLowSince: number | null;
   _starveSecs?: number;            // seconds hunger has sat empty (drainNeeds starvation clock)
   _pleas?: { fromId: EntityId; t: number }[];   // perceived begging pleas (bounded Inform mailbox, alms)
+  mateId?: EntityId | null;        // persistent couple bond (lineage births run off it; the wedded are rooted)
+  _prospects?: { townId: number; name?: string; x: number; z: number; t: number }[];  // perceived land-is-cheap rumours (bounded Inform mailbox, migration)
+  _migrating?: { townId: number; x: number; z: number; until: number } | null;        // own journey state: walking to a new home town (settle on arrival)
   _lastSolicit?: number;           // beg-arm solicitation throttle (sim-time)
   _lastGranaryDraw?: number;       // granary-arm draw throttle (sim-time)
   _granaryEmptyUntil?: number;     // own memory of finding the larder bare — beg wins until then

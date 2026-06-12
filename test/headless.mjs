@@ -30,6 +30,7 @@ import { learningTest } from './suites/learning.mjs';
 import { recruitTest } from './suites/recruit.mjs';
 import { affectTest } from './suites/affect.mjs';
 import { ledgerLiveTest } from './suites/ledger.mjs';
+import { migrationTest } from './suites/migration.mjs';
 import { cautionTest } from './suites/caution.mjs';
 import { memoryGoalTest, npcCastTest } from './suites/memoryGoals.mjs';
 import { perceptTest } from './suites/percept.mjs';
@@ -84,6 +85,8 @@ learningTest(ok, helpers);
 recruitTest(ok, helpers);
 affectTest(ok, helpers);
 ledgerLiveTest(ok, helpers);
+// the emigration valve (config MIGRATE): census→rumour→decision→journey→settlement.
+migrationTest(ok, helpers);
 cautionTest(ok, helpers);
 executionTest(ok, helpers);
 memoryGoalTest(ok, helpers);

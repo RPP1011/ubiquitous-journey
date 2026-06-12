@@ -26,6 +26,7 @@ import { BuildSites, BUILD_KIND } from './construction.js';
 import './features/index.js';   // load the action-grammar features (each self-registers its verbs)
 import { seedNarratives } from './seeding.js';
 import { Lineage } from './lineage.js';
+import { Migration } from './migration.js';
 import { Chronicle } from './chronicle.js';
 import { SagaStore } from './arcs.js';
 import { foldLoss, foldDeed, foldScarcity, noteWitness } from './signals.js';
@@ -173,6 +174,7 @@ export class Simulation {
   surveyor: Surveyor;
   director: Director;
   lineage: Lineage;
+  migration: Migration;
   chronicle: Chronicle;
   sagas: SagaStore;
   _arcPortsCache?: ArcPorts;
@@ -282,6 +284,11 @@ export class Simulation {
     // LINEAGE: births (stability-gated) + apprenticeship/mentorship. Renews the
     // population without aging — the other half of the population feedback loop.
     this.lineage = new Lineage(this);
+
+    // MIGRATION: the emigration valve against multi-town population skew — a
+    // truth-side census that lets a land-is-cheap rumour reach a few ears in a
+    // crowded town (an Inform); the agent decides for itself (features/migrate).
+    this.migration = new Migration(this);
 
     // CHRONICLE: the world's live drama feed. Subscribes to the shared bus (like
     // xpstats/econstats) and distils the deed firehose into NOTABLE story beats —
@@ -1091,6 +1098,30 @@ export class Simulation {
           return sim.groups ? sim.groups.joinWarband(follower, leaderId, cap) : false;
         } catch { return false; }
       },
+      // MIGRATION SETTLEMENT (the emigration valve) — the EXECUTION half of a migrant's
+      // arrival. The agent DECIDED to relocate in cognition (its own perceived land-is-cheap
+      // prospect + its own poverty/houselessness/personality — features/migrate.ts) and
+      // WALKED the journey; this flips its citizenship (townId/townAnchor/townRadius) to the
+      // town it now stands in, re-anchoring wander/work/defence there. Truth-side town
+      // lookup; the chronicle notes the move (the Gazette's material). No gold moves, no
+      // foreign mind is written. Guarded; returns whether it settled.
+      relocate(a, townId) {
+        try {
+          const towns = sim.towns || [];
+          const town = towns[townId];
+          if (!a || !a.alive || !town || a.townId === townId) return false;
+          const from = (a.townId != null && towns[a.townId]) ? towns[a.townId].name : 'their old town';
+          a.townId = town.id;
+          a.townAnchor = town.center;
+          a.townRadius = town.radius;
+          a.wanderTarget = null;        // re-anchor the roam band to the new home immediately
+          try {
+            if (sim.chronicle && sim.chronicle.note) sim.chronicle.note('migration', a.id,
+              `${a.name} left ${from} for ${town.name}, where land is cheap.`);
+          } catch { /* chronicle is best-effort flavour */ }
+          return true;
+        } catch { return false; }
+      },
       // BUILD-STATE EXECUTION FACADE (Phase 2a, debt #2 retirement): the truth-side build
       // state (BuildSites), exposed as a narrow set of execution operations — exactly like
       // the market resolver. `buildStep` runs in act() (execution), which legitimately reads
@@ -1258,6 +1289,9 @@ export class Simulation {
       this.director.tick(ctx, step);
       // LINEAGE: births (stability-gated) + apprenticeship; self-throttled.
       this.lineage.tick(ctx, step);
+      // MIGRATION: per-town census + the land-is-cheap rumour (the emigration
+      // valve, truth-side half); self-throttled, bounded, fully guarded.
+      this.migration.tick(ctx, step);
       // CHRONICLE: sample the Director/Lineage tallies for raid/birth beats
       // (bus-driven beats are captured by its subscription). Self-throttled; guarded.
       this.chronicle.tick();
