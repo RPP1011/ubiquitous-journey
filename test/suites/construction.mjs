@@ -84,6 +84,16 @@ export async function constructionTest(ok, { makeFighter, stubScene }) {
       const store = builder.beliefs && builder.beliefs.map;
       if (store) for (const [key, bel] of store) { if (!(bel && bel.placeKind)) store.delete(key); }
       builder._schemaGoalLock = null;
+      // THE REAL THREAT ISOLATION (the root cause of the long-standing "discovered home by
+      // sight" flake): purging person-beliefs BLINDS the builder — it never believes a threat
+      // exists, never flees, and ~1 run in 6 a raider beat the standing-blind builder into
+      // CAPTIVITY (held, goal=null, then dead at frame 7200: the forensic dump read
+      // alive=false held=true commissioned=nothing). The gate tests build→discover-by-sight,
+      // not combat survival — so the fixture keeps the protagonist alive outright: release a
+      // capture the frame it lands and keep health topped. Fixture-only surgery, the same
+      // scope as the belief purge above.
+      builder._held = false;
+      if (builder.fighter && builder.fighter.alive) builder.fighter.health = Math.max(builder.fighter.health || 0, 100);
       const k = builder.goal && builder.goal.kind;
       if (k === 'flee' || k === 'fight' || k === 'hide' || k === 'shadow' || k === 'avoid') builder.goal = { kind: 'wander' };
       // KEEP HIM AT THE PLOT until he perceives his finished home: once the build is complete
@@ -249,6 +259,10 @@ export async function constructionTest(ok, { makeFighter, stubScene }) {
     const mpoi = sim.world.nearest('market', granary.pos);
     const folk = sim.agents.filter((a) => a.alive && !a.controlled && a.faction === 'townsfolk' && a.autonomous);
     const seller = folk[0], buyer = folk[1];
+    // DRAIN BELOW CAP first: over the long soak above, ambient food trades can fill the larder
+    // to GRANARY.stockCap — and a capped larder cannot tithe, so the gate flaked whenever the
+    // town had been prosperous (stock 12 -> 12). The gate tests the TITHE, not the cap.
+    granary.stock = Math.min(granary.stock || 0, 2);
     const stock0 = granary.stock || 0;
     if (mpoi && seller && buyer) {
       seller.pos.set(mpoi.pos.x, 0, mpoi.pos.z);
@@ -401,6 +415,7 @@ async function guildhallPhase(ok, sim, dt) {
   const schemaWas = SCHEMA.enabled;
   SCHEMA.enabled = false;
   let converged = false;
+  let lastGoal = '?', hallEvidence = '?';   // failure forensics for the rare convergence flake
   try {
     const M = F1;
     M.pos.set(hall.pos.x + 6, M.pos.y, hall.pos.z + 6);
@@ -442,16 +457,27 @@ async function guildhallPhase(ok, sim, dt) {
       const store = M.beliefs && M.beliefs.map;
       if (store) for (const [key, bel] of store) { if (!(bel && bel.placeKind)) store.delete(key); }
     } catch { /* test-only isolation */ }
+    // …and the GOAL STACK: a live member can be carrying a real plan (sate/repay/avenge) from
+    // its ambient life, whose `plan` candidate + incumbent hysteresis can hold the window —
+    // the same competing-candidate isolation as everything above (we assert hall convergence,
+    // not the member's whole life). _prospects likewise (the migrate candidate post-dates this
+    // fixture). The belonging intent re-stamps from the pinned ambition on the next derive.
+    M.goals.length = 0;
+    M._prospects = null; M._migrating = null;
     M.goal = { kind: 'wander' };
-    for (let i = 0; i < 8 && !converged; i++) { // a few cognition ticks (sticky-goal tolerance)
+    for (let i = 0; i < 16 && !converged; i++) { // a few cognition ticks (sticky-goal tolerance)
       M.decide(sim._cognitionCtx());
+      lastGoal = `${M.goal && M.goal.kind}${M.goal && M.goal.withId != null ? ' with:' + M.goal.withId : ''}${M.goal && M.goal.toPos ? ' toPos' : ''}`;
       if (M.goal && M.goal.kind === 'socialize' && M.goal.toPos &&
           Math.hypot(M.goal.toPos.x - hall.pos.x, M.goal.toPos.z - hall.pos.z) < 3) converged = true;
     }
+    hallEvidence = `lastGoal=${lastGoal}, hallId=${M.groupHallId}, hallBelief=${!!(M.groupHallId != null && M.beliefs && M.beliefs.get(M.groupHallId))}`;
   } finally {
     SCHEMA.enabled = schemaWas;
   }
-  ok(converged, 'guildhall: a member\'s socialize converges ON THE HALL (toPos = its own believed hall position)');
+  // residual RARE flake (~1/15 even after the stack/prospects isolation): when it next fires in
+  // CI, the message carries the evidence (which candidate won, whether the hall belief existed).
+  ok(converged, `guildhall: a member's socialize converges ON THE HALL (${hallEvidence})`);
 
   // ── 7d. disband clears the stamp (the hall persists as a town building) ───────
   sim.groups._revert(F1);
