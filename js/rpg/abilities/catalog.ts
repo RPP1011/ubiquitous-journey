@@ -58,6 +58,10 @@ const cleaving_blow = A({
 });
 
 // ---- SOCIAL ------------------------------------------------------------------
+// plant_belief sign convention (effects.ts): amount < 0 = CHARM — raises the
+// target's standing toward the caster, no suspicion; amount > 0 = DECEIVE — plants
+// suspicion + sours standing. Charm-type specs (silver_tongue, haggle) carry
+// negative amounts on purpose.
 const silver_tongue = A({
   id: 'silver_tongue', name: '[Silver Tongue]', classKey: 'speaker', tier: 1,
   header: { target: 'any', range: 6, cooldown: 12, area: { kind: 'self' }, delivery: { kind: 'instant' } },

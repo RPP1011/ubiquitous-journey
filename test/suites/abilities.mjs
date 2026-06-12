@@ -88,6 +88,37 @@ export function proceduralAbilityTest(ok) {
     'procgen: empty-tag class still yields a valid spec (no throw)');
 
   slowWindowTest(ok);
+  plantBeliefSignTest(ok);
+}
+
+// ---- plant_belief sign semantics ---------------------------------------------
+// amount < 0 = CHARM: raises the target's standing toward the caster, no suspicion.
+// amount > 0 = DECEIVE: plants suspicion + sours standing. (The pre-fix code had
+// the sign backwards — a charm smeared its own caster.)
+function plantBeliefSignTest(ok) {
+  const mkSocial = (id, amount) => irSpec({
+    id, name: `[${id}]`, classKey: 'proc:test',
+    header: { target: 'any', range: 6, cooldown: 1, area: { kind: 'self' }, delivery: { kind: 'instant' } },
+    effects: [irEffect('plant_belief', { amount })],
+  });
+
+  // CHARM: a speaker charms a stranger -> goodwill, no suspicion.
+  const charmer = fixtureAgent('Charmer', 0, 0);
+  const mark = fixtureAgent('Mark', 0, 2);
+  ok(castSpec(mkSocial('test_charm', -0.4), charmer, { agents: [charmer, mark], time: 10 }) === true,
+    'plant_belief: charm cast landed');
+  const cb = mark.beliefs.get(charmer.id);
+  ok(!!cb && cb.standing > 0, `plant_belief: charm RAISED the mark's standing toward the caster (${cb && cb.standing.toFixed(2)})`);
+  ok(!!cb && cb.suspicion === 0 && !cb.hostile, 'plant_belief: charm planted no suspicion/hostility');
+
+  // DECEIVE: a trickster plants a rumor -> suspicion + soured standing.
+  const trickster = fixtureAgent('Trickster', 10, 0);
+  const dupe = fixtureAgent('Dupe', 10, 2);
+  ok(castSpec(mkSocial('test_rumor', 0.5), trickster, { agents: [trickster, dupe], time: 10 }) === true,
+    'plant_belief: deceive cast landed');
+  const db = dupe.beliefs.get(trickster.id);
+  ok(!!db && db.suspicion >= 0.5, `plant_belief: deceive planted suspicion (${db && db.suspicion.toFixed(2)})`);
+  ok(!!db && db.standing < 0, `plant_belief: deceive SOURED standing (${db && db.standing.toFixed(2)})`);
 }
 
 // ---- the slow op is REAL (movement honours the window) ----------------------

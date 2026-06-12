@@ -117,8 +117,14 @@ export const EFFECTS: Record<EffectOp, EffectFn> = {
   },
 
   // --- Theory-of-Mind ops: act on the belief layer, not the body ----------
-  // plant a (possibly false) belief in the TARGET about the CASTER — the social
-  // attack: e.amount>0 plants hostility-suspicion, e.amount<0 improves standing.
+  // plant a (possibly false) belief in the TARGET about the CASTER. ONE op, two
+  // social casts, signed by amount:
+  //   amount < 0 — CHARM (silver_tongue / haggle): goodwill. RAISES the target's
+  //     standing toward the caster; plants no suspicion.
+  //   amount > 0 — DECEIVE (plant_rumor): the social attack. Plants suspicion and
+  //     SOURS the target's standing toward the caster.
+  // (The pre-fix code added mag*0.5 directly, so a charm's negative amount LOWERED
+  // standing — charm was a self-inflicted smear. The sign now matches the catalog.)
   plant_belief(e, caster, target, ctx) {
     if (!target?.beliefs || !caster) return false;
     const mag = e.amount || 0.3;
@@ -130,7 +136,7 @@ export const EFFECTS: Record<EffectOp, EffectFn> = {
       confidence: 0.4,
     });
     const b = target.beliefs.get(caster.id);
-    if (b) b.standing = Math.max(-1, Math.min(1, b.standing + mag * 0.5));
+    if (b) b.standing = Math.max(-1, Math.min(1, b.standing - mag * 0.5));
     return true;
   },
 
