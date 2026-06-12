@@ -78,5 +78,56 @@ export function expeditionTest(ok, { makeFighter, stubScene }) {
   ok((exp.stats.losses || 0) === lossesAtMouth,
     'expedition E5b: the homeward arrival does not double-count the tale');
 
+  // ── FELLOWSHIP, not mercenary company ─────────────────────────────────────────
+  // E7: formation prefers the BONDED over the brave-but-strange — and a timid spouse
+  //     comes anyway (the courage gate waived by bond.override, never the provisions);
+  // E8: a devoted captain does not turn at first blood — a cold one does;
+  // E9: survivors who march home together are warmed toward each other (comrade bonds).
+  {
+    const cap2 = mk('Frodo');
+    cap2.personality = { ...pers, altruism: 0.9 };
+    const spouse = mk('Sam');
+    spouse.personality = { ...pers, risk_tolerance: 0.1 };   // timid — fails the courage gate
+    spouse.mateId = cap2.id; cap2.mateId = spouse.id;        // …but wed to the captain
+    const stranger = mk('Boromir');                          // brave, unbonded
+    stranger.personality = { ...pers, risk_tolerance: 0.95 };
+
+    ok(exp._bondTo(spouse, cap2) > exp._bondTo(stranger, cap2),
+      `expedition E7a: the spouse outranks the brave stranger by BOND (${exp._bondTo(spouse, cap2).toFixed(2)} > ${exp._bondTo(stranger, cap2).toFixed(2)})`);
+    spouse.inventory.food = 0;
+    const pool = [spouse, stranger].filter((a) => exp._brave(a));
+    ok(!pool.includes(spouse), 'expedition E7b: the bond never waives the PROVISION gate (Sam still packs the pots)');
+    spouse.inventory.food = EXPEDITION.provisionFood || 1;
+
+    exp._form(cap2, [spouse, stranger]);
+    const E2 = cap2.expedition;
+    E2.delvePlanned = true;
+    cap2.pos.set(E2.target.x, 0, E2.target.z);
+    exp._advance(cap2);
+
+    // E8 — first blood: the devoted captain holds; then gut his devotion and he turns.
+    stranger.fighter.health = 0; stranger.fighter.alive = false;   // Boromir falls
+    // make the bond mutual + warm so loyalty clears the hold line.
+    cap2.beliefs._ensure(spouse.id).standing = 0.9;
+    spouse.beliefs._ensure(cap2.id).standing = 0.9;
+    const retreats0 = exp.stats.retreats || 0;
+    exp._advanceDelve(cap2);
+    ok((exp.stats.retreats || 0) === retreats0 && E2.delve === true,
+      'expedition E8a: a DEVOTED captain does not turn at first blood — loyalty holds the line');
+    cap2.personality.altruism = 0;                                  // a colder man
+    exp._advanceDelve(cap2);
+    ok((exp.stats.retreats || 0) === retreats0 + 1 && E2.phase === 'return',
+      'expedition E8b: the same blood, a cold captain — the retreat is called');
+
+    // E9 — homecoming forges comrades: standing warms pairwise + the bond memory.
+    const s0 = (cap2.beliefs.get(spouse.id) || {}).standing || 0;
+    cap2.pos.set(0, 0, 0);
+    exp._advance(cap2);
+    const s1 = (cap2.beliefs.get(spouse.id) || {}).standing || 0;
+    ok(s1 > s0, `expedition E9a: shared peril warms the survivors toward each other (${s0.toFixed(2)} -> ${s1.toFixed(2)})`);
+    ok(cap2.memory.stm.items().some((e) => e.kind === 'bond' && e.rel === 'comrade'),
+      'expedition E9b: the homecoming files the comrade bond memory (the group machinery will find them)');
+  }
+
   sim.dispose();
 }

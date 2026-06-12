@@ -1885,6 +1885,21 @@ export const EXPEDITION = {
   exploreDeedDist: 40,     // an EXPLORE deed folds per this many metres marched on expedition —
                            //   one of the two emitters that finally make the explorer identity
                            //   reachable (the other: a sightsee outing fully taken in, act.ts)
+  // --- FELLOWSHIP, not mercenary company (the charm trade-off, by design) -------------
+  bond: {                  // follower-selection BOND score toward the captain (mutual regard +):
+    mate: 0.8,             //   the spouse who won't stay home
+    kin: 0.6,              //   blood comes along
+    master: 0.5,           //   the master and the apprentice
+    groupmate: 0.4,        //   guild-/circle-/hearth-mates
+    override: 0.5,         //   a bond at/above this brings even a TIMID soul ("for Frodo" —
+                           //   the courage gate is waived; the provision gate never is)
+  },
+  loyaltyHold: 0.6,        // a captain whose (altruism × mean-bond) loyalty reaches this does
+                           //   NOT turn at first blood — he holds until the company truly bleeds
+                           //   (the deliberate un-optimality: devotion risks more, and sometimes
+                           //   pays in the chronicle's saddest lines)
+  comradeWarm: 0.12,       // pairwise standing warmth among survivors who march home together
+                           //   (a 'comrade' bond memory too — the group machinery then finds them)
 };
 
 // --- NARRATIVE SEEDING: plant initial conditions that GROW into known tropes ---

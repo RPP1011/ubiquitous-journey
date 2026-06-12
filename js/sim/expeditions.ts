@@ -87,11 +87,16 @@ export class Expeditions {
     const cap = captains[0];
     if (!cap) return;
 
-    // brave followers near the captain.
+    // FELLOWSHIP, not mercenary company: followers are chosen by BOND to the captain
+    // (mutual regard + mate/kin/master/groupmate), not by proximity-and-courage. A
+    // strongly-bonded soul comes even if TIMID (bond.override waives the courage gate
+    // — "for Frodo"; the provision gate never waives — somebody packs the pots).
     const want = Math.max(1, (EXPEDITION.partySize || 3) - 1);
-    const followers = pool.filter((a: any) => a !== cap &&
-      a.personality && a.personality.risk_tolerance >= (EXPEDITION.recruitRisk || 0.5))
-      .sort((x: any, y: any) => cap.pos.distanceToSquared(x.pos) - cap.pos.distanceToSquared(y.pos))
+    const B = EXPEDITION.bond || {};
+    const followers = pool.filter((a: any) => a !== cap && a.personality &&
+        (a.personality.risk_tolerance >= (EXPEDITION.recruitRisk || 0.5) ||
+         this._bondTo(a, cap) >= (B.override ?? 0.5)))
+      .sort((x: any, y: any) => this._bondTo(y, cap) - this._bondTo(x, cap))
       .slice(0, want);
     if (!followers.length) return;
 
@@ -241,8 +246,17 @@ export class Expeditions {
     let meanHp = 0;
     for (const m of alive) meanHp += (m.fighter ? m.fighter.health : 0) / maxH;
     meanHp = aliveMembers ? meanHp / aliveMembers : 0;
+    // LOYALTY HOLDS THE LINE: a devoted captain (altruism × bonds) does not turn at first
+    // blood — only the company's blood (meanHp) turns him. The deliberate un-optimality.
+    const firstBlood = (aliveMembers / total) < (EXPEDITION.retreatBelow || 0.99);
+    const loyal = cap.alive && this._loyalty(cap, alive) >= (EXPEDITION.loyaltyHold ?? 0.6);
+    if (firstBlood && loyal && horrorsLeft > 0 && !E.loyalNoted) {
+      E.loyalNoted = true;
+      const fallenOne = E.members.find((m: any) => m && !m.alive);
+      this._note(`${cap.name} would not leave the dark while ${(fallenOne && fallenOne.name) || 'the fallen'} lay there.`);
+    }
     const retreat = aliveMembers > 0 && horrorsLeft > 0 &&
-      ((aliveMembers / total) < (EXPEDITION.retreatBelow || 0.99) || meanHp < (EXPEDITION.retreatHp || 0.4));
+      ((firstBlood && !loyal) || meanHp < (EXPEDITION.retreatHp || 0.4));
     if (retreat) {
       this.stats.retreats = (this.stats.retreats || 0) + 1;
       E.retreated = true;
@@ -316,6 +330,7 @@ export class Expeditions {
     // a RESOLVED delve marching home: the deep's tale was told at the mouth (_endDelve)
     // — the homeward arrival just disbands (no double-counted stats, a quiet beat).
     if (E.resolved) {
+      if (how === 'home') this._forgeComrades(members);
       for (const m of members) this._restore(m);
       cap.expedition = null;
       this.active = this.active.filter((c) => c !== cap);
@@ -326,6 +341,8 @@ export class Expeditions {
     const kills = Math.max(0, this._killCount(survivors) - (E.killsAt0 || 0));
     this.stats.slain += kills;
 
+    // shared peril forges bonds among those who made it home together.
+    if (how === 'home' && survivors.length >= 2) this._forgeComrades(members);
     // restore every survivor to civilian life.
     for (const m of members) this._restore(m);
     cap.expedition = null;
@@ -356,6 +373,60 @@ export class Expeditions {
       m._expRestore = null;
     }
     m.expeditionOf = null;
+  }
+
+  // the BOND between a soul and its captain: mutual standing (mean of each one's regard
+  // for the other) plus the structural ties — mate, kin, master/apprentice, named-group
+  // mate. Belief/own-state reads only (the gossip-warmed fabric IS the fellowship substrate).
+  _bondTo(a: Ag, cap: Ag): number {
+    try {
+      if (!a || !cap) return 0;
+      const B = EXPEDITION.bond || {};
+      const mine = a.beliefs && a.beliefs.get(cap.id);
+      const theirs = cap.beliefs && cap.beliefs.get(a.id);
+      let bond = (((mine && mine.standing) || 0) + ((theirs && theirs.standing) || 0)) / 2;
+      if (a.mateId === cap.id || cap.mateId === a.id) bond += B.mate ?? 0.8;
+      else if ((Array.isArray(a.kinIds) && a.kinIds.includes(cap.id)) ||
+               (Array.isArray(cap.kinIds) && cap.kinIds.includes(a.id))) bond += B.kin ?? 0.6;
+      else if (a.masterId === cap.id || cap.masterId === a.id) bond += B.master ?? 0.5;
+      else if (a.groupName && a.groupName === cap.groupName) bond += B.groupmate ?? 0.4;
+      return Math.max(0, Math.min(1.5, bond));
+    } catch { return 0; }
+  }
+
+  // the captain's LOYALTY to his living company: altruism × mean bond. At/above
+  // loyaltyHold he does not turn at first blood — devotion holds the line (and
+  // sometimes pays for it; the chronicle says so either way).
+  _loyalty(cap: Ag, alive: Ag[]): number {
+    try {
+      if (!cap || !cap.personality || !alive.length) return 0;
+      let mean = 0;
+      for (const m of alive) if (m !== cap) mean += this._bondTo(cap, m);
+      const others = Math.max(1, alive.length - 1);
+      return Math.max(0, Math.min(1, (cap.personality.altruism || 0) * (mean / others) * 2));
+    } catch { return 0; }
+  }
+
+  // SHARED PERIL FORGES BONDS: survivors who march home together warm toward each other
+  // (pairwise standing) and remember it ('comrade' bond, salience BELOW the LTM bar — the
+  // bond-crowding lesson). The group machinery then finds them: we don't mint a named
+  // fellowship, we make one likely to emerge.
+  _forgeComrades(members: Ag[]): void {
+    try {
+      const warm = EXPEDITION.comradeWarm ?? 0.12;
+      const alive = (members || []).filter((m: any) => m && m.alive);
+      if (alive.length < 2) return;
+      for (const m of alive) {
+        for (const o of alive) {
+          if (m === o || !m.beliefs || !m.beliefs._ensure) continue;
+          const b = m.beliefs._ensure(o.id);
+          if (b) b.standing = Math.max(-1, Math.min(1, (b.standing || 0) + warm));
+        }
+        if (m.memory && typeof m.memory.record === 'function') {
+          try { m.memory.record({ t: this.sim.time, kind: 'bond', withId: alive.find((o: Ag) => o !== m)?.id, rel: 'comrade', valence: 1, salience: 0.55 }); } catch { /* */ }
+        }
+      }
+    } catch { /* never throw on the tick */ }
   }
 
   // DISTANCE MARCHED -> EXPLORE deeds: every exploreDeedDist metres a living member has
