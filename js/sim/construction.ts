@@ -60,6 +60,7 @@ const MAP_AFF = (((MAP && MAP.affordances) || {}) as unknown) as Record<string, 
 import {
   generateShell, shelterReport, anyBurning, torch, strikeNearestWall, tickFire, MATERIAL,
 } from '../world/buildingParts.js';
+import { ZONE } from '../world/cityGrid.js';
 
 // Construction's own POI kinds, so callers (act.js/decide.js) never need World to
 // learn about buildings — BuildSites is itself the nearest()-style lookup. (These are
@@ -176,7 +177,7 @@ export class BuildSites {
   // Bias geometry params from kind+wealth+a seeded rng. These only STEER the
   // parametric generator (footprint/storeys/palette); the generator assembles the
   // unique geometry. seed is stamped per commission so no two builds are identical.
-  _paramsFor(kind: string, wealth: number, seed: number) {
+  _paramsFor(kind: string, wealth: number, seed: number, dense = false) {
     const r = mulberry32(seed);
     const F = CITY.foot || {};
     if (kind === BUILD_KIND.TAVERN) {
@@ -212,13 +213,18 @@ export class BuildSites {
         seed,
       };
     }
-    // home: a modest dwelling, occasionally two storeys for a wealthier owner.
-    const storeys = (wealth >= 2 && r() < 0.35) ? 2 : 1;
+    // home: a modest dwelling, occasionally two storeys for a wealthier owner — and
+    // DENSITY BEFORE SPRAWL: in a town whose residential band runs tight (`dense`, the
+    // cities.homesTight signal) every new home rises at least two storeys (capped at
+    // CITY.growth.homeMaxLevels), so a crowded town visibly builds UP.
+    const cap = (CITY.growth && CITY.growth.homeMaxLevels) || 3;
+    const wealthy2 = wealth >= 2 && r() < 0.35;
+    const levels = Math.min(cap, dense ? 2 + (wealthy2 ? 1 : 0) : (wealthy2 ? 2 : 1));
     return {
       footprint: { w: 3 + r() * 2, d: 3 + r() * 2 },
-      storeys,
-      // FOOTPRINT-IN-TILES — a 1×1 plot; a wealthier owner sometimes raises a 2nd storey.
-      tiles: { w: F.homeW || 1, d: F.homeD || 1, levels: (wealth >= 2 && r() < 0.35) ? 2 : 1 },
+      storeys: levels,
+      // FOOTPRINT-IN-TILES — a 1×1 plot; storeys from wealth + town density.
+      tiles: { w: F.homeW || 1, d: F.homeD || 1, levels },
       wealth,
       palette: (r() * 6) | 0,
       seed,
@@ -294,11 +300,12 @@ export class BuildSites {
       if (!town) return null;
       if (this._activeHomesIn(town.id) >= BUILD.maxConcurrentPerTown) return null;   // pace the town
       const seed = (rng() * 1e9) | 0;
-      const p = this._paramsFor(BUILD_KIND.HOME, 1, seed);
-      // CLAIM A TILE PLOT from the town's CityGrid (replaces the Surveyor's lane math).
       if (!this.sim.cities) return null;
+      // DENSITY BEFORE SPRAWL: a tight residential band makes new homes rise a storey.
+      const p = this._paramsFor(BUILD_KIND.HOME, 1, seed, this.sim.cities.homesTight(town.id));
+      // CLAIM A TILE PLOT from the town's CityGrid (replaces the Surveyor's lane math).
       const tp = p.tiles;
-      const plot = this.sim.cities.claimPlot(town.id, tp.w, tp.d, tp.levels);
+      const plot = this.sim.cities.claimPlot(town.id, tp.w, tp.d, tp.levels, ZONE.HOMES);   // the residential blocks
       if (!plot) return null;                                                          // city full: try later
       const site = this._makeSite({
         kind: BUILD_KIND.HOME, ownerId: agent.id, town: town.id, plot, params: p,
@@ -325,7 +332,9 @@ export class BuildSites {
       // old Surveyor lane allocation, is ignored — the grid guarantees non-overlap).
       if (!this.sim.cities) return null;
       const tp = p.tiles;
-      const plot = this.sim.cities.claimPlot(town.id, tp.w, tp.d, tp.levels);
+      // public works claim the CIVIC band: the plaza front, so the heart of town reads as
+      // a square ringed by its institutions (soft preference — see CityGrid.claimPlot).
+      const plot = this.sim.cities.claimPlot(town.id, tp.w, tp.d, tp.levels, ZONE.CIVIC);
       if (!plot) return null;
       const hall = kind === BUILD_KIND.GUILDHALL;
       const site = this._makeSite({
@@ -769,9 +778,9 @@ export class BuildSites {
     try {
       if (!this.sim.cities) return null;
       const seed = (rng() * 1e9) | 0;
-      const p = this._paramsFor(BUILD_KIND.HOME, 1, seed);
+      const p = this._paramsFor(BUILD_KIND.HOME, 1, seed, this.sim.cities.homesTight(town.id));
       const tp = p.tiles;
-      const plot = this.sim.cities.claimPlot(town.id, tp.w, tp.d, tp.levels);
+      const plot = this.sim.cities.claimPlot(town.id, tp.w, tp.d, tp.levels, ZONE.HOMES);
       if (!plot) return null;
       const site = this._makeSite({
         kind: BUILD_KIND.HOME, ownerId: owner ? owner.id : null, town: town.id, plot, params: p,

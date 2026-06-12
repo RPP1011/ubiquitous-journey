@@ -18,6 +18,14 @@ import { CITY } from '../sim/simconfig.js';
 // span lives on the building record, since footprints never overlap so vertical is free.
 export const TILE = { EMPTY: 0, ROAD: 1, BUILDING: 2, RESERVED: 3 };
 
+// ZONES — the town PLAN (derived from tile position, never stored): a central PLAZA kept
+// permanently open (the square the town gathers on — no plot may ever take a plaza tile),
+// a CIVIC band fronting it (public works: tavern/granary/guildhall/shrine claim here, so
+// the heart of town reads as a square ringed by its institutions), and HOMES beyond (the
+// residential blocks). claimPlot takes a zone PREFERENCE — hard only for the plaza;
+// civic/homes fall back gracefully when their band is full, so a crowded town still builds.
+export const ZONE = { PLAZA: 'plaza', CIVIC: 'civic', HOMES: 'homes' } as const;
+
 // ── FILE-LOCAL shapes (module-private: not part of the shared type layer) ──
 /** A tile coordinate in the grid (level-0 footprint cell). */
 interface TileXY { tx: number; ty: number; }
@@ -39,7 +47,9 @@ interface CenterLike { x?: number; z?: number; }
 interface CityGridOpts {
   tile?: number; size?: number; block?: number; levelH?: number;
   minLevel?: number; maxLevel?: number;
+  plazaR?: number; civicDepth?: number;
 }
+type Zone = typeof ZONE[keyof typeof ZONE];
 
 export class CityGrid {
   cx: number;
@@ -50,6 +60,8 @@ export class CityGrid {
   levelH: number;
   minLevel: number;
   maxLevel: number;
+  plazaR: number;
+  civicDepth: number;
   _ground: Uint8Array;
   _buildings: BuildingRec[];
 
@@ -63,6 +75,8 @@ export class CityGrid {
     this.levelH = opts.levelH || CITY.levelHeight; // metres per Z-level (mesh/visual)
     this.minLevel = opts.minLevel ?? CITY.minLevel;
     this.maxLevel = opts.maxLevel ?? CITY.maxLevel;
+    this.plazaR = opts.plazaR ?? ((CITY.zone && CITY.zone.plazaR) || 2);        // plaza half-width, tiles
+    this.civicDepth = opts.civicDepth ?? ((CITY.zone && CITY.zone.civicDepth) || 2); // civic band depth past the plaza
     this._ground = new Uint8Array(this.size * this.size); // level-0 tile state
     this._buildings = [];                          // { tiles:[{tx,ty}], baseLevel, topLevel, id }
     this._layRoadLattice();
@@ -99,6 +113,16 @@ export class CityGrid {
   _isEmpty(tx: number, ty: number): boolean { return this.state(tx, ty) === TILE.EMPTY; }
   _isRoad(tx: number, ty: number): boolean { return this.state(tx, ty) === TILE.ROAD; }
 
+  // the town-plan ZONE of a tile, derived from Chebyshev distance to the grid centre:
+  // PLAZA (≤ plazaR, never built on), CIVIC (the band fronting it), HOMES (the rest).
+  zoneOf(tx: number, ty: number): Zone {
+    const h = (this.size - 1) / 2;
+    const c = Math.max(Math.abs(tx - h), Math.abs(ty - h));
+    if (c <= this.plazaR) return ZONE.PLAZA;
+    if (c <= this.plazaR + this.civicDepth) return ZONE.CIVIC;
+    return ZONE.HOMES;
+  }
+
   // is any tile of this w×d block (anchored at tx,ty) edge-adjacent to a road? (no
   // landlocked buildings — every house fronts a street, which is also its entrance).
   _touchesRoad(tx: number, ty: number, w: number, d: number): boolean {
@@ -130,27 +154,74 @@ export class CityGrid {
   // (cities densify from the core out). `levels` = how tall (>=1); clamped to the grid's
   // vertical span. Returns { centerPos:{x,z}, yaw, tiles:[{tx,ty}], baseLevel, topLevel,
   // tilesW, tilesD } or null if the city is full. Stamps the footprint as BUILDING.
-  claimPlot(w: number, d: number, levels = 1): PlotClaim | null {
+  claimPlot(w: number, d: number, levels = 1, zone: Zone | null = null): PlotClaim | null {
     w = Math.max(1, w | 0); d = Math.max(1, d | 0);
     const topLevel = Math.min(this.maxLevel, Math.max(0, (levels | 0) - 1));
-    // gather candidate anchors, nearest-centre first (stable, deterministic ordering)
-    const h = this.size / 2, cands: { tx: number; ty: number; dist: number }[] = [];
+    // gather candidate anchors, nearest-centre first (stable, deterministic ordering).
+    // THE TOWN PLAN constrains them: a footprint may NEVER take a plaza tile (the square
+    // stays open, hard), and a requested zone is a soft PREFERENCE — civic works hug the
+    // plaza, homes fill the blocks beyond; when the preferred band is full the claim
+    // falls back to any legal tile so a crowded town still builds.
+    const h = this.size / 2, cands: { tx: number; ty: number; dist: number; inZone: boolean }[] = [];
     for (let ty = 0; ty + d <= this.size; ty++) for (let tx = 0; tx + w <= this.size; tx++) {
-      let ok = true;
-      for (let dy = 0; dy < d && ok; dy++) for (let dx = 0; dx < w; dx++) if (!this._isEmpty(tx + dx, ty + dy)) { ok = false; break; }
+      let ok = true, inZone = true;
+      for (let dy = 0; dy < d && ok; dy++) for (let dx = 0; dx < w; dx++) {
+        if (!this._isEmpty(tx + dx, ty + dy)) { ok = false; break; }
+        const z = this.zoneOf(tx + dx, ty + dy);
+        if (z === ZONE.PLAZA) { ok = false; break; }            // the square is never built on
+        if (zone && z !== zone) inZone = false;                 // footprint strays out of the asked band
+      }
       if (!ok || !this._touchesRoad(tx, ty, w, d)) continue;
       const ccx = tx + w / 2, ccy = ty + d / 2;
-      cands.push({ tx, ty, dist: (ccx - h) ** 2 + (ccy - h) ** 2 });
+      cands.push({ tx, ty, dist: (ccx - h) ** 2 + (ccy - h) ** 2, inZone });
     }
     if (!cands.length) return null;
-    cands.sort((a, b) => a.dist - b.dist);
-    const { tx, ty } = cands[0];
+    const preferred = zone ? cands.filter((c) => c.inZone) : cands;
+    const pool = preferred.length ? preferred : cands;          // soft fallback (plaza stays hard)
+    pool.sort((a, b) => a.dist - b.dist);
+    const { tx, ty } = pool[0];
     const tiles: TileXY[] = [];
     for (let dy = 0; dy < d; dy++) for (let dx = 0; dx < w; dx++) { this._ground[this._idx(tx + dx, ty + dy)] = TILE.BUILDING; tiles.push({ tx: tx + dx, ty: ty + dy }); }
     const c = this.tileToWorld(tx + (w - 1) / 2, ty + (d - 1) / 2);
     const rec = { tiles, baseLevel: 0, topLevel, id: this._buildings.length };
     this._buildings.push(rec);
     return { centerPos: c, yaw: this._faceRoad(tx, ty, w, d), tiles, baseLevel: 0, topLevel, tilesW: w, tilesD: d };
+  }
+
+  // GROW the settlement by one block-ring per side (the town visibly expands outward).
+  // The shift by exactly `block` is load-bearing twice over: it preserves the road-
+  // lattice PHASE ((tx+block) % block === tx % block, so old building tiles stay off-road)
+  // and every existing tile's WORLD position (h grows by block exactly as tx does, so
+  // tileToWorld is unchanged for shifted tiles — no building moves, no mesh re-anchors).
+  // Tile records are mutated IN PLACE so callers' held plot references stay valid
+  // (release() frees by the same objects). Returns false at the growth cap.
+  grow(maxTiles?: number): boolean {
+    const cap = maxTiles ?? ((CITY.growth && CITY.growth.maxTiles) || 32);
+    const b = Math.max(2, this.block);
+    const newSize = this.size + 2 * b;
+    if (newSize > cap) return false;
+    this.size = newSize;
+    this._ground = new Uint8Array(newSize * newSize);
+    this._layRoadLattice();
+    for (const rec of this._buildings) {
+      for (const t of rec.tiles) { t.tx += b; t.ty += b; this._ground[this._idx(t.tx, t.ty)] = TILE.BUILDING; }
+    }
+    return true;
+  }
+
+  // fraction of a zone's BUILDABLE (non-road) tiles still empty — the densification
+  // signal: when the residential band runs tight, new homes rise a storey instead of
+  // sprawling, and the town grows a ring when even that runs out.
+  zoneFreeFrac(zone: Zone): number {
+    let free = 0, total = 0;
+    for (let ty = 0; ty < this.size; ty++) for (let tx = 0; tx < this.size; tx++) {
+      const v = this._ground[this._idx(tx, ty)];
+      if (v === TILE.ROAD) continue;
+      if (this.zoneOf(tx, ty) !== zone) continue;
+      total++;
+      if (v === TILE.EMPTY) free++;
+    }
+    return total ? free / total : 0;
   }
 
   // release a footprint back to EMPTY (a build abandoned / a building ruined).
@@ -175,7 +246,8 @@ export class CityGrid {
   }
 
   // an ASCII picture of the ground plane — '#' road, '0'..'9' a building's storey count
-  // (its topLevel+1, capped), '.' empty. Lets us EYE the layout headless (no browser).
+  // (its topLevel+1, capped), 'o' the open plaza, '.' empty. Lets us EYE the layout
+  // headless (no browser).
   ascii(): string {
     const lvlOf = new Map<number, number>();
     for (const b of this._buildings) for (const t of b.tiles) lvlOf.set(t.ty * this.size + t.tx, Math.min(9, (b.topLevel - b.baseLevel) + 1));
@@ -184,7 +256,8 @@ export class CityGrid {
       let r = '';
       for (let tx = 0; tx < this.size; tx++) {
         const v = this._ground[this._idx(tx, ty)];
-        r += v === TILE.ROAD ? '#' : v === TILE.BUILDING ? String(lvlOf.get(this._idx(tx, ty)) || 1) : '.';
+        r += v === TILE.ROAD ? '#' : v === TILE.BUILDING ? String(lvlOf.get(this._idx(tx, ty)) || 1)
+          : (this.zoneOf(tx, ty) === ZONE.PLAZA ? 'o' : '.');
       }
       rows.push(r);
     }

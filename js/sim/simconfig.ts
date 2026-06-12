@@ -1137,6 +1137,24 @@ export const CITY = {
   levelHeight: 3,     // metres per Z-level (one storey)
   minLevel: -2,       // how deep a city may dig (undercity / cellars)
   maxLevel: 4,        // how high it may build (5 storeys: level 0..4)
+  // THE TOWN PLAN (zones, js/world/cityGrid.ts zoneOf): a central PLAZA kept permanently
+  // open (no plot may take a plaza tile — the square the town gathers on), a CIVIC band
+  // fronting it (tavern/granary/guildhall/shrine prefer it: the heart of town reads as a
+  // square ringed by its institutions), HOMES beyond. Distances in TILES (Chebyshev).
+  zone: {
+    plazaR: 2,        // plaza half-width — a ~5×5-tile open square at the town heart
+    civicDepth: 3,    // the civic band extends this many tiles past the plaza edge
+  },
+  // SETTLEMENT GROWTH + DENSIFICATION (js/world/cityGrid.ts grow/zoneFreeFrac): when a
+  // claim fails the grid grows a block-ring per side (the town expands outward, world
+  // positions preserved) up to maxTiles; when the residential band runs TIGHT first,
+  // new homes rise an extra storey instead of sprawling — density before sprawl.
+  growth: {
+    enabled: true,
+    maxTiles: 32,     // growth cap, tiles per side (16 -> 24 -> 32: the town quadruples)
+    denseBelow: 0.35, // homes-zone free fraction below which new homes build UP (+1 storey)
+    homeMaxLevels: 3, // a dense town's homes cap at three storeys
+  },
   // building COMPONENTS — a building is a sparse map of (tx,ty,level)→part (wall/floor/
   // roof/door), each with hp + material, so raids can knock it down piece by piece and
   // fire can spread. Tuning for that destruction model (js/world/buildingParts.js).

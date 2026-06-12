@@ -17,7 +17,7 @@
 // deterministic and don't ride the global random source. Matches the (ok, {makeFighter,
 // stubScene}) suite signature; synchronous (no meshes, no awaits).
 
-import { CityGrid, TILE } from '../../js/world/cityGrid.js';
+import { CityGrid, TILE, ZONE } from '../../js/world/cityGrid.js';
 import {
   generateShell, shelterReport, strikeNearestWall, torch, tickFire, anyBurning,
   settle, damagePart, PART, MATERIAL,
@@ -40,7 +40,75 @@ function mulberry32(seed) {
 // the sibling suites so the runner can call every suite the same way.
 export function cityTest(ok, { makeFighter, stubScene } = {}) {
   cityGridInvariants(ok);
+  cityZoning(ok);
+  cityGrowth(ok);
   buildingPartsRaid(ok);
+}
+
+// SETTLEMENT GROWTH: a full grid grows a block-ring per side — and the shift-by-block
+// remap preserves BOTH the road-lattice phase and every standing building's exact world
+// position (held plot references stay valid: tiles are mutated in place).
+function cityGrowth(ok) {
+  const grid = new CityGrid({ x: 0, z: 0 });
+  ok(grid.zoneFreeFrac(ZONE.HOMES) === 1, 'cityGrow: a fresh residential band reads fully free');
+
+  const p0 = grid.claimPlot(2, 2, 2, ZONE.CIVIC);
+  const t0 = p0.tiles[0];
+  const before = grid.tileToWorld(t0.tx, t0.ty);
+  const sizeBefore = grid.size;
+
+  // fill the old bounds to exhaustion — the densification signal must have fired well before.
+  while (grid.claimPlot(1, 1, 1)) { /* fill */ }
+  ok(grid.zoneFreeFrac(ZONE.HOMES) < ((CITY.growth && CITY.growth.denseBelow) || 0.35),
+    'cityGrow: a packed residential band reads TIGHT (the build-UP signal)');
+
+  ok(grid.grow() && grid.size === sizeBefore + 2 * grid.block,
+    `cityGrow: the town grows a block-ring per side (${sizeBefore} -> ${grid.size})`);
+  const after = grid.tileToWorld(t0.tx, t0.ty);   // same tile OBJECT, remapped coords
+  ok(Math.abs(after.x - before.x) < 1e-9 && Math.abs(after.z - before.z) < 1e-9,
+    'cityGrow: a standing building keeps its EXACT world position through growth');
+  ok(grid.isSolidAt(before.x, before.z), 'cityGrow: the footprint survives the remap (still solid)');
+  ok(grid.state(0, 0) === TILE.ROAD, 'cityGrow: the road-lattice phase is preserved (corner is a street)');
+  ok(!!grid.claimPlot(1, 1, 1, ZONE.HOMES), 'cityGrow: the new ring takes fresh home claims');
+
+  // growth respects its cap: grow to the cap, then refuse.
+  let grew = 0;
+  while (grid.grow()) grew++;
+  ok(grid.size <= ((CITY.growth && CITY.growth.maxTiles) || 32) && !grid.grow(),
+    `cityGrow: growth stops at the cap (size ${grid.size})`);
+}
+
+// THE TOWN PLAN (zones): the plaza stays open under any pressure; civic claims hug the
+// plaza; home claims keep to the residential blocks while space remains; and when the
+// asked band is full the claim falls back softly instead of failing the build.
+function cityZoning(ok) {
+  const grid = new CityGrid({ x: 0, z: 0 });
+
+  // a CIVIC claim (the tavern) lands in the civic band — fronting the plaza.
+  const civic = grid.claimPlot(2, 2, 2, ZONE.CIVIC);
+  ok(!!civic && civic.tiles.every((t) => grid.zoneOf(t.tx, t.ty) === ZONE.CIVIC),
+    'cityZone: a civic claim lands wholly in the civic band (the plaza front)');
+
+  // a HOMES claim keeps out of the civic band while residential space remains.
+  const home = grid.claimPlot(1, 1, 1, ZONE.HOMES);
+  ok(!!home && home.tiles.every((t) => grid.zoneOf(t.tx, t.ty) === ZONE.HOMES),
+    'cityZone: a home claim keeps to the residential blocks');
+
+  // fill the grid to exhaustion with home claims: NO building tile may ever be plaza,
+  // and the claims must eventually overflow softly into civic (fallback) before null.
+  let p, claimed = 0, civicFallback = 0;
+  while ((p = grid.claimPlot(1, 1, 1, ZONE.HOMES))) {
+    claimed++;
+    for (const t of p.tiles) if (grid.zoneOf(t.tx, t.ty) === ZONE.CIVIC) civicFallback++;
+    if (claimed > 500) break;   // backstop (cannot happen on a 16-grid)
+  }
+  ok(claimed > 10, `cityZone: the town keeps building to exhaustion (${claimed} homes)`);
+  ok(civicFallback > 0, `cityZone: a full residential band falls back SOFTLY into civic (${civicFallback} tiles)`);
+  const plazaTaken = grid._buildings.some((b) => b.tiles.some((t) => grid.zoneOf(t.tx, t.ty) === ZONE.PLAZA));
+  ok(!plazaTaken, 'cityZone: the plaza is NEVER built on, even at full occupancy (the square stays open)');
+
+  // the ascii eyeball: plaza renders open ('o') so a layout glance shows the square.
+  ok(grid.ascii().includes('o'), 'cityZone: ascii renders the open plaza');
 }
 
 // (a) CITYGRID INVARIANTS — the road lattice + plot allocator must keep the city

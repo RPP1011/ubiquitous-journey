@@ -81,9 +81,34 @@ export class Cities {
   // town. Returns the CityGrid.claimPlot result — { centerPos:{x,z}, yaw, tiles,
   // baseLevel, topLevel, tilesW, tilesD } — or null (city full / no such town).
   // Guarded so a bad townId can never throw inside the build commission.
-  claimPlot(townId: number, w: number, d: number, levels = 1) {
-    try { const g = this.gridFor(townId); return g ? g.claimPlot(w, d, levels) : null; }
-    catch { return null; }
+  claimPlot(townId: number, w: number, d: number, levels = 1, zone: string | null = null) {
+    try {
+      const g = this.gridFor(townId);
+      if (!g) return null;
+      let p = g.claimPlot(w, d, levels, zone);
+      // SETTLEMENT GROWTH: a full town doesn't refuse the build — it grows a block-ring
+      // (world positions preserved; see CityGrid.grow) and tries once more. The growth
+      // cap (CITY.growth.maxTiles) is the real "city full". Chronicled: a town outgrowing
+      // its bounds is a story.
+      if (!p && CITY.growth && CITY.growth.enabled !== false && g.grow()) {
+        p = g.claimPlot(w, d, levels, zone);
+        try {
+          const town = (this.sim.towns || []).find((t: any) => t && t.id === townId);
+          if (this.sim.chronicle) this.sim.chronicle.note(BEAT.BUILD, null,
+            `${(town && town.name) || 'The town'} has outgrown its old bounds — new streets are laid beyond the edge.`);
+        } catch { /* chronicle is best-effort flavour */ }
+      }
+      return p;
+    } catch { return null; }
+  }
+
+  // is a town's RESIDENTIAL band running tight? (the densification signal — construction
+  // gives new homes an extra storey instead of sprawl when this is true). Guarded.
+  homesTight(townId: number): boolean {
+    try {
+      const g = this.gridFor(townId);
+      return !!g && g.zoneFreeFrac('homes') < ((CITY.growth && CITY.growth.denseBelow) || 0.35);
+    } catch { return false; }
   }
 
   // RELEASE a footprint back to the grid (a build was abandoned / a building ruined),
