@@ -217,6 +217,73 @@ export async function constructionTest(ok, { makeFighter, stubScene }) {
   const anyTavern = sim.buildSites.hasTavern(0) || finishedTavern || sim.surveyor.stats.taverns >= 1;
   ok(anyTavern, `construction: town commissioned a tavern (sites/built=${finishedTavern}, surveyed=${sim.surveyor.stats.taverns})`);
 
+  // ── 5b. the GRANARY — commissioned at the pop threshold, tithed, drawn from ──
+  // The main town also clears SURVEYOR.granaryMinPop (<= tavernMinPop), so the Surveyor
+  // should have commissioned the public larder over the same run. Then drive the two
+  // mechanics directly (unit-style, RNG-free): a FOOD market clear near the granary
+  // tithes a fraction into its stock, and a destitute standing at the larder draws a
+  // meal through the resolver facade.
+  const anyGranary = sim.buildSites.hasGranary(0) || sim.surveyor.stats.granaries >= 1;
+  ok(anyGranary, `construction: town commissioned a granary (surveyed=${sim.surveyor.stats.granaries})`);
+
+  // a finished granary building to exercise stock/draw against. If the run's window left
+  // it mid-build, force-finish the site through the sim's own finalize path (progress=1 →
+  // BuildSites.tick promotes it) — the mechanic under test is stock/draw, not build pacing.
+  let granary = (sim.buildSites._buildings || []).find((b) => b.buildKind === 'granary');
+  if (!granary) {
+    const site = (sim.buildSites._sites || []).find((s) => s.kind === 'granary');
+    if (site) {
+      site.woodHave = site.woodNeeded; site.progress = 1;
+      sim.buildSites.tick(sim._ctx(), 0.5);
+      granary = (sim.buildSites._buildings || []).find((b) => b.buildKind === 'granary');
+    }
+  }
+  ok(!!granary, 'construction: a granary building stands (built or force-finalized)');
+
+  if (granary) {
+    // TITHE: two real townsfolk at the market POI nearest the granary; the seller holds a
+    // food surplus, the buyer coin and an empty pack. A cleared food trade should move
+    // titheFrac into the larder's stock. (Gold checks are over — this is food in kind.)
+    const { runMarket } = await import('../../js/sim/market.js');
+    const { GRANARY } = await import('../../js/sim/simconfig.js');
+    const mpoi = sim.world.nearest('market', granary.pos);
+    const folk = sim.agents.filter((a) => a.alive && !a.controlled && a.faction === 'townsfolk' && a.autonomous);
+    const seller = folk[0], buyer = folk[1];
+    const stock0 = granary.stock || 0;
+    if (mpoi && seller && buyer) {
+      seller.pos.set(mpoi.pos.x, 0, mpoi.pos.z);
+      buyer.pos.set(mpoi.pos.x + 1, 0, mpoi.pos.z);
+      seller.inventory.food = 10; seller.needs.hunger = 1;
+      buyer.inventory.food = 0; buyer.needs.hunger = 0.5; buyer.gold = Math.max(buyer.gold, 100);
+      // pin the price beliefs so OUR buyer always clears: the book is busy (other townsfolk at
+      // the stalls out-bid a modest belief — the seeded flake this retires), so the buyer bids
+      // the TOP of the book (10) and the seller asks the floor (1) — guaranteed overlap and
+      // first match, whatever the run's drifted beliefs look like.
+      seller.priceBeliefs.food = 1; buyer.priceBeliefs.food = 10;
+      // the tithe exempts a subsistence buyer's only meal, so the buyer must clear at least
+      // twice (holding a whole meal by the second unit) — loop runMarket until the stock moves.
+      for (let i = 0; i < 8 && (granary.stock || 0) <= stock0; i++) runMarket(sim);
+    }
+    ok((granary.stock || 0) > stock0,
+      `construction: a cleared food trade tithed the granary (stock ${stock0.toFixed(2)} -> ${(granary.stock || 0).toFixed(2)})`);
+
+    // DRAW: a destitute (no food, no coin) standing at the larder is served ONE meal —
+    // stock down, pack up — through the co-location-gated resolver facade.
+    const pauper = folk.find((a) => a !== seller && a !== buyer) || buyer;
+    if (pauper) {
+      pauper.inventory.food = 0; pauper.gold = 0;
+      pauper.pos.set(granary.pos.x + 0.5, 0, granary.pos.z);
+      granary.stock = Math.max(granary.stock || 0, (GRANARY.drawMeal || 1) + 1);
+      const before = granary.stock;
+      const served = sim._cogResolver().granaryDraw(pauper);
+      ok(served && (pauper.inventory.food || 0) >= (GRANARY.drawMeal || 1) && granary.stock < before,
+        `construction: a destitute drew a meal from the larder (served=${served}, food=${(pauper.inventory.food || 0).toFixed(2)}, stock ${before.toFixed(2)} -> ${granary.stock.toFixed(2)})`);
+      // a draw beyond the stock is refused (the larder can run bare — beg's turn).
+      granary.stock = 0;
+      ok(!sim._cogResolver().granaryDraw(pauper), 'construction: a bare larder serves nothing');
+    }
+  }
+
   // ── 6. every NPC still has a comfort need, a goal, and a valid ambition ──────
   ok(sim.agents.every((a) => (a.alive ? (a.needs && typeof a.needs.comfort === 'number') : true)),
     'construction: every living agent has a comfort need');
@@ -232,7 +299,8 @@ export async function constructionTest(ok, { makeFighter, stubScene }) {
   // ── info ─────────────────────────────────────────────────────────────────────
   const st = sim.buildSites.stats;
   console.log(`INFO  construction: commissioned=${st.commissioned} completed=${st.completed} ` +
-    `homes=${st.homes} taverns=${st.taverns} (surveyor plots=${sim.surveyor.stats.plots} taverns=${sim.surveyor.stats.taverns})`);
+    `homes=${st.homes} taverns=${st.taverns} granaries=${st.granaries} ` +
+    `(surveyor plots=${sim.surveyor.stats.plots} taverns=${sim.surveyor.stats.taverns} granaries=${sim.surveyor.stats.granaries})`);
   if (builder && builder.homeBeliefId != null && !isUnhoused(builder)) {
     // Phase 2a: report from the finished-building record (found by id), not a truth-side home.
     const h = (sim.buildSites._buildings || []).find((b) => b.id === builder.homeBeliefId);

@@ -474,4 +474,5 @@ export const STEER_FILLS: Record<string, SteerFill> = {
   // PERSISTENT-AMBITION STANDING-ACTIVITY FILL (Phase B1) — renown's frontier march
   seek_glory: fillSeekGlory,
   beg: fillMarket,        // a beggar heads for the crowd at the stalls; the plea is act's verb
+  granary: fillComfort,   // walk to the known town larder (toPos, a static Place); the draw is act's verb
 };

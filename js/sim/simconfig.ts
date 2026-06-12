@@ -1094,6 +1094,11 @@ export const SURVEYOR = {
   tavernWood: 14,             // WOOD a tavern costs (drawn from the town fund, built by townsfolk)
   tavernBenefit: { comfort: 1.0, social: 1.0 },  // a tavern restores comfort AND social
   tavernWealth: 2,            // cosmetic wealth tier passed to buildingGen (a grander build)
+  // --- public granary (the town larder — see GRANARY for the stock/draw tuning) ---
+  granaryEnabled: true,
+  granaryMinPop: 10,          // commission the town larder once the town holds this many townsfolk
+  granaryWood: 10,            // WOOD a granary costs (the same town fund — wood + labour, never gold)
+  granaryWealth: 1,           // cosmetic wealth tier (a plain civic store, not a grand hall)
 };
 
 // --- city tile grid (Z-levelled) --------------------------------------------
@@ -1131,6 +1136,8 @@ export const CITY = {
     homeW: 1, homeD: 1,           // a private home: a single tile footprint
     tavernW: 2, tavernD: 2,       // the town tavern: a 2×2 (occasionally 3-wide) block
     tavernLevels: 2,              // the tavern rises two storeys
+    granaryW: 2, granaryD: 1,     // the town granary: a long low store
+    granaryLevels: 1,             // a single storey (a barn, not a hall)
   },
   // RAID damage tuning — how a raider near a building takes its component shell apart.
   raid: {
@@ -1200,6 +1207,30 @@ export const SUBSIST = {
   priority: 0.85,    // survival-grade stack priority (above ambition 0.45, below avenge 0.9)
   sateTo: 0.7,       // plan until hunger is restored to this level
   ttl: 60,           // goal expiry (refreshed while the want persists)
+};
+
+// --- granary (the public larder) -----------------------------------------------
+// The town's CIVIC answer to starvation, one rung above begging on the survival ladder. The
+// Surveyor commissions ONE granary per grown town (SURVEYOR.granary*); a tithe IN KIND stocks
+// it — a fraction of every FOOD unit cleared at that town's market goes into the larder
+// (market.ts; food is produced/consumed, not a conserved quantity like gold, so the tax mints
+// nothing) — and a destitute hungry soul DRAWS one meal from it (resolver.granaryDraw,
+// co-location-gated like deliverTo). Begging is for when the larder is bare too.
+export const GRANARY = {
+  titheFrac: 0.15,   // food units tithed into the town granary per cleared market unit
+  titheRange: 80,    // metres from the granary a clearing buyer must be (its town's market)
+  stockCap: 12,      // the larder holds at most this much food — a buffer, NOT a hoard (a high
+                     //   cap kept taxing long after need was met, lifting meals out of circulation)
+  drawMeal: 1,       // food units a destitute draws per visit
+  drawRange: 3.4,    // metres from the granary a draw lands (co-location, ~talkRange)
+  drawEvery: 2,      // seconds between draw attempts while standing at the larder (throttle)
+  drawBump: 0.05,    // candidate rank above the beg score (the civic answer wins the tie)
+  urgentWeight: 1.6, // STARVING (hunger < ECON.nibbleBelow): the larder is the emergency room —
+                     //   pitched over WEIGHT.plan (1.3) so a cross-map forage plan can't march a
+                     //   dying pauper past the town larder (the seed-31 probe found exactly that:
+                     //   21 destitute starved ~83m from town while the larders sat stocked),
+                     //   and under the danger/flee tier (survival from violence still wins)
+  emptyMemory: 45,   // sim-seconds an agent remembers finding the larder bare (beg wins meanwhile)
 };
 
 export const ALMS = {
@@ -1340,6 +1371,8 @@ export const MAP = {
     rest:    ['safe', 'shelter', 'rest'], hut: ['safe', 'shelter', 'rest'],
     tavern:  ['crowd', 'safe', 'shelter', 'rest'],
     home:    ['safe', 'conceal', 'shelter', 'rest', 'private'],
+    granary: ['safe', 'larder'],   // the public larder — what the destitute's granary trip queries
+
     frontier:['exit'],       // the heading-extension fallback place
   },
 };

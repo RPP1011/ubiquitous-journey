@@ -7,8 +7,9 @@
 // the realised clearing price; unfilled orders drift toward each other
 // (decentralised tatonnement) so prices converge to competitive levels.
 
-import { COMMODITIES, ECON, BASE_PRICE } from './simconfig.js';
+import { COMMODITIES, ECON, BASE_PRICE, GRANARY } from './simconfig.js';
 import { POI_KIND } from './world.js';
+import { BUILD_KIND } from './construction.js';
 import { recordTrade } from './econstats.js';
 import { noteSnub } from './signals.js';
 import type { Agent, Commodity, EntityId } from '../../types/sim.js';
@@ -45,6 +46,33 @@ function sour(who: Agent, at: Agent, amt: number, sim: Sim, pid: EntityId | null
   const greed = (who.personality && (who.personality.greed ?? who.personality.ambition)) ?? 0.5;
   b.standing = Math.max(-1, b.standing - amt * (0.4 + greed));               // the greedier, the harder they take it
   noteSnub(who, sim.time);   // SIGNAL ([13] §3): a felt slight — perceivable evidence the `slandered` memory reads
+}
+
+// THE GRANARY TITHE — a tax IN KIND: when a FOOD trade clears at a town with a built granary,
+// a small fraction (GRANARY.titheFrac) of the just-cleared unit moves from the buyer's pack
+// into the public larder's stock. Food is produced/consumed (not a conserved quantity like
+// gold — gold is NEVER minted/burned here), so the tithe is a real deduction that reads as a
+// market tax, not a mint. The granary is found cheaply via BuildSites.nearest (the buildings
+// list), distance-gated so only the local town's market pays into its own larder. A full
+// larder levies nothing. Guarded; never throws on the tick (the freeze lesson).
+function titheGranary(sim: Sim, buyer: Agent): void {
+  try {
+    const bs = sim.buildSites;
+    if (!bs || !bs.nearest || !buyer || !buyer.inventory) return;
+    const g = bs.nearest(BUILD_KIND.GRANARY, buyer.pos);
+    if (!g || !g.pos) return;
+    const r = GRANARY.titheRange || 80;
+    const dx = g.pos.x - buyer.pos.x, dz = g.pos.z - buyer.pos.z;
+    if (dx * dx + dz * dz > r * r) return;                       // not this town's market
+    const frac = GRANARY.titheFrac || 0.15;
+    if ((g.stock || 0) >= (GRANARY.stockCap || 12)) return;      // larder full — no tax levied
+    // NEVER tax a subsistence buyer's only meal: the tithe falls on PROVISIONING buys (the
+    // buyer still holds a whole meal after it), not on a hungry pauper's single unit — the
+    // first probe found the unexempted tax STARVING the very margin the larder exists for.
+    if ((buyer.inventory.food || 0) < 1 + frac) return;
+    buyer.inventory.food -= frac;
+    g.stock = Math.min(GRANARY.stockCap || 12, (g.stock || 0) + frac);
+  } catch { /* never throw on the tick */ }
 }
 
 export function runMarket(sim: Sim): void {
@@ -102,6 +130,7 @@ export function runMarket(sim: Sim): void {
         sellerBelief: sBelief, buyerBelief: bBelief,
       });
       economicSlight(s.a, b.a, c, price, sim);   // selfish friction -> ambient grudges
+      if (c === 'food') titheGranary(sim, b.a);  // the granary tithe: a tax in kind on food clears
 
 
 

@@ -190,6 +190,8 @@ export interface Agent {
   _starveSecs?: number;            // seconds hunger has sat empty (drainNeeds starvation clock)
   _pleas?: { fromId: EntityId; t: number }[];   // perceived begging pleas (bounded Inform mailbox, alms)
   _lastSolicit?: number;           // beg-arm solicitation throttle (sim-time)
+  _lastGranaryDraw?: number;       // granary-arm draw throttle (sim-time)
+  _granaryEmptyUntil?: number;     // own memory of finding the larder bare — beg wins until then
   _diedOfHunger?: boolean;         // death was starvation, not a blade (the reaper's beat text)
   _buildAccum: number;
   wanderTarget: Vector3 | null;
