@@ -1436,6 +1436,7 @@ export const MAP = {
     town:    ['crowd', 'safe', 'resource'],
     market:  ['crowd', 'safe', 'resource'],
     forge:   ['resource'], mine: ['resource'], field: ['resource'],
+    well:    ['crowd', 'safe', 'water'],   // plaza furniture — the square's non-commercial gathering spot
     forest:  ['conceal', 'resource'], meadow: ['resource'],
     // PLACES-AS-PERCEPTS (Phase 2a): a tavern/rest site affords shelter+rest (a hearth to sit
     // by), a home affords shelter+rest+private (your own roof). `shelter`/`rest`/`private` are

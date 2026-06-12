@@ -23,7 +23,7 @@ interface SceneLike { add(o: Obj3D): void; remove(o: Obj3D): void; }
 
 export const POI_KIND = {
   FIELD: 'field', FOREST: 'forest', MINE: 'mine', FORGE: 'forge',
-  MARKET: 'market', REST: 'rest', MEADOW: 'meadow', HUT: 'hut',
+  MARKET: 'market', REST: 'rest', MEADOW: 'meadow', HUT: 'hut', WELL: 'well',
 };
 
 export class World implements IWorld {
@@ -104,6 +104,10 @@ export class World implements IWorld {
     const at = (dx: number, dz: number) => new THREE.Vector3(cx + dx, 0, cz + dz);
     const m = this._add(POI_KIND.MARKET, at(0, 0), makeMarket());
     if (primary) this.market = m;                    // town 0's market = the legacy singleton
+    // THE TOWN WELL — plaza furniture: the market holds the plaza's centre, the well its
+    // shoulder. A 'crowd'/'water' gathering Place (MAP.affordances.well) distinct from the
+    // stalls, so the square has a social anchor that isn't commerce.
+    this._add(POI_KIND.WELL, at(4, 3), makeWell());
     this._add(POI_KIND.FORGE, at(6, -4), makeForge());
     this._add(POI_KIND.FORGE, at(-7, 5), makeForge());
     this._add(POI_KIND.HUT,   at(-9, -6), makeHut()); // apothecary
@@ -358,6 +362,25 @@ function makeLandmark(kind: string) {
       new T3.MeshStandardMaterial({ color: 0xc94f4f, side: T3.DoubleSide }));
     flag.position.set(0.6, 2.8, 0); g.add(pole, flag);
   }
+  return g;
+}
+
+// the town well: a stone drum, two posts and a little roof — the plaza's furniture.
+function makeWell() {
+  const g = new T3.Group();
+  const drum = new T3.Mesh(new T3.CylinderGeometry(0.7, 0.8, 0.7, 10),
+    new T3.MeshStandardMaterial({ color: 0x8d8d94, roughness: 1 }));
+  drum.position.y = 0.35; drum.castShadow = true;
+  const postL = new T3.Mesh(new T3.BoxGeometry(0.12, 1.5, 0.12),
+    new T3.MeshStandardMaterial({ color: 0x6b4f33 }));
+  postL.position.set(-0.55, 0.9, 0);
+  const postR = new T3.Mesh(new T3.BoxGeometry(0.12, 1.5, 0.12),
+    new T3.MeshStandardMaterial({ color: 0x6b4f33 }));
+  postR.position.set(0.55, 0.9, 0);
+  const roof = new T3.Mesh(new T3.ConeGeometry(1.0, 0.55, 4),
+    new T3.MeshStandardMaterial({ color: 0x7a3f2a, flatShading: true }));
+  roof.position.y = 1.85; roof.rotation.y = Math.PI / 4; roof.castShadow = true;
+  g.add(drum, postL, postR, roof);
   return g;
 }
 
