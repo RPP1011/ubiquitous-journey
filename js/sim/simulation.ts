@@ -1088,6 +1088,32 @@ export class Simulation {
           }
         } catch { /* never throw on the tick */ }
       },
+      // SAY (docs/architecture/17 §8.1) — the speech-act primitive: assert an opinion about a subject
+      // into the nearby audience. EFFECT (execution, belief-only, per-perceiver): nudge each listener's
+      // OWN standing toward the subject by the remark's valence (a planted opinion — like a milder,
+      // legitimate rumour; the subject itself is never lectured about itself). Then publish the public
+      // `say` DEED so listeners INFER the speaker's motive (warn/slander/vouch — motives/speech.ts).
+      // `surfaceTag` is the speaker's PRESENTED cover (honest default; a deceiver overrides — P6).
+      // Conserved (belief only, mints nothing); co-location-gated; guarded; never throws on the tick.
+      say(speaker, subjectId, valence, opts = {}) {
+        try {
+          if (!speaker || subjectId == null) return;
+          const range = opts.range || SIM.visionRange;
+          const v = valence < 0 ? -1 : 1;
+          const weight = opts.weight ?? 0.05;
+          for (const w of sim.agents) {
+            if (w === speaker || !w.alive || w.controlled || w.id === subjectId) continue;
+            if (w.pos.distanceTo(speaker.pos) > range) continue;
+            const b = w.beliefs.get(subjectId);
+            if (b) b.standing = Math.max(-1, Math.min(1, (b.standing || 0) + v * weight));
+          }
+          this.publishDeed({
+            actorId: speaker.id, primitive: 'say', targetId: subjectId,
+            surfaceTag: opts.surfaceTag || (v < 0 ? 'counsel' : 'endorsement'),
+            sceneCues: { valence: v }, magnitude: Math.min(1, Math.abs(valence)), t: sim.time,
+          });
+        } catch { /* never throw on the tick */ }
+      },
       // PHYSICAL AFFECT (docs/architecture/10) — apply a believed physical-state change to another
       // entity (the Affect rows beyond strike→dead): 'freed' cuts a captive's bonds, 'wrecked'
       // sabotages a target. The PHYSICAL effect only — like combat resolving health; any REACTION

@@ -11,6 +11,7 @@ import { deedsProcessed, resetDeedStats, inferMotive } from '../../js/sim/motiva
 import { World } from '../../js/sim/world.js';
 import { Simulation } from '../../js/sim/simulation.js';
 import { resolveCombat } from '../../js/combat.js';
+import { FeatureStage } from './_stage.mjs';
 
 export function motivationTest(ok) {
   // toy rows — test-only primitive keys so they never collide with the live motive set.
@@ -88,6 +89,52 @@ export function motivationInferenceTest(ok) {
   // I5 — an illegible primitive (no candidates) returns 'unknown', never throws.
   const r5 = inferMotive(burgher, { ...deed, primitive: 'no-such-primitive' }, {});
   ok(r5.best === 'unknown' && r5.conf === 0, 'I5: a primitive with no candidate motives infers unknown');
+
+  // ── SPEECH-ACTS (P5, docs/architecture/17 §8.1): one negative remark, two readings ──
+  ok(['warn', 'slander', 'vouch'].every((k) => motivesFor('say').map((m) => m.key).includes(k)),
+    'I6: say-primitive inference motives registered (warn/slander/vouch)');
+  const remark = { actorId: 1, primitive: 'say', targetId: 2, surfaceTag: 'counsel', sceneCues: { valence: -1 }, magnitude: 0.4, t: 0 };
+  // a witness who already DISTRUSTS the subject reads the negative remark as a WARNING (counsel).
+  const wary = mkObs({}, 50, { 2: { hostile: true, standing: -0.3 } });
+  const sW = inferMotive(wary, remark, {});
+  ok(sW.best === 'warn', `I7: a negative remark about a DISTRUSTED subject reads as a warning (${sW.best} @${sW.conf.toFixed(2)})`);
+  // a witness who LIKES the subject reads the IDENTICAL remark as a SMEAR (slander).
+  const fond = mkObs({}, 50, { 2: { standing: 0.8, hostile: false } });
+  const sS = inferMotive(fond, remark, {});
+  ok(sS.best === 'slander', `I8: the SAME remark about a LIKED subject reads as slander (${sS.best} @${sS.conf.toFixed(2)})`);
+  ok(sW.best !== sS.best, `I9: one remark, two readings (${sW.best} vs ${sS.best})`);
+}
+
+// ---- the deed PATH (P3) + the say EFFECT (P5), deterministic ------------------------------------
+// Scripted (not soak-emergent, so never flaky): a published deed is delivered to a co-located witness
+// and drained through onWitnessPrimitive; and a `say` plants an opinion in the audience + emits a deed.
+export function motivationDeedPathTest(ok, helpers) {
+  // D1 — emit→publishDeed→inbox→perceive-drain→onWitnessPrimitive (the P3 plumbing, end to end).
+  {
+    const st = new FeatureStage(helpers);
+    const actor = st.add('Actor', 0, 0);
+    const witness = st.add('Witness', 1.0, 0);
+    st.believe(witness, actor);                 // a base belief exists to annotate
+    resetDeedStats();
+    st.ctx().resolver.publishDeed({ actorId: actor.id, primitive: 'take', targetId: actor.id, surfaceTag: 'theft', sceneCues: {}, magnitude: 0.5, t: st.sim.time });
+    const f = st.run(() => deedsProcessed() > 0, { maxFrames: 180, pin: [[actor, 0, 0], [witness, 1.0, 0]] });
+    ok(deedsProcessed() > 0, `D1: a published deed is delivered + drained through onWitnessPrimitive (processed=${deedsProcessed()}, frame ${f})`);
+    st.dispose();
+  }
+  // D2 — the `say` EFFECT: a negative remark about a subject lowers the audience's standing toward it,
+  // and the say deed reaches the inbox (conserved; belief-only).
+  {
+    const st = new FeatureStage(helpers);
+    const speaker = st.add('Speaker', 0, 0);
+    const listener = st.add('Listener', 1.0, 0);
+    const subject = st.add('Subject', 40, 40);   // off-scene (talked ABOUT, not present)
+    st.believe(listener, subject);               // the listener holds a (neutral) opinion of the subject
+    const before = listener.beliefs.get(subject.id).standing || 0;
+    for (let i = 0; i < 5; i++) st.ctx().resolver.say(speaker, subject.id, -1, { weight: 0.1 });
+    const after = listener.beliefs.get(subject.id).standing || 0;
+    ok(after < before, `D2: a negative say lowered the audience's standing toward the subject (${before.toFixed(2)} → ${after.toFixed(2)})`);
+    st.dispose();
+  }
 }
 
 // ---- the SHADOW check (docs/architecture/17 P1) -------------------------------------------------
@@ -109,7 +156,6 @@ export async function motivationShadowTest(ok, { makeFighter, stubScene }) {
   for (let k = 0; k < 5; k++) await Promise.resolve();
 
   setShadow(true);
-  resetDeedStats();
   const FRAMES = 8000, dt = 1 / 60;
   let stage = 'init';
   try {
@@ -142,10 +188,6 @@ export async function motivationShadowTest(ok, { makeFighter, stubScene }) {
   const mismatches = withMotive.filter((a) => PRIM[a.motive.key] && a.motive.primitive !== PRIM[a.motive.key]);
   ok(mismatches.length === 0,
     `S4: committed primitive matches the motive kind (${mismatches.length} mismatch${mismatches.length === 1 ? '' : 'es'})`);
-
-  // S5 — P3: the deed path is LIVE — witnessed theft-shaped deeds reached the inbox and were drained
-  // through onWitnessPrimitive (proves emit→publishDeed→inbox→perceive-drain→handler, not silently dead).
-  ok(deedsProcessed() > 0, `S5: witnessed deeds flowed through the inference path (${deedsProcessed()} processed)`);
 
   if (st.diverge > 0) {
     const tally = {};

@@ -71,6 +71,9 @@ export interface ResolverFacade {
   // range (vision-gated roster scan — execution layer). The inference that follows reads only the
   // observer's own beliefs. Drained each perceive pass.
   publishDeed(deed: Deed): void;
+  // docs/architecture/17 §8.1: the `say` speech-act — plant an opinion (valence) about a subject into
+  // the nearby audience's own beliefs + publish the say deed for motive inference. Conserved; gated.
+  say(speaker: Agent, subjectId: EntityId, valence: number, opts?: { range?: number; weight?: number; surfaceTag?: string }): void;
   affect(actor: Agent, targetId: EntityId, state: 'freed' | 'wrecked'): boolean;
   // RECRUIT (Inform): plant an OFFER on the candidate's own perception (`_offers`). NOT a
   // foreign-mind write of a goal — the candidate decides for itself; this only makes the offer
