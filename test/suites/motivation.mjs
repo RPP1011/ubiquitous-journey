@@ -95,6 +95,15 @@ export async function motivationShadowTest(ok, { makeFighter, stubScene }) {
   const EPS = 0.001;
   ok(st.rate <= EPS,
     `S2: arbitrate matches scoreAndSelect tick-for-tick (diverge ${st.diverge}/${st.total} = ${(st.rate * 100).toFixed(3)}% ≤ ${(EPS * 100).toFixed(1)}%)`);
+  // S3/S4 — P2: every deciding agent carries the committed (primitive, motivation) pair, and the
+  // primitive matches its motive kind (the un-fusing — docs/architecture/17 §1).
+  const withMotive = sim.agents.filter((a) => !a.controlled && a.motive && typeof a.motive.primitive === 'string');
+  ok(withMotive.length > 0, `S3: agents carry a committed (primitive,motivation) pair (${withMotive.length})`);
+  const PRIM = { wander: 'locomote', work: 'produce', eat: 'consume', fight: 'strike', flee: 'locomote', comfort: 'locomote' };
+  const mismatches = withMotive.filter((a) => PRIM[a.motive.key] && a.motive.primitive !== PRIM[a.motive.key]);
+  ok(mismatches.length === 0,
+    `S4: committed primitive matches the motive kind (${mismatches.length} mismatch${mismatches.length === 1 ? '' : 'es'})`);
+
   if (st.diverge > 0) {
     const tally = {};
     for (const s of st.samples) { const k = `${s.live}→${s.oracle}`; tally[k] = (tally[k] || 0) + 1; }

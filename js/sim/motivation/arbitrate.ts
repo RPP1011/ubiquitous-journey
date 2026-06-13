@@ -247,7 +247,7 @@ export function arbitrate(a: Agent, ctx: CognitionCtx, planStep: PlanStep | null
   let avoiding = false;
   for (const row of ROWS) {
     const got = row.gen(a, ctx, sc);
-    if (got) { cand.push(got); if (got.kind === 'avoid') avoiding = true; }
+    if (got) { got.primitive = row.primitive; cand.push(got); if (got.kind === 'avoid') avoiding = true; }
   }
 
   // ambition tilt: scale every collected candidate by its per-kind favour.
@@ -259,12 +259,13 @@ export function arbitrate(a: Agent, ctx: CognitionCtx, planStep: PlanStep | null
     const provisioned = !(ak && ak.kind === 'seek_glory' && (a.inventory.food || 0) < 1);
     if (ak && provisioned) {
       const s = Math.min(WEIGHT.ambition * (MOTIVE.ambitionDriveFloor + ambitionDrive(a)), WEIGHT.plan - 0.05);
-      if (s > 0) cand.push({ kind: ak.kind, score: s, ...(ak.extra || {}) });
+      if (s > 0) cand.push({ kind: ak.kind, score: s, primitive: ak.kind === 'work' ? 'produce' : 'locomote', ...(ak.extra || {}) });
     }
   }
 
-  // PLAN STEP candidate (after the ambition tilt, so not double-scaled).
-  if (planStep) cand.push({ kind: 'plan', score: WEIGHT.plan, step: planStep });
+  // PLAN STEP candidate (after the ambition tilt, so not double-scaled). Its primitive is the plan
+  // step's own verb (the un-fused physical act the planner chose).
+  if (planStep) cand.push({ kind: 'plan', score: WEIGHT.plan, primitive: planStep.prim || 'goto', step: planStep });
 
   // LOOSE-GROUP COHESION post-phase: mutate the socialize/work candidates in place (not new rows).
   const gt = a.groupType ? GROUP_TYPES_T[a.groupType] : null;
@@ -294,6 +295,11 @@ export function arbitrate(a: Agent, ctx: CognitionCtx, planStep: PlanStep | null
     if (eff > bestEff) best = cc;
   }
   const winner: Goal = best ? (best as unknown as Goal) : { kind: a.canWork ? 'work' : 'wander' };
+  // P2 — THE (PRIMITIVE, MOTIVATION) PAIR (docs/architecture/17): commit the un-fused motive alongside
+  // the goal. `primitive` is the public physical act the winning impetus drives (the deed emit + the
+  // inspector read it); `bind` is the committed goal itself. Own-state; guarded by construction.
+  const primitive = best ? ((best.primitive as string) || 'locomote') : (winner.kind === 'work' ? 'produce' : 'locomote');
+  a.motive = { key: winner.kind, primitive, bind: winner };
   // TELEMETRY (parity with the former inline scorer): candidates scored this tick + the BEHAVIOUR_WON
   // beat. Own-scalar writes, read truth-side (depthMetrics / the trace ring); note() is guarded.
   (a as { _decideCands?: number })._decideCands = cand.length;

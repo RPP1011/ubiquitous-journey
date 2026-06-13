@@ -121,6 +121,11 @@ export interface Agent {
   abilities: Map<string, AbilitySpec>;// empty Map for the ability-less
   progression: Progression;
   goal: Goal | null;
+  // docs/architecture/17 P2: the committed (primitive, motivation) pair — the short-term impetus
+  // selected this tick + the public physical act it drives. `bind` is the committed goal (the same
+  // object as `goal`). First-class so the deed emit (P3) + inspector can read what an agent is doing
+  // and WHY without re-deriving it. Optional until arbitrate sets it each commit.
+  motive?: { key: string; primitive: string; bind: Goal } | null;
   goals: Goal[];
   memory: Memory;
   trace: Trace;
