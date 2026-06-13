@@ -27,6 +27,35 @@ export function presentTag(a: Agent, trueTag: string, coverTag?: string): string
   return ((a as { _deceives?: boolean })._deceives && coverTag) ? coverTag : trueTag;
 }
 
+/** RECURSIVE ToM (docs/architecture/17 §7.5) — a synthetic "typical bystander", built within the
+ *  ACTOR'S OWN epistemic scope (the actor assumes the average witness holds no strong opinion of the
+ *  subject). The guile branch runs inferMotive against this model to predict how a deed will read. */
+function modelTypicalWitness(deed: Deed): Agent {
+  const m = new Map<number, unknown>();
+  if (deed.targetId != null) m.set(deed.targetId as number, { standing: 0, hostile: false, believedWealth: 0, wealthConf: 0 });
+  if (deed.actorId != null) m.set(deed.actorId as number, { standing: 0, hostile: false, believedWealth: 0.4, wealthConf: 0.3 });
+  return { id: -1, personality: {}, gold: 50, beliefs: { get(id: number) { return m.get(id); } } } as unknown as Agent;
+}
+
+/** The guile branch (docs/architecture/17 §7.5): a deceiving actor picks the cover tag that best hides
+ *  its true (damaging) motive — by running the SAME inferMotive against a model witness and minimizing
+ *  P(they read my real motive). One level only; gated on `_deceives` (honest actors return their true
+ *  tag); K ≤ 4 cover options (bounded, ~24 cheap reads). Never throws. */
+export function chooseDeceptiveTag(actor: Agent, deed: Deed, trueMotiveKey: string, coverTags: string[], ctx: FullCtx): string {
+  const trueTag = deed.surfaceTag || trueMotiveKey;
+  if (!(actor as { _deceives?: boolean })._deceives) return trueTag;   // honest mainline — no guile
+  try {
+    const witness = modelTypicalWitness(deed);
+    let bestTag = trueTag, bestExposure = Infinity;
+    for (const tag of coverTags.slice(0, 4)) {   // K ≤ 4 — bounded enumeration
+      const post = inferMotive(witness, { ...deed, surfaceTag: tag }, ctx);
+      const exposure = post.dist[trueMotiveKey] || 0;   // how likely they read my real, costly motive
+      if (exposure < bestExposure) { bestExposure = exposure; bestTag = tag; }
+    }
+    return bestTag;
+  } catch { return trueTag; }
+}
+
 /** Drain the agent's perceived-deed inbox, inferring a motive for each. Run in the perceive pass (once
  *  per cognition tick), before new beliefs form. Bounded by the inbox cap; each deed independently
  *  guarded so one fault never blocks the rest (the freeze lesson). */

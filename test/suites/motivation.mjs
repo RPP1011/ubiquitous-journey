@@ -7,7 +7,7 @@ import {
   registerMotive, allMotives, motivesFor, motiveByKey,
 } from '../../js/sim/motivation/registry.js';
 import { setShadow, shadowStats } from '../../js/sim/motivation/arbitrate.js';
-import { deedsProcessed, resetDeedStats, inferMotive } from '../../js/sim/motivation/infer.js';
+import { deedsProcessed, resetDeedStats, inferMotive, chooseDeceptiveTag } from '../../js/sim/motivation/infer.js';
 import { World } from '../../js/sim/world.js';
 import { Simulation } from '../../js/sim/simulation.js';
 import { resolveCombat } from '../../js/combat.js';
@@ -127,6 +127,19 @@ export function motivationDeceptionTest(ok) {
   const fond = mkObs({}, { 2: { standing: 0.8, hostile: false } });
   const fondRead = inferMotive(fond, smearCovered, {});
   ok(fondRead.best === 'slander', `P6-3: a witness who likes the subject resists the cover (${fondRead.best}) — bias, NOT dictate`);
+}
+
+// ---- RECURSIVE ToM / guile (P7, docs/architecture/17 §7.5) --------------------------------------
+// A guileful actor reasons about how a deed will be READ and picks the cover that best hides its true
+// motive. An honest actor runs no guile (presents its true tag).
+export function motivationGuileTest(ok) {
+  const deed = { actorId: 1, primitive: 'say', targetId: 2, surfaceTag: 'defamation', sceneCues: { valence: -1 }, magnitude: 0.5, t: 0 };
+  // a deceiver: it simulates a model witness for each cover and minimizes its slander-exposure.
+  const tag = chooseDeceptiveTag({ _deceives: true }, deed, 'slander', ['counsel', 'defamation'], {});
+  ok(tag === 'counsel', `P7-1: a guileful slanderer reasons 'counsel' best hides its true motive (chose '${tag}')`);
+  // an honest actor presents its true tag — the guile branch is skipped entirely.
+  const honest = chooseDeceptiveTag({ _deceives: false }, deed, 'slander', ['counsel', 'defamation'], {});
+  ok(honest === 'defamation', `P7-2: an honest actor presents its true tag, no guile ('${honest}')`);
 }
 
 // ---- the deed PATH (P3) + the say EFFECT (P5), deterministic ------------------------------------
