@@ -41,6 +41,10 @@ export const DELIVERY_KINDS: readonly DeliveryKind[] = ['instant', 'projectile',
 export const TARGET_KINDS: readonly TargetKind[] = ['self', 'enemy', 'ally', 'any'];
 export const TRIGGERS: readonly Trigger[] = [null, 'on_hit', 'on_kill', 'target_hp_below', 'caster_hp_below'];
 
+// story-state cast conditions (doc 16): every kind reads the CASTER's own state/beliefs at
+// cast time (interpreter.requirementsMet); unknown kinds fail validate() — the trust boundary.
+export const REQUIRE_KINDS: readonly string[] = ['while_faithful', 'while_oaths_kept', 'vs_sworn_foe', 'near_home'];
+
 // hard numeric ceilings so a generated/LLM spec can't produce a nuke
 export const LIMITS = {
   amount:   200,   // damage / heal / knockback magnitude
@@ -68,6 +72,7 @@ interface SpecInput {
   header?: Partial<AbilityHeader>;
   effects?: EffectInput[];
   grantsTags?: string[];
+  origin?: AbilitySpec['origin'];
 }
 
 // ---- builder helpers (keep authored specs terse + consistent) ---------------
@@ -96,9 +101,11 @@ export function spec(o: SpecInput): AbilitySpec {
       castTime: h.castTime ?? 0,
       area:     h.area     || { kind: 'self' },
       delivery: h.delivery || { kind: 'instant' },
+      ...(h.requires && h.requires.length ? { requires: h.requires.map((r) => ({ ...r })) } : {}),
     },
     effects:    (o.effects || []).map((e) => (e.op ? (e as AbilityEffect) : effect(e.opName as EffectOp, e))),
     grantsTags: o.grantsTags ? o.grantsTags.slice() : [],
+    ...(o.origin ? { origin: { ...o.origin } } : {}),
   };
 }
 
@@ -135,6 +142,16 @@ export function validate(s: unknown): s is AbilitySpec {
   for (const e of sp.effects) if (!validateEffect(e)) return false;
 
   if (sp.grantsTags && !Array.isArray(sp.grantsTags)) return false;
+  // story-state conditions: whitelisted kinds only, MAX TWO per spec (the M1 refund cap's
+  // structural half — condition stacking is munchkin gold).
+  const reqs = (h as { requires?: unknown }).requires;
+  if (reqs !== undefined) {
+    if (!Array.isArray(reqs) || reqs.length > 2) return false;
+    for (const r of reqs) {
+      if (!r || typeof r !== 'object') return false;
+      if (!REQUIRE_KINDS.includes((r as { kind?: unknown }).kind as string)) return false;
+    }
+  }
   return true;
 }
 

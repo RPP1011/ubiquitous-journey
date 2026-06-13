@@ -52,7 +52,7 @@ export type {
 export type {
   EffectOp, AreaKind, DeliveryKind, TargetKind, Trigger,
   AbilityArea, AbilityDelivery, AbilityEffect, EffectOpts,
-  AbilityHeader, AbilitySpec, CatalogModule, CastCtx, EffectFn, AbilityStatus,
+  AbilityHeader, AbilitySpec, AbilityRequire, CatalogModule, CastCtx, EffectFn, AbilityStatus,
 } from './abilities.js';
 
 export type {

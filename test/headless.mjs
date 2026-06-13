@@ -16,7 +16,7 @@ import { makeOk, stubScene, makeFighter } from './harness.mjs';
 import { epistemicScan } from './suites/epistemic.mjs';
 import { shadowGuard } from './suites/shadows.mjs';
 import { combatUnit } from './suites/combat.mjs';
-import { proceduralAbilityTest } from './suites/abilities.mjs';
+import { proceduralAbilityTest, narrativeAbilityTest } from './suites/abilities.mjs';
 import { plannerSelfTest } from './suites/planner.mjs';
 import { obligationsTest } from './suites/obligations.mjs';
 import { seedingTest, romanceTest } from './suites/seeding.mjs';
@@ -61,6 +61,7 @@ epistemicScan(ok);
 shadowGuard(ok);
 combatUnit(ok, helpers);
 proceduralAbilityTest(ok);
+await narrativeAbilityTest(ok, helpers);   // docs 15/16: provenance, conditions, the oath:kept seam
 plannerSelfTest(ok, helpers);
 // Action-grammar Phase 5: the obligation ledger (commitments + recurrence), the one new store.
 obligationsTest(ok);

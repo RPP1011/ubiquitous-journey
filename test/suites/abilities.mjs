@@ -4,7 +4,13 @@
 // trust boundary, distinct tag-profiles yield distinct abilities, power/cooldown
 // scale with tier, and the same (classKey,tier) is byte-stable (determinism).
 
-import { generateAbility } from '../../js/rpg/abilities/generate.js';
+import { generateAbility, generateEventAbility } from '../../js/rpg/abilities/generate.js';
+import { requirementsMet } from '../../js/rpg/abilities/interpreter.js';
+import { deriveGoals, pruneGoals } from '../../js/sim/motivation.js';
+import { goalAvenge } from '../../js/sim/planner.js';
+import { agentBiography } from '../../js/sim/biography.js';
+import { World } from '../../js/sim/world.js';
+import { Simulation } from '../../js/sim/simulation.js';
 import { validate as validateSpec, spec as irSpec, effect as irEffect } from '../../js/rpg/abilities/ir.js';
 import { castSpec } from '../../js/rpg/abilities/interpreter.js';
 import { slowMul, abilityStatus } from '../../js/rpg/abilities/effects.js';
@@ -254,4 +260,73 @@ function slowWindowTest(ok) {
   ok(slowed > 0 && free > 0, `slow: the fixture actually moved (slowed=${slowed.toFixed(3)}m, free=${free.toFixed(3)}m)`);
   ok(Math.abs(slowed - free * 0.4) < 1e-9,
     `slow: in-window speed is slowFactor x normal (${slowed.toFixed(3)} vs ${free.toFixed(3)}m per step)`);
+}
+
+
+// ---- NARRATIVE abilities (docs 15/16 G1+PR1): signatures share names, events mint
+// provenance, conditions are commitments, and the oath:kept seam grants for real.
+export async function narrativeAbilityTest(ok, { makeFighter: mkF, stubScene }) {
+  // 1) R2 — identical mechanics share ONE name and id, across different classes.
+  const a1 = generateAbility({ classKey: 'farmer', tags: ['FARMING'] }, 2);
+  const a2 = generateAbility({ classKey: 'proc:9999', tags: ['FARMING'] }, 2);
+  ok(!!a1 && !!a2 && a1.id === a2.id && a1.name === a2.name && abilitySignature(a1) === abilitySignature(a2),
+    `narrative: identical mechanics share one name world-wide (${a1 && a1.name})`);
+
+  // 2) event mints: provenance attached, condition REFUND buys power (M1 economics).
+  const bound = generateEventAbility({
+    seam: 'oath:kept', agentId: 7, t: 100, archetype: 'combat', register: 'vengeance',
+    tags: ['MELEE'], requires: [{ kind: 'vs_sworn_foe' }], withId: 42, originText: 'a vow kept in blood',
+  });
+  const unbound = generateEventAbility({
+    seam: 'oath:kept', agentId: 7, t: 100, archetype: 'combat', register: 'vengeance',
+    tags: ['MELEE'], withId: 42, originText: 'a vow kept in blood',
+  });
+  const dmg = (sp) => Math.max(0, ...sp.effects.filter((e) => e.op === 'damage').map((e) => e.amount));
+  ok(!!bound && validateSpec(bound) && bound.origin && bound.origin.seam === 'oath:kept' && bound.origin.withId === 42,
+    `narrative: an event mint carries its provenance (${bound && bound.name} — "${bound && bound.origin.text}")`);
+  ok(!!unbound && dmg(bound) > dmg(unbound),
+    `narrative: a CONDITION refunds budget — the bound ability is the stronger one (${dmg(bound)} > ${dmg(unbound)})`);
+
+  // 3) requirementsMet — commitments made mechanical, all own-state reads.
+  const pious = fixtureAgent('Pious', 0, 0);
+  pious.faith = 'Om';
+  const boon = generateEventAbility({
+    seam: 'faith:shrine', agentId: pious.id, t: 50, archetype: 'defensive', register: 'holy',
+    tags: ['HEAL'], god: 'Om', requires: [{ kind: 'while_faithful', god: 'Om' }],
+    originText: 'given at the raising of the shrine of Om',
+  });
+  ok(!!boon && requirementsMet(boon, pious), 'narrative: the faithful may cast the boon');
+  pious.faith = null;   // apostasy
+  ok(!requirementsMet(boon, pious), 'narrative: apostasy makes the boon FIZZLE (the mercy left their hands)');
+
+  // 4) E2E — the oath:kept seam: swear (deriveGoals), kill (_slain), resolve (pruneGoals)
+  //    -> an origin-bearing ability lands, dormant until the wielder swears AGAIN
+  //    (vs_sworn_foe), and the biography answers "where did you learn that?".
+  const world = new World(stubScene);
+  const sim = new Simulation(stubScene, world, { makeFighter: mkF });
+  const avenger = new Agent(mkF('knight', {}), {
+    id: 9651, name: 'Avenger', profession: null, faction: 'townsfolk',
+    personality: { risk_tolerance: 0.6, social_drive: 0.4, ambition: 0.5, altruism: 0.5, curiosity: 0.5 },
+  });
+  sim.agents.push(avenger); sim.agentsById.set(avenger.id, avenger);
+  const ctx = sim._ctx();
+  // ensureCatalog's lazy import() settles on the TASK queue (not microtasks) — give the
+  // generator module one real tick before the seam fires (live sims settle in frame one).
+  await new Promise((r) => setTimeout(r, 25));
+  avenger.memory.mtm.push({ t: 0, kind: 'assaulted', withId: 9901, valence: -1, salience: 1 });
+  deriveGoals(avenger, ctx);                  // swears the avenge oath
+  avenger._slain = new Set([9901]);           // the combat bridge stamped the kill
+  pruneGoals(avenger, ctx);                   // kept -> the seam grants
+  const granted = [...avenger.abilities.values()].find((sp) => sp.origin && sp.origin.seam === 'oath:kept');
+  ok(!!granted && granted.origin.withId === 9901,
+    `narrative: a vengeance carried through TAUGHT something (${granted && granted.name})`);
+  ok(!requirementsMet(granted, avenger, 555),
+    'narrative: the grudge-blade is DORMANT against a stranger (vs_sworn_foe)');
+  avenger.pushGoal(goalAvenge(777), ctx);     // a fresh vow
+  ok(requirementsMet(granted, avenger, 777),
+    'narrative: it wakes when the wielder swears again — the ability IS the grudge');
+  const bio = agentBiography(avenger, sim).join(' | ');
+  ok(bio.includes(granted.name) && bio.includes('a vow kept in blood'),
+    `narrative: the biography answers "where did you learn that?" (${bio.split(' | ').find((l) => l.startsWith('carries'))})`);
+  sim.dispose();
 }

@@ -45,6 +45,17 @@ export function agentBiography(a: Ag, sim: Sim): string[] {
     if (role.length) lines.push(role.join(', '));
     if (a.faith) lines.push(`keeps the faith of ${a.faith}`);
 
+    // EVENT-BORN SKILLS — the abilities that answer "where did you learn that?" (doc 15):
+    // a spec carrying `origin` is a story artifact; the codex line is a biography line.
+    try {
+      const carried: string[] = [];
+      const ab = (a as { abilities?: Map<string, { name?: string; origin?: { text?: string } | null }> }).abilities;
+      if (ab && ab.forEach) ab.forEach((sp) => {
+        if (sp && sp.origin && carried.length < 2) carried.push(`${sp.name} (${sp.origin.text || 'earned in the living'})`);
+      });
+      if (carried.length) lines.push(`carries ${carried.join('; ')}`);
+    } catch { /* best-effort flavour */ }
+
     // --- family: spouse + kin
     const fam: string[] = [];
     if (a.mateId != null) { const m = NAMES_OF(sim, a.mateId); if (m) fam.push(`wed to ${m}`); }

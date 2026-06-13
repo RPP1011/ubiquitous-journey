@@ -53,6 +53,10 @@ export interface EffectOpts {
 }
 
 /** The header (the 5 orthogonal dimensions minus effects). */
+/** A story-state cast condition (docs 16): evaluated at cast time from the CASTER's own
+ *  state/beliefs only — a commitment made mechanical (while_faithful, vs_sworn_foe, ...). */
+export interface AbilityRequire { kind: string; god?: string; }
+
 export interface AbilityHeader {
   target: TargetKind;
   range: number;
@@ -60,6 +64,7 @@ export interface AbilityHeader {
   castTime: number;
   area: AbilityArea;
   delivery: AbilityDelivery;
+  requires?: AbilityRequire[];   // story-state conditions (<=2, whitelisted in ir.ts; M1)
 }
 
 /** A complete, validated ability spec — the single source of truth. */
@@ -71,6 +76,10 @@ export interface AbilitySpec {
   header: AbilityHeader;
   effects: AbilityEffect[];
   grantsTags: string[];       // behaviour-flavour tags the cast itself contributes
+  // PROVENANCE (doc 15/16): where this was learned — a real seam, a real moment. The
+  // biography/codex/obituary answer "where did you learn that?" from this. Class-milestone
+  // mints may omit it (the grind path); event mints always carry it.
+  origin?: { seam: string; withId?: number | string | null; t?: number; text?: string } | null;
 }
 
 /** The (optional, lazily-imported) catalog module shape Progression probes. */

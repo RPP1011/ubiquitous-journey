@@ -39,10 +39,50 @@ export function onCooldown(agent: Agent, spec: AbilitySpec, now: number): boolea
 
 // castSpec(spec, caster, ctx) -> bool (did it fire?). ctx = the sim _ctx()
 // { agents, agentsById, world, time }.
+// STORY-STATE CAST CONDITIONS (doc 16; M9 preflight): every check reads the CASTER's own
+// state/beliefs — never the roster. `targetId` is the chosen target when the caller knows
+// it (vs_sworn_foe needs one; with none it fails CLOSED). Unknown kinds fail closed too —
+// the ir.validate whitelist should make that unreachable. A failed condition is a FIZZLE:
+// no cooldown burned, no event — the commitment simply isn't held.
+export function requirementsMet(spec: AbilitySpec, caster: Agent, targetId: unknown = null): boolean {
+  try {
+    const reqs = spec.header && spec.header.requires;
+    if (!reqs || !reqs.length) return true;
+    for (const r of reqs) {
+      switch (r.kind) {
+        case 'while_faithful': {
+          const faith = (caster as { faith?: string }).faith;
+          if (!faith || (r.god && faith !== r.god)) return false;
+          break;
+        }
+        case 'while_oaths_kept':
+          if (((caster.life && caster.life.forsworn) || 0) > 0) return false;   // the forsworn lose it
+          break;
+        case 'vs_sworn_foe': {
+          if (targetId === '*') break;   // caller vouches (castSpec re-check; the chooser already gated)
+          const goals = caster.goals || [];
+          if (targetId == null || !goals.some((g) => g && g.kind === 'avenge' && g.subjectId === targetId)) return false;
+          break;
+        }
+        case 'near_home': {
+          const hb = (caster.homeBeliefId != null && caster.beliefs) ? caster.beliefs.get(caster.homeBeliefId) : null;
+          if (!hb || hb.sheltered === false || !hb.lastPos) return false;
+          const dx = hb.lastPos.x - caster.pos.x, dz = hb.lastPos.z - caster.pos.z;
+          if (dx * dx + dz * dz > 15 * 15) return false;
+          break;
+        }
+        default: return false;
+      }
+    }
+    return true;
+  } catch { return false; }
+}
+
 export function castSpec(spec: AbilitySpec, caster: Agent, ctx: CastCtx | null): boolean {
   if (!spec || !caster || !caster.alive) return false;
   const specId = spec.id;
   if (!validate(spec)) { console.warn('ability rejected by validate()', specId); return false; }
+  if (!requirementsMet(spec, caster, '*')) return false;   // broken commitment = FIZZLE (no cooldown burn); target-bound conds are the chooser's gate
 
   const now = ctx?.time ?? 0;
   if (onCooldown(caster, spec, now)) return false;

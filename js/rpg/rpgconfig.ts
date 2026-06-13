@@ -50,6 +50,21 @@ export const RPG = {
                              //   maxHealth is a global constant consumed as fractions in
                              //   ~20 places — defence scales via abilities/shields instead
 
+  // --- GENERATION budget (doc 16 §4: same tier = same power, spent differently) ----
+  gen: {
+    budgetBase: 30,          // B(t) = budgetBase x budgetGrowth^(t-1)
+    budgetGrowth: 1.35,      // steeper than the old 1.18 — tiers should feel earned
+    dmgPerPoint: 1.0,        // damage bought per budget point
+    healPerPoint: 1.1,       // healing is slightly dearer
+    shieldPerPoint: 0.9,     // shielding slightly cheaper
+    slowCostPerSec: 6,       // control durations are priced per second…
+    stunCostPerSec: 14,      // …stun far dearer than slow
+    windowCostPerSec: 4,     // craft/trade windows priced per second
+  },
+  // EVENT GRANTS (doc 15 PR1): one event-born ability per agent per this many sim-seconds
+  // (M8's same-moment grace), whatever the seam.
+  eventGrantGraceSec: 600,
+
   // --- narrative beats (the GRIND-IMMUNE xp channel) ------------------------
   // The "what a character has LIVED" axis. Routine produce/buy/sell stays the
   // low, plateauing income above; the dramatic beats episodic memory already

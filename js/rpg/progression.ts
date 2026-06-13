@@ -24,7 +24,8 @@ import type {
 } from '../../types/sim.js';
 
 // generate.js generates an ability spec themed by a class + tier index.
-type GenModule = { generateAbility: (cls: GenClassDesc, tier: number) => AbilitySpec | null };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type GenModule = { generateAbility: (cls: GenClassDesc, tier: number) => AbilitySpec | null; generateEventAbility?: (d: any) => AbilitySpec | null };
 type GenClassDesc = { classKey: string; name: string; tags: Tag[] };
 // ir.validate is the spec trust-boundary whitelist (defensive re-check).
 type ValidateFn = (spec: unknown) => boolean;
@@ -51,7 +52,7 @@ function ensureCatalog() {
     })
     .catch(() => { /* abilities subsystem absent — degrade gracefully */ });
   import('./abilities/generate.js')
-    .then((m) => { if (m && m.generateAbility) _gen = { generateAbility: m.generateAbility }; })
+    .then((m) => { if (m && m.generateAbility) _gen = { generateAbility: m.generateAbility, generateEventAbility: m.generateEventAbility }; })
     .catch(() => { /* generator absent — template classes only */ });
   import('./abilities/ir.js')
     .then((m) => { if (m && m.validate) _validate = m.validate; })
@@ -425,6 +426,32 @@ export class Progression {
       actorId: this.agent.id, verb: 'ability_gained', tags: [],
       magnitude: lvl, targetId: undefined, t: now,
     }));
+  }
+
+  // EVENT-BORN GRANT (doc 15 PR1): mint an ability FROM a lived moment through the
+  // generator's event pipeline, under the M8 same-moment grace (one event grant per
+  // agent per RPG.eventGrantGraceSec, whatever the seam) and the same duplicate-
+  // signature suppression as every grant. Files a milestone-grade MEMORY (the grant is
+  // itself an episode the biography can read). Returns the granted spec or null.
+  grantEventAbility(desc: Record<string, unknown> & { seam: string; t: number }): AbilitySpec | null {
+    try {
+      ensureCatalog();
+      if (!_gen || !_gen.generateEventAbility) return null;   // lazy module not loaded yet
+      const now = Number(desc.t) || 0;
+      const aa = this as Progression & { _lastEventGrantAt?: number };
+      if (now - (aa._lastEventGrantAt ?? -Infinity) < (RPG.eventGrantGraceSec || 600)) return null;
+      const spec = _gen.generateEventAbility({ ...desc, agentId: this.agent.id, t: now });
+      if (!spec || (_validate && !_validate(spec))) return null;
+      this._grantAbility(spec, 0, now);
+      if (!this.abilities.has(spec.id)) return null;          // suppressed as a mechanical twin
+      aa._lastEventGrantAt = now;
+      try {
+        if (this.agent.memory && typeof this.agent.memory.record === 'function') {
+          this.agent.memory.record({ t: now, kind: 'milestone', label: spec.name, valence: 1, salience: 0.7 });
+        }
+      } catch { /* memory is best-effort flavour */ }
+      return spec;
+    } catch { return null; }
   }
 
   // ---------------------------------------------------------------------------

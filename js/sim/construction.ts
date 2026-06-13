@@ -656,6 +656,25 @@ export class BuildSites {
         } else if (site.kind === BUILD_KIND.SHRINE) {
           this.sim.chronicle.note('build', null,
             `The faithful of ${site.god || 'the gods'} raised a shrine in ${townName}.`);
+          // THE GOD'S BOON (doc 15 PR1, the faith:shrine seam): the LOCAL faithful receive
+          // an event-born blessing, conditioned while_faithful — apostasy makes it fizzle,
+          // and the chronicle will say the mercy left their hands. Execution-side roster
+          // read (this is the build system); each grant is graced/validated inside
+          // grantEventAbility.
+          try {
+            if (site.god) {
+              for (const m of this.sim.agents) {
+                if (!m.alive || m.controlled || m.faction !== 'townsfolk' || m.townId !== site.town) continue;
+                if (m.faith !== site.god || !m.progression || !m.progression.grantEventAbility) continue;
+                m.progression.grantEventAbility({
+                  seam: 'faith:shrine', t: (ctx && ctx.time) || 0, archetype: 'defensive',
+                  register: 'holy', tags: ['HEAL'], god: site.god,
+                  requires: [{ kind: 'while_faithful', god: site.god }],
+                  originText: `given at the raising of the shrine of ${site.god}`,
+                });
+              }
+            }
+          } catch { /* grants are best-effort flavour */ }
         } else {
           this.sim.chronicle.note('build', site.ownerId,
             `${owner ? owner.name : 'A townsperson'} raised ${hn} in ${townName}.`);

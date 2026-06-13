@@ -1,57 +1,33 @@
-// Procedural ability generation. The world refactor dropped fixed professions and
-// made occupation emergent, so MOST classes are now PROCEDURAL (key "proc:...") —
-// they match no CLASS_TEMPLATE and therefore have NO hand-authored catalog entry
-// (catalog.js + CLASS_MILESTONES key only on template classes). This module fills
-// that gap: it MINTS a valid AbilitySpec for any class from its dominant deed-tags,
-// scaled by tier, so emergent identities still earn [Skills].
+// Procedural ability generation, v2 — the doc-16 PIPELINE (the v1 three-template builder
+// is gone). A spec is ASSEMBLED, not selected: FORM × PRIMARY op (budget-priced) × RIDER
+// (t2+) × optional story-state CONDITION, drawn by a seeded stream from pools the class's
+// tags (or the grant EVENT) vote in. The authored surface is VOCABULARY tables; the variety
+// is the cross product with real identities and moments.
 //
-// Hard rules (mirrors generate-side of the trust boundary in ir.validate):
-//   - Output MUST pass ir.validate() and stay within ir.LIMITS. We clamp every
-//     number before building the spec, then validate() before returning (null on
-//     the impossible-but-defensive failure — callers must treat null as "no grant").
-//   - DETERMINISTIC: every choice is seeded from fnv1a(classKey | tier | index).
-//     No Math.random(), no Date — same (classKey, tier) -> byte-identical spec,
-//     so the headless suite stays reproducible.
-//
-// Theming: a class's dominant tags pick the ability ARCHETYPE:
-//   combat (MELEE/KILL/RISK/BERSERK/DUEL) -> damage (melee swing or projectile)
-//   defensive (DEFENSE/ENDURANCE/HEAL)    -> shield / heal on self
-//   trade/social (TRADE/PERSUADE/...)     -> utility (slow / stun / plant_belief / scry)
-// Tier scales POWER ~exponentially (amount) and COOLDOWN ~linearly (longer waits).
+// Hard rules (unchanged + extended):
+//   - Output MUST pass ir.validate() within ir.LIMITS; null on failure (callers treat as
+//     "no grant"). DETERMINISTIC: seeded from fnv1a — no Math.random, no Date.
+//   - R1 (the slow lesson): every op in a pool HAS a consumer (damage/heal/shield/stun/
+//     slow are combat-live; plant_belief/scry act on beliefs; trade_edge/craft_boost are
+//     the haggle/master_craft hooks).
+//   - R2: a CLASS mint's id/name derive from its mechanical SIGNATURE — identical mechanics
+//     share one name (and one cooldown key) world-wide. An EVENT mint's name comes from its
+//     seam's register lexicon and its id from the moment — uniqueness is the point there.
+//   - M1: condition refunds MULTIPLY as retained cost, floor 0.3 (≤70% refund), max 2
+//     conditions (also enforced structurally by ir.validate).
 
 import { spec, effect, validate, LIMITS } from './ir.js';
+import { abilitySignature } from '../progression.js';
+import { RPG } from '../rpgconfig.js';
 import { fnv1a } from '../tags.js';
-import type { AbilitySpec, AbilityArea, AbilityEffect, AbilityHeader } from '../../../types/sim.js';
+import type { AbilitySpec, AbilityArea, AbilityEffect, AbilityRequire, AbilityHeader, EffectOp } from '../../../types/sim.js';
 
-// the loose body the archetype builders return — a partial header + the effect list +
-// the cast-flavour tags. spec() wraps it into a full (validated) AbilitySpec.
-interface BuiltBody {
-  header: Partial<AbilityHeader>;
-  effects: AbilityEffect[];
-  grantsTags: string[];
-}
-
-// a small deterministic stream object: .pick(arr) and .frac() (0..1)
-interface Stream {
-  next(): number;
-  frac(): number;
-  pick<T>(arr: readonly T[]): T;
-}
-
-// ---- deterministic seeded picks --------------------------------------------
-// A tiny xorshift-ish stream seeded by an FNV hash of the identity string, so a
-// (classKey,tier) pair yields a stable sequence of choices with no global RNG.
-function seedFor(classKey: string, tier: number, salt = 0): number {
-  return fnv1a(`${classKey || 'proc'}|${tier}|${salt}`);
-}
-// advance a 32-bit state (xorshift32) -> next unsigned 32-bit
+// ---- deterministic seeded stream (unchanged from v1) ------------------------
+interface Stream { next(): number; frac(): number; pick<T>(arr: readonly T[]): T; }
+function seedFor(key: string, salt = 0): number { return fnv1a(`${key}|${salt}`); }
 function nextState(s: number): number {
-  s ^= (s << 13); s >>>= 0;
-  s ^= (s >>> 17);
-  s ^= (s << 5);  s >>>= 0;
-  return s >>> 0;
+  s ^= (s << 13); s >>>= 0; s ^= (s >>> 17); s ^= (s << 5); s >>>= 0; return s >>> 0;
 }
-// a small deterministic stream object: .pick(arr) and .frac() (0..1)
 function stream(seed: number): Stream {
   let s = seed >>> 0 || 0x9e3779b9;
   return {
@@ -61,249 +37,226 @@ function stream(seed: number): Stream {
   };
 }
 
-// the three ability archetypes a class's dominant tags pick.
-type Archetype = 'combat' | 'defensive' | 'utility';
+// ---- archetypes: six, voted by tags ------------------------------------------
+type Archetype = 'combat' | 'defensive' | 'craft' | 'trade' | 'social' | 'cunning';
+const VOTES: Record<Archetype, readonly string[]> = {
+  combat:    ['MELEE', 'KILL', 'RISK', 'BERSERK', 'DUEL', 'ATTACK', 'POWER'],
+  defensive: ['DEFENSE', 'ENDURANCE', 'HEAL', 'FLEE', 'SURVIVE', 'RESOLVE'],
+  craft:     ['SMITHING', 'CRAFTING', 'TOOLMAKING', 'FARMING', 'MINING', 'WOODCUT', 'FORAGE', 'BUILD'],
+  trade:     ['TRADE', 'PROFIT', 'HAGGLE', 'BARTER'],
+  social:    ['PERSUADE', 'CHARM', 'GOSSIP', 'LEAD', 'SOCIAL'],
+  cunning:   ['DECEIVE', 'STEALTH', 'CUNNING', 'INTRIGUE'],
+};
+const ARCH_ORDER: readonly Archetype[] = ['combat', 'defensive', 'craft', 'trade', 'social', 'cunning'];
 
-// ---- tag -> archetype classification ---------------------------------------
-const COMBAT_TAGS    = new Set(['MELEE', 'KILL', 'RISK', 'BERSERK', 'DUEL']);
-const DEFENSIVE_TAGS = new Set(['DEFENSE', 'ENDURANCE', 'HEAL', 'FLEE']);
-const UTILITY_TAGS   = new Set([
-  'TRADE', 'PROFIT', 'HAGGLE', 'BARTER',
-  'PERSUADE', 'GOSSIP', 'DECEIVE', 'LEAD', 'CHARM', 'STEALTH',
-  'SMITHING', 'CRAFTING', 'TOOLMAKING',
-  'FARMING', 'MINING', 'WOODCUT', 'FORAGE', 'EXPLORE', 'WANDER',
-]);
-
-// rank the supplied tags into the three archetypes; returns the winning
-// archetype + the (sorted) tags that voted for it (used for flavour + grantsTags).
-function classifyArchetype(tags: unknown): Archetype {
-  const list = Array.isArray(tags) ? tags.filter((t): t is string => typeof t === 'string') : [];
-  let combat = 0, defensive = 0, utility = 0;
-  for (const t of list) {
-    if (COMBAT_TAGS.has(t)) combat++;
-    else if (DEFENSIVE_TAGS.has(t)) defensive++;
-    else if (UTILITY_TAGS.has(t)) utility++;
+function classifyArchetype(tags: readonly string[]): Archetype {
+  let best: Archetype = 'combat', bestN = -1;
+  for (const a of ARCH_ORDER) {
+    let n = 0;
+    for (const t of tags) if (VOTES[a].includes(t)) n++;
+    if (n > bestN) { bestN = n; best = a; }
   }
-  // tie-break combat > defensive > utility; default to combat when no tags voted
-  if (combat >= defensive && combat >= utility) return 'combat';
-  if (defensive >= utility) return 'defensive';
-  return 'utility';
+  return best;
 }
 
-// ---- tier scaling -----------------------------------------------------------
-// tier is the milestone tier index (1..N from RPG.tierLevels); we accept any
-// positive integer. Power grows ~exponentially, cooldown ~linearly. Everything is
-// clamped to LIMITS at the call site so this can never exceed the trust ceiling.
+// ---- tier + budget ------------------------------------------------------------
 function tierIndex(tier: unknown): number {
   const t = Math.floor(Number(tier));
   return isFinite(t) && t >= 1 ? t : 1;
 }
-// exponential-ish power curve, clamped to [lo, hi].
-function scalePow(base: number, growth: number, tier: number, lo: number, hi: number): number {
-  const v = base * Math.pow(growth, tier - 1);
-  return Math.max(lo, Math.min(hi, v));
+const G = () => (RPG.gen || {}) as Record<string, number>;
+function budgetFor(tier: number): number {
+  return (G().budgetBase ?? 30) * Math.pow(G().budgetGrowth ?? 1.35, tierIndex(tier) - 1);
 }
-function scaleLin(base: number, perTier: number, tier: number, lo: number, hi: number): number {
-  const v = base + perTier * (tier - 1);
-  return Math.max(lo, Math.min(hi, v));
-}
-const clampAmt = (x: number): number => Math.max(-LIMITS.amount, Math.min(LIMITS.amount, x));
-const clampDur = (x: number): number => Math.max(0, Math.min(LIMITS.dur, x));
-const clampCd  = (x: number): number => Math.max(0, Math.min(LIMITS.cooldown, x));
-const clampR   = (x: number): number => Math.max(0, Math.min(LIMITS.areaR, x));
-const round1   = (x: number): number => Math.round(x * 10) / 10;
-
-// ---- display-name helper ----------------------------------------------------
-// Wandering-Inn bracketed [Skill] flavour, themed by archetype + a deterministic
-// adjective so two tiers of the same class read as a progression.
-const ARCH_NOUN: Record<Archetype, readonly string[]> = {
-  combat:    ['Strike', 'Cleave', 'Onslaught', 'Reaver', 'Rend'],
-  defensive: ['Bulwark', 'Ward', 'Resolve', 'Aegis', 'Endurance'],
-  utility:   ['Gambit', 'Ploy', 'Insight', 'Whisper', 'Sleight'],
+// M1: refunds MULTIPLY as retained cost, floored at 0.3 (cap 70% total refund).
+const COND_RETAIN: Record<string, number> = {
+  vs_sworn_foe: 0.4, while_faithful: 0.65, while_oaths_kept: 0.75, near_home: 0.75,
 };
-const TIER_ADJ = ['Lesser', 'Steady', 'Greater', 'Master', 'Grand', 'Peerless'];
-
-export function abilityName(archetype: Archetype, tier: number, rng: Stream | null): string {
-  const nouns = ARCH_NOUN[archetype] || ARCH_NOUN.combat;
-  const noun = rng ? rng.pick(nouns) : nouns[0];
-  const adj = TIER_ADJ[Math.min(TIER_ADJ.length - 1, tierIndex(tier) - 1)];
-  return `[${adj} ${noun}]`;
+function refundFor(requires: AbilityRequire[] | undefined): number {
+  let retain = 1;
+  for (const r of requires || []) retain *= COND_RETAIN[r.kind] ?? 1;
+  return Math.max(0.3, retain);
 }
+const clampAmt = (x: number): number => Math.max(0, Math.min(LIMITS.amount, Math.round(x * 10) / 10));
+const clampDur = (x: number): number => Math.max(0, Math.min(LIMITS.dur, Math.round(x * 10) / 10));
+const clampCd  = (x: number): number => Math.max(1, Math.min(LIMITS.cooldown, Math.round(x * 10) / 10));
 
-// a stable, collision-resistant id from identity (so cooldown ledgers key cleanly).
-function abilityId(classKey: string, tier: number, archetype: Archetype): string {
-  const h = fnv1a(`${classKey || 'proc'}|${tier}|${archetype}`).toString(36);
-  const key = String(classKey || 'proc').replace(/[^a-z0-9]+/gi, '_').toLowerCase();
-  return `gen_${key}_t${tierIndex(tier)}_${h}`;
-}
+// ---- the clause assembly --------------------------------------------------------
+interface Built { header: Partial<AbilityHeader>; effects: AbilityEffect[]; grantsTags: string[]; primary: EffectOp; form: string; }
 
-// ---- the three archetype builders ------------------------------------------
-// Each returns { header, effects, grantsTags } pre-clamped; generateAbility wraps
-// them in spec() and validates.
+function build(archetype: Archetype, tier: number, rng: Stream, tags: readonly string[], requires?: AbilityRequire[]): Built {
+  const t = tierIndex(tier);
+  const budget = budgetFor(t) / refundFor(requires);   // a bound ability is a STRONGER one
+  const cdBase = clampCd(5 + 2.2 * (t - 1));
 
-function buildCombat(tier: number, rng: Stream, tags: string[]): BuiltBody {
-  // melee vs projectile: deterministic, but bias toward melee for MELEE-tagged.
-  const meleeBias = tags.includes('MELEE') ? 0.7 : 0.4;
-  const projectile = rng.frac() > meleeBias;
-
-  const dmg = round1(scalePow(34, 1.18, tier, 8, LIMITS.amount));
-  const cd  = round1(scaleLin(5, 2.2, tier, 1, LIMITS.cooldown));
-
-  if (projectile) {
-    const speed = round1(scaleLin(16, 4, tier, 4, LIMITS.speed));
-    const range = round1(scaleLin(9, 1.5, tier, 3, LIMITS.range));
-    const effects = [effect('damage', { amount: clampAmt(dmg), tags: ['CAST', 'MELEE'] })];
-    // tier 2+ projectiles also slow on hit (the chained secondary)
-    if (tierIndex(tier) >= 2) {
-      effects.push(effect('slow', {
-        amount: 0.5, dur: clampDur(round1(scaleLin(2, 0.6, tier, 0.5, LIMITS.dur))),
-        when: 'on_hit', tags: ['FROST'],
-      }));
+  if (archetype === 'combat') {
+    const projectile = rng.frac() > (tags.includes('MELEE') ? 0.7 : 0.4);
+    const dmg = clampAmt(budget * (G().dmgPerPoint ?? 1.0));
+    const effects: AbilityEffect[] = [effect('damage', { amount: dmg, tags: projectile ? ['CAST', 'MELEE'] : ['MELEE', 'FORCE'] })];
+    let form = projectile ? 'projectile' : 'melee';
+    let area: AbilityArea = { kind: 'self' };
+    if (!projectile && t >= 3) { area = { kind: 'cone', r: Math.min(LIMITS.areaR, 2.6 + 0.3 * t), deg: 100 }; form = 'cone'; }
+    if (t >= 2) {
+      // tiers add CLAUSES: a rider, not just numbers (R5)
+      const rider = rng.pick(['knockback', 'slow', 'stun'] as const);
+      if (rider === 'knockback') effects.push(effect('knockback', { amount: clampAmt(1.2 + 0.4 * t), when: 'on_hit', tags: ['FORCE'] }));
+      else if (rider === 'slow') effects.push(effect('slow', { amount: 0.5, dur: clampDur(1.5 + 0.5 * t), when: 'on_hit', tags: ['FROST'] }));
+      else effects.push(effect('stun', { dur: clampDur(0.8 + 0.25 * t), when: 'on_hit', tags: ['CONTROL'] }));
     }
     return {
-      header: {
-        target: 'enemy', range, cooldown: clampCd(cd),
-        area: { kind: 'self' }, delivery: { kind: 'projectile', speed },
-      },
-      effects,
-      grantsTags: ['CAST', 'ATTACK', 'POWER'],
+      header: projectile
+        ? { target: 'enemy', range: Math.min(LIMITS.range, 9 + 1.5 * t), cooldown: cdBase, area: { kind: 'self' }, delivery: { kind: 'projectile', speed: Math.min(LIMITS.speed, 16 + 4 * t) } }
+        : { target: 'enemy', range: 2.6, cooldown: cdBase, area, delivery: { kind: 'instant' } },
+      effects, grantsTags: projectile ? ['CAST', 'ATTACK', 'POWER'] : ['ATTACK', 'MELEE', 'POWER'],
+      primary: 'damage', form,
     };
   }
-
-  // melee swing: short reach, instant; cone at higher tiers (a cleave).
-  const cone = tierIndex(tier) >= 3;
-  const area: AbilityArea = cone
-    ? { kind: 'cone', r: clampR(round1(scaleLin(2.6, 0.3, tier, 0.5, LIMITS.areaR))), deg: 100 }
-    : { kind: 'self' };
-  const effects = [effect('damage', { amount: clampAmt(dmg), tags: ['MELEE', 'FORCE'] })];
-  if (tierIndex(tier) >= 2) {
-    effects.push(effect('knockback', {
-      amount: round1(scaleLin(1.2, 0.4, tier, 0, 8)), when: 'on_hit', tags: ['FORCE'],
-    }));
-  }
-  return {
-    header: {
-      target: 'enemy', range: 2.6, cooldown: clampCd(cd),
-      area, delivery: { kind: 'instant' },
-    },
-    effects,
-    grantsTags: ['ATTACK', 'MELEE', 'POWER'],
-  };
-}
-
-function buildDefensive(tier: number, rng: Stream, tags: string[]): BuiltBody {
-  const cd = round1(scaleLin(14, 3, tier, 1, LIMITS.cooldown));
-  // heal-leaning for HEAL/ENDURANCE, shield-leaning otherwise
-  const healLean = tags.includes('HEAL') || tags.includes('ENDURANCE');
-  const wantHeal = healLean ? rng.frac() < 0.65 : rng.frac() < 0.35;
-
-  const shieldAmt = round1(scalePow(22, 1.16, tier, 5, LIMITS.amount));
-  const shieldDur = clampDur(round1(scaleLin(5, 1, tier, 1, LIMITS.dur)));
-  const effects = [];
-  if (wantHeal) {
-    effects.push(effect('heal', {
-      amount: clampAmt(round1(scalePow(28, 1.18, tier, 5, LIMITS.amount))),
-      when: 'caster_hp_below', tags: ['RESTORE'],
-    }));
-  }
-  effects.push(effect('shield', { amount: clampAmt(shieldAmt), dur: shieldDur, tags: ['WARD'] }));
-  return {
-    header: {
-      target: 'self', range: 0, cooldown: clampCd(cd),
-      area: { kind: 'self' }, delivery: { kind: 'instant' },
-    },
-    effects,
-    grantsTags: ['DEFEND', 'SURVIVE', 'RESOLVE'],
-  };
-}
-
-function buildUtility(tier: number, rng: Stream, tags: string[]): BuiltBody {
-  const cd = round1(scaleLin(9, 2, tier, 1, LIMITS.cooldown));
-  const social = tags.some((t) =>
-    ['PERSUADE', 'DECEIVE', 'CHARM', 'GOSSIP', 'LEAD', 'TRADE', 'PROFIT', 'HAGGLE', 'BARTER'].includes(t));
-
-  // deceive/charm -> plant_belief; insight-y -> scry; otherwise a control op (slow/stun)
-  const deceptive = tags.includes('DECEIVE') || tags.includes('CHARM') || tags.includes('PERSUADE');
-  const range = round1(scaleLin(6, 0.5, tier, 1, LIMITS.range));
-
-  if (deceptive) {
-    // social attack: amount sign chosen by tag (charm helps, deceive hurts)
-    const mag = tags.includes('CHARM') || tags.includes('PERSUADE')
-      ? -round1(scaleLin(0.3, 0.08, tier, 0, 1))
-      :  round1(scaleLin(0.4, 0.08, tier, 0, 1));
-    const r = clampR(round1(scaleLin(4, 0.6, tier, 0, LIMITS.areaR)));
+  if (archetype === 'defensive') {
+    const wantHeal = rng.frac() < (tags.includes('HEAL') || tags.includes('ENDURANCE') ? 0.65 : 0.35);
+    const effects: AbilityEffect[] = [];
+    let primary: EffectOp = 'shield';
+    if (wantHeal) { primary = 'heal'; effects.push(effect('heal', { amount: clampAmt(budget / (G().healPerPoint ?? 1.1)), when: 'caster_hp_below', tags: ['RESTORE'] })); }
+    effects.push(effect('shield', { amount: clampAmt((wantHeal ? budget * 0.4 : budget) / (G().shieldPerPoint ?? 0.9)), dur: clampDur(4 + t), tags: ['WARD'] }));
     return {
-      header: {
-        target: 'any', range, cooldown: clampCd(cd),
-        area: tierIndex(tier) >= 2 ? { kind: 'circle', r } : { kind: 'self' },
-        delivery: { kind: 'instant' },
-      },
-      effects: [effect('plant_belief', { amount: Math.max(-1, Math.min(1, mag)), tags: ['PERSUADE'] })],
-      grantsTags: ['SOCIAL', 'PERSUADE', 'CHARM'],
+      header: { target: 'self', range: 0, cooldown: clampCd(14 + 3 * t), area: { kind: 'self' }, delivery: { kind: 'instant' } },
+      effects, grantsTags: ['DEFEND', 'SURVIVE', 'RESOLVE'], primary, form: 'self',
     };
   }
-
-  if (social && rng.frac() < 0.5) {
-    // a scry (read-the-room) utility
+  if (archetype === 'craft') {
+    // the master_craft hook: a produce-speed window; budget buys duration.
     return {
-      header: {
-        target: 'any', range, cooldown: clampCd(cd),
-        area: { kind: 'self' }, delivery: { kind: 'instant' },
-      },
-      effects: [effect('scry', { amount: 0, tags: ['INSIGHT'] })],
-      grantsTags: ['SOCIAL', 'INSIGHT', 'OBSERVE'],
+      header: { target: 'self', range: 0, cooldown: clampCd(18 + 4 * t), area: { kind: 'self' }, delivery: { kind: 'instant' } },
+      effects: [effect('craft_boost', { amount: Math.min(2.2, 1.3 + 0.1 * t), dur: clampDur(budget / (G().windowCostPerSec ?? 4)), tags: ['CRAFT'] })],
+      grantsTags: ['CRAFT', 'PRODUCE', 'MASTERY'], primary: 'craft_boost' as EffectOp, form: 'self',
     };
   }
-
-  // a control op: slow or stun a foe, scaling duration with tier.
-  const useStun = rng.frac() < 0.4 && tierIndex(tier) >= 2;
-  const dur = clampDur(round1(scaleLin(2, 0.7, tier, 0.5, LIMITS.dur)));
-  const effects = useStun
-    ? [effect('stun', { amount: 0, dur, when: 'on_hit', tags: ['CONTROL'] })]
-    : [effect('slow', { amount: 0.5, dur, tags: ['CONTROL'] })];
+  if (archetype === 'trade') {
+    // the haggle hook: a price-edge window; budget buys duration.
+    return {
+      header: { target: 'self', range: 0, cooldown: clampCd(14 + 3 * t), area: { kind: 'self' }, delivery: { kind: 'instant' } },
+      effects: [effect('trade_edge', { amount: 0.05 + 0.01 * Math.min(5, t), dur: clampDur(budget / (G().windowCostPerSec ?? 4)), tags: ['BARTER', 'PROFIT'] })],
+      grantsTags: ['TRADE', 'BARTER', 'PROFIT'], primary: 'trade_edge' as EffectOp, form: 'self',
+    };
+  }
+  if (archetype === 'social') {
+    const wantScry = rng.frac() < 0.4;
+    if (wantScry) {
+      return {
+        header: { target: 'any', range: 6 + 0.5 * t, cooldown: clampCd(10 + 2 * t), area: { kind: 'self' }, delivery: { kind: 'instant' } },
+        effects: [effect('scry', { amount: 0, tags: ['INSIGHT'] })],
+        grantsTags: ['SOCIAL', 'INSIGHT', 'OBSERVE'], primary: 'scry', form: 'gaze',
+      };
+    }
+    // charm: NEGATIVE amount raises the target's standing toward the caster (sign fixed)
+    return {
+      header: { target: 'any', range: 6, cooldown: clampCd(12 + 2 * t), area: { kind: 'self' }, delivery: { kind: 'instant' } },
+      effects: [effect('plant_belief', { amount: -Math.min(1, 0.25 + 0.07 * t + budget / 400), tags: ['CHARM', 'PERSUADE'] })],
+      grantsTags: ['SOCIAL', 'PERSUADE', 'CHARM'], primary: 'plant_belief', form: 'charm',
+    };
+  }
+  // cunning: a rumour (positive plant), or control.
+  const wantRumour = rng.frac() < 0.5;
+  if (wantRumour) {
+    return {
+      header: { target: 'any', range: 6, cooldown: clampCd(15 + 2 * t), area: t >= 2 ? { kind: 'circle', r: Math.min(LIMITS.areaR, 4 + 0.6 * t) } : { kind: 'self' }, delivery: { kind: 'instant' } },
+      effects: [effect('plant_belief', { amount: Math.min(1, 0.35 + 0.07 * t), tags: ['DECEIVE', 'INTRIGUE'] })],
+      grantsTags: ['SOCIAL', 'DECEIVE', 'CUNNING'], primary: 'plant_belief', form: 'whisper',
+    };
+  }
+  const useStun = t >= 2 && rng.frac() < 0.4;
   return {
-    header: {
-      target: 'enemy', range: round1(Math.min(range, 8)), cooldown: clampCd(cd),
-      area: { kind: 'self' }, delivery: { kind: 'instant' },
-    },
-    effects,
-    grantsTags: ['SOCIAL', 'CONTROL', 'CUNNING'],
+    header: { target: 'enemy', range: Math.min(8, 6 + 0.5 * t), cooldown: clampCd(9 + 2 * t), area: { kind: 'self' }, delivery: { kind: 'instant' } },
+    effects: [useStun
+      ? effect('stun', { dur: clampDur(budget / (G().stunCostPerSec ?? 14)), when: 'on_hit', tags: ['CONTROL'] })
+      : effect('slow', { amount: 0.5, dur: clampDur(budget / (G().slowCostPerSec ?? 6)), tags: ['CONTROL'] })],
+    grantsTags: ['SOCIAL', 'CONTROL', 'CUNNING'], primary: useStun ? 'stun' : 'slow', form: 'snare',
   };
 }
 
-// ---- public API -------------------------------------------------------------
-// generateAbility({ classKey, name, tags }, tier) -> a VALID AbilitySpec, or null
-// if (defensively) the build failed validate(). Deterministic per (classKey,tier).
-interface ClassDescriptor {
-  classKey?: string;
-  key?: string;
-  tags?: unknown;
+// ---- names ----------------------------------------------------------------------
+const TIER_ADJ = ['Lesser', 'Steady', 'Greater', 'Master', 'Grand', 'Peerless'];
+const OP_NOUN: Record<string, string> = {
+  'damage/melee': 'Strike', 'damage/cone': 'Cleave', 'damage/projectile': 'Bolt',
+  'heal/self': 'Mending', 'shield/self': 'Ward',
+  'craft_boost/self': 'Craft', 'trade_edge/self': 'Bargain',
+  'plant_belief/charm': 'Charm', 'plant_belief/whisper': 'Whisper', 'scry/gaze': 'Eye',
+  'slow/snare': 'Snare', 'stun/snare': 'Hold',
+};
+const TAG_EPITHET: Record<string, string> = {
+  FARMING: 'Harvest', WOODCUT: 'Timber', MINING: 'Stone', FORAGE: 'Herbwise', SMITHING: 'Forge',
+  CRAFTING: 'Maker’s', TRADE: 'Ledger', PROFIT: 'Coin', HAGGLE: 'Market', BARTER: 'Trader’s',
+  PERSUADE: 'Silver', CHARM: 'Honeyed', GOSSIP: 'Whispered', LEAD: 'Banner', DECEIVE: 'Shadow',
+  STEALTH: 'Veiled', MELEE: 'War', KILL: 'Reaver’s', RISK: 'Daring', DEFENSE: 'Iron',
+  ENDURANCE: 'Stalwart', HEAL: 'Mercy’s', EXPLORE: 'Wayfarer’s', BUILD: 'Mason’s',
+};
+function epithetFor(tags: readonly string[], rng: Stream): string {
+  const hits = tags.filter((t) => TAG_EPITHET[t]);
+  return hits.length ? TAG_EPITHET[rng.pick(hits)] : '';
 }
+
+// ---- public API: CLASS mints (R2: id/name from the mechanical signature) ------------
+interface ClassDescriptor { classKey?: string; key?: string; tags?: unknown; }
 export function generateAbility(cls: ClassDescriptor | null | undefined, tier: unknown): AbilitySpec | null {
   const classKey = cls?.classKey ?? cls?.key ?? 'proc';
-  const tags: string[] = Array.isArray(cls?.tags)
-    ? cls.tags.filter((t): t is string => typeof t === 'string') : [];
+  const tags: string[] = Array.isArray(cls?.tags) ? cls.tags.filter((t): t is string => typeof t === 'string') : [];
   const t = tierIndex(tier);
-
   const archetype = classifyArchetype(tags);
-  const rng = stream(seedFor(classKey, t, 1));
+  const rng = stream(seedFor(`${classKey}|${t}|${archetype}`, 1));
+  const body = build(archetype, t, rng, tags);
 
-  let body: BuiltBody;
-  if (archetype === 'combat') body = buildCombat(t, rng, tags);
-  else if (archetype === 'defensive') body = buildDefensive(t, rng, tags);
-  else body = buildUtility(t, rng, tags);
-
+  // R2 — name + id derive from the SIGNATURE: identical mechanics share one name (and one
+  // cooldown key) everywhere; a name difference always means a mechanics difference.
+  const draft = spec({ id: 'sig', classKey, tier: t, header: body.header, effects: body.effects, grantsTags: body.grantsTags });
+  const sig = abilitySignature(draft);
+  const sigHash = fnv1a(sig).toString(36);
+  const adj = TIER_ADJ[Math.min(TIER_ADJ.length - 1, t - 1)];
+  const noun = OP_NOUN[`${body.primary}/${body.form}`] || 'Skill';
+  const epithet = epithetFor(tags, stream(seedFor(sig, 2)));   // seeded by the SIGNATURE, not the class
   const out = spec({
-    id: abilityId(classKey, t, archetype),
-    name: abilityName(archetype, t, stream(seedFor(classKey, t, 2))),
-    classKey,
-    tier: t,
-    header: body.header,
-    effects: body.effects,
-    grantsTags: body.grantsTags,
+    id: `gen_${sigHash}`,
+    name: `[${adj}${epithet ? ' ' + epithet : ''} ${noun}]`,
+    classKey, tier: t, header: body.header, effects: body.effects, grantsTags: body.grantsTags,
   });
+  return validate(out) ? out : null;
+}
 
-  // the trust boundary — never hand back a spec that doesn't validate.
-  if (!validate(out)) return null;
-  return out;
+// ---- public API: EVENT mints (doc 15 grant seams; provenance + condition-bound) -----
+// `register` picks the name lexicon; the SEAM supplies the condition (refund -> stronger);
+// names carry no person-ids (cognition mints them) — the WHO lives in origin.withId and is
+// rendered by the display layer (biography/codex) via nameOf.
+const NAME_LEXICON: Record<string, readonly string[]> = {
+  vengeance: ['The Vow Kept', 'Blood Debt Paid', 'What Was Owed', 'The Long Memory'],
+  guile:     ['What Promises Are Worth', 'The Loose Tongue', 'A Debt Unpaid', 'The Sideways Look'],
+  holy:      ['{god}’s Mercy', '{god}’s Calm', 'The {god} Blessing', '{god}’s Quiet Hand'],
+  grit:      ['The Day I Did Not Die', 'Second Dawn', 'Not Yet', 'The Stubborn Hour'],
+};
+export interface EventGrantDesc {
+  seam: string;            // e.g. 'oath:kept' — joins the id + origin
+  agentId: number | string;
+  t: number;               // sim-time of the moment (joins the seed — determinism per moment)
+  tier?: number;
+  archetype: Archetype;
+  register: keyof typeof NAME_LEXICON | string;
+  tags?: string[];
+  requires?: AbilityRequire[];
+  god?: string;
+  withId?: number | string | null;
+  originText: string;
+}
+export function generateEventAbility(d: EventGrantDesc): AbilitySpec | null {
+  if (!d || !d.seam) return null;
+  const t = tierIndex(d.tier ?? 2);
+  const rng = stream(seedFor(`${d.agentId}|${d.seam}|${Math.floor(d.t)}`, 3));
+  const body = build(d.archetype, t, rng, d.tags || [], d.requires);
+  const pool = NAME_LEXICON[d.register as string] || NAME_LEXICON.grit;
+  const raw = rng.pick(pool).replace('{god}', d.god || 'the gods');
+  const out = spec({
+    id: `evt_${d.seam.replace(/[^a-z0-9]+/gi, '_')}_${d.agentId}_${Math.floor(d.t)}`,
+    name: `[${raw}]`,
+    classKey: null, tier: t,
+    header: { ...body.header, ...(d.requires && d.requires.length ? { requires: d.requires } : {}) },
+    effects: body.effects, grantsTags: body.grantsTags,
+    origin: { seam: d.seam, withId: d.withId ?? null, t: d.t, text: d.originText },
+  });
+  return validate(out) ? out : null;
 }

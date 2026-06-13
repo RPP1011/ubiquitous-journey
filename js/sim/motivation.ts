@@ -15,7 +15,7 @@ import { rng } from './rng.js';
 import { RPG } from '../rpg/rpgconfig.js';
 import { goalAvenge, goalSeekFortune, goalRepay, goalGrieve, goalDelve } from './planner.js';
 import { arcKey } from './arcs.js';
-import { foldOathSworn, foldOathPop } from './signals.js';
+import { foldOathSworn, foldOathPop, oaths } from './signals.js';
 
 // narrative-weight goals tracked as OATHS (docs/architecture/13 Family E): swearing one + keeping vs
 // abandoning it is character measured as a quantity ("a man of his word" / "the faithless").
@@ -49,7 +49,7 @@ function swearOath(a: Agent, kind: string, targetId: unknown): void {
       a.needs.comfort = Math.max(0, a.needs.comfort - (OATHS.swearComfortCost || 0));
   } catch { /* never throw on the tick */ }
 }
-function resolveOath(a: Agent, kind: string, targetId: unknown, reason: 'kept' | 'abandoned'): void {
+function resolveOath(a: Agent, kind: string, targetId: unknown, reason: 'kept' | 'abandoned', now = 0): void {
   if (targetId == null) return;
   try {
     const rec = oathMap(a).get(kind + ':' + targetId);
@@ -67,10 +67,44 @@ function resolveOath(a: Agent, kind: string, targetId: unknown, reason: 'kept' |
       if (a.memory && typeof a.memory.record === 'function') {
         try { a.memory.record({ t: 0, kind: 'forsworn', withId: targetId as EntityId, valence: -1, salience: 0.75 }); } catch { /* */ }
       }
-    } else if (a.mood) {
-      // a vow KEPT: the vindicated walk tall — fear breaks (on top of the closure
-      // XP/triumph the goal pop already pays).
-      a.mood.fear = Math.max(0, (a.mood.fear || 0) * 0.4);
+    } else {
+      if (a.mood) {
+        // a vow KEPT: the vindicated walk tall — fear breaks (on top of the closure
+        // XP/triumph the goal pop already pays).
+        a.mood.fear = Math.max(0, (a.mood.fear || 0) * 0.4);
+      }
+      // EVENT-BORN ABILITY (doc 15 PR1, the oath:kept seam): a vengeance carried through
+      // can TEACH something — a combat mint bound vs_sworn_foe (dormant until the wielder
+      // swears again; the ability IS the grudge). Own-state grant through the agent's own
+      // progression; graced + signature-suppressed inside grantEventAbility.
+      if (kind === 'avenge' && a.progression && (a.progression as { grantEventAbility?: unknown }).grantEventAbility) {
+        try {
+          (a.progression as unknown as { grantEventAbility: (d: Record<string, unknown>) => unknown }).grantEventAbility({
+            seam: 'oath:kept', t: now, archetype: 'combat', register: 'vengeance',
+            tags: ['MELEE', 'KILL'], requires: [{ kind: 'vs_sworn_foe' }],
+            withId: targetId, originText: 'a vow kept in blood',
+          });
+        } catch { /* never throw on the tick */ }
+      }
+    }
+    // THE FAITHLESS GET SLY (M2, character-gated): a genuinely faithless soul — at least
+    // five resolved oaths with a kept-ratio under 0.2 — learns guile, ONCE per life. The
+    // oath economics make every abandonment cost a lifetime comfort-ceiling step, so this
+    // is bought with peace of mind, never farmed.
+    if (reason === 'abandoned' && !(a as { _faithlessGranted?: boolean })._faithlessGranted
+        && a.progression && (a.progression as { grantEventAbility?: unknown }).grantEventAbility) {
+      try {
+        const tally = oaths(a);
+        let sworn = 0, kept = 0;
+        for (const k2 in tally) { sworn += tally[k2].kept + tally[k2].abandoned; kept += tally[k2].kept; }
+        if (sworn >= 5 && kept / sworn < 0.2) {
+          (a as { _faithlessGranted?: boolean })._faithlessGranted = true;
+          (a.progression as unknown as { grantEventAbility: (d: Record<string, unknown>) => unknown }).grantEventAbility({
+            seam: 'oath:faithless', t: now, archetype: 'cunning', register: 'guile',
+            tags: ['DECEIVE'], originText: 'learned what promises are worth',
+          });
+        }
+      } catch { /* never throw on the tick */ }
     }
   } catch { /* never throw on the tick */ }
 }
@@ -384,7 +418,7 @@ export function pruneGoals(a: Agent, ctx: CognitionCtx | null): void {
   const now = ctx ? ctx.time : 0;
   a.goals = a.goals.filter((g: Goal) => {
     if (!g) return false;
-    if (g.expiresAt != null && now >= g.expiresAt) { cautionWaste(a, ctx, g); if (OATH_KINDS.has(g.kind as string)) resolveOath(a, g.kind as string, g.subjectId, 'abandoned'); return false; }
+    if (g.expiresAt != null && now >= g.expiresAt) { cautionWaste(a, ctx, g); if (OATH_KINDS.has(g.kind as string)) resolveOath(a, g.kind as string, g.subjectId, 'abandoned', now); return false; }
     if (typeof g.predicate === 'function') {
       try {
         if (g.predicate(a, ctx)) {
@@ -411,7 +445,7 @@ export function pruneGoals(a: Agent, ctx: CognitionCtx | null): void {
             }
             awardGoalClosureXP(a, g, now, 0.5);   // narrative-beat xp for the closure
           }
-          if (OATH_KINDS.has(g.kind as string)) resolveOath(a, g.kind as string, g.subjectId, forgotten ? 'abandoned' : 'kept');   // §13 E.oaths
+          if (OATH_KINDS.has(g.kind as string)) resolveOath(a, g.kind as string, g.subjectId, forgotten ? 'abandoned' : 'kept', now);   // §13 E.oaths
           // WARBAND ARC RESOLUTION (docs/architecture/12 §3.5): the recruiter leaves the
           // march OPEN; the leader's assault popping on a genuine kill is the victory that
           // closes it — and the march's win signal for caution ([11] §8) fires HERE, at the
@@ -430,7 +464,7 @@ export function pruneGoals(a: Agent, ctx: CognitionCtx | null): void {
         }
       } catch { /* keep on error */ }
     }
-    if (g._unreachable) { cautionWaste(a, ctx, g); if (OATH_KINDS.has(g.kind as string)) resolveOath(a, g.kind as string, g.subjectId, 'abandoned'); return false; }   // flagged by the planner as infeasible
+    if (g._unreachable) { cautionWaste(a, ctx, g); if (OATH_KINDS.has(g.kind as string)) resolveOath(a, g.kind as string, g.subjectId, 'abandoned', now); return false; }   // flagged by the planner as infeasible
     return true;
   });
 }

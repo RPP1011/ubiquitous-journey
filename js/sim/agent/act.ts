@@ -11,7 +11,7 @@ import { DIR, TUNE } from '../../constants.js';
 import { ARENA_RADIUS } from '../../arena.js';
 import { POI_KIND } from '../world.js';
 import { GOODS, ECON, SIM, SOCIAL, BAND, BUILD, COMFORT, NOVELTY, RECIPES, CAUTION, ROMANCE , ALMS, GRANARY, WEALTH } from '../simconfig.js';
-import { castSpec, onCooldown } from '../../rpg/abilities/interpreter.js';
+import { castSpec, onCooldown, requirementsMet } from '../../rpg/abilities/interpreter.js';
 import { slowMul } from '../../rpg/abilities/effects.js';
 import { ABILITY } from '../../rpg/rpgconfig.js';
 import { isMelee } from '../../rpg/abilities/ir.js';
@@ -597,7 +597,7 @@ export function tryCastAbility(a: Agent, target: Agent, dist: number, ctx: Cogni
     const f = a.fighter;
     if (!f || !f.alive) return false;
     const now = ctx.time || 0;
-    const spec = bestOffensiveAbility(a, dist, now);
+    const spec = bestOffensiveAbility(a, dist, now, target.id);
     if (!spec) return false;
     // MELEE specs ride the swing: only commit when the body is free to start one
     // and isn't already carrying a spec, so castSpec's cooldown burn maps 1:1 to
@@ -673,10 +673,13 @@ export function bestSelfAbility(a: Agent, now: number): AbilitySpec | null {
 // knockback). At range we prefer NON-melee reach (projectile/area/instant ranged)
 // that can actually hit; adjacent we prefer melee. Ties break on damage. Ready =
 // off the interpreter cooldown. Returns a validated catalog/generated spec or null.
-export function bestOffensiveAbility(a: Agent, dist: number, now: number): AbilitySpec | null {
+export function bestOffensiveAbility(a: Agent, dist: number, now: number, targetId: unknown = null): AbilitySpec | null {
   let best: AbilitySpec | null = null, bestScore = -Infinity;
   for (const spec of a.abilities.values()) {
     if (!spec || !spec.header) continue;
+    // M9 preflight: a story-state condition that doesn't hold (vs this target) skips the
+    // spec BEFORE any cooldown is burned — the no-op cast rate stays zero.
+    if (spec.header.requires && !requirementsMet(spec, a, targetId)) continue;
     const tgt = spec.header.target;
     if (tgt !== 'enemy' && tgt !== 'any') continue;       // not an attack
     const dmg = offensivePower(spec);
