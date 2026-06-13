@@ -36,7 +36,7 @@ import { cautionTest } from './suites/caution.mjs';
 import { memoryGoalTest, npcCastTest } from './suites/memoryGoals.mjs';
 import { perceptTest } from './suites/percept.mjs';
 import { schemasTest } from './suites/schemas.mjs';
-import { motivationTest, motivationInferenceTest, motivationDeceptionTest, motivationGuileTest, motivationDeedPathTest, motivationShadowTest } from './suites/motivation.mjs';
+import { motivationTest, motivationInferenceTest, motivationDeceptionTest, motivationGuileTest, motivationDeliberateTest, motivationDeedPathTest, motivationShadowTest } from './suites/motivation.mjs';
 import { wealthCheck } from './suites/wealth.mjs';
 import { recipeTest } from './suites/recipes.mjs';
 import { traceTest } from './suites/trace.mjs';
@@ -110,6 +110,8 @@ motivationInferenceTest(ok);
 motivationDeceptionTest(ok);
 // Motivation P7 recursive ToM: a guileful actor picks the cover that best hides its true motive.
 motivationGuileTest(ok);
+// Motivation P8 deliberation: a lie read benignly is caught on a second look once evidence accrues.
+motivationDeliberateTest(ok);
 // Motivation P3/P5 deed path + say effect (deterministic, scripted).
 motivationDeedPathTest(ok, helpers);
 // Motivation P1 shadow: the row-based arbiter matches decide()'s scorer tick-for-tick over a soak.

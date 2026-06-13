@@ -75,15 +75,70 @@ export function onWitnessPrimitive(a: Agent, deed: Deed, ctx: FullCtx): void {
   if (!deed || deed.actorId === a.id) return;   // I know my own motive; no self-inference
   _processed++;
   const { best, conf } = inferMotive(a, deed, ctx);
-  if (best === 'unknown' || conf < (MOTIVE.attributeAt || 0.45)) return;   // §7.2a: sub-threshold → no write
-  // attribute onto MY belief about the actor — only if I already hold one (don't mint a belief from a
-  // single ambiguous glimpse; perception forms the base belief, this annotates its motive). Sparse by
-  // construction. P4 is ADDITIVE: it writes the inferred motive only; the existing standing fold
-  // (witnessDeed) stays authoritative for the magnitude. Deception (P6) fools exactly this field.
-  const b = a.beliefs.get(deed.actorId);
-  if (!b) return;
-  b.believedMotive = best;
-  b.motiveConf = conf;
+  if (best === 'unknown') return;
+  if (conf >= (MOTIVE.attributeAt || 0.45)) {
+    // SALIENT read → persist the attribution onto MY belief about the actor (only if I already hold
+    // one — perception forms the base belief; this annotates its motive). Sparse. ADDITIVE in P4: the
+    // existing standing fold stays authoritative for magnitude; deception (P6) fools exactly this field.
+    const b = a.beliefs.get(deed.actorId);
+    if (b) { b.believedMotive = best; b.motiveConf = conf; }
+    return;
+  }
+  // §7.2a — the AMBIGUOUS band: a salient-but-illegible deed leaves a PUZZLE (not a belief write) for
+  // the agent to later `deliberate` over. Below the floor, or not salient, nothing happens (the resting
+  // low-confidence state). Bounded; its own ring (never the episodic memory).
+  if (conf >= (MOTIVE.ambiguityFloor || 0.15) && (deed.magnitude || 0) >= (MOTIVE.puzzleAt || 0.6)) {
+    filePuzzle(a, deed, { best, conf });
+  }
+}
+
+/** File a salient, inconclusively-read deed into the dedicated puzzle ring (§7.2a). Bounded — the
+ *  oldest drops past the cap; deduped on (actor, primitive) so re-witnessing doesn't pile up. */
+export function filePuzzle(a: Agent, deed: Deed, posterior: { best: string; conf: number }): void {
+  const ring = a._puzzles || (a._puzzles = []);
+  if (ring.some((p) => p.deed.actorId === deed.actorId && p.deed.primitive === deed.primitive)) return;
+  ring.push({ deed, posterior, t: deed.t });
+  const cap = MOTIVE.puzzleRing || 6;
+  while (ring.length > cap) ring.shift();
+}
+
+/** How well a candidate motive COHERES with what the agent now believes (§7.6) — a 'warn' (counsel)
+ *  about someone the agent has come to LIKE is incoherent (you don't warn me against a friend), so it
+ *  is demoted on a second look. Other motives pass. 0..1 (a multiplier on the re-inferred confidence). */
+function characterCoherence(a: Agent, deed: Deed, motiveKey: string): number {
+  if (motiveKey === 'warn') {
+    const sb = deed.targetId != null ? a.beliefs.get(deed.targetId) : null;
+    const liked = sb ? clamp01((sb as { standing?: number }).standing || 0) : 0;
+    return clamp01(1 - 0.6 * liked);
+  }
+  return 1;
+}
+
+/** DELIBERATE (docs/architecture/17 §7.6) — the internal action: pick the most salient unresolved
+ *  puzzle and RE-READ it against the agent's now-richer beliefs (+ a coherence check). If the second
+ *  look crosses the write bar, persist the attribution + its consequence and retire the puzzle; else
+ *  count a pass and let it fade after `deliberatePasses`. Reads/writes only own state. Returns true on
+ *  a resolution. This is how a witness becomes "sharp" enough to catch a lie the reflex missed. */
+export function deliberate(a: Agent, ctx: FullCtx): boolean {
+  const ring = a._puzzles;
+  if (!ring || !ring.length) return false;
+  // the puzzle that nags most — highest deed magnitude.
+  let pick = ring[0];
+  for (const p of ring) if ((p.deed.magnitude || 0) > (pick.deed.magnitude || 0)) pick = p;
+  try {
+    const post = inferMotive(a, pick.deed, ctx);                 // SAME deed, richer beliefs now
+    const coherent = characterCoherence(a, pick.deed, post.best);
+    const conf = clamp01(post.conf * coherent);                  // an incoherent lead is demoted
+    if (post.best !== 'unknown' && conf >= (MOTIVE.attributeAt || 0.45)) {
+      const b = a.beliefs.get(pick.deed.actorId);
+      if (b) { b.believedMotive = post.best; b.motiveConf = conf; }
+      a._puzzles = ring.filter((p) => p !== pick);              // settled — stop nagging
+      return true;
+    }
+    pick.passes = (pick.passes || 0) + 1;
+    if (pick.passes >= (MOTIVE.deliberatePasses || 3)) a._puzzles = ring.filter((p) => p !== pick);
+  } catch { /* never throw on the tick */ }
+  return false;
 }
 
 /** Assemble the cue view a likelihood reads: the deed's frozen SCENE cues ∪ the observer's OBSERVER

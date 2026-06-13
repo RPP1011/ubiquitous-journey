@@ -7,7 +7,7 @@ import {
   registerMotive, allMotives, motivesFor, motiveByKey,
 } from '../../js/sim/motivation/registry.js';
 import { setShadow, shadowStats } from '../../js/sim/motivation/arbitrate.js';
-import { deedsProcessed, resetDeedStats, inferMotive, chooseDeceptiveTag } from '../../js/sim/motivation/infer.js';
+import { deedsProcessed, resetDeedStats, inferMotive, chooseDeceptiveTag, filePuzzle, deliberate } from '../../js/sim/motivation/infer.js';
 import { World } from '../../js/sim/world.js';
 import { Simulation } from '../../js/sim/simulation.js';
 import { resolveCombat } from '../../js/combat.js';
@@ -140,6 +140,35 @@ export function motivationGuileTest(ok) {
   // an honest actor presents its true tag — the guile branch is skipped entirely.
   const honest = chooseDeceptiveTag({ _deceives: false }, deed, 'slander', ['counsel', 'defamation'], {});
   ok(honest === 'defamation', `P7-2: an honest actor presents its true tag, no guile ('${honest}')`);
+}
+
+// ---- DELIBERATION (P8, docs/architecture/17 §7.6 / §8.3): the lie caught on a second look --------
+// A planted lie reads benignly on the reflex (a filed puzzle, no belief written); after the witness
+// gains a contradicting belief and DELIBERATES, the attribution flips and persists.
+export function motivationDeliberateTest(ok) {
+  const subjBelief = { standing: 0, hostile: false };
+  const actorBelief = { standing: 0, believedMotive: undefined, motiveConf: 0 };
+  const m = new Map([[2, subjBelief], [1, actorBelief]]);
+  const obs = { id: 99, personality: {}, gold: 50, beliefs: { get(id) { return m.get(id); } }, _puzzles: [] };
+
+  // a SALIENT, inconclusively-read say (a slander wearing a 'counsel' cover) → file a puzzle.
+  const deed = { actorId: 1, primitive: 'say', targetId: 2, surfaceTag: 'counsel', sceneCues: { valence: -1 }, magnitude: 0.9, t: 0 };
+  filePuzzle(obs, deed, { best: 'warn', conf: 0.4 });
+  ok(obs._puzzles.length === 1, `P8-1: a salient ambiguous deed files an unresolved puzzle (${obs._puzzles.length})`);
+  ok(!actorBelief.believedMotive, 'P8-2: nothing persisted from the ambiguous reflex read');
+
+  // LATER: the witness comes to LIKE the subject (learns they're decent) — now the remark is incoherent
+  // as counsel. Deliberating re-reads the SAME deed and resolves it as slander, which persists.
+  subjBelief.standing = 0.85;
+  const resolved = deliberate(obs, {});
+  ok(resolved && actorBelief.believedMotive === 'slander',
+    `P8-3: deliberation catches the lie — re-reads the deed as slander once the subject is liked (${actorBelief.believedMotive})`);
+  ok(obs._puzzles.length === 0, 'P8-4: the resolved puzzle stops nagging (retired from the ring)');
+
+  // P8-5 — an INCURIOUS witness who never deliberates: the puzzle lingers, the cover holds (no belief).
+  const obs2 = { id: 98, personality: {}, gold: 50, beliefs: { get() { return undefined; } }, _puzzles: [] };
+  filePuzzle(obs2, deed, { best: 'warn', conf: 0.4 });
+  ok(obs2._puzzles.length === 1, 'P8-5: an unexamined puzzle lingers — the cover holds for whoever never thinks it through');
 }
 
 // ---- the deed PATH (P3) + the say EFFECT (P5), deterministic ------------------------------------

@@ -469,6 +469,12 @@ export const MOTIVE = {
                             //   write nothing, leaving any prior attribution intact. The single most
                             //   load-bearing inference knob (the prior×likelihood calibration target).
   legibleAt: 0.7,           // an honest, cue-rich act is "clearly read" at/above this conf (calibration)
+  ambiguityFloor: 0.15,     // §7.2a: below this the read is illegible (nothing happens). Between this and
+                            //   attributeAt is the AMBIGUOUS band — a salient deed there files a puzzle.
+  puzzleAt: 0.6,            // §7.6: a sub-threshold deed files an `unresolved` puzzle only if its
+                            //   magnitude is at/above this (a killing, a large theft — worth brooding on).
+  puzzleRing: 6,            // capacity of the DEDICATED a._puzzles store (separate from the episodic rings)
+  deliberatePasses: 3,      // bounded re-tries on a still-murky puzzle before it's let go to fade
 };
 
 // --- QUANTITIES: numeric-threshold plan composition (docs/architecture/10, Phase 1) ----

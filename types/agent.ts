@@ -133,6 +133,10 @@ export interface Agent {
   // docs/architecture/17 §7.4: this agent presents a deceptive COVER on its deeds (a spy / the guileful).
   // Default false (the honest mainline). Set by intrigue/the Director; read by presentTag + the guile branch.
   _deceives?: boolean;
+  // docs/architecture/17 §7.2a/§7.6: the DEDICATED bounded ring of UNRESOLVED puzzles — salient deeds
+  // whose motive a witness read inconclusively and may later `deliberate` over. Separate from the
+  // episodic memory rings (so puzzles never evict drama memories). Lazily created; capped.
+  _puzzles?: Array<{ deed: Deed; posterior: { best: string; conf: number }; t: number; passes?: number }>;
   goals: Goal[];
   memory: Memory;
   trace: Trace;
