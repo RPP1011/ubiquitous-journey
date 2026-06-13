@@ -33,6 +33,11 @@ export type {
 } from './goals.js';
 
 export type {
+  Motivation, MotiveBind, MotiveServes, MotivePosterior,
+  Deed, Signature, CueScope, CueSpec, SceneCues, Cues,
+} from './motivation.js';
+
+export type {
   Personality, Needs, Mood, Life, HostileRef, Agent, Obligation,
   SpyState, ArbitrageState, TargetState, RoamState,
 } from './agent.js';

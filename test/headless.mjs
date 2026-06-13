@@ -36,6 +36,7 @@ import { cautionTest } from './suites/caution.mjs';
 import { memoryGoalTest, npcCastTest } from './suites/memoryGoals.mjs';
 import { perceptTest } from './suites/percept.mjs';
 import { schemasTest } from './suites/schemas.mjs';
+import { motivationTest } from './suites/motivation.mjs';
 import { wealthCheck } from './suites/wealth.mjs';
 import { recipeTest } from './suites/recipes.mjs';
 import { traceTest } from './suites/trace.mjs';
@@ -101,6 +102,8 @@ perceptTest(ok, helpers);
 // Phase-2a reasoning framework (Step 1): IR + vocab evaluators + interpreter, in isolation.
 // Catalogue empty ⇒ behaviour unchanged; the substrate writes' output-stability is the soak.
 schemasTest(ok);
+// Motivation layer (docs/architecture/17 §3) P1 foundation: the MOTIVATIONS registry in isolation.
+motivationTest(ok);
 // Phase-4 economy prerequisite: stored wealth (purse vs stash) — day-one inert.
 await wealthCheck(ok, helpers);
 // Phase-4 economy prerequisite: recipe-gating of crafted production — day-one inert.
