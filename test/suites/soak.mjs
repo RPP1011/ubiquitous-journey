@@ -10,7 +10,7 @@
 import { World } from '../../js/sim/world.js';
 import { Simulation } from '../../js/sim/simulation.js';
 import { Agent } from '../../js/sim/agent.js';
-import { SIM, INTRIGUE, SEEDS, LINEAGE } from '../../js/sim/simconfig.js';
+import { SIM, INTRIGUE, SEEDS, LINEAGE, CAMPS, DIRECTOR } from '../../js/sim/simconfig.js';
 import { resolveCombat } from '../../js/combat.js';
 import { AMBITIONS } from '../../js/sim/motivation.js';
 import { memoryPhrase } from '../../js/sim/memory.js';
@@ -98,7 +98,12 @@ export async function soak(ok, { makeFighter, stubScene }) {
   const STEER_BASELINE = ['avoid', 'build', 'caravan', 'comfort', 'eat', 'fight', 'flee',
     'follow', 'hide', 'market', 'reporter', 'rest', 'shadow', 'sightsee', 'socialize',
     'spy', 'wander', 'work'];
-  const missing = STEER_BASELINE.filter((k) => !goalKindsSeen.has(k));
+  // 'spy' only emerges if a camp spawns bodies to draw spies FROM (intrigue). The peaceful-sim
+  // config zeroes the camps (leaders+followers=0), so spies can't arise — drop it from the floor
+  // when no camp is populated. (Default config keeps camps ⇒ 'spy' stays a required kind.)
+  const campsPopulated = !!CAMPS && Object.values(CAMPS).some((c) => ((c.leaders ?? 1) + (c.followers ?? 0)) > 0);
+  const baseline = campsPopulated ? STEER_BASELINE : STEER_BASELINE.filter((k) => k !== 'spy');
+  const missing = baseline.filter((k) => !goalKindsSeen.has(k));
   ok(missing.length === 0,
     `steer: behavioural repertoire preserved — every baseline goal.kind still emerges ` +
     `(${goalKindsSeen.size} distinct${missing.length ? ', MISSING: ' + missing.join(', ') : ''})`);
@@ -114,7 +119,14 @@ export async function soak(ok, { makeFighter, stubScene }) {
   // anti-massacre safety valve). Gold conservation is asserted above and holds
   // BECAUSE spawned raiders carry no purse (they never mint gold).
   const dir = sim.director;
-  ok(dir && dir.stats.raids >= 1, `director: fired at least one raid (${dir ? dir.stats.raids : 0} raids, ${dir ? dir.stats.spawned : 0} raiders spawned)`);
+  // Raids only fire when the director's raid weight is non-zero. The peaceful-sim config sets
+  // DIRECTOR.weights.raid = 0 (no raider waves by design), so assert the machinery ran only when
+  // raids are enabled; otherwise assert the inverse (the valve stayed off ⇒ zero raiders spawned).
+  if ((DIRECTOR?.weights?.raid ?? 0) > 0) {
+    ok(dir && dir.stats.raids >= 1, `director: fired at least one raid (${dir ? dir.stats.raids : 0} raids, ${dir ? dir.stats.spawned : 0} raiders spawned)`);
+  } else {
+    ok(dir && dir.stats.spawned === 0, `director: peaceful config — no raids fired (${dir ? dir.stats.spawned : 0} raiders spawned)`);
+  }
   ok(townMin > 0, `director: town not instantly wiped (townsfolk min=${townMin}, start=${townStart})`);
   // every director-spawned raider carries ZERO gold — spawning must not mint money.
   const raiderGold = sim.agents.filter((a) => /^Raider /.test(a.name)).reduce((s, a) => s + a.gold, 0);

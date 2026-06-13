@@ -47,6 +47,14 @@ export function roadsTest(ok) {
   ok(ROADS.every((s) => Number.isFinite(s.ax + s.az + s.bx + s.bz + s.len) && s.len > 1),
     'every segment is finite + non-degenerate');
 
+  // Single-town (megatown) world: no town-pairs ⇒ no road segments, so the road-pull /
+  // caravan-following layer is dormant by construction. The spanning-tree assertions above
+  // already cover the degenerate graph; the route-walk below needs a real segment to exercise.
+  if (!ROADS.length) {
+    ok(true, 'single-town world: no road segments — caravan/road-pull layer dormant by construction');
+    return;
+  }
+
   // 2 — roadPull: 10m laterally off the first segment's midpoint, bound for its b-end
   const s0 = ROADS[0];
   const ux = (s0.bx - s0.ax) / s0.len, uz = (s0.bz - s0.az) / s0.len;

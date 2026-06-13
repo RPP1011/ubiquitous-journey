@@ -32,8 +32,12 @@ export async function wealthCheck(ok, { makeFighter, stubScene }) {
     const pf = makeFighter('knight', { isPlayer: true });
     sim.addPlayer(pf);
     const player = sim.player;
-    const monster = sim.agents.find((x) => x.faction === 'monster');
-    ok(!!monster, `wealth: found a monster-faction body to loot`);
+    // Cast a spare body as a monster-faction corpse to loot — independent of MONSTER.count
+    // (the peaceful-sim config spawns zero monsters; this test only needs ONE body whose
+    // faction is 'monster' to exercise the death-loot hook's purse/stash split).
+    const monster = sim.agents.find((x) => x !== player && x.alive && x.faction === 'townsfolk');
+    ok(!!monster, `wealth: found a body to cast as a monster corpse`);
+    monster.faction = 'monster';
     monster.gold = 12; monster.stash = 9;                 // a body carrying both
     const pPurse0 = player.gold, pStash0 = (player.stash || 0);
     const total0 = sim.agents.reduce((s, x) => s + x.gold + (x.stash || 0), 0);

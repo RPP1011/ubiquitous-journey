@@ -81,7 +81,7 @@ export const RECIPES = {
 // starter kit (see ECON.starterKit) and CHOOSES what to do from GOODS each work
 // decision. Same headcount as the old profession roster (23 souls).
 export const ROSTER = [
-  { n: 23 },
+  { n: 300 },                 // MEGATOWN: one dense core of 300 townsfolk (× TOWNS.centers.length = 1 town)
 ];
 
 // --- economy tuning ---------------------------------------------------------
@@ -248,12 +248,15 @@ export const URCHIN = {
 // live/work/defend within. Town 0 stays at the origin so its terrain/landmarks
 // are unchanged. Every origin-hardcoded subsystem reads an agent's townAnchor.
 export const TOWNS = {
-  centers: [[0, 0], [210, 0], [-170, 170], [60, -230]],   // world (x,z) of each town centre —
-                                  //   all within ~250 of origin so the monster frontier band
-                                  //   (0.45..0.92 × ARENA_RADIUS=600 ⇒ 270..552) stays wilderness;
-                                  //   varied inter-town distances (210..460m) give caravans real routes
-  radius: 70,                     // a town's home band: wander / work / defence scale
-  names: ['Eastmarket', 'Crowmoor', 'Highford', 'Saltwick', 'Thornvale'],   // datelines (cycled)
+  centers: [[0, 0]],              // MEGATOWN: a single dense core at the origin. The monster frontier
+                                  //   band (0.45..0.92 × ARENA_RADIUS=600 ⇒ 270..552) still rings it as
+                                  //   wilderness; with one town the inter-town layer (caravans / arbitrage /
+                                  //   migration / road graph) is dormant by construction (no second town to
+                                  //   trade or migrate to) — those subsystems no-op cleanly, not crash.
+  radius: 200,                    // a town's home band (wander / work / defence). Widened from 70 so 300
+                                  //   townsfolk aren't crammed into a hamlet's footprint — still < 270 so
+                                  //   the home band stays clear of the monster frontier.
+  names: ['Eastmarket'],          // the one town's name (dateline)
   // SPECIALIZATION (comparative advantage): each town's resource sites are skewed so
   // it surpluses some goods and runs short on OTHERS — creating real inter-town demand
   // that makes caravans + arbitrage matter. CRUCIAL LESSON: a FOOD deficit is fatal
@@ -262,10 +265,11 @@ export const TOWNS = {
   // itself, and specializes in the non-essential goods. Trade flows in crafting inputs.
   // (counts per kind; towns beyond this list fall back to the balanced default.)
   profiles: [
-    { field: 6, forest: 8, mine: 9, meadow: 2 },   // Eastmarket — ironhill town: ore+wood rich, HERB-poor (wants herb)
-    { field: 6, forest: 3, mine: 3, meadow: 9 },   // Crowmoor   — green town:    herb rich, ORE+WOOD-poor (wants ore+wood)
-    { field: 9, forest: 6, mine: 2, meadow: 4 },   // Highford   — breadbasket:   food+wood rich, ORE-poor (wants ore/tools)
-    { field: 6, forest: 2, mine: 8, meadow: 5 },   // Saltwick   — delvers' town: ore+herb rich, WOOD-poor (wants wood)
+    // MEGATOWN: one self-sufficient profile (no trade partner ⇒ it must produce EVERY good
+    // itself). Site counts scaled ~10× the old hamlet so 300 townsfolk have reachable work of
+    // every kind; FOOD is weighted heaviest — a food deficit is the only fatal one (a food-poor
+    // town starves + depopulates; ore/wood/herb shortfalls only throttle crafting).
+    { field: 60, forest: 36, mine: 36, meadow: 30 },   // Eastmarket — the one town: balanced + abundant
   ],
   // STONE WALLS ringing each town's built core. The ring sits just INSIDE the
   // resource ring (sites scatter from r=18 outward), so it encloses the market /
@@ -846,7 +850,7 @@ export function factionHostile(a: string | null | undefined, b: string | null | 
 // menace only townsfolk who venture out, rather than chasing a victim into the
 // village and razing it. Director RAIDERS have no home/leash (they DO assault the
 // town) but withdraw on a TTL. This leash is the structural anti-massacre guarantee.
-export const MONSTER = { count: 8, model: 'barbarian', faction: 'monster', name: 'Bandit', threat: 1.1, leashR: 50 };
+export const MONSTER = { count: 0, model: 'barbarian', faction: 'monster', name: 'Bandit', threat: 1.1, leashR: 50 };  // PEACEFUL SIM: no monster spawns (progression-without-combat experiment)
 
 // THE AVENGER — the player's deeds make lasting ENEMIES. When the player MURDERS a
 // townsperson, the most capable of the slain's kin becomes a persistent personal
@@ -914,7 +918,7 @@ export const CAMPS = {
   bandit: {
     faction: 'bandit', model: 'barbarian', name: 'Bandit',
     leaderName: 'Bandit Chief',
-    leaders: 1, followers: 3,
+    leaders: 0, followers: 0,       // PEACEFUL SIM: no bandit camp spawns (target=0 ⇒ no reinforcement, no spies)
     threat: 1.05, leaderThreat: 1.25,
     ringMin: 0.70, ringMax: 0.88,   // camp distance from town centre (× ARENA_RADIUS)
     scatter: 5,                     // followers scatter this far around the leader
@@ -935,7 +939,7 @@ export const CAMPS = {
   rival: {
     faction: 'rival', model: 'knight', name: 'Clansman',
     leaderName: 'Clan Elder',
-    leaders: 1, followers: 2,
+    leaders: 0, followers: 0,       // PEACEFUL SIM: no rival clan camp spawns
     threat: 0.95, leaderThreat: 1.15,
     ringMin: 0.72, ringMax: 0.90,
     scatter: 5,
@@ -1408,7 +1412,10 @@ export const SIM = {
   runSpeed: 7.2,             // scaled with moveSpeed
   arriveDist: 0.7,
 
-  hungerDrain: 1 / 95,
+  hungerDrain: 1 / 600,     // PEACEFUL/MEGATOWN: ~10-min hunger clock (was 1/95 ≈ 95s). The widened
+                            //   200m town puts the single market a ~90s round-trip from the rim; a 95s
+                            //   clock starved the outskirts faster than they could refuel (304→106 in 30min).
+                            //   A 6× clock keeps the refuel loop well inside budget while `eat` still fires.
   energyDrain: 1 / 140,
   socialDrain: 1 / 90,
   noveltyDrain: 1 / 130,    // boredom builds slowly — the NOVELTY need (drives sightsee/exploration)
@@ -2010,7 +2017,7 @@ export const DIRECTOR = {
   // (the measured insight: the substrate — masters, apprentices, families — is
   // already dense at any scale; what's scarce is the SPARK, so the director supplies
   // it rather than us needing a bigger world).
-  weights: { raid: 4, opportunity: 2, crisis: 1.5, spark: 1, trope: 3 },
+  weights: { raid: 0, opportunity: 2, crisis: 1.5, spark: 1, trope: 3 },   // PEACEFUL SIM: raid weight 0 ⇒ the director never spawns a raider wave
 
   // TROPE ENGINE — the director as a light story manager. Each instigation finds an
   // existing constellation of agents that ALMOST forms a known trope and supplies
@@ -2023,9 +2030,9 @@ export const DIRECTOR = {
     feud: true,              // two townsfolk who mildly dislike -> deepen to a feud
     vendetta: true,          // amplify a real grievance into a sworn vendetta
     prophet: true,           // a charismatic soul revives a dwindling god (Small Gods)
-    nemesis: true,           // promote a raider to a named, persistent BOSS the town must fell
-    war: true,               // a camp chief rises as a WARLORD and wars on the town (faction arc)
-    caravanRaid: true,       // bandits ambush a laden hauler on the road (logistics drama)
+    nemesis: false,          // PEACEFUL SIM: no raider→boss promotion (off)
+    war: false,              // PEACEFUL SIM: no camp-chief→warlord war on the town (off)
+    caravanRaid: false,      // PEACEFUL SIM: no road ambushes (off; also inert with one town)
     // --- first wave from docs/trope-catalog.md: break the conflict-monopoly with
     //     warm/social/justice/ambition sparks (all cheap belief+memory, no new verbs)
     reunion: true,           // RECOVERY: long-parted kin of one House recognize each other

@@ -118,7 +118,13 @@ export async function constructionTest(ok, { makeFighter, stubScene }) {
   // invariant (the same "remove the RNG confound" technique this suite already uses). Restored below.
   const schemaWas = SCHEMA.enabled;
   SCHEMA.enabled = false;
-  const FRAMES = 7200, dt = 1 / 60;
+  // 14400 frames (240 sim-sec). The builder dithers on work/comfort goals for the first ~40s
+  // before deriving the build goal, then needs ~40s to commission→build→perceive — so completion
+  // lands ~f4900, only ~2/3 through the old 7200 window. That thin margin made discovery RNG-
+  // fragile: any config that shifts goal arbitration (e.g. the slower hunger clock leaves the
+  // builder more content, delaying its commit to build) could slip completion past frame 7200.
+  // Doubling the window restores comfortable margin without changing what's asserted.
+  const FRAMES = 14400, dt = 1 / 60;
   let stage = 'init';
   try {
     for (let i = 0; i < FRAMES; i++) {
