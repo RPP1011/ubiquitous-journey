@@ -19,6 +19,14 @@ let _processed = 0;
 export function deedsProcessed(): number { return _processed; }
 export function resetDeedStats(): void { _processed = 0; }
 
+/** DECEPTION (docs/architecture/17 §7.4) — the surface tag an actor PRESENTS on its deed. An honest
+ *  actor presents its true tag; a deceiver (`a._deceives`) presents the motive's innocuous COVER. The
+ *  deceiver only BIASES the witness's inference (the cover boosts the cover-motive's likelihood) — it
+ *  never SETS the belief, so a witness with a strong contrary prior sees through it. */
+export function presentTag(a: Agent, trueTag: string, coverTag?: string): string {
+  return ((a as { _deceives?: boolean })._deceives && coverTag) ? coverTag : trueTag;
+}
+
 /** Drain the agent's perceived-deed inbox, inferring a motive for each. Run in the perceive pass (once
  *  per cognition tick), before new beliefs form. Bounded by the inbox cap; each deed independently
  *  guarded so one fault never blocks the rest (the freeze lesson). */

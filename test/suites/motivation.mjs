@@ -105,6 +105,30 @@ export function motivationInferenceTest(ok) {
   ok(sW.best !== sS.best, `I9: one remark, two readings (${sW.best} vs ${sS.best})`);
 }
 
+// ---- DECEPTION (P6, docs/architecture/17 §7.4): bias, not dictate -------------------------------
+// A slander presented under a 'counsel' cover fools a neutral witness but NOT one who likes the
+// subject — the deceiver biases the inference, it never sets the belief.
+export function motivationDeceptionTest(ok) {
+  const mkObs = (personality, beliefs = {}) => ({
+    id: 99, personality, gold: 50,
+    beliefs: { _m: new Map(Object.entries(beliefs).map(([k, v]) => [Number(k), v])), get(id) { return this._m.get(id); } },
+  });
+  const smearOpen = { actorId: 1, primitive: 'say', targetId: 2, surfaceTag: 'defamation', sceneCues: { valence: -1 }, magnitude: 0.5, t: 0 };
+  const smearCovered = { ...smearOpen, surfaceTag: 'counsel' };   // the deceiver's cover
+
+  // a NEUTRAL witness (a plain, neutral opinion of the subject):
+  const neutral = mkObs({}, { 2: { standing: 0, hostile: false } });
+  const open = inferMotive(neutral, smearOpen, {});
+  const covered = inferMotive(neutral, smearCovered, {});
+  ok(open.best === 'slander', `P6-1: an OPEN smear reads as slander to a neutral witness (${open.best})`);
+  ok(covered.best === 'warn', `P6-2: the SAME smear under a 'counsel' cover FOOLS the neutral witness (${covered.best}) — deception LANDS`);
+
+  // a FOND witness (likes the subject) SEES THROUGH the cover.
+  const fond = mkObs({}, { 2: { standing: 0.8, hostile: false } });
+  const fondRead = inferMotive(fond, smearCovered, {});
+  ok(fondRead.best === 'slander', `P6-3: a witness who likes the subject resists the cover (${fondRead.best}) — bias, NOT dictate`);
+}
+
 // ---- the deed PATH (P3) + the say EFFECT (P5), deterministic ------------------------------------
 // Scripted (not soak-emergent, so never flaky): a published deed is delivered to a co-located witness
 // and drained through onWitnessPrimitive; and a `say` plants an opinion in the audience + emits a deed.

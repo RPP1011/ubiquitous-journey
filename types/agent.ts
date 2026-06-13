@@ -130,6 +130,9 @@ export interface Agent {
   // docs/architecture/17 §6/§7: the inbox of witnessed deeds (public primitives) awaiting motive
   // inference, drained each perceive pass (motivation/infer.ts). Lazily created on first publish; bounded.
   perceivedDeeds?: Deed[];
+  // docs/architecture/17 §7.4: this agent presents a deceptive COVER on its deeds (a spy / the guileful).
+  // Default false (the honest mainline). Set by intrigue/the Director; read by presentTag + the guile branch.
+  _deceives?: boolean;
   goals: Goal[];
   memory: Memory;
   trace: Trace;
