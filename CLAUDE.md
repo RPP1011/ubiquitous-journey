@@ -93,9 +93,13 @@ npm/import-from-CDN; keep everything local and import-mapped.
 > `09-reasoning-layer`. The **action-grammar / knowledge model** is `10-action-grammar` (+ its LLD),
 > outcome-conditioned **caution** is `11-outcome-conditioned-caution-lld`, the (built)
 > emergent-arc/saga registry + authoring tooling is `12-narrative-tooling-lld` (signal catalog:
-> `13-narrative-signals`), and lethal hunger + the survival ladder is `14-survival-economy`. SLM/LLM
+> `13-narrative-signals`), and lethal hunger + the survival ladder is `14-survival-economy`. The
+> progression-earning economy, reward-minting, and the `(primitive, motivation)` + Theory-of-Mind
+> refactor are **design docs** (not yet as-built): `15-ability-generation-lld`,
+> `16-reward-generation-lld`, `17-motivation-primitive-lld`. SLM/LLM
 > opportunities: `docs/slm-opportunities.md`. The summary below is the quickstart; those docs are
-> the full as-built spec — keep them updated when you change architecture (not just tuning).
+> the full as-built spec (except the design docs noted) — keep them updated when you change
+> architecture (not just tuning).
 
 > **Post-refactor module layout (SRP).** The former god-objects were split into single-
 > responsibility modules — behavior moved, call sites unchanged (thin delegating methods):
