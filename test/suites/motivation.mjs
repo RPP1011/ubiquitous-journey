@@ -7,7 +7,7 @@ import {
   registerMotive, allMotives, motivesFor, motiveByKey,
 } from '../../js/sim/motivation/registry.js';
 import { setShadow, shadowStats } from '../../js/sim/motivation/arbitrate.js';
-import { deedsProcessed, resetDeedStats } from '../../js/sim/motivation/infer.js';
+import { deedsProcessed, resetDeedStats, inferMotive } from '../../js/sim/motivation/infer.js';
 import { World } from '../../js/sim/world.js';
 import { Simulation } from '../../js/sim/simulation.js';
 import { resolveCombat } from '../../js/combat.js';
@@ -51,6 +51,43 @@ export function motivationTest(ok) {
 
   // M7 — exactly the three toy rows were added (no leakage, no double-count).
   ok(allMotives().length === before + 3, `M7: exactly 3 toy motives registered (Δ=${allMotives().length - before})`);
+}
+
+// ---- ToM motive INFERENCE (docs/architecture/17 §7 / P4) ----------------------------------------
+// The marquee demo: one identical robbery deed, read by two different witnesses, yields two different
+// attributed motives — purely from their own priors (the per-witness divergence the whole design is for).
+export function motivationInferenceTest(ok) {
+  // I1 — the `take` primitive has its inference candidates registered (theft/robbery/justice).
+  const takeMotives = motivesFor('take').map((m) => m.key);
+  ok(['theft', 'robbery', 'justice'].every((k) => takeMotives.includes(k)),
+    `I1: take-primitive inference motives registered (${takeMotives.join(', ')})`);
+
+  // a minimal observer stub: personality + gold + a tiny belief table (get/set), no full Agent needed.
+  const mkObs = (personality, gold, beliefs = {}) => ({
+    id: 99, personality, gold,
+    beliefs: { _m: new Map(Object.entries(beliefs).map(([k, v]) => [Number(k), v])),
+      get(id) { return this._m.get(id); } },
+  });
+  // a robbery of subject #2 by actor #1, witnessed.
+  const deed = { actorId: 1, primitive: 'take', targetId: 2, surfaceTag: 'robbery', sceneCues: {}, magnitude: 0.6, t: 0 };
+  const richVictim = { 2: { believedWealth: 0.9, wealthConf: 1 } };
+
+  // WITNESS A — a bold, poor, uncaring soul who believes the victim rich: reads it as JUSTICE.
+  const robin = mkObs({ risk_tolerance: 0.8, altruism: 0.2 }, 4, richVictim);
+  const rA = inferMotive(robin, deed, {});
+  ok(rA.best === 'justice', `I2: a bold/poor/uncaring witness who believes the victim rich reads a robbery as JUSTICE (got ${rA.best} @${rA.conf.toFixed(2)})`);
+
+  // WITNESS B — a comfortable, kindly soul (same deed): reads it as a ROBBERY (a wrong).
+  const burgher = mkObs({ risk_tolerance: 0.3, altruism: 0.8 }, 200, richVictim);
+  const rB = inferMotive(burgher, deed, {});
+  ok(rB.best === 'robbery', `I3: a comfortable, kindly witness reads the SAME robbery as a ROBBERY (got ${rB.best} @${rB.conf.toFixed(2)})`);
+
+  // I4 — the two witnesses genuinely DIVERGE on the identical deed (the whole point).
+  ok(rA.best !== rB.best, `I4: one deed, two witnesses, two truths (${rA.best} vs ${rB.best})`);
+
+  // I5 — an illegible primitive (no candidates) returns 'unknown', never throws.
+  const r5 = inferMotive(burgher, { ...deed, primitive: 'no-such-primitive' }, {});
+  ok(r5.best === 'unknown' && r5.conf === 0, 'I5: a primitive with no candidate motives infers unknown');
 }
 
 // ---- the SHADOW check (docs/architecture/17 P1) -------------------------------------------------

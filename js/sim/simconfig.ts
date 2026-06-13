@@ -463,6 +463,12 @@ export const MOTIVE = {
                             //   personality drive is added (decide) — low enough that a low-drive
                             //   soul keeps its leisure variety instead of being conscripted, high
                             //   enough that every ambition claims real idle time (aligned dwell)
+  // --- ToM motive INFERENCE (docs/architecture/17 §7) ---
+  attributeAt: 0.45,        // §7.2a write bar: a witness persists believedMotive only when the posterior
+                            //   conf is at/above this — sub-threshold reads (the common stranger case)
+                            //   write nothing, leaving any prior attribution intact. The single most
+                            //   load-bearing inference knob (the prior×likelihood calibration target).
+  legibleAt: 0.7,           // an honest, cue-rich act is "clearly read" at/above this conf (calibration)
 };
 
 // --- QUANTITIES: numeric-threshold plan composition (docs/architecture/10, Phase 1) ----

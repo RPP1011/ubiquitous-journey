@@ -36,7 +36,7 @@ import { cautionTest } from './suites/caution.mjs';
 import { memoryGoalTest, npcCastTest } from './suites/memoryGoals.mjs';
 import { perceptTest } from './suites/percept.mjs';
 import { schemasTest } from './suites/schemas.mjs';
-import { motivationTest, motivationShadowTest } from './suites/motivation.mjs';
+import { motivationTest, motivationInferenceTest, motivationShadowTest } from './suites/motivation.mjs';
 import { wealthCheck } from './suites/wealth.mjs';
 import { recipeTest } from './suites/recipes.mjs';
 import { traceTest } from './suites/trace.mjs';
@@ -104,6 +104,8 @@ perceptTest(ok, helpers);
 schemasTest(ok);
 // Motivation layer (docs/architecture/17 §3) P1 foundation: the MOTIVATIONS registry in isolation.
 motivationTest(ok);
+// Motivation P4 inference: one deed, two witnesses, two attributed motives (per-witness divergence).
+motivationInferenceTest(ok);
 // Motivation P1 shadow: the row-based arbiter matches decide()'s scorer tick-for-tick over a soak.
 await motivationShadowTest(ok, helpers);
 // Phase-4 economy prerequisite: stored wealth (purse vs stash) — day-one inert.

@@ -54,6 +54,12 @@ export interface BeliefState {
   assocSightings: number;           // raw surveil-sighting accumulator (pre-consolidation)
   believedWealth: number;           // believed prosperity of the subject, 0..1 (docs/architecture/12 §6)
   wealthConf: number;               // how sure (firmed by first-hand cues, faded by decay)
+  // docs/architecture/17 §7.2a: the LAST SALIENT motive this observer attributed to the subject (the
+  // ToM inference output) + how sure. Sparse — written ONLY when a confident read of a notable act
+  // lands (most cells never carry one); the deception layer fools exactly this. Optional/decaying.
+  believedMotive?: string;
+  motiveConf?: number;
+  believedKindness?: number;        // a slow character estimate (0..1), like believedWealth (§4a)
 
   // record one piece of liveness evidence ('struck'|'blocked'|'harmedMe'|'moved'). Guarded.
   recordAnimacy(kind: 'struck' | 'blocked' | 'harmedMe' | 'moved'): void;
