@@ -12,6 +12,7 @@ import { SIM, SOURCE, BAND, COMMODITIES, ECON, MAP, SIGNALS, ESTEEM as WEALTHCUE
 import { noteSnub } from '../signals.js';
 import { PERCEPT_KIND } from '../percept.js';
 import { STAGE, REASON } from '../trace.js';
+import { drainDeeds } from '../motivation/infer.js';
 import type { Agent, FullCtx, Perceivable } from '../../../types/sim.js';
 import type { Vector3 } from 'three';
 import type { EntityId, Stage, Reason } from '../../../types/sim.js';
@@ -46,6 +47,9 @@ const asThing = (o: Perceivable): PerceivedThing => o as unknown as PerceivedThi
 // is just another subject, so NPCs naturally form beliefs about you).
 export function perceive(a: Agent, ctx: FullCtx): void {
   if (!a.alive || a.controlled) return;
+  // docs/architecture/17 §7: process the witnessed-deed inbox (infer motives) BEFORE forming new
+  // beliefs this tick. P3 stub is a no-op; P4 makes it write believedMotive + the conf-scaled fold.
+  drainDeeds(a, ctx);
   // terrain shapes sight: high ground sees FARTHER, and a quarry hiding in
   // deep wood / a low vale is HARDER to spot. Effective range = base vision ×
   // a vantage gain (my elevation) × the target's concealment penalty. This is

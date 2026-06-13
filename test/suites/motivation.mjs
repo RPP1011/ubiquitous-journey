@@ -7,6 +7,7 @@ import {
   registerMotive, allMotives, motivesFor, motiveByKey,
 } from '../../js/sim/motivation/registry.js';
 import { setShadow, shadowStats } from '../../js/sim/motivation/arbitrate.js';
+import { deedsProcessed, resetDeedStats } from '../../js/sim/motivation/infer.js';
 import { World } from '../../js/sim/world.js';
 import { Simulation } from '../../js/sim/simulation.js';
 import { resolveCombat } from '../../js/combat.js';
@@ -71,6 +72,7 @@ export async function motivationShadowTest(ok, { makeFighter, stubScene }) {
   for (let k = 0; k < 5; k++) await Promise.resolve();
 
   setShadow(true);
+  resetDeedStats();
   const FRAMES = 8000, dt = 1 / 60;
   let stage = 'init';
   try {
@@ -103,6 +105,10 @@ export async function motivationShadowTest(ok, { makeFighter, stubScene }) {
   const mismatches = withMotive.filter((a) => PRIM[a.motive.key] && a.motive.primitive !== PRIM[a.motive.key]);
   ok(mismatches.length === 0,
     `S4: committed primitive matches the motive kind (${mismatches.length} mismatch${mismatches.length === 1 ? '' : 'es'})`);
+
+  // S5 — P3: the deed path is LIVE — witnessed theft-shaped deeds reached the inbox and were drained
+  // through onWitnessPrimitive (proves emit→publishDeed→inbox→perceive-drain→handler, not silently dead).
+  ok(deedsProcessed() > 0, `S5: witnessed deeds flowed through the inference path (${deedsProcessed()} processed)`);
 
   if (st.diverge > 0) {
     const tally = {};

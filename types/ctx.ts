@@ -9,6 +9,7 @@ import type { Perceivable } from './percept.js';
 import type { World, MentalMap } from './world.js';
 import type { AbilitySpec } from './abilities.js';
 import type { Arc, ArcOpenOpts } from './arcs.js';
+import type { Deed } from './motivation.js';
 
 /** The narrator's arc write-ports, exposed on BOTH ctxs (docs/architecture/12 §3). These are
  *  OBSERVER-LAYER, write-only: they file/escalate/close completed-arc records the chronicle and
@@ -66,6 +67,10 @@ export interface ResolverFacade {
   // `affect` applies a physical-state change (freed/wrecked). Callers gate location.
   take(a: Agent, sourceId: EntityId, payload: { item?: string; n?: number; gold?: number }): number;
   witnessDeed(actor: Agent, victimId: EntityId | null, kind: string, severity?: number): void;
+  // docs/architecture/17 §6: drop a public Deed envelope into the inbox of every agent in perception
+  // range (vision-gated roster scan — execution layer). The inference that follows reads only the
+  // observer's own beliefs. Drained each perceive pass.
+  publishDeed(deed: Deed): void;
   affect(actor: Agent, targetId: EntityId, state: 'freed' | 'wrecked'): boolean;
   // RECRUIT (Inform): plant an OFFER on the candidate's own perception (`_offers`). NOT a
   // foreign-mind write of a goal — the candidate decides for itself; this only makes the offer

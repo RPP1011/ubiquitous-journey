@@ -1060,6 +1060,32 @@ export class Simulation {
           if (kind === 'rob') { try { if (sim.sagas && sim.sagas.findArc('outlaw:' + actor.id)) sim.sagas.appendBeat('outlaw:' + actor.id, 'round', `${actor.name} struck again.`); } catch { /* never throw */ } }
           // the deed feeds the RPG progression (the actor's emergent class) via the shared bus.
           busEmit({ actorId: actor.id, verb: kind, tags: ['THEFT', 'RISK'], targetId: victimId ?? undefined, magnitude: sev, t: sim.time });
+          // docs/architecture/17 §6: ALSO emit the public DEED envelope for the ToM inference path. The
+          // hardcoded per-perceiver fold above stays authoritative until P4 swaps it; this is additive
+          // plumbing (the inbox handler is a no-op stub in P3). A theft-shaped deed drives the `take`
+          // primitive, presenting its true surface tag (theft/robbery); cues filled in P4.
+          this.publishDeed({
+            actorId: actor.id, primitive: 'take', targetId: victimId ?? undefined,
+            surfaceTag: kind === 'rob' ? 'robbery' : 'theft', sceneCues: {}, magnitude: sev, t: sim.time,
+          });
+        } catch { /* never throw on the tick */ }
+      },
+      // PUBLISH A DEED (docs/architecture/17 §6) — drop the public envelope into the inbox of every
+      // agent whose perception covers the act site (vision-gated; execution layer, so the roster scan
+      // is sanctioned — the INFERENCE that follows reads only the observer's own beliefs). Bounded
+      // inbox; drained each perceive pass by motivation/infer.ts. Guarded; never throws on the tick.
+      publishDeed(deed) {
+        try {
+          if (!deed || deed.actorId == null) return;
+          const actor = sim.agentsById.get(deed.actorId);
+          if (!actor) return;
+          for (const w of sim.agents) {
+            if (w === actor || !w.alive || w.controlled) continue;
+            if (w.pos.distanceTo(actor.pos) > SIM.visionRange) continue;
+            const inbox = w.perceivedDeeds || (w.perceivedDeeds = []);
+            inbox.push(deed);
+            if (inbox.length > 16) inbox.shift();   // bounded — the oldest unprocessed deed drops
+          }
         } catch { /* never throw on the tick */ }
       },
       // PHYSICAL AFFECT (docs/architecture/10) — apply a believed physical-state change to another

@@ -18,6 +18,7 @@ import type { Trace } from './trace.js';
 import type { Progression } from './rpg.js';
 import type { AbilitySpec } from './abilities.js';
 import type { Goal, Ambition, PlanStep } from './goals.js';
+import type { Deed } from './motivation.js';
 import type { Fighter } from './combat.js';
 import type { Bounty } from './news.js';
 import type { CognitionCtx, FullCtx } from './ctx.js';
@@ -126,6 +127,9 @@ export interface Agent {
   // object as `goal`). First-class so the deed emit (P3) + inspector can read what an agent is doing
   // and WHY without re-deriving it. Optional until arbitrate sets it each commit.
   motive?: { key: string; primitive: string; bind: Goal } | null;
+  // docs/architecture/17 §6/§7: the inbox of witnessed deeds (public primitives) awaiting motive
+  // inference, drained each perceive pass (motivation/infer.ts). Lazily created on first publish; bounded.
+  perceivedDeeds?: Deed[];
   goals: Goal[];
   memory: Memory;
   trace: Trace;
