@@ -13,7 +13,7 @@ import { chooseOccupation, laborValue } from './occupation.js';
 import { qualifyHome, isUnhoused } from '../construction.js';
 import { foldGoalDwell } from '../signals.js';
 import { STAGE, REASON } from '../trace.js';
-import type { Agent, CognitionCtx, Goal, EntityId, Stage, Reason } from '../../../types/sim.js';
+import type { Agent, CognitionCtx, Goal, EntityId, Stage, Reason, PlanStep } from '../../../types/sim.js';
 import type { Vector3 } from 'three';
 
 // trace.js infers STAGE/REASON members as plain `string`; retype for Trace.note.
@@ -231,6 +231,26 @@ export function decide(a: Agent, ctx: CognitionCtx): void {
     return;
   }
 
+  // SELECTION (docs/architecture/17 P1): the utility scorer is now its own function (`scoreAndSelect`)
+  // so it can be re-hosted as motivation rows (arbitrate) behind a shadow check. The role-guard
+  // early-returns + side-effecting passes above stay here (the pre-phase, §5). decide() owns the
+  // COMMIT (a.goal + the occupation tail); scoreAndSelect is the pure selection.
+  const winner: Goal = scoreAndSelect(a, ctx, planStep);
+  a.goal = winner;
+  // REASONING-COST hysteresis (Phase 3): stamp the time the committed goal.kind last CHANGED, so the
+  // LOD relevance gate can keep a just-re-deliberated agent at full fidelity for a short window.
+  if (winner.kind !== a._prevGoalKind) { a._lastGoalChangeAt = ctx.time; a._prevGoalKind = winner.kind; }
+  // emergent occupation: when we settle on WORK, decide WHAT to make this stint (belief-priced,
+  // proximity- and ambition-weighted, opportunity-gated). Stored on a._trade; belief-only; guarded.
+  if (winner.kind === 'work') chooseOccupation(a, ctx);
+}
+
+// SCORE & SELECT (docs/architecture/17 P1) — decide()'s utility scorer, extracted VERBATIM so it can be
+// re-hosted as motivation rows (arbitrate) behind a shadow check. Pure selection: reads beliefs/own-
+// state (+ the `planStep` decide already computed — never re-running the side-effecting passes), writes
+// only own telemetry (_decideCands + the trace), returns the winning goal. The body is unchanged from
+// the former inline scorer, so this is behaviour-preserving (the existing soak/limit-cycle gates prove it).
+function scoreAndSelect(a: Agent, ctx: CognitionCtx, planStep: PlanStep | null): Goal {
   const P = a.personality;
   const inv = a.inventory;
 
@@ -559,21 +579,11 @@ export function decide(a: Agent, ctx: CognitionCtx): void {
   }
   a._decideCands = _nCand;   // REASONING-COST: candidates scored this tick (read truth-side)
   const winner: Goal = best ? (best as unknown as Goal) : { kind: a.canWork ? 'work' : 'wander' };
-  a.goal = winner;
-  // REASONING-COST hysteresis (Phase 3): stamp the time the committed goal.kind last CHANGED,
-  // so the LOD relevance gate can keep a just-re-deliberated agent at full fidelity for a short
-  // window (anti-thrash at the stride edge). Own-scalar writes; read truth-side in _isRelevant.
-  if (winner.kind !== a._prevGoalKind) { a._lastGoalChangeAt = ctx.time; a._prevGoalKind = winner.kind; }
-  // TRACE (write-only, never read back): the everyday utility-arbitration winner + its score —
-  // the headline "why this behaviour and not another" beat. (The override locks above —
-  // duel/avenger/butcher's-shadow/schema flee — commit before this scorer and return; the
-  // schema-driven ones are already covered by SCHEMA_FIRED.) Own scores only; note() guarded.
+  // TRACE (write-only, never read back): the utility-arbitration winner + its score — the headline
+  // "why this behaviour and not another" beat. Kept here in the scorer (which holds `best`); the
+  // commit + occupation tail run in decide() (the caller). Own scores only; note() guarded.
   a.trace.note(STAGE_T.DECIDE, REASON_T.BEHAVIOUR_WON, { t: ctx.time, a: winner.kind, b: best ? +best.score.toFixed(2) : null });
-
-  // emergent occupation: when we settle on WORK, decide WHAT to make this stint
-  // (belief-priced, proximity- and ambition-weighted, opportunity-gated). Stored
-  // on a._trade and produced by act()/_produce. Belief-only inputs; guarded.
-  if (winner.kind === 'work') chooseOccupation(a, ctx);
+  return winner;
 }
 
 // AMBITION-ACTIVITY (Phase B1) — the standing-activity intent the ambition_goals feature stamps
