@@ -6,6 +6,10 @@
 import {
   registerMotive, allMotives, motivesFor, motiveByKey,
 } from '../../js/sim/motivation/registry.js';
+import { setShadow, shadowStats } from '../../js/sim/motivation/arbitrate.js';
+import { World } from '../../js/sim/world.js';
+import { Simulation } from '../../js/sim/simulation.js';
+import { resolveCombat } from '../../js/combat.js';
 
 export function motivationTest(ok) {
   // toy rows — test-only primitive keys so they never collide with the live motive set.
@@ -46,4 +50,56 @@ export function motivationTest(ok) {
 
   // M7 — exactly the three toy rows were added (no leakage, no double-count).
   ok(allMotives().length === before + 3, `M7: exactly 3 toy motives registered (Δ=${allMotives().length - before})`);
+}
+
+// ---- the SHADOW check (docs/architecture/17 P1) -------------------------------------------------
+// Drive a full town with the row-based arbiter (arbitrate) running ALONGSIDE the live scoreAndSelect,
+// and assert the chosen `kind` matches tick-for-tick within ε. This is the gate that must be green
+// BEFORE the swap: the rows reproduce decide()'s scorer behaviour-equivalently. The shadow never
+// drives the sim, so the soak's own invariants (above) prove the live path is unchanged.
+export async function motivationShadowTest(ok, { makeFighter, stubScene }) {
+  const world = new World(stubScene);
+  const sim = new Simulation(stubScene, world, { makeFighter });
+  sim.spawn();
+  const pf = makeFighter('knight', { isPlayer: true });
+  pf.root.position.set(0, 0, 8);
+  sim.addPlayer(pf);
+  await Promise.all([
+    import('../../js/rpg/abilities/catalog.js').catch(() => {}),
+    import('../../js/rpg/abilities/generate.js').catch(() => {}),
+  ]);
+  for (let k = 0; k < 5; k++) await Promise.resolve();
+
+  setShadow(true);
+  const FRAMES = 8000, dt = 1 / 60;
+  let stage = 'init';
+  try {
+    for (let i = 0; i < FRAMES; i++) {
+      stage = 'sim.update'; sim.update(dt);
+      for (const f of sim.fighters) f.update(dt);
+      const ev = resolveCombat(sim.fighters, sim.isHostile.bind(sim), sim._ctx());
+      if (ev.length) sim.onCombatEvents(ev);
+    }
+  } catch (err) {
+    setShadow(false);
+    ok(false, `shadow: drove the sim threw at '${stage}' -> ${err && err.message}`);
+    return;
+  }
+  const st = shadowStats();
+  setShadow(false);
+
+  // S1 — the shadow actually ran (decisions were scored).
+  ok(st.total > 1000, `S1: shadow observed real decision traffic (${st.total} comparisons)`);
+  // S2 — the row arbiter reproduces scoreAndSelect's chosen kind within ε. Target ε = 0 (identical
+  // logic over a shared scratch); a tiny tolerance guards float/ordering edge cases.
+  const EPS = 0.001;
+  ok(st.rate <= EPS,
+    `S2: arbitrate matches scoreAndSelect tick-for-tick (diverge ${st.diverge}/${st.total} = ${(st.rate * 100).toFixed(3)}% ≤ ${(EPS * 100).toFixed(1)}%)`);
+  if (st.diverge > 0) {
+    const tally = {};
+    for (const s of st.samples) { const k = `${s.live}→${s.row}`; tally[k] = (tally[k] || 0) + 1; }
+    console.log(`INFO  shadow divergences (live→row): ${Object.entries(tally).map(([k, v]) => `${k}×${v}`).join('  ')}`);
+  } else {
+    console.log(`INFO  shadow: ${st.total} decisions, ZERO divergence — arbitrate ≡ scoreAndSelect`);
+  }
 }

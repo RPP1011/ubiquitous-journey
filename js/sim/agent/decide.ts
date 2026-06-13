@@ -10,6 +10,7 @@
 import { SIM, WEIGHT, ECON, COMMODITIES, GROUP_TYPES, LEGEND, SOCIAL, COMFORT, NOVELTY, BUILD, ESTEEM as WEALTH, ROMANCE, MOTIVE, ALMS, GRANARY, MIGRATE, factionHostile } from '../simconfig.js';
 import { updateAmbition, ambitionFavor, ambitionWantsFight, deriveGoals, pruneGoals } from '../motivation.js';
 import { chooseOccupation, laborValue } from './occupation.js';
+import { shadowCheck } from '../motivation/arbitrate.js';
 import { qualifyHome, isUnhoused } from '../construction.js';
 import { foldGoalDwell } from '../signals.js';
 import { STAGE, REASON } from '../trace.js';
@@ -236,6 +237,10 @@ export function decide(a: Agent, ctx: CognitionCtx): void {
   // early-returns + side-effecting passes above stay here (the pre-phase, §5). decide() owns the
   // COMMIT (a.goal + the occupation tail); scoreAndSelect is the pure selection.
   const winner: Goal = scoreAndSelect(a, ctx, planStep);
+  // SHADOW (docs/architecture/17 P1): verify the row-based arbiter would pick the same kind, WITHOUT
+  // driving the sim. No-op unless a shadow run flipped it on; a.goal still holds the prev goal here
+  // (the hysteresis input arbitrate reads). Byte-identical live behaviour when off.
+  shadowCheck(a, ctx, planStep, winner.kind);
   a.goal = winner;
   // REASONING-COST hysteresis (Phase 3): stamp the time the committed goal.kind last CHANGED, so the
   // LOD relevance gate can keep a just-re-deliberated agent at full fidelity for a short window.
@@ -610,7 +615,7 @@ export function topAmbitionGoal(a: Agent): { kind: string; extra?: Record<string
 // so the candidate scales with how strongly this agent WANTS its ambition: the bold seek glory
 // hardest, the curious journey hardest, the ambitious pursue their craft hardest, the social
 // seek kin hardest. Defaults to a mid drive for an unmapped ambition. Never throws.
-function ambitionDrive(a: Agent): number {
+export function ambitionDrive(a: Agent): number {
   const P = a.personality || {};
   switch (a.ambition ? a.ambition.kind : '') {
     case 'renown':     return P.risk_tolerance ?? 0.5;
@@ -629,7 +634,7 @@ function ambitionDrive(a: Agent): number {
 // I THINK they are, and may find an empty spot if they've moved (then I re-choose).
 // Returns a subjectId, or null when I know no friend yet (caller falls back to the
 // market, the town's gathering place). Never throws — guarded for the freeze lesson.
-function pickSocialTarget(a: Agent): EntityId | null {
+export function pickSocialTarget(a: Agent): EntityId | null {
   let best: EntityId | null = null, bestScore = -Infinity;
   for (const b of a.beliefs.all()) {
     if (b.hostile || b.standing < SOCIAL.friendStanding || b.confidence < SOCIAL.knownConf) continue;
@@ -646,7 +651,7 @@ function pickSocialTarget(a: Agent): EntityId | null {
 // avoidRange of where I BELIEVE it is. Reads ONLY my OWN beliefs (suspicion/standing/hostile/lastPos/
 // confidence) — the epistemic split holds. Returns the suspect's believed pos ({x,z}) to steer OFF,
 // or null when no one unsettles me. Guarded; never throws (the freeze lesson).
-function pickSuspectToAvoid(a: Agent): { x: number; z: number } | null {
+export function pickSuspectToAvoid(a: Agent): { x: number; z: number } | null {
   try {
     let best: { x: number; z: number } | null = null, bestD = Infinity;
     for (const b of a.beliefs.all()) {
