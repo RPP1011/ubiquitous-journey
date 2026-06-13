@@ -1,12 +1,36 @@
 # 17 (LLD) — Motivation as a first-class layer: the `(primitive × motivation)` factoring & its Theory-of-Mind
 
-> **Status: design / low-level design (unbuilt).** This is the *implementation* spec for refactoring
-> the action layer so that **a verb is no longer an atom — it is a `(primitive, motivation)` pair.**
-> It is the successor to [`10-action-grammar-lld.md`](10-action-grammar-lld.md): the action grammar
-> built the verb→executor registry; this doc *splits the verb itself* into the public physical act
-> (the **primitive**) and the private short-term impetus behind it (the **motivation**), and makes the
-> motivation a thing other agents must **infer** rather than be told. Read 10 first — it owns the
-> registry mechanics this builds on.
+> **Status: BUILT (phases P1–P8 landed; some breadth deliberately deferred — see below).** This is the
+> *implementation* spec for refactoring the action layer so that **a verb is no longer an atom — it is a
+> `(primitive, motivation)` pair.** It is the successor to [`10-action-grammar-lld.md`](10-action-grammar-lld.md):
+> the action grammar built the verb→executor registry; this doc *splits the verb itself* into the public
+> physical act (the **primitive**) and the private short-term impetus behind it (the **motivation**), and
+> makes the motivation a thing other agents must **infer** rather than be told. Read 10 first — it owns
+> the registry mechanics this builds on.
+>
+> **As-built map** (`js/sim/motivation/{registry,arbitrate,infer}.ts`, `js/sim/motives/{acquire,speech}.ts`,
+> `types/motivation.ts`; tests in `test/suites/motivation.mjs`):
+> - **P1** — the decide() scorer is re-hosted as a row table (`arbitrate`), shadow-proven ≡ the former
+>   `scoreAndSelect` (a permanent equivalence oracle, 0 divergence over the soak).
+> - **P2** — `a.motive = {key, primitive, bind}` commits the un-fused pair.
+> - **P3** — the deed envelope + inbox (`resolver.publishDeed` → `perceivedDeeds` → `drainDeeds`).
+> - **P4** — real `inferMotive` (prior×likelihood) writing sparse `believedMotive`/`motiveConf`; the
+>   `take` motives (theft/robbery/justice). *Additive*: the standing fold (`witnessDeed`) stays
+>   authoritative for magnitude, so this layers the inferred motive without disturbing behavioural gates.
+> - **P5** — the `say` primitive + speech motives (warn/slander/vouch) + `resolver.say`.
+> - **P6** — deception (`presentTag`/`_deceives` + the cover-tag likelihood bias).
+> - **P7** — recursive ToM (`chooseDeceptiveTag`, the guile branch).
+> - **P8** — deliberation (`a._puzzles` + `deliberate` + `characterCoherence`).
+>
+> **Deliberately deferred** (documented, with rationale; the doc's *value* — the (primitive, motivation)
+> model + ToM inference + deception + deliberation — is built, these are breadth/cleanup):
+> - `act.ts` execution dispatch is **not** rewired through `execMotive`/`runExecutor` (cosmetic; the
+>   existing STEER_FILLS + executor-registry path already executes correctly — freeze risk, no payoff).
+> - The hardcoded `witnessDeed` standing fold is **not** retired onto inference (P4 is additive instead,
+>   which keeps every behavioural gate green; the inferred motive is the *new* signal).
+> - `intrigue.ts` `plant()` is **not** retired onto the `say` path (it works and is well-tested).
+> - Cue *producers* (the `witnessed_aggression` episode, `strike`-primitive defend/avenge inference) are
+>   a natural next extension — the `take` and `say` primitives carry the inference today.
 >
 > Three hard invariants override everything below:
 > - **The epistemic split** ([02](02-epistemic-split.md)): *motivation selection* (the arbitration,
