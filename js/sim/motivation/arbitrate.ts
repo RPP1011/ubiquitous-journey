@@ -23,9 +23,15 @@ import { laborValue } from '../agent/occupation.js';
 import { qualifyHome, isUnhoused } from '../construction.js';
 import {
   pickSocialTarget, pickSuspectToAvoid, ambitionDrive, topAmbitionGoal, nearestComfortSource,
+  scoreAndSelect,
 } from '../agent/decide.js';
-import type { Agent, CognitionCtx, Goal, PlanStep, EntityId } from '../../../types/sim.js';
+import { STAGE, REASON } from '../trace.js';
+import type { Agent, CognitionCtx, Goal, PlanStep, EntityId, Stage, Reason } from '../../../types/sim.js';
 import type { Vector3 } from 'three';
+
+// STAGE/REASON are runtime consts (allowJs widens their members to string); re-narrow for Trace.note.
+const ST = STAGE as Record<string, Stage>;
+const RS = REASON as Record<string, Reason>;
 
 const GROUP_TYPES_T = GROUP_TYPES as Record<string, { cohesion?: string; combatant?: boolean; pull?: number } | undefined>;
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
@@ -287,32 +293,40 @@ export function arbitrate(a: Agent, ctx: CognitionCtx, planStep: PlanStep | null
     const bestEff = best && best.kind === prevKind ? best.score * 1.18 : (best ? best.score : -Infinity);
     if (eff > bestEff) best = cc;
   }
-  return best ? (best as unknown as Goal) : { kind: a.canWork ? 'work' : 'wander' };
+  const winner: Goal = best ? (best as unknown as Goal) : { kind: a.canWork ? 'work' : 'wander' };
+  // TELEMETRY (parity with the former inline scorer): candidates scored this tick + the BEHAVIOUR_WON
+  // beat. Own-scalar writes, read truth-side (depthMetrics / the trace ring); note() is guarded.
+  (a as { _decideCands?: number })._decideCands = cand.length;
+  a.trace.note(ST.DECIDE, RS.BEHAVIOUR_WON, { t: ctx.time, a: winner.kind, b: best ? +best.score.toFixed(2) : null });
+  return winner;
 }
 
-// ── SHADOW VERIFICATION (docs/architecture/17 P1) ──────────────────────────────────────────────────
-// Run arbitrate() alongside the live scoreAndSelect() and tally where the chosen `kind` diverges, WITHOUT
-// driving the sim. Off by default (one boolean check on the hot path; byte-identical behaviour when off).
-// The soak shadow test flips it on, runs a full town, and asserts divergence ≤ ε before any swap.
+// ── SHADOW VERIFICATION / PERMANENT EQUIVALENCE NET (docs/architecture/17 P1) ───────────────────────
+// arbitrate() is now the LIVE scorer; scoreAndSelect() survives as a pure reference oracle. The shadow
+// re-runs the oracle alongside the live arbiter and tallies where the chosen `kind` diverges, WITHOUT
+// driving the sim. Off by default (one boolean check on the hot path; byte-identical when off). The soak
+// shadow test flips it on and asserts divergence ≤ ε — so any future drift in arbitrate (e.g. as P2 un-
+// fuses primitives) trips against the frozen oracle.
 let _shadowOn = false;
 let _total = 0, _diverge = 0;
-const _samples: Array<{ live: string; row: string }> = [];
+const _samples: Array<{ live: string; oracle: string }> = [];
 
 export function setShadow(on: boolean): void { _shadowOn = on; _total = 0; _diverge = 0; _samples.length = 0; }
-export function shadowStats(): { total: number; diverge: number; rate: number; samples: ReadonlyArray<{ live: string; row: string }> } {
+export function shadowStats(): { total: number; diverge: number; rate: number; samples: ReadonlyArray<{ live: string; oracle: string }> } {
   return { total: _total, diverge: _diverge, rate: _total ? _diverge / _total : 0, samples: _samples };
 }
 
-/** Called from decide() right after scoreAndSelect, BEFORE the commit (so a.goal still holds the prev
- *  goal — matching the hysteresis input). No-op when shadowing is off. Never throws. */
+/** Called from decide() right after arbitrate, BEFORE the commit (so a.goal still holds the prev goal —
+ *  the hysteresis input both read). Re-runs the oracle and compares to the live arbiter's choice.
+ *  No-op when shadowing is off. The oracle is pure (no telemetry/commit), so this never double-writes. */
 export function shadowCheck(a: Agent, ctx: CognitionCtx, planStep: PlanStep | null, liveKind: string): void {
   if (!_shadowOn) return;
   try {
-    const w = arbitrate(a, ctx, planStep);
+    const oracle = scoreAndSelect(a, ctx, planStep);
     _total++;
-    if (w.kind !== liveKind) {
+    if (oracle.kind !== liveKind) {
       _diverge++;
-      if (_samples.length < 40) _samples.push({ live: liveKind, row: w.kind });
+      if (_samples.length < 40) _samples.push({ live: liveKind, oracle: oracle.kind });
     }
   } catch { /* never throw on the tick */ }
 }

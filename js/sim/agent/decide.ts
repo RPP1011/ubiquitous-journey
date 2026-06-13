@@ -10,7 +10,7 @@
 import { SIM, WEIGHT, ECON, COMMODITIES, GROUP_TYPES, LEGEND, SOCIAL, COMFORT, NOVELTY, BUILD, ESTEEM as WEALTH, ROMANCE, MOTIVE, ALMS, GRANARY, MIGRATE, factionHostile } from '../simconfig.js';
 import { updateAmbition, ambitionFavor, ambitionWantsFight, deriveGoals, pruneGoals } from '../motivation.js';
 import { chooseOccupation, laborValue } from './occupation.js';
-import { shadowCheck } from '../motivation/arbitrate.js';
+import { arbitrate, shadowCheck } from '../motivation/arbitrate.js';
 import { qualifyHome, isUnhoused } from '../construction.js';
 import { foldGoalDwell } from '../signals.js';
 import { STAGE, REASON } from '../trace.js';
@@ -236,10 +236,11 @@ export function decide(a: Agent, ctx: CognitionCtx): void {
   // so it can be re-hosted as motivation rows (arbitrate) behind a shadow check. The role-guard
   // early-returns + side-effecting passes above stay here (the pre-phase, §5). decide() owns the
   // COMMIT (a.goal + the occupation tail); scoreAndSelect is the pure selection.
-  const winner: Goal = scoreAndSelect(a, ctx, planStep);
-  // SHADOW (docs/architecture/17 P1): verify the row-based arbiter would pick the same kind, WITHOUT
-  // driving the sim. No-op unless a shadow run flipped it on; a.goal still holds the prev goal here
-  // (the hysteresis input arbitrate reads). Byte-identical live behaviour when off.
+  // SELECTION (docs/architecture/17 P1, SWAPPED): the row-based arbiter is now authoritative. The
+  // former inline scorer survives as `scoreAndSelect` (a pure REFERENCE ORACLE) and the shadow check
+  // re-verifies arbitrate ≡ oracle tick-for-tick (a permanent regression net, flipped on by the soak
+  // shadow test). a.goal still holds the prev goal here — the hysteresis input both read.
+  const winner: Goal = arbitrate(a, ctx, planStep);
   shadowCheck(a, ctx, planStep, winner.kind);
   a.goal = winner;
   // REASONING-COST hysteresis (Phase 3): stamp the time the committed goal.kind last CHANGED, so the
@@ -255,7 +256,10 @@ export function decide(a: Agent, ctx: CognitionCtx): void {
 // state (+ the `planStep` decide already computed — never re-running the side-effecting passes), writes
 // only own telemetry (_decideCands + the trace), returns the winning goal. The body is unchanged from
 // the former inline scorer, so this is behaviour-preserving (the existing soak/limit-cycle gates prove it).
-function scoreAndSelect(a: Agent, ctx: CognitionCtx, planStep: PlanStep | null): Goal {
+// Kept post-swap as a PURE REFERENCE ORACLE (no telemetry/commit side-effects) — arbitrate is the live
+// scorer; the shadow check re-runs this and asserts they pick the same kind (the permanent equivalence
+// net, §17 P1). Telemetry (_decideCands + the BEHAVIOUR_WON trace) lives in arbitrate now.
+export function scoreAndSelect(a: Agent, ctx: CognitionCtx, planStep: PlanStep | null): Goal {
   const P = a.personality;
   const inv = a.inventory;
 
@@ -582,12 +586,8 @@ function scoreAndSelect(a: Agent, ctx: CognitionCtx, planStep: PlanStep | null):
     const bestEff = best && best.kind === prevKind ? best.score * 1.18 : (best ? best.score : -Infinity);
     if (eff > bestEff) best = c;
   }
-  a._decideCands = _nCand;   // REASONING-COST: candidates scored this tick (read truth-side)
+  void _nCand;   // counted for parity with arbitrate; telemetry write lives there now (oracle is pure)
   const winner: Goal = best ? (best as unknown as Goal) : { kind: a.canWork ? 'work' : 'wander' };
-  // TRACE (write-only, never read back): the utility-arbitration winner + its score — the headline
-  // "why this behaviour and not another" beat. Kept here in the scorer (which holds `best`); the
-  // commit + occupation tail run in decide() (the caller). Own scores only; note() guarded.
-  a.trace.note(STAGE_T.DECIDE, REASON_T.BEHAVIOUR_WON, { t: ctx.time, a: winner.kind, b: best ? +best.score.toFixed(2) : null });
   return winner;
 }
 

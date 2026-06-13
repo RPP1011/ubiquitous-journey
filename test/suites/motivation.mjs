@@ -97,9 +97,9 @@ export async function motivationShadowTest(ok, { makeFighter, stubScene }) {
     `S2: arbitrate matches scoreAndSelect tick-for-tick (diverge ${st.diverge}/${st.total} = ${(st.rate * 100).toFixed(3)}% ≤ ${(EPS * 100).toFixed(1)}%)`);
   if (st.diverge > 0) {
     const tally = {};
-    for (const s of st.samples) { const k = `${s.live}→${s.row}`; tally[k] = (tally[k] || 0) + 1; }
-    console.log(`INFO  shadow divergences (live→row): ${Object.entries(tally).map(([k, v]) => `${k}×${v}`).join('  ')}`);
+    for (const s of st.samples) { const k = `${s.live}→${s.oracle}`; tally[k] = (tally[k] || 0) + 1; }
+    console.log(`INFO  shadow divergences (live arbiter→oracle): ${Object.entries(tally).map(([k, v]) => `${k}×${v}`).join('  ')}`);
   } else {
-    console.log(`INFO  shadow: ${st.total} decisions, ZERO divergence — arbitrate ≡ scoreAndSelect`);
+    console.log(`INFO  shadow: ${st.total} decisions, ZERO divergence — live arbitrate ≡ oracle scoreAndSelect`);
   }
 }
