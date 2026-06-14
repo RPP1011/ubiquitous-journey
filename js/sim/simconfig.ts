@@ -1741,6 +1741,36 @@ export const HEARSAY = {
   // reads as a "jump" (no stale heading). Below this, observe() updates the unit heading; above
   // it the heading resets (a fresh anchor). Gates the inferDestination heading-match term.
   predictMaxGap: 0.6,
+  // WITNESSED EXONERATION (the vouch): a first-hand FOND belief defends its subject against
+  // slander. When I adopt/colour gossip that marks a subject hostile or drops its standing while
+  // I hold a fresh first-hand (hops=0) FOND belief about them, I push the rumourmonger's OWN
+  // belief about that subject BACK toward mine — a counter-merge, a "vouch". Net effect: a
+  // well-liked agent with loyal eyewitness friends is naturally slander-resistant; a loner is
+  // vulnerable. Belief→belief only, bounded, scaled by MY first-hand confidence; gated on a
+  // GENUINE fondness so a neutral acquaintance does not reflexively defend everyone (slander
+  // stays cheap against strangers — only real friends vouch).
+  vouchStanding: 0.25,    // I vouch only for a subject I hold at least this FONDLY (first-hand)
+  vouchConf: 0.55,        // …and only when my own first-hand belief is at least this confident
+  vouchStrength: 0.4,     // how hard my vouch nudges the teller's standing back toward mine (×my conf)
+  vouchHostileHeal: 0.34, // a vouch CLEARS the teller's RUMOUR-born hostility when push (=vouchStrength×my conf)
+                          //   clears this — push tops out at vouchStrength, so only a near-max-confidence
+                          //   vouch heals a feud; a faint one only softens the standing, not the hostility
+};
+
+// SENTIMENT — a slow per-(observer→subject) relationship EMA that accrues across many small
+// interactions, independent of any single dramatic event. Where `standing` swings on deeds and
+// gossip, `sentiment` is the long memory of "do I generally like being near this person?": it
+// eases up with repeated pleasant proximity (the same chat that builds affinity) and gently
+// decays toward neutral when unreinforced (snubs, distance). It COLOURS standing (a small pull of
+// standing toward where sentiment sits), never replaces it — so existing standing-reading
+// behaviour benefits with no decide.ts change. Bounded + decaying so the town stays neither
+// all-fond nor all-cold (the soak invariant).
+export const SENTIMENT = {
+  emaGain: 0.0022,        // per-chat-tick pull of sentiment toward its pleasant-proximity target (slow)
+  pleasantTarget: 0.55,   // the ceiling repeated pleasant proximity eases sentiment toward
+  decayPerSec: 0.003,     // gentle drift back toward neutral each second when not reinforced (forgetting)
+  colourGain: 0.12,       // fraction of (sentiment − standing) folded into standing per chat-tick (the colour)
+  cap: 0.75,              // |sentiment| ceiling — a lasting like/dislike, never an absolute
 };
 
 // Factions (RPG layer). Townsfolk are the village; the player is an outsider.

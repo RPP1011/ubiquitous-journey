@@ -7,7 +7,7 @@
 // imports config + pure terrain helpers only.
 
 import { terrainHeight, concealmentAt } from '../../arena.js';
-import { inferDestination } from '../beliefs.js';
+import { inferDestination, BeliefState } from '../beliefs.js';
 import { SIM, SOURCE, BAND, COMMODITIES, ECON, MAP, SIGNALS, ESTEEM as WEALTHCUE, HEARSAY, factionHostile } from '../simconfig.js';
 import { noteSnub } from '../signals.js';
 import { PERCEPT_KIND } from '../percept.js';
@@ -249,6 +249,16 @@ export function gossipBeliefs(a: Agent, ctx: FullCtx): void {
         }
         continue;
       }
+      // WITNESSED EXONERATION (the vouch): before I let this teller's belief colour mine, if the
+      // teller speaks ILL of a subject I hold FIRST-HAND and FOND (a friend being slandered), I
+      // talk BACK — nudging the teller's OWN belief about that subject up toward mine. Belief→
+      // belief only, inside the sanctioned gossip bridge (writing the teller's store is fine here);
+      // bounded by my first-hand confidence. So a well-liked agent with loyal eyewitness friends is
+      // slander-resistant; a loner has no-one to vouch and is vulnerable. Never throws.
+      if (!a.controlled) {
+        const mine = a.beliefs.get(b.subjectId);
+        BeliefState.vouch(mine, b);
+      }
       a.beliefs.mergeFrom(b, SOURCE.TALKED);
     }
     // RUMOURED PRICES: chatting also drifts my price beliefs toward this neighbour's —
@@ -287,6 +297,14 @@ export function gossipBeliefs(a: Agent, ctx: FullCtx): void {
     // of being scrubbed away every tick (the bug that kept the town all-positive).
     const rel = a.beliefs.get(o.id);
     if (rel && !rel.hostile && rel.standing >= 0) rel.standing = Math.min(BAND.affinityCap, rel.standing + BAND.affinityGain);
+    // RELATIONSHIP SENTIMENT (SENTIMENT): this peaceful chat is ONE small pleasant interaction —
+    // accrue the slow relationship EMA. Unlike affinity (which only builds from a non-negative
+    // baseline), sentiment accrues even toward someone I currently resent — a long history of
+    // small kindnesses can SLOWLY thaw a grudge — but its colour on standing is gentle and the
+    // decay pulls it back when the kindnesses stop, so a real wrong still persists in the short
+    // run. It colours standing toward where sentiment sits, so existing standing-readers benefit.
+    // Belief→own-belief only; bounded; guarded.
+    if (rel) rel.accrueSentiment();
     break;   // one conversation partner per tick
   }
 }
