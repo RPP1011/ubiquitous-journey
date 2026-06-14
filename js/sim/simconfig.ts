@@ -1681,6 +1681,20 @@ export const LINEAGE = {
   reconcileChance: 0.25,    // per-pass chance two long-standing rivals RECONCILE (clear the
                             //   rivalry, become friends) — the peaceful end of the arc; higher
                             //   once one has already surpassed the other (the strife is settled)
+
+  // --- INHERITED FEUDS, ACTED (street-level enmity) ---
+  // A child born into a feuding HOUSE inherits the grudge as dynastic DATA (a rivalId, a
+  // standing bias). This makes it VISIBLE on the street: a YOUNG member of a feuding house,
+  // on PERCEIVING (holding a fresh belief about) a member of the RIVAL house, SOURS its belief
+  // about that neighbour — low standing + mild suspicion, NOT auto-hostility (a soured belief
+  // the existing avoid/shun behaviour acts on; latching hostility would over-escalate). Reads
+  // the agent's OWN beliefs + the agent's house + the STATIC feud registry (a shared world
+  // fact, like the mental map) — no roster scan to decide. Bounded + rare.
+  feudGrudgeEnabled: true,
+  feudYoungMaxLevel: 4,     // only YOUNG townsfolk (≤ this TOTAL level) take up the street grudge
+  feudGrudgeStanding: -0.4, // standing the soured belief is pulled DOWN toward (cool, not hostile)
+  feudGrudgeSuspicion: 0.3, // mild suspicion seeded alongside ("something's off about them")
+  feudGrudgePerPass: 4,     // at most this many fresh grudges stamped per pass (bounded)
 };
 
 // --- MIGRATION: the emigration valve against population skew ------------------
@@ -2247,6 +2261,18 @@ export const INTRIGUE = {
                              //   eventual unmasking lands as a betrayal, not "Bandit 3 caught"
   unmaskChance: 0.28,        // chance a PLANT is witnessed and the spy is exposed — its cover
                              //   blown, the town now perceives its true faction and hunts it
+  // --- FALSE PRICE INTEL (information warfare) -------------------------------
+  // Besides the social rumour, a spy by the market may also whisper a FALSE PRICE TIP —
+  // INFLATING what nearby bystanders believe a good is worth, written straight into their OWN
+  // priceBeliefs ("ore is dear right now"). The dupe then overvalues it: it asks too high and
+  // can't clear (a wasted market dwell — the existing wasted-trip loss), or a hauler sets out on
+  // the bad tip. Mints NOTHING — it MISROUTES real trade. The inflated number is just a belief
+  // that decay/real trades will erode back toward truth. Gated to the spy phase, bounded.
+  priceTipChance: 0.5,                        // chance a near-market plant ALSO seeds a price tip
+  priceTipGoods: ['ore', 'tool', 'potion'],   // the high-value goods a tip can name (a believable lie)
+  priceTipMult: 1.7,                          // factor the believed price is inflated to (clamped to bounds)
+  priceTipRadius: 22,                         // bystanders within this of the spy hear the tip (bounded)
+  priceTipMax: 3,                             // at most this many bystanders duped per plant (bounded)
 };
 
 // --- TRACE: the reasoning-trace diagnostic side-channel (docs/reasoning-traces.md) ---

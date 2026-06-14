@@ -22,7 +22,7 @@
 // members (no new bodies, no minted gold) — they are camp combatants given a
 // cover identity, not extra spawns.
 
-import { INTRIGUE, SOURCE, SIM } from './simconfig.js';
+import { INTRIGUE, SOURCE, SIM, ECON } from './simconfig.js';
 import { rng } from './rng.js';
 
 // `sim`/`ctx` (the owning Simulation + its cognition context — wave-2, still .js) and the
@@ -48,7 +48,7 @@ export class Intrigue {
     this._assigned = false;
     this.spies = [];
     // telemetry (read-only; surfaced by the soak assertion + any future UI)
-    this.stats = { spies: 0, disguised: 0, plants: 0, exfils: 0 };
+    this.stats = { spies: 0, disguised: 0, plants: 0, exfils: 0, falseTips: 0 };
   }
 
   // Pick the spies once the world has spawned: a config fraction of each enabling
@@ -146,6 +146,12 @@ export class Intrigue {
     this.stats.plants++;
     S.plantCd = INTRIGUE.plantCadence;
 
+    // FALSE PRICE INTEL (information warfare): besides the social lie, the spy may also
+    // whisper a bad PRICE TIP — inflating what nearby bystanders believe a good is worth.
+    // It misroutes real trade (the dupe overprices and can't clear), mints nothing. Bounded,
+    // guarded; the spy READS ground-truth prices in its own action but WRITES only beliefs.
+    if (rng() < (INTRIGUE.priceTipChance || 0)) { try { this._plantPriceTip(spy, ctx); } catch { /* never throw */ } }
+
     // CAUGHT IN THE ACT — a plant may be witnessed, exposing the spy. Its cover is
     // blown: ground-truth faction now shows, and the town turns on the traitor.
     // (Skipped while the Director is running this spy as a SPY'S WEB arc — there the
@@ -164,6 +170,37 @@ export class Intrigue {
 
     // having planted, exfiltrate (decide.js drives the actual movement).
     if (INTRIGUE.exfilAfterPlant) { S.phase = 'exfil'; this.stats.exfils++; }
+  }
+
+  // FALSE PRICE INTEL — the spy injects an INFLATED price belief for one high-value good into
+  // the OWN priceBeliefs of a few bystanders within earshot. The dupes overvalue it: they ask
+  // too high and fail to clear (a wasted market dwell), or a hauler reads the dear price and
+  // sets out on a bad tip. The economy is UNTOUCHED — no gold minted, no inventory moved; only
+  // a believed NUMBER is corrupted, which ordinary trades + decay will pull back toward truth.
+  // Bounded by priceTipMax / priceTipRadius. Reads the good's true price ONLY to size a
+  // believable lie (the deceiver's own sanctioned action) and WRITES only beliefs.
+  _plantPriceTip(spy: Ag, ctx: Ctx): void {
+    const goods = (INTRIGUE.priceTipGoods && INTRIGUE.priceTipGoods.length) ? INTRIGUE.priceTipGoods : null;
+    if (!goods) return;
+    const good = goods[(Math.floor(rng() * goods.length)) % goods.length];
+    const bounds = (ECON && ECON.priceBounds) || [1, 40];
+    const mult = INTRIGUE.priceTipMult || 1.6;
+    const r = INTRIGUE.priceTipRadius || INTRIGUE.frameRadius || 22;
+    const cap = INTRIGUE.priceTipMax || 3;
+    let duped = 0;
+    for (const o of ctx.agents) {
+      if (duped >= cap) break;
+      if (o === spy || !o.alive || o.controlled) continue;
+      if (o.faction !== 'townsfolk' || !o.priceBeliefs) continue;
+      if (spy.pos.distanceTo(o.pos) > r) continue;
+      const cur = o.priceBeliefs[good];
+      if (typeof cur !== 'number' || cur <= 0) continue;           // only corrupt a held belief
+      const lie = Math.min(bounds[1], Math.max(bounds[0], cur * mult));
+      if (lie <= cur) continue;                                    // a tip must INFLATE to mislead
+      o.priceBeliefs[good] = +lie.toFixed(2);                      // the false "it's dear" tip
+      duped++;
+      this.stats.falseTips++;
+    }
   }
 
   // UNMASK — the spy is exposed. Drop its cover (so perception now reads its TRUE,
