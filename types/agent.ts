@@ -172,8 +172,12 @@ export interface Agent {
   expedition?: TargetState | null;
   caravanRun?: TargetState | null;
   _duelWith?: EntityId | null;
+  _duelStart?: number | null;                                    // when the duel was enlisted (supervisor timeout)
+  _duelRestore?: { combatant: boolean; canWork?: boolean } | null;  // role-flag restore blob (stand-down)
   avengerOf?: EntityId | null;
   guardianOf?: EntityId | null;
+  bodyguardOf?: EntityId | null;      // sworn to shield a charge (director bodyguard trope)
+  warlord?: boolean;                  // a mustered war-leader (director raid) — never duels for honour
   sightTarget?: Vector3 | null;       // a target landmark position (steer/sightsee), not an id
   _ambitionIntent?: string | null;    // standing ambition-activity kind (ambition_goals feature → decide)
   relics?: unknown[];
@@ -185,6 +189,10 @@ export interface Agent {
                                       //   my OWN place-belief of that id (discovered by sight)
   _groupFormedAt?: number | null;     // anchor-side: when this group formed (the hall endurance gate)
   _schemaGoalLock?: { kind: string; until: number } | null;
+  _quirk?: string;                    // QUIRKS: stable behavioural tic, derived once by quirkOf (decide.ts)
+  _quirkLingerUntil?: number;         // SHOW-OFF: sim-time a show-off lingers at a fresh kill (act.ts)
+  _lastKills?: number;                // SHOW-OFF: last-seen life.kills (kill-delta edge detect, act.ts)
+  _duelChallengedAt?: number;         // EMERGENT DUEL: last tick this agent issued a challenge (throttle)
   _slain?: Set<EntityId>;
   _liveOaths?: number;                // sworn-and-unresolved oath count (oath economics: gnaw/courage/purpose)
   _underground?: boolean;

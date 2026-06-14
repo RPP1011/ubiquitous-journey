@@ -1047,6 +1047,52 @@ export const SOCIAL = {
 };
 
 // ============================================================================
+// QUIRKS — a stable behavioural tic per agent. The scorer derives a deterministic
+// _quirk from id+personality AT READ TIME (no spawn write), then shapes EXISTING
+// candidate scores by a GENTLE multiplier — the same expression in scoreAndSelect
+// (the oracle) AND the arbitrate row table (the S2 parity tripwire). Multipliers are
+// near 1 on purpose: the median-preserving lesson — a tic colours an agent, it does
+// NOT remake it. Tune the table here, never in logic.
+// ============================================================================
+export const QUIRK = {
+  // gating: a quirk is assigned only to a townsperson whose personality CROSSES the
+  // matching trait bar (so it reads as a tendency the agent already had, dialled up).
+  // An agent that fits no bar gets the 'plain' quirk (all multipliers 1 — a no-op).
+  pickThresh: 0.58,           // a trait at/above this can earn the matching quirk
+  lonerThresh: 0.34,          // …loner/homebody are LOW-tail tics instead (trait below this)
+  // per-quirk, per-candidate-kind multipliers (gentle, ~±25%). A kind absent from a
+  // quirk's row multiplies by 1 (the `?? 1` default in quirkMul).
+  mul: {
+    haggler:  { market: 1.22, work: 1.06 },                  // loves the deal — hauls to market readier
+    loner:    { socialize: 0.78, avoid: 1.2, wander: 1.12 }, // keeps to itself; wider berth
+    showoff:  { socialize: 1.2, fight: 1.1 },                // plays to a crowd; relishes a scrap
+    homebody: { comfort: 1.18, wander: 0.85 },               // hearth-drawn; roams less
+    busybody: { socialize: 1.3, market: 1.08 },              // forever in the thick of it
+  } as Record<string, Record<string, number>>,
+  // SHOW-OFF LINGER (act.ts, NOT scored — no S2 impact): a show-off who lands a kill
+  // basks a moment at the spot before moving on (own-state timer; pure flavour).
+  showoffLinger: 4,           // sim-seconds a show-off lingers after a kill
+};
+
+// ============================================================================
+// EMERGENT DUELS OF HONOUR — two unencumbered agents with MUTUAL latched-hostile,
+// deeply-soured belief-standing may ELECT a 1v1 duel that, on resolution, CLOSES the
+// feud (unlatch + warm to wary respect — handled by the existing Director duel
+// supervisor/_resolveDuel + the combatEvents death path). The election reads each
+// agent's OWN belief of the other (the epistemic split); the existing _duelWith→fight
+// branch in decide drives it; combat truth resolves the fight. Tune here, never in logic.
+// ============================================================================
+export const DUEL = {
+  enabled: true,
+  standingAt: -0.6,    // each must believe the other this soured (a deep feud, not a spat)
+  range: 22,           // …and be within this distance of where it BELIEVES the rival is
+  confMin: 0.35,       // …on a belief confident enough to act on
+  riskMin: 0.45,       // only the not-timid issue a challenge (own nerve)
+  chance: 0.05,        // per-eligible-tick election probability (rare; a tic, not a brawl pit)
+  challengeEvery: 10,  // sim-seconds between an agent's election attempts (throttle)
+};
+
+// ============================================================================
 // PHASE-1 BUILDINGS — emergent private homes + one town tavern, walk-through
 // benefit zones, paid in WOOD + the owner's own LABOUR time (gold never minted
 // or burned). TUNE HERE, never in logic. (COMFORT/BUILD/SURVEYOR mirror the

@@ -23,7 +23,7 @@ import { laborValue } from '../agent/occupation.js';
 import { qualifyHome, isUnhoused } from '../construction.js';
 import {
   pickSocialTarget, pickSuspectToAvoid, ambitionDrive, topAmbitionGoal, nearestComfortSource,
-  scoreAndSelect,
+  scoreAndSelect, quirkOf, quirkMul,
 } from '../agent/decide.js';
 import { STAGE, REASON } from '../trace.js';
 import type { Agent, CognitionCtx, Goal, PlanStep, EntityId, Stage, Reason } from '../../../types/sim.js';
@@ -252,6 +252,16 @@ export function arbitrate(a: Agent, ctx: CognitionCtx, planStep: PlanStep | null
 
   // ambition tilt: scale every collected candidate by its per-kind favour.
   for (const cc of cand) cc.score *= ambitionFavor(a, cc.kind);
+
+  // QUIRK TIC (gentle) — the float-identical twin of scoreAndSelect's quirk loop (both call
+  // quirkOf/quirkMul, so the S2 shadow oracle and the live arbiter agree tick-for-tick). Skipped while
+  // a `build` candidate is present (a quirk must not derail the time-critical home commitment) — the
+  // SAME guard scoreAndSelect applies, so parity holds.
+  const building = cand.some((cc) => cc.kind === 'build');
+  if (!building) {
+    const quirk = quirkOf(a);
+    for (const cc of cand) cc.score *= quirkMul(quirk, cc.kind);
+  }
 
   // AMBITION-ACTIVITY (pushed AFTER the favour loop, so NOT double-scaled; clamped below WEIGHT.plan).
   if (!sc.inDanger && !avoiding) {

@@ -7,7 +7,8 @@
 // Behaviour-preserving: verbatim bodies of the old Agent methods. No cycles —
 // imports config, pure helpers, motivation, and the occupation chooser.
 
-import { SIM, WEIGHT, ECON, COMMODITIES, GROUP_TYPES, LEGEND, SOCIAL, COMFORT, NOVELTY, BUILD, ESTEEM as WEALTH, ROMANCE, MOTIVE, ALMS, GRANARY, MIGRATE, factionHostile } from '../simconfig.js';
+import { SIM, WEIGHT, ECON, COMMODITIES, GROUP_TYPES, LEGEND, SOCIAL, COMFORT, NOVELTY, BUILD, ESTEEM as WEALTH, ROMANCE, MOTIVE, ALMS, GRANARY, MIGRATE, QUIRK, DUEL, factionHostile } from '../simconfig.js';
+import { rng } from '../rng.js';
 import { updateAmbition, ambitionFavor, ambitionWantsFight, deriveGoals, pruneGoals } from '../motivation.js';
 import { chooseOccupation, laborValue } from './occupation.js';
 import { arbitrate, shadowCheck } from '../motivation/arbitrate.js';
@@ -27,6 +28,53 @@ const GROUP_TYPES_T = GROUP_TYPES as Record<string, { cohesion?: string; combata
 interface Candidate { kind: string; score: number; [k: string]: unknown }
 
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
+
+// QUIRKS — a stable behavioural tic, DERIVED at read time (no spawn write). The quirk is a pure
+// function of the agent's id + personality, so both the live arbiter (arbitrate) and the reference
+// oracle (scoreAndSelect) call quirkOf()/quirkMul() and get FLOAT-IDENTICAL multipliers (the S2
+// parity tripwire). Reads ONLY own id + own personality — the epistemic split is untouched (a quirk
+// shapes how an agent weighs ITS OWN candidates). Gentle by design (the median-preserving lesson):
+// a tic colours a soul, it does not remake it. Cached on _quirk once derived (stable for the agent's
+// life — id + personality never change). Non-townsfolk / no-trait agents get 'plain' (a no-op row).
+const QUIRK_KINDS = ['haggler', 'loner', 'showoff', 'homebody', 'busybody'] as const;
+export function quirkOf(a: Agent): string {
+  const cached = (a as Agent & { _quirk?: string })._quirk;
+  if (cached != null) return cached;
+  let q = 'plain';
+  try {
+    const P = a.personality || {};
+    // Only a townsperson carries a tic (monsters/the player stay plain — the freeze-lesson guard
+    // also means professionless combatants are unaffected by the gentle social/economic shaping).
+    if (a.faction === 'townsfolk') {
+      const risk = P.risk_tolerance ?? 0.5, soc = P.social_drive ?? 0.5;
+      const ambn = P.ambition ?? 0.5, cur = P.curiosity ?? 0.5;
+      const hi = QUIRK.pickThresh;
+      // A DETERMINISTIC tie-break among the traits that cross their bar: hash the id to pick one
+      // of the eligible quirks, so the SAME agent always wears the SAME tic (no RNG, no spawn read).
+      const eligible: string[] = [];
+      if (soc <= QUIRK.lonerThresh) eligible.push('loner');
+      if (ambn >= hi) eligible.push('haggler');          // the deal-driven haggle harder
+      if (risk >= hi) eligible.push('showoff');          // the bold play to a crowd
+      if (cur <= QUIRK.lonerThresh) eligible.push('homebody');   // the incurious stay near the hearth
+      if (soc >= hi) eligible.push('busybody');          // the gregarious are everywhere
+      if (eligible.length > 0) {
+        // stable hash of the id string → an index into the eligible set (id is fixed for life).
+        const s = String(a.id);
+        let h = 0;
+        for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+        q = eligible[(((h % eligible.length) + eligible.length) % eligible.length)];
+      }
+    }
+  } catch { q = 'plain'; }
+  (a as Agent & { _quirk?: string })._quirk = q;
+  return q;
+}
+// the gentle per-(quirk, candidate-kind) multiplier (1 when the quirk doesn't touch that kind).
+export function quirkMul(quirk: string, kind: string): number {
+  const row = (QUIRK.mul as Record<string, Record<string, number>>)[quirk];
+  return (row && row[kind]) ?? 1;
+}
+void QUIRK_KINDS;   // documents the closed quirk set (the showoff act-linger reads 'showoff' too)
 
 // WEALTH RECOGNITION CHANNEL (docs/architecture/12 §6) — belief-only esteem: an agent that BELIEVES
 // a non-suspect local is prosperous nudges its OWN standing toward them. Personality-gated WITH the
@@ -49,6 +97,54 @@ export function recognizeWealth(a: Agent): void {
       if (envious) b.standing = Math.max(-1, b.standing - WEALTH.envyCool * mass);
       else if (altru > 0.4 || soc > 0.5) b.standing = Math.min(1, b.standing + WEALTH.deferWarm * mass);
     }
+  } catch { /* never throw on the tick */ }
+}
+
+// EMERGENT DUEL ELECTION (own-belief only) — the honour-duel the agent picks for ITSELF, vs the
+// Director's storyteller-chosen one. An unencumbered, not-timid townsperson that holds a CONFIDENT,
+// LATCHED-HOSTILE, DEEPLY-SOURED belief about a nearby rival may (rarely) issue a challenge: set its
+// OWN _duelWith + enlist itself (the same combatant/canWork flip + _duelStart the Director's
+// _enlistDuelist applies, inlined so we don't reach into the director module). The READ is the
+// agent's own belief (hostile/standing/lastPos/confidence) — the epistemic split holds; truth (combat)
+// resolves the fight; the Director's _superviseDuels/_resolveDuel CLOSES the feud (unlatch + wary
+// respect). Two rivals who each latched the other both elect → a real MUTUAL duel. One duel at a time
+// per agent; throttled; never starts while otherwise committed. Guarded; never throws on the tick.
+export function maybeElectDuel(a: Agent, ctx: CognitionCtx): void {
+  try {
+    if (!DUEL.enabled || !a.autonomous || a._duelWith != null) return;
+    if (a.faction !== 'townsfolk') return;                       // monsters/raiders don't duel for honour
+    // unencumbered: not already pulled into another role/commitment (mirror _tropeDuel's `free`).
+    // A soul raising its own home (a committed build site) is encumbered too — it has a roof to
+    // finish before it takes up a grudge with steel (and this keeps a duel from derailing the
+    // time-critical build commitment — the same care the scorer's build-guard takes).
+    if (a.inParty || a.reporter || a.bounty || a.spy || a.expedition || a.caravanRun ||
+        a.arbitrage || a._held || a.guardianOf != null || a.bodyguardOf != null ||
+        a.avengerOf != null || a.nemesis || a.warlord || a._buildSiteId != null) return;
+    const P = a.personality || {};
+    if ((P.risk_tolerance ?? 0.5) < DUEL.riskMin) return;        // only the not-timid challenge
+    // throttle: at most one election attempt per cooldown window (own-state stamp).
+    const now = ctx.time || 0;
+    if (a._duelChallengedAt != null && now - a._duelChallengedAt < (DUEL.challengeEvery || 10)) return;
+    a._duelChallengedAt = now;
+    if (rng() >= DUEL.chance) return;                            // rare — a tic, not a brawl pit
+    // find my bitterest believed rival in reach: latched-hostile, standing at/below the deep-feud bar,
+    // confidently known, and near where I BELIEVE it is. Belief-only — no roster read.
+    let rivalId: EntityId | null = null, worst = DUEL.standingAt + 1e-9;
+    for (const b of a.beliefs.all()) {
+      if (b.subjectId === a.id || b.placeKind) continue;
+      if (!b.hostile || !b.lastPos) continue;                    // must be a LATCHED-hostile rival
+      if ((b.confidence || 0) < DUEL.confMin) continue;          // confidently known
+      if ((b.standing ?? 0) > DUEL.standingAt) continue;         // deeply soured (a feud, not a spat)
+      if (a.pos.distanceTo(b.lastPos) > DUEL.range) continue;    // within challenge reach
+      if ((b.standing ?? 0) < worst) { worst = b.standing ?? 0; rivalId = b.subjectId; }
+    }
+    if (rivalId == null) return;
+    // ELECT: enlist MYSELF for the duel (the Director's _enlistDuelist effect, inlined — own-state
+    // only). The existing _duelWith→fight branch picks it up this very tick; _superviseDuels resolves.
+    a._duelRestore = { combatant: a.combatant, canWork: a.canWork };
+    a._duelStart = now;
+    a.combatant = true; a.canWork = false;
+    a._duelWith = rivalId;
   } catch { /* never throw on the tick */ }
 }
 
@@ -93,6 +189,16 @@ export function decide(a: Agent, ctx: CognitionCtx): void {
   // The Reporter subsystem sets a.reporterTarget; act.js walks the body there. This
   // override wins over every other role so the press always keeps to its beat.
   if (a.reporter) { a.goal = { kind: 'reporter' }; return; }
+
+  // EMERGENT DUEL ELECTION (own-belief): an unencumbered agent that BELIEVES a nearby rival is
+  // latched-hostile AND deeply soured may ELECT a 1v1 duel — setting its OWN _duelWith and enlisting
+  // itself (combatant/canWork flip + _duelStart) exactly as the Director's _enlistDuelist does. The
+  // read is BELIEF-ONLY (the epistemic split); the existing _duelWith→fight branch below drives the
+  // body; the Director's _superviseDuels/_resolveDuel CLOSES the feud (unlatch + wary respect) on a
+  // low-HP yield or timeout, and combatEvents handles a death. Two rivals who both latched each other
+  // each elect (the feud is symmetric) → a genuine MUTUAL duel. Runs BEFORE the scorer, so it never
+  // perturbs the S2 arbitrate≡oracle parity. Set on own-state only — no roster handle is touched.
+  maybeElectDuel(a, ctx);
 
   // DUEL OF HONOUR: a 1v1 LOCK — a duelist seeks and fights only its opponent, with no
   // flee and no economic distraction (we return before those candidates are scored).
@@ -507,6 +613,19 @@ export function scoreAndSelect(a: Agent, ctx: CognitionCtx, planStep: PlanStep |
   // longer-term motivation tilts the short-term utility toward its preferred
   // action (e.g. an ambitious agent values 'work' more, a wanderer 'wander').
   for (const c of cand) c.score *= ambitionFavor(a, c.kind);
+
+  // QUIRK TIC (gentle): the agent's stable behavioural tic shapes its OWN candidate weights — applied
+  // IDENTICALLY here and in arbitrate's ROW table (both call quirkOf/quirkMul → float-identical, the
+  // S2 parity net). Pushed after the ambitionFavor loop (the ambition/cohesion order is preserved).
+  // SKIP while a `build` candidate is on the table: commissioning/raising a home is a fragile, time-
+  // critical commitment (a quirk's gentle comfort/market boost could out-compete build and slip the
+  // project — the median-preserving lesson: a tic must not derail a life decision). Both scorers apply
+  // the SAME guard, so S2 parity holds.
+  const building = cand.some((c) => c.kind === 'build');
+  if (!building) {
+    const quirk = quirkOf(a);
+    for (const c of cand) c.score *= quirkMul(quirk, c.kind);
+  }
 
   // AMBITION-ACTIVITY (Phase B1): when no enemy/opportunity is in sight, an agent pursues its
   // ambition's standing ACTIVITY (work my craft / march to the frontier / take in the sights /
