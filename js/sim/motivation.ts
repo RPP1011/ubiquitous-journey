@@ -21,6 +21,25 @@ import { foldOathSworn, foldOathPop, oaths } from './signals.js';
 // abandoning it is character measured as a quantity ("a man of his word" / "the faithless").
 const OATH_KINDS = new Set(['avenge', 'repay', 'free', 'court', 'rescue']);
 
+// VENDETTA FRICTION (own-state, per-(self→subject)): each fresh avenge-trigger from the SAME subject
+// increments a friction tally; past MOTIVE.vendettaThreshold the grudge HARDENS into a non-expiring
+// lifelong feud. A tiny bounded per-agent Map (capped + LRU-evicted), guarded, never throws. Mirrors
+// oathMap. Returns the tally AFTER the bump.
+function frictionMap(a: Agent): Map<string, number> {
+  const aa = a as Agent & { _vendettaFriction?: Map<string, number> };
+  return aa._vendettaFriction || (aa._vendettaFriction = new Map());
+}
+function bumpFriction(a: Agent, subjectId: EntityId): number {
+  try {
+    const m = frictionMap(a);
+    const k = String(subjectId);
+    const n = Math.min((m.get(k) || 0) + 1, MOTIVE.vendettaFrictionCap || 16);
+    m.delete(k); m.set(k, n);                                  // re-insert => most-recent (LRU)
+    while (m.size > 32) { const oldest = m.keys().next().value; if (oldest === undefined) break; m.delete(oldest); }
+    return n;
+  } catch { return 1; }
+}
+
 // DEDUP THE OATH COUNT (life-trace finding): an avenge goal is re-derived EVERY cognition tick off a
 // still-salient memory and pops "satisfied" instantly when its target is already dead — which would
 // inflate sworn/kept ~750× per agent (pure re-derivation churn). An oath is counted ONCE per distinct
@@ -150,6 +169,15 @@ function beliefAlive(a: Agent | null, subjectId: EntityId): boolean {
   return !!(b && b.confidence >= SIM.actOnBeliefMin);
 }
 
+// BELIEF-BASED bond: do I hold POSITIVE standing toward `subjectId` (a friend/ally, not a stranger)?
+// Reads only my OWN belief table — the epistemic split. A subject I have no belief about reads as
+// unbonded (no avenge for a stranger I happened to see fall).
+function believedBonded(a: Agent | null, subjectId: EntityId): boolean {
+  if (!a || !a.beliefs || subjectId == null) return false;
+  const b = a.beliefs.get(subjectId);
+  return !!(b && (b.standing || 0) >= (MOTIVE.avengeBondMin || 0.25));
+}
+
 // Ambition catalogue. `favors` multiplies the score of matching decide() action
 // kinds (1 = neutral). `weight(P)` is the assignment propensity from personality.
 // `progress(a)` returns 0..1 toward fulfilment; cumulative kinds read a baseline
@@ -204,6 +232,26 @@ function snapshot(a: Agent): Record<string, number> {
   return { mkills: a.life.monsterKills, dist: a.life.dist, social: a.life.social, gold: a.gold, level: lvl(a) };
 }
 
+// NAMED LIFE-GOAL: bind a specific believed SUBJECT to a mastery/renown ambition — the
+// rival-to-surpass / role-model whose standing the agent measures itself against. Picked from the
+// agent's OWN belief table (the highest believed-standing OTHER it knows), never a roster scan, so a
+// hermit who knows no one carries an unbound ambition (returns null). Narration-only: stored on the
+// ambition for the biography to read; it does NOT change what the ambition favors or how it scores.
+function pickAmbitionRival(a: Agent): EntityId | null {
+  try {
+    if (!a.beliefs) return null;
+    const floor = MOTIVE.ambitionRivalStandingMin || 0.3;
+    let bestId: EntityId | null = null, bestStanding = floor;
+    for (const [id, b] of a.beliefs.map) {
+      if (id === a.id || !b) continue;
+      if (b.confidence < SIM.actOnBeliefMin) continue;     // only a peer I'm still sure of
+      const s = b.standing || 0;
+      if (s > bestStanding) { bestStanding = s; bestId = id; }   // someone I admire == the bar to clear
+    }
+    return bestId;
+  } catch { return null; }
+}
+
 // Pick an ambition kind weighted by personality from the agent's eligible pool.
 // `avoid` lets a just-completed ambition not immediately repeat.
 export function assignAmbition(a: Agent, now = 0, avoid: string | null = null): void {
@@ -215,6 +263,12 @@ export function assignAmbition(a: Agent, now = 0, avoid: string | null = null): 
   let r = rng() * total, kind = pool[0];
   for (let i = 0; i < pool.length; i++) { r -= ws[i]; if (r <= 0) { kind = pool[i]; break; } }
   a.ambition = { kind, label: AMBITIONS[kind].label, base: snapshot(a), progress: 0, t0: now, revenge: false };
+  // a mastery/renown soul measures itself against a believed PEER it esteems — a specific
+  // rival-to-surpass bound from its OWN beliefs (narration reads ambition.targetId later).
+  if (kind === 'mastery' || kind === 'renown') {
+    const rival = pickAmbitionRival(a);
+    if (rival != null) a.ambition.targetId = rival;
+  }
 }
 
 // REVENGE RE-HOMED (Phase 3): being attacked no longer mutates the agent's
@@ -297,6 +351,31 @@ function openVendettaArc(a: Agent, ctx: CognitionCtx | null, foeId: EntityId): v
   } catch { /* never throw on the tick */ }
 }
 
+// PLAN-LESS DISPOSITION GOAL (grief-shaped): empty atoms + a never-true predicate, so the planner
+// never injects a step and it simply sits on the stack until its expiresAt pops it. Used for the
+// mined-memory dispositions (wary / glory / shun) — they bias mood/biography, not new act() code.
+function dispositionGoal(kind: string, opts: { subjectId?: EntityId; place?: string }): Goal {
+  return {
+    kind, subjectId: opts.subjectId, place: opts.place,
+    atoms: [], predicate() { return false; },
+  } as Goal;
+}
+
+// ARM AN AVENGE GOAL with vendetta-hardening. Every fresh trigger from the SAME culprit bumps the
+// per-(self→subject) friction tally; once it crosses MOTIVE.vendettaThreshold the avenge goal is made
+// NON-EXPIRING — an earned lifelong feud (it then resolves only on a believed-dead pop, never by
+// cooling). Below the threshold it cools after avengeExpiry as before. Own-state only; guarded.
+function armAvenge(a: Agent, ctx: CognitionCtx | null, culpritId: EntityId, from: string, now: number): void {
+  const friction = bumpFriction(a, culpritId);
+  const g = goalAvenge(culpritId);
+  g.priority = 0.9; g.from = from;
+  const hardened = friction >= (MOTIVE.vendettaThreshold || 3);
+  if (!hardened) g.expiresAt = now + (MOTIVE.avengeExpiry || 120);   // a lifelong feud never cools out
+  traceDerived(a, ctx, g, a.pushGoal(g, ctx));
+  openVendettaArc(a, ctx, culpritId);
+  swearOath(a, 'avenge', culpritId);
+}
+
 export function deriveGoals(a: Agent, ctx: CognitionCtx | null): void {
   if (!a || a.controlled || !a.memory || typeof a.pushGoal !== 'function') return;
   if (a.faction === 'monster') return;              // monsters carry no grudge-goals
@@ -318,12 +397,7 @@ export function deriveGoals(a: Agent, ctx: CognitionCtx | null): void {
         // HUNT one that fled out of belief-reach (the avenge goal drives destination-intent
         // pursuit). No roster/liveness read here.
         if (ep.withId === a.id || (a._slain && a._slain.has(ep.withId))) continue;
-        const g = goalAvenge(ep.withId);
-        g.priority = 0.9; g.from = 'assaulted';
-        g.expiresAt = now + (MOTIVE.avengeExpiry || 120);
-        traceDerived(a, ctx, g, a.pushGoal(g, ctx));
-        openVendettaArc(a, ctx, ep.withId);   // narrative spine: the feud is now a tracked arc (§12 §3.5)
-        swearOath(a, 'avenge', ep.withId);            // an oath sworn (§13 E.oaths)
+        armAvenge(a, ctx, ep.withId, 'assaulted', now);   // vendetta-hardens on repeat provocation from the same foe
       } else if (ep.kind === 'windfall') {
         const g = goalSeekFortune(ep.place || 'market', MOTIVE.fortuneTarget || 140);
         g.priority = 0.6; g.from = 'windfall';
@@ -348,15 +422,47 @@ export function deriveGoals(a: Agent, ctx: CognitionCtx | null): void {
         grief.priority = 0.55; grief.from = 'witnessed_death';
         grief.expiresAt = now + (MOTIVE.grieveExpiry || 90);
         traceDerived(a, ctx, grief, a.pushGoal(grief, ctx));
+        // GENERALISED NPC-vs-NPC AVENGE: carry a vendetta for the believed culprit when the FALLEN
+        // was a BONDED other (I hold positive standing toward them) and the episode is salient enough.
+        // The culprit comes from MY OWN memory (ep.byId) — a planted/mistaken byId yields a tragically
+        // wrong avenger (the point). believedBonded reads only my OWN belief; no roster scan.
         const haveCulprit = ep.byId != null && ep.byId !== a.id && !(a._slain && a._slain.has(ep.byId));
-        if (haveCulprit) {
-          const av = goalAvenge(ep.byId as EntityId);
-          av.priority = 0.85; av.from = 'witnessed_death';
-          av.expiresAt = now + (MOTIVE.avengeExpiry || 120);
-          traceDerived(a, ctx, av, a.pushGoal(av, ctx));
-          openVendettaArc(a, ctx, ep.byId as EntityId);   // the blood-feud is now a tracked arc (§12 §3.5)
-          swearOath(a, 'avenge', ep.byId);                      // an oath sworn (§13 E.oaths)
+        if (haveCulprit && believedBonded(a, ep.withId) && (ep.salience || 0) >= (MOTIVE.avengeWitnessSalienceMin || 0.55)) {
+          armAvenge(a, ctx, ep.byId as EntityId, 'witnessed_death', now);
         }
+      } else if (ep.kind === 'bloodshed' && ep.byId != null) {
+        // A bloodshed I WITNESSED (a killing of someone, attributed to ep.byId): if the fallen
+        // (ep.withId) is a bonded other and I believe a culprit, avenge them too. Same bonded ×
+        // salience gate as witnessed_death; own memory + own belief only.
+        const culprit = ep.byId as EntityId;
+        const ok = culprit !== a.id && !(a._slain && a._slain.has(culprit))
+          && ep.withId != null && ep.withId !== a.id && believedBonded(a, ep.withId)
+          && (ep.salience || 0) >= (MOTIVE.avengeWitnessSalienceMin || 0.55);
+        if (ok) armAvenge(a, ctx, culprit, 'bloodshed', now);
+      } else if (ep.kind === 'survived' && ep.withId != null && (ep.salience || 0) >= (MOTIVE.warySalienceMin || 0.6)) {
+        // A NEAR-DEATH at this foe's hands -> a lasting WARINESS of them. A plan-less disposition that
+        // simply biases away (decays over waryExpiry). Not the player's self; reads only own memory.
+        if (ep.withId === a.id) continue;
+        const g = dispositionGoal('wary', { subjectId: ep.withId });
+        g.priority = 0.5; g.from = 'survived';
+        g.expiresAt = now + (MOTIVE.waryExpiry || 360);
+        traceDerived(a, ctx, g, a.pushGoal(g, ctx));
+      } else if ((ep.kind === 'triumph' || ep.kind === 'milestone') && (ep.salience || 0) >= (MOTIVE.glorySalienceMin || 0.6)) {
+        // A past glory (a great kill, a class earned) -> a RETURN-TO-GLORY pull. Plan-less disposition
+        // (the pride mood was already raised when the episode was recorded); biases + decays. Keyed by
+        // place (or the deed's label) so distinct triumphs don't collapse to one stacked goal.
+        const g = dispositionGoal('glory', { place: ep.place || (typeof ep.label === 'string' ? ep.label : 'past glory') });
+        g.priority = 0.45; g.from = ep.kind;
+        g.expiresAt = now + (MOTIVE.gloryExpiry || 200);
+        traceDerived(a, ctx, g, a.pushGoal(g, ctx));
+      } else if (ep.kind === 'forsworn' && ep.withId != null) {
+        // A vow I BROKE toward this party -> SHAME-AVOIDANCE: shun the one I wronged. Plan-less
+        // disposition (the forsworn comfort-ceiling scar already landed); shun decays over shameExpiry.
+        if (ep.withId === a.id) continue;
+        const g = dispositionGoal('shun', { subjectId: ep.withId });
+        g.priority = 0.4; g.from = 'forsworn';
+        g.expiresAt = now + (MOTIVE.shameExpiry || 300);
+        traceDerived(a, ctx, g, a.pushGoal(g, ctx));
       } else if (ep.kind === 'relic') {
         // found / heard of a relic in a place -> delve there (aspirational for NPCs).
         const g = goalDelve(ep.place || 'a ruin');

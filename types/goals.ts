@@ -121,6 +121,8 @@ export interface Ambition {
   progress: number;             // 0..1
   t0: number;
   revenge: boolean;
+  targetId?: EntityId;          // a specific believed SUBJECT bound to this ambition (e.g. a rival-to-surpass); narration-only
+  targetPlace?: string;         // a specific place bound to this ambition (e.g. a frontier to roam); narration-only
 }
 
 /** The compact ambition view surfaced to UI/biography (motivation.ambitionSnapshot). */
