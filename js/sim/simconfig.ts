@@ -2247,6 +2247,26 @@ export const INTRIGUE = {
                              //   eventual unmasking lands as a betrayal, not "Bandit 3 caught"
   unmaskChance: 0.28,        // chance a PLANT is witnessed and the spy is exposed — its cover
                              //   blown, the town now perceives its true faction and hunts it
+  // --- CULTIVATE: spies GROOM discontented locals into witting collaborators (assets) ---------
+  // Rather than only plant-and-run, a spy that lingers near a GENUINELY DISCONTENTED townsperson
+  // (poor AND soured on its own town — read from ground truth in the spy's OWN action) makes a
+  // REPEATED warming offer that, over several encounters, nudges that local's BELIEF toward the
+  // spy's camp faction (warmer standing toward the spy, cooler toward its own town). Past a
+  // threshold the local turns: it becomes a WITTING minor planter that occasionally plants a
+  // false rumour FOR the spy — a second-order deceiver. Belief/flag writes only; nothing minted.
+  // RARE + GRADUAL by design: a slow warmth per encounter, a hard cap of assets per spy, and only
+  // a truly discontented local qualifies. Flip `cultivate` off and grooming is wholly inert.
+  cultivate: true,           // master switch for the asset-grooming layer (off → only plant-and-run)
+  cultivateRadius: 10,       // a spy must be within this of a local to warm them (a quiet word)
+  cultivatePoorBelow: 18,    // a candidate must hold LESS gold than this to be "poor" (startGold 40)
+  cultivateGrievance: -0.12, // candidate's belief-standing toward its OWN town must be at/below this
+  cultivateWarmth: 0.05,     // standing nudge toward the spy per encounter (slow — many to turn)
+  cultivateCooling: 0.03,    // standing nudge DOWN toward the local's own town per encounter
+  cultivateTurnAt: 0.45,     // believed-standing toward the spy at/above which the local TURNS (witting)
+  cultivateMaxAssets: 2,     // hard cap of witting assets a single spy may run at once
+  assetPlantCadence: 22,     // sim-seconds a turned asset waits between planting FOR the spy (slower than the spy)
+  assetPlantChance: 0.5,     // per-opportunity chance a turned asset actually plants (rarer than the spy)
+  assetExposeChance: 0.5,    // on the spy's unmasking, chance exposure CHAINS to each known asset
 };
 
 // --- TRACE: the reasoning-trace diagnostic side-channel (docs/reasoning-traces.md) ---
