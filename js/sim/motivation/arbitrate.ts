@@ -23,7 +23,7 @@ import { laborValue } from '../agent/occupation.js';
 import { qualifyHome, isUnhoused } from '../construction.js';
 import {
   pickSocialTarget, pickSuspectToAvoid, ambitionDrive, topAmbitionGoal, nearestComfortSource,
-  scoreAndSelect, quirkOf, quirkMul,
+  scoreAndSelect, quirkOf, quirkMul, survivalMod, notorietyFear,
 } from '../agent/decide.js';
 import { STAGE, REASON } from '../trace.js';
 import type { Agent, CognitionCtx, Goal, PlanStep, EntityId, Stage, Reason } from '../../../types/sim.js';
@@ -71,11 +71,15 @@ const ROWS: Row[] = [
   // ── survival (belief-only hostile) ──
   { key: 'fight', primitive: 'strike', serves: 'reflex', gen(a, _ctx, sc) {
     if (sc.enemyId == null || !sc.brave || sc.tethered) return null;
-    return c('fight', WEIGHT.fight * (0.4 + a.personality.risk_tolerance) + a.mood.anger, { targetId: sc.enemyId });
+    // M3 believed force-ratio modulation — float-identical to scoreAndSelect (both call survivalMod).
+    const { fightMul } = survivalMod(a, sc.enemyId);
+    return c('fight', (WEIGHT.fight * (0.4 + a.personality.risk_tolerance) + a.mood.anger) * fightMul, { targetId: sc.enemyId });
   } },
   { key: 'flee', primitive: 'locomote', serves: 'reflex', gen(a, _ctx, sc) {
     if (sc.enemyId == null || a.combatant || !sc.inDanger) return null;
-    return c('flee', WEIGHT.flee * (1.2 - a.personality.risk_tolerance) + a.mood.fear + 0.5, { fromId: sc.enemyId });
+    // M3 force-ratio flee-up + believed-villain notoriety fold — float-identical to scoreAndSelect.
+    const { fleeMul } = survivalMod(a, sc.enemyId);
+    return c('flee', (WEIGHT.flee * (1.2 - a.personality.risk_tolerance) + a.mood.fear + 0.5) * fleeMul + notorietyFear(a, sc.enemyId), { fromId: sc.enemyId });
   } },
 
   // ── economic / life scheduling (canWork && !inDanger) ──

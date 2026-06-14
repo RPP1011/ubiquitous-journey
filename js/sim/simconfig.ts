@@ -1798,6 +1798,33 @@ export const SIM = {
   strengthHpWeight: 1.0,       // how strongly MY current HP fraction discounts MY own strength (0 = ignore HP)
 };
 
+// SURVIVAL READS BELIEVED STRENGTH (docs/architecture/18 M3) — the consumption side of the M2 force
+// estimate. The fight/flee pushes were personality-constant; now they tip with the BELIEVED force
+// ratio (believedForceRatio: my own strength vs the believed enemy's) and my own HP fraction —
+// outmatched/wounded → flee more, dominant/healthy → fight more. Personality stays the co-factor
+// (a daredevil still fights at a worse ratio than a coward), so this is the M3 DIAL, not a switch.
+// GENTLE + MEDIAN-PRESERVING by design: at an even matchup (ratio≈1) AND full HP every multiplier is
+// ~1, so the median townsperson's fight/flee is unchanged — only the lopsided cases tip. The ratio is
+// squashed to rc∈[0,1] (rc = ratio/(ratio+1): 0→0, even→0.5, dominant/unrated→~1) so the dial is
+// bounded no matter how lopsided the estimate. Reads OWN beliefs/stats only — the epistemic split holds.
+export const SURVIVAL = {
+  // FIGHT confidence: scales WEIGHT.fight's base by the force ratio (rc) and own HP fraction. At the
+  // neutral point (rc=0.5, full HP) both terms are 1 → the push is unchanged (median-preserving).
+  fightFloor: 0.70, fightSpan: 0.60,   // ratio term: fightFloor + fightSpan*rc  → [0.70 .. 1.30], 1.0 at rc=0.5
+  fightHpFloor: 0.60, fightHpSpan: 0.40, // HP term: fightHpFloor + fightHpSpan*hpFrac → [0.60 .. 1.00], 1.0 at full HP
+  // FLEE urge: the mirror — scales WEIGHT.flee's base UP when outmatched (low rc) or wounded.
+  fleeFloor: 0.70, fleeSpan: 0.60,     // ratio term: fleeFloor + fleeSpan*(1-rc) → [0.70 .. 1.30], 1.0 at rc=0.5
+  fleeHpFloor: 0.75, fleeHpSpan: 0.50, // HP term: fleeHpFloor + fleeHpSpan*(1-hpFrac) → [0.75 .. 1.25], 1.0 at ~half HP
+  // HIDE (the schema `outmatchedBy` bar, NOT a scorer): go to ground when I believe the ratio is
+  // lopsided past this — my own strength is below this fraction of the believed foe's. 0.5 = "the foe
+  // is believed ≥2× me". A civilian with no finer model still hides from a believed-hostile (the old
+  // binary test is kept as the fallback when the foe is unrated, ratio = +Inf).
+  hideRatioBar: 0.55,
+  // NOTORIETY FEAR (generalises the player-only LEGEND flee gate): a believed-notorious HOSTILE adds
+  // to the flee score for ANY timid civilian — an NPC villain unsettles the street like the player does.
+  notorietyFleeWeight: 0.8,    // flee += this × believed notoriety (folded into the flee push, not a branch)
+};
+
 // MENTAL MAP / Theory-of-Mind DESTINATION inference. The agent's known PLACES are
 // shared STATIC geography (gates/POIs/landmarks) — never live entities — queried by
 // AFFORDANCE ('exit'/'conceal'/'safe'/'crowd'/'resource'). `inferDestination` scores
