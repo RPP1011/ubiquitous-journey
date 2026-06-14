@@ -1122,8 +1122,26 @@ export class Simulation {
       // a landed change. Guarded; minimal until richer captivity/structure mechanics land.
       affect(actor, targetId, state) {
         try {
+          if (!actor) return false;
+          // STRUCTURE SABOTAGE (features/sabotage.ts): a `B:`-namespaced target is a BUILDING percept,
+          // not an agent. Wrecking it GUTS its walls/doors (set hp 0) the way a raid's torch would —
+          // the next BuildSites._raidPass recomputes shelterReport from the now-gutted struct and
+          // flips believed `sheltered`/`alive`, so the owner DISCOVERS the ruin by sight (the
+          // homecoming path), never telepathically. Conserved (destroys wood parts, not gold). This
+          // gives the formerly-dormant `wreck` row its live structure mechanic.
+          if (state === 'wrecked' && typeof targetId === 'string' && targetId.startsWith('B:')) {
+            const blds = sim.buildSites && sim.buildSites._buildings;
+            if (!blds) return false;
+            const b = blds.find((x) => x && x.id === targetId);
+            if (!b || !b.struct || !b.struct.parts || b.sheltered === false) return false;
+            let n = 0;
+            for (const p of b.struct.parts.values()) {
+              if (p.type === 'wall' || p.type === 'door') { p.hp = 0; p.burning = 0; n++; }
+            }
+            return n > 0;     // _raidPass folds the shelter loss + displacement on its next pass
+          }
           const t = sim.agentsById.get(targetId);
-          if (!t || !actor) return false;
+          if (!t) return false;
           if (state === 'freed') { t._held = false; t._freedBy = actor.id; return true; }
           if (state === 'wrecked') { t._wrecked = true; return true; }
           return false;

@@ -15,5 +15,8 @@ import './alms.js';          // charity decided by character: the altruistic fee
 import './migrate.js';       // emigration decided by character: the poor/restless answer a land-is-cheap rumour
 import './subsistence.js';   // the goalSate live trigger: hunger posed to the planner (forage/buy by cost)
 import './signalsFold.js';   // docs/architecture/13: PLAN_OUTCOME-folded catalog signals (streak/perils)
+import './scout.js';         // belief-driven scouting: the curious go RESOLVE a shaky-but-juicy belief (observe/ask)
+import './apprentice.js';    // aspiration apprenticeship: a mastery soul studies a craft it lacks (tuition → teacher)
+import './sabotage.js';      // the dormant `wreck` row, triggered: a grudging/bold/uncaring soul torches a rival's building
 
 export {};

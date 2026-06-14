@@ -518,6 +518,38 @@ export const KNOW = {
   askGain: 0.3,          // confidence a single (cheap, vaguer) ask adds to a topic's home
 };
 
+// --- SCOUT: belief-driven investigation (the curious resolve a shaky-but-juicy belief) ----
+// The dormant LOW-confidence band turned PROACTIVE (features/scout.ts). A curious agent that holds a
+// belief which is both UNCERTAIN (confidence in a middle band — known-of, not yet trusted) and WORTH
+// RESOLVING (a believed-rich mark, a believed relic place, a stale friend's whereabouts) derives a
+// Know() goal to go RESOLVE it — observe (first-hand) or ask (cheap). It reads ONLY its own belief
+// confidences (the epistemic split): the agent acts to firm up what it is unsure of, never on the
+// roster. Selective (a curiosity gate + a confidence WINDOW) so it is investigation, not constant
+// milling — and bounded (pushGoal dedups by kind; the goal cools on its expiry).
+export const SCOUT = {
+  curiosityMin: 0.55,    // only the CURIOUS go out of their way to resolve a hunch (character gate)
+  confLo: 0.12,          // the uncertainty WINDOW: a belief firmer than confLo (known-of, not noise)…
+  confHi: 0.5,           // …but below confHi (not yet trusted enough to act on) is worth scouting.
+  wealthCue: 0.45,       // a mark whose believed wealth is at/above this is a juicy mark to confirm
+  expiry: 90,            // sim-seconds a scout goal persists before it cools (then re-derive afresh)
+  priority: 0.4,         // below the heist/rescue derivers — investigation is a quiet background pull
+};
+
+// --- APPRENTICE: aspiration apprenticeship (a mastery soul studies a craft it lacks) ------
+// A `mastery`-ambition agent that believes a high-skill neighbour practises a craft IT LACKS derives
+// a Know(recipe) goal → the planner inserts `study` (tuition flows to the teacher, conserved, via
+// resolver.teachRecipe). Distinct from learning.ts's deriver (which only firms up the agent's OWN
+// trade): this is the AMBITION to broaden — a master-in-the-making picks up a SECOND craft. The
+// teacher is chosen from the agent's OWN beliefs (a confident, prosperous-seeming, not-disliked
+// neighbour ≈ an established crafter — a believed-skill cue), never the roster. Selective (the mastery
+// ambition + a believed teacher) so it is a rare aspirational thread, not town-wide cross-training.
+export const APPRENTICE = {
+  teacherWealthCue: 0.4, // a neighbour believed at least this prosperous reads as an established crafter
+  teacherStanding: -0.2, // …and not actively disliked (a soured neighbour is no master to apprentice to)
+  expiry: 160,           // sim-seconds the Know(recipe) aspiration persists (matches learning's window)
+  priority: 0.42,        // just under learning.ts's own-trade learn (0.45) — broadening is secondary
+};
+
 // --- ROB: the take-from-a-person acquire row (docs/architecture/10, Phase 3) -----------
 // The acquire table's `person` row — taking gold from a mark by FORCE (robbery; tax/alms are
 // the same moved-shape with a different social trace). MOVED, so the executor debits the mark
@@ -1152,6 +1184,26 @@ export const BUILD = {
   rebuildGraceTicks: 120,
   // benefit a finished home confers (comfort source; homes are not social hubs)
   homeBenefit: { comfort: 1.0, social: 0.0 },
+};
+
+// --- SABOTAGE: the wreck primitive, given a live target (features/sabotage.ts) ------------
+// Wires the formerly-DORMANT `wreck` Affect row to a real structure mechanic: a strongly-grudging,
+// bold/uncaring agent that believes a RIVAL owns a specific building (a place-belief it spatially
+// associates with a deeply-soured person-belief) derives a wrecked(buildingId) goal → [goto → wreck].
+// The wreck executor guts the building's walls (resolver.affect on a `B:` id), flipping its believed
+// `sheltered` state on the next raid-pass recompute — the owner then re-routes via the homecoming
+// path when it PERCEIVES the ruin (no telepathy). Gated HARD on circumstance × character (a deep
+// grudge AND a vindictive, bold, uncaring soul) so arson is RARE and emergent — mirrors urchin.ts's
+// discipline (poverty is circumstance, character is the choice). Conserved: wrecking moves no gold.
+export const SABOTAGE = {
+  grudgeStanding: -0.55, // a person-belief soured AT/BELOW this is a real grudge (not mere dislike)
+  vindictivenessMin: 0.6,// …held by a VINDICTIVE soul (the character lever — most never sabotage)
+  riskMin: 0.55,         // …who is BOLD enough to risk being seen torching a rival's home
+  altruismMax: 0.4,      // …and UNCARING enough about the harm (the same uncaring gate as the urchin)
+  ownerRadius: 10,       // a building within this of the rival's believed pos reads as "the rival's"
+  expiry: 120,           // sim-seconds a wreck goal persists before it cools (arson is a passing fury)
+  priority: 0.5,         // matched to the urchin steal goal — a deliberate, bounded grievance act
+  wallDmg: 9999,         // damage dealt to each wall/door on a wreck (guts the shell → unsheltered)
 };
 
 // --- SURVEYOR: town plot allocation + public-tavern commissioning ------------
