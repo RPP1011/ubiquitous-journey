@@ -27,6 +27,11 @@ export const REP = {
     ATTACKED_NPC:   { personal: -0.40, faction: -0.12, label: 'attacked one of them' },
     KILLED_NPC:     { personal: -0.70, faction: -0.30, label: 'killed one of them' },
     THEFT:          { personal: -0.30, faction: -0.10, label: 'stole from them' },
+    // BETRAYAL-AS-CHOICE: a witnessed oath-abandonment. Unlike the deeds above (player deeds
+    // judged against the witness's faction), this is an NPC↔NPC reputation deed — a soul SEEN
+    // to forsake a sworn vow loses the trust of those who saw it. It rides gossip like any
+    // knownDeed (beliefs._carryDeed carries the freshest label outward, garbling-aware).
+    FORSWORN:       { personal: -0.22, faction: -0.04, label: 'broke their sworn word' },
   },
 
   priceFavorMax: 0.15,    // a beloved player buys 15% cheaper / sells 15% dearer
@@ -140,6 +145,35 @@ export class Reputation implements IReputation {
     }
     // faction rollup (once per affected faction, not per-witness)
     for (const f of factionsHit) this.bumpFaction(f, deed.faction);
+    return n;
+  }
+
+  // BETRAYAL-AS-CHOICE — the social leak of a broken vow (an NPC↔NPC reputation deed).
+  // The breaker's OWN truth is just its memory (recorded in motivation.resolveOath); this is
+  // the OBSERVER bridge (society pass, full roster) that lets the deed LEAK: every OTHER agent
+  // within vision of the breaker forms its OWN belief — a standing drop toward the breaker plus
+  // a FORSWORN knownDeed (newest, so beliefs._carryDeed rides it down the gossip chain). The
+  // breaker is not a witness against itself, and the player is excluded (player↔NPC standing is
+  // reputation.ts's player-slot business, not an NPC's opinion of another NPC). Belief-only;
+  // ground truth is untouched. Returns the number of observers who learned of it.
+  witnessForsworn(agents: Agent[], breaker: Agent | null, now = 0) {
+    const deed = deedOf('FORSWORN');
+    if (!deed || !breaker || !breaker.id) return 0;
+    let n = 0;
+    for (const w of agents) {
+      if (!w || !w.alive || w.controlled || w.id === breaker.id) continue;        // not self, not the player body
+      if (this.playerId != null && w.id === this.playerId) continue;
+      if (!w.pos || !breaker.pos || w.pos.distanceTo(breaker.pos) > SIM.visionRange) continue;  // only those who SAW it
+      if (!w.beliefs) continue;
+      let b = w.beliefs.get(breaker.id);
+      // only an agent who already KNOWS the breaker forms the opinion — the leak rides who was
+      // watching, not telepathy. (No belief yet → it heard nothing first-hand; gossip may still reach it.)
+      if (!b) continue;
+      b.standing = clamp((b.standing || 0) + deed.personal, -1, 1);
+      b.knownDeeds.unshift({ deed: 'FORSWORN', label: deed.label, t: now });
+      if (b.knownDeeds.length > 6) b.knownDeeds.length = 6;
+      n++;
+    }
     return n;
   }
 

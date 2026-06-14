@@ -1749,6 +1749,16 @@ export const PATRICIAN = {
   reconcileChance: 0.4,    // chance a brokering becomes a LASTING reconciliation (enemies →
                            //   friends) rather than a mere truce — the positive register
   reconcileStanding: 0.4,  // the warm mutual standing a reconciliation leaves behind
+  // CONTESTED / REFUSABLE PEACE — a party nursing a fresh, salient BETRAYED/AVENGE wound (read
+  // from its OWN memory) resists a forced forgiveness; a deep enough one can HARDEN the feud
+  // instead. Tuned so the override fires only over real blood — most truces still land cleanly.
+  refuseSalience: 0.6,     // grudge salience (either side) above which a RECONCILIATION can't form
+                           //   (degrades to a resisted truce — you can't befriend a real betrayer)
+  resistSalience: 0.5,     // grudge salience above which a truce is THROTTLED (nudge ×(1-grudge),
+                           //   hostility not quelled) and may backfire
+  hardenChance: 0.5,       // chance a resisted truce BACKFIRES (feud hardens) rather than just
+                           //   barely moving — a failed brokering, the more interesting outcome
+  hardenAmount: 0.08,      // how far standing DROPS when a forced peace backfires (the wound deepens)
 };
 
 // --- THE NIGHT WATCH: a civic guard institution (Discworld's City Watch) -------
@@ -1786,6 +1796,12 @@ export const HOUSES = {
     'Fenwick', 'Oakes', 'Rede', 'Sallow', 'Tarn', 'Wode', 'Yarrow', 'Brand', 'Coll',
     'Drey', 'Frost', 'Garn', 'Hale', 'Ives', 'Joss', 'Karr', 'Lund', 'Mott', 'Nye',
     'Orr', 'Pike', 'Quist', 'Reeve', 'Snell', 'Vary'],
+  // OATHBREAKER BRAND (betrayal-as-choice): a soul who breaks ENOUGH vows earns a dark epithet
+  // that rides every future chronicle beat — the negative dynastic counterpart to "the Bold".
+  // Branded once per life by houses.brandForsworn (gated on life.forsworn ≥ forswornBrandAt),
+  // and only on a not-yet-named agent (never clobbers a hero/villain title).
+  forswornBrandAt: 3,      // broken vows before the brand sticks (rare on purpose — a pattern, not a slip)
+  forswornNames: ['Oathbreaker', 'the Faithless', 'the False', 'Vow-breaker', 'the Forsworn'],
 };
 
 // --- EPITHETS: emergent heroes & villains (a light Nemesis system) -------------
