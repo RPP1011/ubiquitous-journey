@@ -17,5 +17,8 @@ import './subsistence.js';   // the goalSate live trigger: hunger posed to the p
 import './signalsFold.js';   // docs/architecture/13: PLAN_OUTCOME-folded catalog signals (streak/perils)
 import './reciprocity.js';   // docs/architecture/17 §8.2: read believedMotive back into trust (the ToM loop's 2nd half)
 import './newsread.js';      // NEWS MOVES PRICES: a market-side reader folds the Gazette's printed median into its OWN price belief
+import './scout.js';         // belief-driven scouting: the curious go RESOLVE a shaky-but-juicy belief (observe/ask)
+import './apprentice.js';    // aspiration apprenticeship: a mastery soul studies a craft it lacks (tuition → teacher)
+import './sabotage.js';      // the dormant `wreck` row, triggered: a grudging/bold/uncaring soul torches a rival's building
 
 export {};
