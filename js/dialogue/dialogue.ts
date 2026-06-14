@@ -8,7 +8,9 @@
 import { COMMODITIES, FACTIONS, SOURCE } from '../sim/simconfig.js';
 import { rng } from '../sim/rng.js';
 import { provenanceLabel } from '../sim/beliefs.js';
-import type { Agent, BeliefState, EntityId } from '../../types/sim.js';
+import { memoryPhrase } from '../sim/memory.js';
+import { agentDrive } from '../sim/biography.js';
+import type { Agent, BeliefState, EntityId, Episode } from '../../types/sim.js';
 
 // simulation.js is a later cluster — typed as the minimal read surface used here.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -60,6 +62,7 @@ export class DialogueSession {
   over: boolean;
   lastResult: DialogueResult | null;
   _revealed: boolean;
+  _reminisced: boolean;
   _opts: DialogueOption[];
 
   constructor(npc: Agent, player: Agent | null, sim: Sim | null) {
@@ -69,6 +72,7 @@ export class DialogueSession {
     this.over = false;
     this.lastResult = null;          // {text, tone:'good'|'bad'|'neutral'} of last choice
     this._revealed = false;          // has the NPC spilled its rumour yet?
+    this._reminisced = false;        // has the NPC shared a memory yet?
     this._opts = [];                 // cached option list for the current turn
   }
 
@@ -191,6 +195,26 @@ export class DialogueSession {
     return a ? a.name : `#${id}`;
   }
 
+  // --- the NPC's salient EPISODIC memory (the autobiography surface) ----------
+  // Read-only over the NPC's OWN memory (never the roster's truth). Prefer a
+  // formative memory the PLAYER is part of (so the NPC can call back a shared
+  // history — "I've not forgotten you cut down the wolf that had me"); fall back
+  // to its single most formative episode otherwise. Fully guarded: an NPC with no
+  // memory / fixtures (monsters, bare test agents) simply yields null.
+  _salientMemory(): Episode | null {
+    try {
+      const mem = this.npc.memory;
+      if (!mem || typeof mem.salient !== 'function') return null;
+      const pid: EntityId | null = this.player ? this.player.id : null;
+      const eps: Episode[] = mem.salient(6) || [];
+      if (pid != null) {
+        const aboutPlayer = eps.find((e) => e && e.withId === pid);
+        if (aboutPlayer) return aboutPlayer;
+      }
+      return eps.length ? eps[0] : null;
+    } catch { return null; }
+  }
+
   // what does this NPC WANT? read its trade desires (wantQty) for an "I need…"
   _wants(): { commodity: string; qty: number } | null {
     const npc = this.npc;
@@ -211,6 +235,12 @@ export class DialogueSession {
     const rum = this._topRumour();
     if (rum && !this._revealed) {
       opts.push({ id: 'ask_rumour', label: 'Heard anything lately?', kind: 'gossip' });
+    }
+
+    // 1b) reminisce: surface a salient EPISODIC memory of the NPC (its own
+    //     autobiography — a shared past with the player, or what drives it).
+    if (!this._reminisced && (this._salientMemory() || agentDrive(this.npc, this.sim))) {
+      opts.push({ id: 'reminisce', label: "What's on your mind?", kind: 'reminisce' });
     }
 
     // 2) trade hook: surface what the NPC needs (informational; the market
@@ -258,6 +288,7 @@ export class DialogueSession {
     const opt: DialogueOption = this._opts.find((o) => o.id === id) || { id, label: '', kind: id };
     switch (opt.kind) {
       case 'gossip':     return this._doRumour();
+      case 'reminisce':  return this._doReminisce();
       case 'trade':      return this._doNeed(opt._want);
       case 'offer':      return this._doOffer();
       case 'recruit':    return this._doRecruit();
@@ -314,6 +345,52 @@ export class DialogueSession {
       });
     }
     return (this.lastResult = { text, tone: 'neutral' });
+  }
+
+  // surface the NPC's salient episodic MEMORY (and/or what drives it) as a spoken
+  // line. Read-only over the NPC's OWN memory + goals — player-facing flavour that
+  // drives no decision. Guarded: never throws on a memory-less / fixture NPC.
+  _doReminisce(): DialogueResult {
+    this._reminisced = true;
+    let drive: string | null = null;
+    try { drive = agentDrive(this.npc, this.sim); } catch { drive = null; }
+
+    const ep = this._salientMemory();
+    if (ep) {
+      const pid: EntityId | null = this.player ? this.player.id : null;
+      const aboutPlayer = pid != null && ep.withId === pid;
+      const nameOf = (id: number | string) => this._subjectName(id as EntityId);
+      const phrase = memoryPhrase(ep, nameOf);
+      const good = (ep.valence || 0) >= 0;
+      // for a player-involved memory, address them directly ("I've not forgotten
+      // you cut down the wolf…"); otherwise speak it in the third person.
+      let line: string;
+      if (aboutPlayer) {
+        const youPhrase = this._toSecondPerson(phrase);
+        line = good
+          ? `"I've not forgotten — ${youPhrase}. I still owe you for that."`
+          : `"I remember well enough — ${youPhrase}. Such things stay with a person."`;
+      } else {
+        line = `"I've seen my share. I once ${phrase}."`;
+      }
+      // optionally append what drives them now (the biography "what I'm about" opener)
+      if (drive) line = line.slice(0, -1) + ` These days I'm ${drive}."`;
+      return (this.lastResult = { text: line, tone: good ? 'good' : 'bad' });
+    }
+
+    // no memory worth telling — fall back to what drives them, if anything
+    if (drive) return (this.lastResult = { text: `"Me? I'm ${drive}."`, tone: 'neutral' });
+    return (this.lastResult = { text: `"Nothing much on my mind, truth be told."`, tone: 'neutral' });
+  }
+
+  // rewrite a memoryPhrase that names the player (by name or #id) into 2nd person.
+  _toSecondPerson(phrase: string): string {
+    const player = this.player;
+    const pname = player ? player.name : null;
+    let out = phrase;
+    if (pname) out = out.split(pname).join('you');
+    if (player) out = out.split(`#${player.id}`).join('you');
+    return out;
   }
 
   _doNeed(want?: { commodity: string; qty: number }): DialogueResult {

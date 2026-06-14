@@ -63,6 +63,15 @@ export const RECIPES = {
   // 'all' ⇒ every gated recipe (so every working townsperson keeps crafting exactly
   // as today). Children inherit a subset; newcomers learn.
   seedKnown: 'all',
+  // LOST RECIPES (docs/architecture/10-lld §6): a lineage CHILD is NOT guaranteed to
+  // inherit a craft. For each gated recipe at least one PARENT knows, the child is born
+  // knowing it only with probability `childInheritP` — otherwise it spawns WITHOUT that
+  // craft and must LEARN it (the learn deriver) or let it lapse. A recipe NO living
+  // parent knows can never be inherited, so a craft genuinely DIES OUT of a bloodline
+  // once its last holder stops practising, and must be re-taught from a surviving smith
+  // (conserved tuition). Kept high so the town keeps crafting (economy soak stays
+  // healthy) while crafts can still be sought / forgotten / re-taught.
+  childInheritP: 0.7,        // P(a child inherits a gated recipe a parent knows); <1 ⇒ crafts can be lost
   rediscoverPerSec: 0,       // self-rediscovery rate while stuck without a recipe (stub; 0 ⇒ off).
   // GRADED RECIPE KNOWLEDGE (docs/architecture/10-lld §6, §19 gap #1). Each recipe carries a graded
   // CONFIDENCE (the belief table's four fields, applied to own craft knowledge): half-learned from
