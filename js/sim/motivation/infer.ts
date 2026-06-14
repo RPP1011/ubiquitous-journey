@@ -149,7 +149,30 @@ function assembleCues(a: Agent, deed: Deed): Cues {
   cues.iBelieveVictimRich = vb ? (vb.believedWealth || 0) * (vb.wealthConf || 0) : 0;
   const ab = a.beliefs.get(deed.actorId);
   cues.iBelieveActorPoor = ab ? clamp01(1 - (ab.believedWealth || 0)) : 0.5;
+  // §8.2 — the flagship observer cue: did I, this witness, recently see THIS strike's VICTIM throw the
+  // first blow (a witnessed_aggression in MY OWN memory, byId === the victim, within the provocation
+  // window)? If so, the same blow reads as DEFENCE to me and as AGGRESSION to a witness who didn't —
+  // two truths from one deed. Reads only the observer's own episodic memory; no roster scan; bounded.
+  cues.iSawProvocation = sawVictimProvoke(a, deed) ? 1 : 0;
   return cues;
+}
+
+/** §8.2 — does the observer's OWN recent memory hold a witnessed_aggression whose byId is the deed's
+ *  VICTIM (i.e. "I saw this victim throw a punch earlier") within MOTIVE.provocationWindow? Bounded scan
+ *  of the recent rings (own episodic memory only — the epistemic split holds). Never throws. */
+function sawVictimProvoke(a: Agent, deed: Deed): boolean {
+  try {
+    if (deed.targetId == null || !a.memory || !a.memory.stm) return false;
+    const window = MOTIVE.provocationWindow || 30;
+    const eps = [...a.memory.stm.items(), ...a.memory.mtm.items()];
+    for (const e of eps) {
+      if (!e || e.kind !== 'witnessed_aggression') continue;
+      if (e.byId !== deed.targetId) continue;             // the VICTIM was the earlier aggressor
+      if ((deed.t - (e.t || 0)) > window) continue;       // still within the provocation window
+      return true;
+    }
+  } catch { /* fall through */ }
+  return false;
 }
 
 /** Infer a motive for a witnessed deed: a bounded prior×likelihood read over the candidate motives for

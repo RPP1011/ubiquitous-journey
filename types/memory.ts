@@ -6,7 +6,7 @@ import type { EntityId } from './core.js';
 
 /** The kind of a remembered episode (memoryPhrase switches on these). */
 export type EpisodeKind =
-  | 'triumph' | 'bloodshed' | 'assaulted' | 'witnessed_death' | 'survived'
+  | 'triumph' | 'bloodshed' | 'assaulted' | 'witnessed_death' | 'witnessed_aggression' | 'survived'
   | 'windfall' | 'milestone' | 'bond' | 'succoured' | 'relic' | 'closure'
   | 'ruined' | 'thwarted' | 'slandered'   // status-sensor episodes (docs/architecture/12 §5)
   | (string & {});   // open: other salient kinds may be recorded

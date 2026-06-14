@@ -511,6 +511,15 @@ export const MOTIVE = {
                             //   magnitude is at/above this (a killing, a large theft — worth brooding on).
   puzzleRing: 6,            // capacity of the DEDICATED a._puzzles store (separate from the episodic rings)
   deliberatePasses: 3,      // bounded re-tries on a still-murky puzzle before it's let go to fade
+  // --- combat-deed cues + RECIPROCITY read-back (docs/architecture/17 §8.2) ---
+  provocationWindow: 30,    // §8.2: sim-seconds a witness's OWN `witnessed_aggression` memory of THIS
+                            //   victim throwing the first blow legitimately reads a later strike on them
+                            //   as DEFENSE — the flagship "two witnesses, two truths" cue (iSawProvocation).
+  reciprocityCool: 0.18,    // standing the reciprocity DERIVER cools per tick on a CONFIDENT hostile
+                            //   believedMotive (aggression/theft/robbery/slander) — small + bounded so the
+                            //   soft-avoid arms gradually, never a cliff that destabilizes the soak.
+  reciprocityWarm: 0.10,    // standing it WARMS on a confident benign motive (defense/justice/vouch).
+  reciprocitySuspicion: 0.12, // suspicion the cool adds (feeds decide.pickSuspectToAvoid's soft berth).
 };
 
 // --- QUANTITIES: numeric-threshold plan composition (docs/architecture/10, Phase 1) ----
