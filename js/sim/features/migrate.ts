@@ -25,12 +25,35 @@
 // Bounded (prospectCap mailbox, TTL-pruned here); guarded; never throws.
 
 import { registerDeriver } from '../exec/registry.js';
-import { MIGRATE } from '../simconfig.js';
+import { MIGRATE, BASE_PRICE } from '../simconfig.js';
 import { rng } from '../rng.js';
+import { bestOption } from '../agent/select.js';
+import { tradeMargin, masteryMul } from '../agent/occupation.js';
 import type { Agent, CognitionCtx } from '../../../types/sim.js';
 
-type Prospect = { townId: number; name?: string; x: number; z: number; t: number };
+const BASE_PRICE_T = BASE_PRICE as Record<string, number>;
+
+type Prospect = { townId: number; name?: string; x: number; z: number; t: number; good?: string | null; price?: number };
 type Migrating = { townId: number; x: number; z: number; until: number };
+
+// The migrant's BELIEVED net margin at a prospect's town for its OWN trade: the
+// destination's REPORTED sale price (stamped on the prospect by migration.js) minus
+// the migrant's OWN believed input cost, weighted by its OWN productivity (masteryMul).
+// A master smith heading where tools are dear earns more than a novel there — comparative
+// advantage. The input cost is recovered from tradeMargin (gross_belief − margin_belief =
+// input_cost_belief), so we substitute only the GROSS with the destination's figure — the
+// inputs it would buy anywhere stay at its own belief. Reads OWN _trade/mastery/priceBeliefs
+// + a perceived rumour figure; never the roster. Falls back to its own margin when the
+// rumour carried no price (no staple report / a made good). Guarded by bestOption.
+function prospectValue(a: Agent, p: Prospect): number {
+  const good = p.good || a._trade;
+  if (!good) return 0;
+  const ownMargin = tradeMargin(a, good);                 // own believed margin at home
+  if (p.price == null || !(p.price > 0)) return ownMargin * masteryMul(a, good);
+  const ownGross = a.priceBeliefs[good] || BASE_PRICE_T[good] || 1;
+  const inputCost = ownGross - ownMargin;                 // believed cost of the recipe inputs
+  return (p.price - inputCost) * masteryMul(a, good);     // believed margin THERE × my output
+}
 
 registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
   const aa = a as Agent & { _prospects?: Prospect[]; _migrating?: Migrating | null };
@@ -68,15 +91,22 @@ registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
   const striving = (P.ambition ?? 0.5) >= (MIGRATE.ambitionMin || 0.7);
   if (!restless && !striving) return;                                // character: the settled ignore it
 
-  for (const p of aa._prospects.splice(0)) {                         // each prospect weighed ONCE (spent)
-    if (!p || p.townId === aa.townId) continue;
-    if ((aa.inventory && aa.inventory.food || 0) < (MIGRATE.provisionFood || 2)) continue;  // no rations, no road
-    if (rng() > (MIGRATE.acceptChance || 0.5)) continue;             // slept on it; decided to stay
-    // COMMIT: the own-state journey intent decide() mints the `migrate` candidate off
-    // (fillMigrate walks the road; the deriver's arrival watch above settles it).
-    aa._migrating = { townId: p.townId, x: p.x, z: p.z, until: now + (MIGRATE.journeySecs || 300) };
-    break;                                                           // one move at a time
-  }
+  // no rations, no road — settle this once for the whole batch (one larder, one journey).
+  if ((aa.inventory && aa.inventory.food || 0) < (MIGRATE.provisionFood || 2)) { aa._prospects.length = 0; return; }
+  const prospects = aa._prospects.splice(0);                         // each prospect weighed ONCE (spent)
+  // COMPARATIVE ADVANTAGE: among the prospects, prefer the town where MY trade pays
+  // best (believed margin × my mastery), not just the first one heard — a master smith
+  // heads where tools are dear. bestOption is value-only here (no distance discount: the
+  // road is a fixed journey-clock either way; the gain is where the LIVING is better).
+  const best = bestOption(prospects, {
+    valueOf: (p) => prospectValue(aa, p),
+    skipIf: (p) => !p || p.townId === aa.townId,
+  });
+  if (!best) return;
+  if (rng() > (MIGRATE.acceptChance || 0.5)) return;                 // slept on it; decided to stay
+  // COMMIT: the own-state journey intent decide() mints the `migrate` candidate off
+  // (fillMigrate walks the road; the deriver's arrival watch above settles it).
+  aa._migrating = { townId: best.townId, x: best.x, z: best.z, until: now + (MIGRATE.journeySecs || 300) };
 });
 
 export {};

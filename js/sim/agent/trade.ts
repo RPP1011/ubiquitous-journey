@@ -136,7 +136,30 @@ function speculativeWant(a: Agent, c: string): number {
     return 1;                                                     // bid one more unit of the cheap good to hold
   } catch { return 0; }
 }
-export function sellQty(a: Agent, c: string): number { return Math.max(0, Math.floor(a.surplus(c))); }
+// SPECULATIVE HOLD — the SELL half of item-2 speculation. speculativeWant buys a glutted
+// non-perishable betting the price recovers; selling it back by the blind surplus rule would
+// dump it at the SAME depressed price it was bought at (sell low — the opposite of the bet).
+// So while the agent's OWN price belief for that good is still BELOW base (the glut hasn't
+// lifted), it HOLDS the speculative stock back from the sell book — and RELEASES it once its
+// belief recovers to base (the bet paid off; now it's worth selling). Belief-gated + conserved
+// (this only defers the sale; gold still only transfers at clear time). Only the speculator's
+// own held stock is held back — food (perishable) and non-speculators sell as before. Guarded.
+function specHold(a: Agent, c: string): number {
+  try {
+    if (c === 'food') return 0;                                     // perishable — never a hold
+    const P = a.personality || {};
+    const driven = (a.ambition && a.ambition.kind === 'wealth') || (P.ambition ?? 0) >= (ECON.specAmbitionMin || 0.6);
+    if (!driven) return 0;                                          // only speculators hold (symmetry with the buy side)
+    const base = BASE_PRICE_T[c]; if (!base) return 0;
+    const belief = a.priceBeliefs[c] || base;
+    if (belief >= base * (ECON.specSellAtFrac ?? 1)) return 0;       // belief recovered ≥ base → release the hold, sell
+    // still cheap → hold up to the speculative cap (above that, the excess is ordinary surplus to clear)
+    return Math.min(a.inventory[c] || 0, ECON.specMaxHold || 4);
+  } catch { return 0; }
+}
+export function sellQty(a: Agent, c: string): number {
+  return Math.max(0, Math.floor(a.surplus(c)) - specHold(a, c));
+}
 
 // THE HAGGLE EDGE (the trade_edge ability op): while my OWN bargaining window is
 // open (_haggleEdgeUntil, vs the per-frame sim-time stamp) I drive a harder bargain
