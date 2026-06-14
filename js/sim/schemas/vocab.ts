@@ -52,6 +52,14 @@ export const nearSubject = (ref: SubjectRef, range: number): PredNode => ({ op: 
 export const perceivedNow = (ref: SubjectRef): PredNode => ({ op: 'perceivedNow', args: [ref] });
 export const selfEngaged = (ref: SubjectRef, strikes: number): PredNode => ({ op: 'selfEngaged', args: [ref, strikes] });
 export const observedAnimacy = (ref: SubjectRef): PredNode => ({ op: 'observedAnimacy', args: [ref] });
+// selfTrait(name, cmp, val): compare one of MY personality traits (own-state). Used to gate
+// a disposition on CHARACTER (a bold/curious soul rubbernecks; a timid one flees).
+export const selfTrait = (name: string, cmp: Comparator, val: number): PredNode => ({ op: 'selfTrait', args: [name, cmp, val] });
+// selfPoor(threshold): is MY carried purse below `threshold`? (own-state gold read).
+export const selfPoor = (threshold: number): PredNode => ({ op: 'selfPoor', args: [threshold] });
+// hostileNearFriend(range): do I believe a hostile is within `range` of a subject I think well
+// of (a friend's believed lastPos)? Pure belief×belief read over MY OWN table (no roster scan).
+export const hostileNearFriend = (range: number): PredNode => ({ op: 'hostileNearFriend', args: [range] });
 
 // inference ops (write a cached higher-order belief field, TTL'd by the interpreter)
 export const setIntent = (kind: string): InferNode => ({ op: 'setIntent', args: [kind] });
@@ -257,6 +265,58 @@ export const PRED_EVAL: Record<string, PredEvalFn> = {
     if (!t) return false;
     return (t.struck || 0) + (t.blocked || 0) + (t.harmedMe || 0) + (t.moved || 0) > 0;
   },
+
+  // selfTrait(name, cmp, val): compare one of MY personality traits (own-state). Guarded:
+  // a missing personality / non-numeric trait → false (no character gate fires).
+  selfTrait(node, env) {
+    const [name, cmp, val] = node.args;
+    const p = env.agent.personality;                        // identifier `agent` — scan-safe
+    if (!p) return false;
+    const have = p[name as string];
+    if (typeof have !== 'number') return false;
+    return cmpVal(have, cmp, val);
+  },
+
+  // selfPoor(threshold): is my carried purse below `threshold`? Own-state gold read. Guarded:
+  // a professionless/goldless agent (monster/player) reads 0 → poor only if threshold > 0.
+  selfPoor(node, env) {
+    const [threshold] = node.args;
+    const gold = env.agent.gold;                            // identifier `agent` — scan-safe
+    const g = typeof gold === 'number' ? gold : 0;
+    return g < ((threshold as number) || 0);
+  },
+
+  // hostileNearFriend(range): do I believe a hostile sits within `range` of a subject I think
+  // well of? A belief×belief proximity read over MY OWN bounded table — no roster scan. Both the
+  // threat and the friend are my BELIEFS (lastPos/standing/hostile); confidence-gated. Guarded.
+  hostileNearFriend(node, env) {
+    const [range] = node.args;
+    const r = typeof range === 'number' ? range : Infinity;
+    try {
+      const me = env.agent;
+      const all = env.beliefs.all();
+      // friends I hold a positive opinion of and have a placed belief on.
+      const friends = [];
+      for (const f of all) {
+        if (f.subjectId === me.id) continue;
+        if ((f.standing || 0) <= 0 || !f.lastPos) continue;
+        if (f.confidence < SIM.actOnBeliefMin) continue;
+        friends.push(f);
+      }
+      if (!friends.length) return false;
+      for (const h of all) {
+        if (h.subjectId === me.id) continue;
+        if (!(h.hostile || factionHostile(me.faction, h.lastFaction))) continue;
+        if (h.confidence < SIM.actOnBeliefMin || !h.lastPos) continue;
+        for (const f of friends) {
+          if (f.subjectId === h.subjectId) continue;
+          const dx = f.lastPos.x - h.lastPos.x, dz = f.lastPos.z - h.lastPos.z;
+          if (Math.hypot(dx, dz) <= r) return true;
+        }
+      }
+    } catch { /* fall through */ }
+    return false;
+  },
 };
 
 // dispatch one predicate node; guarded so a bad node is false, never a throw.
@@ -424,6 +484,8 @@ function deedTagKinds(deedTag: string): Set<string> {
   if (deedTag === 'HOSTILE_ACT' || deedTag === 'STRUCK') {
     return new Set(['assaulted', 'witnessed_death', 'survived']);
   }
+  // a death I WITNESSED of the subject (the vulture's corpse cue) — the fallen is e.withId.
+  if (deedTag === 'DEATH') return new Set(['witnessed_death']);
   return new Set([deedTag]);
 }
 

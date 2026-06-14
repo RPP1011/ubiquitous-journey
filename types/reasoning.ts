@@ -23,7 +23,7 @@ export type SubjectRef = 'self' | `@${string}` | EntityId;
 export interface PredNode {
   op: 'all' | 'any' | 'not' | 'believe' | 'witnessed' | 'selfNeed' | 'selfIs'
     | 'outmatchedBy' | 'nearKnown' | 'nearSubject' | 'perceivedNow' | 'selfEngaged'
-    | 'observedAnimacy';
+    | 'observedAnimacy' | 'selfTrait' | 'selfPoor' | 'hostileNearFriend';
   args: unknown[];   // leaf scalars, or [PredNode[]] for all/any, or [PredNode] for not
 }
 

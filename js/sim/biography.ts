@@ -12,9 +12,48 @@ type Sim = any;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Ag = any;
 
+import { CHARACTER } from './simconfig.js';
+
 const NAMES_OF = (sim: Sim, id: unknown): string | null => {
   try { const o = sim && sim.agentsById && sim.agentsById.get(id); return o ? (o.given || o.name) : null; } catch { return null; }
 };
+
+// CHARACTER EPITHETS (observer-layer) — coin a descriptive byname/clause off an agent's
+// STANDING personality: its `_temperament` tag (non-enumerable on the personality object,
+// so read via property access) and trait extremes (>=hi / <=lo). Pure + fully guarded — an
+// agent that predates the Phase-1 personality additions simply yields null. Drives nothing.
+//
+// characterByname: the short "the X" form a name carries (temperament-led). Null if ordinary.
+export function characterByname(a: Ag): string | null {
+  try {
+    if (!CHARACTER.enabled || !a) return null;
+    const p = a.personality;
+    if (!p) return null;
+    // _temperament is non-enumerable; read it directly off the object.
+    const temper = (p as Record<string, unknown>)._temperament;
+    if (typeof temper === 'string') {
+      const byname = CHARACTER.temperaments[temper];
+      if (byname) return byname;
+    }
+  } catch { /* never throw */ }
+  return null;
+}
+
+// characterClause: a trailing descriptive clause coined from a single trait at an extreme
+// (e.g. high vindictiveness -> "who never forgets a slight"). First match wins. Null if none.
+export function characterClause(a: Ag): string | null {
+  try {
+    if (!CHARACTER.enabled || !a) return null;
+    const p = a.personality;
+    if (!p) return null;
+    for (const rule of CHARACTER.traitClauses) {
+      const v = (p as Record<string, unknown>)[rule.trait];
+      if (typeof v !== 'number') continue;
+      if (rule.hi ? v >= CHARACTER.hi : v <= CHARACTER.lo) return rule.text;
+    }
+  } catch { /* never throw */ }
+  return null;
+}
 
 // returns an array of short lines (newest-first identity → deeds → bonds).
 export function agentBiography(a: Ag, sim: Sim): string[] {
@@ -30,6 +69,15 @@ export function agentBiography(a: Ag, sim: Sim): string[] {
     if (a.house) calling.push(`of House ${a.house}`);
     if (lvl) calling.push(`level ${lvl}`);
     if (calling.length) lines.push(calling.join(' '));
+
+    // --- character: the standing temperament byname + a trait-extreme clause (observer
+    //     narration coined from personality; guarded — null for pre-Phase-1 souls).
+    const byname = characterByname(a);
+    const clause = characterClause(a);
+    const character: string[] = [];
+    if (byname) character.push(`known as ${byname}`);
+    if (clause) character.push(clause);
+    if (character.length) lines.push(character.join(', '));
 
     // --- standing in the world (a role beyond their trade)
     const role: string[] = [];

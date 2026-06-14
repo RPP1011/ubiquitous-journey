@@ -26,6 +26,7 @@ export const PRED_OPS = new Set<string>([
   'all', 'any', 'not',
   'believe', 'witnessed', 'selfNeed', 'selfIs', 'outmatchedBy',
   'nearKnown', 'nearSubject', 'perceivedNow', 'selfEngaged', 'observedAnimacy',
+  'selfTrait', 'selfPoor', 'hostileNearFriend',
 ]);
 export const INFER_OPS = new Set<string>([
   'setIntent', 'inferDestination', 'raise', 'raiseThenSet',
