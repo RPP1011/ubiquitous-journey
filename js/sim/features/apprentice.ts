@@ -21,8 +21,23 @@
 
 import { registerDeriver } from '../exec/registry.js';
 import { goalLearn } from '../planner.js';
+import { tradeMargin } from '../agent/occupation.js';
 import { APPRENTICE, RECIPES } from '../simconfig.js';
 import type { Agent, CognitionCtx } from '../../../types/sim.js';
+
+// Do I BELIEVE someone nearby plies `good`? The believedOccupation cue (doc 18 M2) banked on a
+// person-belief — own-belief only, never the roster. A craft for which I believe a practitioner
+// exists is one I can actually apprentice to (a teacher is plausibly about), so it breaks ties
+// toward learnable crafts. Fallible (the cue can be stale/wrong → no teacher present → the goal
+// cools), exactly like every other belief read here.
+function believesPractitionerOf(a: Agent, good: string): boolean {
+  if (!a.beliefs) return false;
+  for (const b of a.beliefs.all()) {
+    if (!b || b.subjectId === a.id || b.placeKind) continue;
+    if (b.believedOccupation === good) return true;
+  }
+  return false;
+}
 
 // Does the agent hold a believed-ESTABLISHED-crafter cue among its OWN beliefs? A neighbour believed
 // prosperous (a full pack / fine gear — the wealth cue) AND not disliked reads as a settled master
@@ -42,7 +57,7 @@ function believesAMaster(a: Agent): boolean {
 }
 
 // THE LIVE DERIVER (own-state + own-belief ONLY). A mastery soul that lacks a gated craft AND believes
-// an established crafter is about forms a Know(recipe) goal for the FIRST such craft it lacks. The
+// an established crafter is about forms a Know(recipe) goal for the BEST-MARGIN such craft it lacks. The
 // planner then routes [goldGe(tuition) → at(market) → study]; study pays the teacher (conserved) and
 // firms the recipe. Dormant unless a mastery soul genuinely lacks a craft (with seedKnown 'all' every
 // born producer knows its gated recipes) — correct + unit-tested regardless; fires for lineage
@@ -51,17 +66,24 @@ registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
   if (!a || !a.alive || a.controlled || a.faction === 'monster') return;
   if (!a.recipes || !a.ambition || a.ambition.kind !== 'mastery') return;   // the broaden-my-craft ambition
   const gated = (RECIPES.gated as string[]) || [];
-  // the first gated craft I do NOT yet know — the second craft to pick up. (learning.ts owns my OWN
-  // trade; this is a DIFFERENT one I aspire to, so skip my current trade good.)
-  let want: string | null = null;
+  // The BEST craft to pick up by EXPLOITED KNOWLEDGE (doc 18 §3 — the apprentice proxy gap): not the
+  // first gated craft I lack, but the one with the best believed NET MARGIN (`tradeMargin`, my OWN
+  // price beliefs), with a tie-break BONUS for a craft I believe a practitioner already plies (so the
+  // aspiration lands where a teacher is plausibly about). learning.ts owns my OWN trade; this is a
+  // DIFFERENT one I aspire to, so my current trade good is skipped. Belief-only; the chooser leaves the
+  // ground-truth teacher match to resolver.teachRecipe.
+  let want: string | null = null, bestScore = -Infinity;
   for (const good of gated) {
     if (good === a._trade) continue;                  // my own trade is learning.ts's business
-    if (!a.recipes.has(good)) { want = good; break; }
+    if (a.recipes.has(good)) continue;                // already craft it
+    let score = tradeMargin(a, good);                 // believed effective value of the labour
+    if (believesPractitionerOf(a, good)) score *= (APPRENTICE.knownTeacherBonus || 1.5);
+    if (score > bestScore) { bestScore = score; want = good; }
   }
   if (!want) return;                                  // already knows every gated craft
   if (!believesAMaster(a)) return;                    // no believed master to apprentice to (belief cue)
   const g = goalLearn({ kind: 'recipe', good: want });
-  g.priority = APPRENTICE.priority; g.from = 'apprentice';
+  g.priority = APPRENTICE.priority; g.value = bestScore; g.from = 'apprentice';
   g.expiresAt = (ctx ? ctx.time : 0) + (APPRENTICE.expiry || 160);
   a.pushGoal(g, ctx);
 });

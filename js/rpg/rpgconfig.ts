@@ -108,6 +108,22 @@ export const ABILITY = {
                          //   (conserved); a harder bargain can also lose the match.
   craftBoostMul: 1.6,    // master_craft (craft_boost op): produce-speed multiplier
                          //   while the window is open
+
+  // ALLY-SUPPORT CAST (doc 18) — a healer/warder mends a believed comrade-in-arms mid-fight instead
+  // of attacking, when it holds a READY ally-targeted heal/shield spec. Belief-only ally cue.
+  allyStandingMin: 0,    // a believed-ally I'll mend must be at least this well-regarded (a comrade, not a foe)
+  allyMinConf: 0.3,      // …and recently/firmly enough placed (belief confidence) to be worth a cast
+
+  // SOCIAL CAST (doc 18) — a charmer/schemer spends a granted silver_tongue / plant_rumor on the
+  // talk path, on a nearby target it has DESIGNS on. Character-gated + throttled. Own beliefs only.
+  socialCastEvery: 6,    // sim-seconds between social casts (a flourish, not a per-frame tic)
+  socialRange: 7,        // a target must be within this believed distance to work on
+  socialMinConf: 0.3,    // …and placed in mind at least this confidently (recently seen)
+  charmGregarious: 0.6,  // only the GREGARIOUS bother to charm a cool acquaintance (character gate)
+  charmLo: -0.4,         // a CHARM target's standing window: warmer than a rival…
+  charmHi: 0.3,          // …but not already a firm friend (no point — there's goodwill to gain)
+  sourVindictive: 0.6,   // only the VINDICTIVE sour a rival with a planted rumour (character gate)
+  sourBelow: -0.2,       // a SOUR target is a believed-hostile or a soul I already dislike below this
 };
 
 // Sigmoid used by the class matcher + significance shaping. Stable for large |x|.
