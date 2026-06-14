@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { DIR, TUNE } from '../../constants.js';
 import { ARENA_RADIUS } from '../../arena.js';
 import { POI_KIND } from '../world.js';
-import { GOODS, ECON, SIM, SOCIAL, BAND, BUILD, COMFORT, NOVELTY, RECIPES, CAUTION, ROMANCE , ALMS, GRANARY, WEALTH } from '../simconfig.js';
+import { GOODS, ECON, SIM, SOCIAL, BAND, BUILD, COMFORT, NOVELTY, RECIPES, CAUTION, ROMANCE , ALMS, GRANARY, WEALTH, HAUNT } from '../simconfig.js';
 import { castSpec, onCooldown, requirementsMet } from '../../rpg/abilities/interpreter.js';
 import { slowMul } from '../../rpg/abilities/effects.js';
 import { ABILITY } from '../../rpg/rpgconfig.js';
@@ -740,11 +740,30 @@ const expectedYield = (step: PlanStep): number => {
   return (typeof amt === 'number' && amt > 0) ? amt : 0;     // burgle/rob: the believed haul
 };
 
+// HAUNT (own-state, steer-only feature): stamp the agent's favourite SPOT at its CURRENT
+// position when a GOOD MOMENT lands here — a windfall caution outcome or a positive goal
+// closure. The wander steer-fill drifts gently back toward _haunt, so an idle agent leans
+// homeward to "its spot" instead of roaming uniformly. The haunt EASES toward each fresh
+// good-moment spot (moveToward) rather than teleporting — a place where good things keep
+// happening firms up; a one-off windfall barely budges an established haunt. Own-state only
+// (a.pos), never throws (the freeze lesson) — guards a missing pos.
+function recordHaunt(a: Agent): void {
+  const p = a.pos;
+  if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.z)) return;
+  const h = a._haunt;
+  if (!h) { a._haunt = { x: p.x, z: p.z }; return; }
+  const k = HAUNT.moveToward;
+  h.x += (p.x - h.x) * k;
+  h.z += (p.z - h.z) * k;
+}
+
 // fire the handlers, mark the step resolved (de-dup) + close the goal's caution trail.
 function cautionEmit(a: Agent, ctx: CognitionCtx, step: PlanStep, goal: Goal | null | undefined, status: OutcomeStatus, expected?: number, realized?: number): void {
   step._emitted = true;
   if (goal && goal._cautionTrail && goal._cautionTrail.step === step) goal._cautionTrail.resolved = true;
   a._cautionStep = null; a._cautionGoal = null;
+  // a windfall (realized payoff beat the believed haul) is a GOOD MOMENT here — stamp the haunt.
+  if (status === 'windfall') recordHaunt(a);
   runPlanOutcome(a, ctx, { status, step, expected, realized });
 }
 
@@ -815,6 +834,8 @@ export function execPlanStep(a: Agent, dt: number, ctx: CognitionCtx): void {
         t: ctx.time, kind: goal.kind === 'avenge' ? 'triumph' : 'closure',
         withId: goal.subjectId, valence: 1, salience: 0.5,
       });
+      // a fulfilled goal is a GOOD MOMENT — stamp the haunt at the closure spot (own-state).
+      recordHaunt(a);
       awardGoalClosureXP(a, goal, ctx.time, 0.5);
     }
   } catch { a.fighter.setMoving(0); }
