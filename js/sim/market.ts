@@ -17,6 +17,22 @@ import type { Agent, Commodity, EntityId } from '../../types/sim.js';
 
 const clamp = (x: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, x));
 
+// BELIEVED-MOTIVE TRUST (doc 18 §collapse-gap; item 1). The motive keys the ToM inference layer
+// (js/sim/motives/*) attributes, split into the HOSTILE reads that breed distrust and the BENIGN
+// reads that breed extra trust. A confident attribution (motiveConf ≥ ECON.motiveTrustConf) on a
+// belief shifts a trade ON TOP of standing.
+const HOSTILE_MOTIVES: Record<string, true> = { theft: true, robbery: true, aggression: true, avenge: true, slander: true };
+const BENIGN_MOTIVES: Record<string, true> = { defense: true, justice: true, vouch: true, warn: true };
+// motiveTrust(belief) -> +1 (confident benign), -1 (confident hostile), 0 (none/uncertain). Reads
+// ONLY the passed belief's own attributed-motive fields; guarded; never throws.
+function motiveTrust(b: { believedMotive?: string; motiveConf?: number } | null | undefined): -1 | 0 | 1 {
+  if (!b || !b.believedMotive) return 0;
+  if ((b.motiveConf || 0) < (ECON.motiveTrustConf || 0.45)) return 0;
+  if (HOSTILE_MOTIVES[b.believedMotive]) return -1;
+  if (BENIGN_MOTIVES[b.believedMotive]) return 1;
+  return 0;
+}
+
 // THE STANDING SKEW (NPC↔NPC, item 1) — the seller's OWN belief-standing toward the buyer slides
 // the clearing price WITHIN the [ask..bid] band: a believed friend (standing>0) gets it nearer the
 // ask (cheaper), a disliked buyer (standing<0) nearer the bid (gouged). The SAME returned price
@@ -29,10 +45,16 @@ function npcFavoredPrice(seller: Agent, buyer: Agent, ask: number, bid: number, 
     const b = seller.beliefs.get(buyer.id);
     if (!b) return mid;                                   // a stranger gets the neutral midpoint
     const standing = clamp(b.standing || 0, -1, 1);
-    if (!standing) return mid;
+    const mt = motiveTrust(b);                              // confident attributed motive: -1 hostile / +1 benign / 0
+    if (!standing && !mt) return mid;
     const half = (bid - ask) / 2;                          // head-room either side of the midpoint
     // friend (standing>0): slide DOWN toward the ask (cheaper for the buyer); foe (standing<0): UP.
-    const shifted = mid - standing * half * (ECON.npcFavorMax || 0);
+    let shifted = mid - standing * half * (ECON.npcFavorMax || 0);
+    // BELIEVED-MOTIVE TRUST (item 1): ON TOP of standing, a buyer the seller has pegged a confident
+    // THIEF/AGGRESSOR/SLANDERER is gouged extra (slide UP toward the bid); a confident DEFENDER/
+    // JUSTICE/VOUCHER gets an extra discount (slide DOWN toward the ask). Own-belief; bounded by the band.
+    if (mt < 0) shifted += half * (ECON.motiveDistrustSkew || 0);   // distrust: dearer
+    else if (mt > 0) shifted -= half * (ECON.motiveTrustSkew || 0); // trust: cheaper
     return +clamp(shifted, ask, bid).toFixed(2);
   } catch { return mid; }
 }
@@ -66,6 +88,12 @@ function extendsCredit(seller: Agent, buyer: Agent, value: number): boolean {
     const b = seller.beliefs.get(buyer.id);
     if (!b) return false;                                        // a stranger gets no credit
     if ((b.confidence || 0) < 0.3) return false;                 // must actually know them
+    // BELIEVED-MOTIVE TRUST (item 1): a buyer the seller has confidently pegged a THIEF/AGGRESSOR/
+    // SLANDERER is refused credit no matter how the standing reads — you don't loan to a known
+    // brigand. A confident BENIGN motive (defender/justice/voucher) waives the standing bar instead.
+    const mt = motiveTrust(b);
+    if (mt < 0 && (ECON.motiveCreditBlock !== false)) return false;
+    if (mt > 0) return true;
     return (b.standing || 0) >= (ECON.creditStanding ?? 0.4);    // and trust them
   } catch { return false; }
 }

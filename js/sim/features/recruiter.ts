@@ -20,6 +20,20 @@ import type { Agent, CognitionCtx, PlanStep, EntityId } from '../../../types/sim
 
 const REACH = 2.2;
 
+// BELIEVED-MOTIVE COMPLIANCE (doc 18 §collapse-gap; item 1). The candidate's attributed motive about
+// the OFFERER colours its join bar on top of standing: a confident hostile read (thief/aggressor/
+// slanderer) makes it warier (a higher bar), a confident benign read (defender/justice/voucher) an
+// easier sell (a lower bar). Reads ONLY the candidate's own belief about the offerer; never throws.
+const HOSTILE_MOTIVES: Record<string, true> = { theft: true, robbery: true, aggression: true, avenge: true, slander: true };
+const BENIGN_MOTIVES: Record<string, true> = { defense: true, justice: true, vouch: true, warn: true };
+function motiveTrust(b: { believedMotive?: string; motiveConf?: number } | null | undefined): -1 | 0 | 1 {
+  if (!b || !b.believedMotive) return 0;
+  if ((b.motiveConf || 0) < (RECRUIT.motiveTrustConf || 0.45)) return 0;
+  if (HOSTILE_MOTIVES[b.believedMotive]) return -1;
+  if (BENIGN_MOTIVES[b.believedMotive]) return 1;
+  return 0;
+}
+
 // RECURSIVE ToM (one level deeper than the `follow` prediction): does the LEADER believe THE
 // CANDIDATE also fears the foe? The leader cannot read the candidate's mind — but it CAN reason over
 // two of its OWN beliefs: where it believes the candidate stands, and where it believes a hostile
@@ -119,7 +133,11 @@ registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
     if ((off.payoff || 0) < (WARBAND.minPayoff || 0)) continue;                  // too thin to weigh
     const rel = a.beliefs.get(off.from);                                         // MY belief about the offerer
     const standing = rel ? (rel.standing || 0) : 0;
-    if (standing < bar) continue;                                                // not yet won over
+    // BELIEVED-MOTIVE COMPLIANCE (item 1): my own attributed motive about THIS offerer shifts the
+    // bar — warier of a confident brigand (bar up), an easier sell for a confident defender (bar down).
+    const mt = motiveTrust(rel);
+    const effBar = bar + (mt < 0 ? (WARBAND.motiveDistrustBar || 0) : mt > 0 ? -(WARBAND.motiveTrustBar || 0) : 0);
+    if (standing < effBar) continue;                                             // not yet won over
     if (standing > bestStanding) { bestStanding = standing; bestId = off.from; } // join the dearest offerer
   }
   if (bestId == null) return;

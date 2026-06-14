@@ -191,19 +191,44 @@ export class Lineage {
   // unattached, fond, fit (fed + safe), and currently within mateRange (they met).
   // Once wed the bond PERSISTS (a.mateId) and survives them drifting apart to work.
   _courtship(ctx: Ctx, civs: Ag[]): void {
+    const mr2 = LINEAGE.mateRange * LINEAGE.mateRange;
     for (let i = 0; i < civs.length; i++) {
       const A = civs[i];
       if (A.mateId != null || !this._fed(A) || !this._safe(A, ctx)) continue;
-      let best = null, bd = LINEAGE.mateRange * LINEAGE.mateRange;
+      // COURT BY THE DEEPER BOND (doc 18 item 2): among the fond, in-range, fit candidates, pick by a
+      // SCORE — the durable mutual `sentiment` (the slow relationship EMA) + mutual standing magnitude,
+      // distance-discounted — so a deep connection beats a fresh equal-standing acquaintance who merely
+      // stands nearer. Each side's read is its OWN belief about the other (belief-only, the split holds).
+      let best = null, bestScore = -Infinity;
       for (let j = i + 1; j < civs.length; j++) {
         const B = civs[j];
         if (B.mateId != null || !this._fond(A, B)) continue;
         if (!this._fed(B) || !this._safe(B, ctx)) continue;
-        const d = A.pos.distanceToSquared(B.pos);
-        if (d < bd) { bd = d; best = B; }
+        const d2 = A.pos.distanceToSquared(B.pos);
+        if (d2 > mr2) continue;                            // must be within courting range (they met)
+        const score = this._courtScore(A, B, Math.sqrt(d2));
+        if (score > bestScore) { bestScore = score; best = B; }
       }
       if (best) { this._wed(A, best); return; }            // one new couple per pass
     }
+  }
+
+  // COURT SCORE (doc 18 item 2): the durable bond + affinity strength of the pair, distance-discounted.
+  // bond = mean of each side's own `sentiment` toward the other (the slow EMA); affinity = mean of each
+  // side's own standing magnitude above the fond floor. Belief-only reads; guarded (defaults to a
+  // proximity-only score on any gap, so behaviour degrades to the old nearest pick).
+  _courtScore(A: Ag, B: Ag, dist: number): number {
+    let bond = 0, aff = 0;
+    try {
+      const ab = A.beliefs && A.beliefs.get(B.id), ba = B.beliefs && B.beliefs.get(A.id);
+      const sent = (((ab && ab.sentiment) || 0) + ((ba && ba.sentiment) || 0)) / 2;
+      const stand = ((Math.max(0, (ab && ab.standing) || 0)) + (Math.max(0, (ba && ba.standing) || 0))) / 2;
+      bond = sent * (LINEAGE.courtBondWeight || 0);
+      aff = stand * (LINEAGE.courtStandingWeight || 0);
+    } catch { /* fall back to proximity-only */ }
+    const base = 1 + bond + aff;                           // a fond pair is worth ≥1; the bond lifts it
+    const range = LINEAGE.courtDistRange || LINEAGE.mateRange || 16;
+    return base / (1 + Math.max(0, dist) / range);         // distance-discount (nearer still helps)
   }
 
   _wed(A: Ag, B: Ag): void {
