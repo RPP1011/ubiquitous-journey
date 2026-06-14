@@ -1168,6 +1168,43 @@ export const STEER = {
                       //   no oscillation around the centreline)
 };
 
+// --- SELECT: the belief-weighted selection primitive (doc 18, M1) -------------
+// Tuning for `js/sim/agent/select.ts`'s `bestOption` and its two first applications
+// (flee-to-refuge + work-site), both done INSIDE the steer fills (locomotion-target
+// selection, below the motivation scorer — S2-parity-safe; they never change which
+// candidate KIND wins, only WHERE a chosen behaviour walks). All reads are the agent's
+// OWN beliefs + the STATIC mental map (epistemic split intact).
+export const SELECT = {
+  range: 40,            // default distance-discount range for bestOption (value/(1+dist/range))
+
+  // FLEE-TO-REFUGE: a panicked agent runs to a gate/cover it KNOWS rather than blindly
+  // radially away. Candidates are static map Places affording exit/conceal/safe (own
+  // map-knowledge). A refuge whose bearing lies TOWARD the believed threat is penalised
+  // (you don't flee into the lion's mouth) — never hard-skipped, so a cornered agent
+  // still takes the only door it knows.
+  flee: {
+    affords: ['exit', 'conceal', 'safe'],  // the refuge affordances, in the agent's mental map
+    range: 60,           // refuges count out to here (a gate is worth a longer sprint than a tavern)
+    towardThreatPenalty: 0.7,  // multiply a refuge's value when it lies toward the threat (1=straight at it)
+    // personality: a BOLD agent (high risk_tolerance) tolerates a refuge a little nearer the
+    // threat / is pickier about distance; a TIMID agent grabs the nearest known door. Modeled as a
+    // range stretch with boldness so the timid effectively discount distance harder.
+    boldRangeBonus: 30,  // add (risk_tolerance × this) metres to the refuge range — the bold range farther
+  },
+
+  // WORK-SITE: pick the believed-best site for the trade among the sites of that kind,
+  // not the raw nearest. "Richness" has no per-site runtime field, so value = proximity
+  // (closer is cheaper to reach = more net throughput) with two belief modifiers: a site
+  // near a believed-HOSTILE's last-known position is penalised (a miner avoids the seam the
+  // bandit haunts), and an INDUSTRIOUS agent will travel farther for a clear site.
+  work: {
+    range: 50,           // work-site distance-discount range
+    hostileRange: 28,    // a believed-hostile within this of a site taints it
+    hostilePenalty: 0.55,// multiply a tainted site's value by this (a strong, not absolute, deterrent)
+    industryReach: 40,   // add (industry × this) metres to the range — a striver ranges for a clear site
+  },
+};
+
 // --- HAUNTS & DAILY RHYTHM (legible place + time, steer-only, own-state) ------
 // Two GENTLE locomotion biases that make idle agents recognisable by WHERE and WHEN —
 // without touching any candidate score (S2 parity-safe). Both are own-state reads only

@@ -40,9 +40,10 @@ import * as THREE from 'three';
 import { rng } from '../rng.js';
 import { ARENA_RADIUS, LANDMARKS } from '../../arena.js';
 import { roadPull } from '../roads.js';
-import { SIM, STEER, SOCIAL, ECON, GOODS, PARTY, ROMANCE, MOTIVE, HAUNT } from '../simconfig.js';
+import { SIM, STEER, SOCIAL, ECON, GOODS, PARTY, ROMANCE, MOTIVE, HAUNT, SELECT } from '../simconfig.js';
 import { POI_KIND } from '../world.js';
 import { _stepAlong, groundY } from './movement.js';
+import { bestOption, planarDist } from './select.js';
 import type { Agent, CognitionCtx, EntityId } from '../../../types/sim.js';
 
 /** A {x,z} (+optional y) point: a belief lastPos, a static POI/Place, or an own point. */
@@ -356,8 +357,46 @@ function fillWork(a: Agent, ctx: CognitionCtx): Field | null {
   if (!a._trade) a.chooseOccupation(ctx);       // lazily pick a trade (own-state, no roster)
   const g = a._trade ? GOODS_T[a._trade] : null;
   if (!g) return null;                          // no valid trade -> idle (was `break`)
-  const site = ctx.world.nearest(g.site, a.pos);
+  const site = chooseWorkSite(a, ctx, g.site) || ctx.world.nearest(g.site, a.pos);
   return site ? attractField(site.pos, false) : null;
+}
+
+// Pick the believed-best work site of `kind` (doc 18, M1) instead of the raw nearest.
+// "Richness" has no per-site runtime field, so value = proximity (closer = cheaper to reach
+// = more net throughput), with a belief modifier: a site near a believed-HOSTILE's last-known
+// position is penalised (a miner shuns the seam a bandit haunts). An INDUSTRIOUS agent ranges
+// farther for a clear site. Reads the STATIC world POIs + the agent's OWN hostile beliefs only
+// (no live roster). Returns null on any trouble so the caller falls back to nearest.
+function chooseWorkSite(a: Agent, ctx: CognitionCtx, kind: string): { pos: XZ } | null {
+  if (!ctx.world || !ctx.world.pois) return null;
+  const cfg = SELECT.work;
+  // believed-hostile positions, from my OWN beliefs only (confidence-gated, like flee).
+  const threats: { x: number; z: number }[] = [];
+  try {
+    for (const b of a.beliefs.all()) {
+      if (!b.hostile || !b.lastPos || b.confidence < SIM.actOnBeliefMin) continue;
+      threats.push({ x: b.lastPos.x, z: b.lastPos.z });
+    }
+  } catch { /* no beliefs -> no taint */ }
+  let cands: { pos: XZ }[];
+  try {
+    cands = ctx.world.pois.filter((p) => p.kind === kind && p.pos);
+  } catch { return null; }
+  if (cands.length <= 1) return cands[0] || null;   // 0/1 site: nothing to choose, let caller's nearest stand
+  const industry = (a.personality && a.personality.industry) || 0;
+  const range = (cfg.range || 50) + industry * (cfg.industryReach || 0);
+  return bestOption(cands, {
+    range,
+    distanceOf: (c) => planarDist(a.pos, c.pos),
+    valueOf: (c) => {
+      // base worth 1; taint it when a believed-hostile is camped near this site.
+      let v = 1;
+      for (let i = 0; i < threats.length; i++) {
+        if (planarDist(threats[i], c.pos) <= (cfg.hostileRange || 28)) { v *= (cfg.hostilePenalty || 0.55); break; }
+      }
+      return v;
+    },
+  });
 }
 
 // COMFORT — walk to my home or a tavern (toPos, a belief-home / static shelter Place
@@ -416,12 +455,58 @@ function fillSeekGlory(a: Agent, _ctx: CognitionCtx): Field | null {
 // arrives. A faded/absent belief leaves NO valid repulsor pos -> the away=pos radial
 // fallback drifts me outward from origin (the old fleeFrom(null) quirk G4/C4 depend on,
 // reproduced in steer's pure-repulsor branch). Run either way.
-function fillFlee(a: Agent, _ctx: CognitionCtx): Field | null {
-  if (a.goal!.toPos) return attractField(a.goal!.toPos, true);
+function fillFlee(a: Agent, ctx: CognitionCtx): Field | null {
+  if (a.goal!.toPos) return attractField(a.goal!.toPos, true);   // a schema/hearth refuge already chosen
   const fb = a.goal!.fromId != null ? a.beliefs.get(a.goal!.fromId) : null;
-  // belief.lastPos may be undefined (no belief) — steer's repulsor guard handles it,
-  // falling back to the radial-from-origin drift exactly as fleeFrom(null) did.
-  return { repulsors: [{ pos: fb ? fb.lastPos : undefined, weight: STEER.wThreat }], run: true };
+  const threat = fb && fb.lastPos ? fb.lastPos : null;     // where I BELIEVE the threat is (or null)
+  // KNOWLEDGE EXPLOITATION (doc 18, M1): before drifting radially, run to a refuge I KNOW.
+  // Among the static Places I know that afford exit/conceal/safe (own mental-map knowledge —
+  // never the roster), pick the best via the belief-weighted selection primitive: prefer a
+  // CLOSE refuge that lies AWAY from where I believe the threat is (you don't flee into the
+  // lion's mouth). A bold soul (risk_tolerance) ranges a little farther for a known door.
+  const refuge = chooseRefuge(a, ctx, threat);
+  if (refuge) return attractField({ x: refuge.x, z: refuge.z }, true);
+  // No known refuge → the OLD behaviour exactly: a single PURE REPULSOR away from the believed
+  // threat (steer projects a 6m synthetic away-point, never arrives); a faded/absent belief leaves
+  // no valid repulsor pos → the away=pos radial-from-origin drift (fleeFrom(null), G4/C4 depend on it).
+  return { repulsors: [{ pos: threat || undefined, weight: STEER.wThreat }], run: true };
+}
+
+// Pick the best KNOWN refuge to flee toward (doc 18 M1), or null when none is known.
+// Candidates = static map Places affording exit/conceal/safe within boldness-stretched range;
+// value distance-discounts and is penalised when the refuge bearing leans TOWARD the threat.
+// Pure: reads only the static mental map + the agent's own personality + the passed threat pos.
+function chooseRefuge(a: Agent, ctx: CognitionCtx, threat: { x: number; z: number } | null): { x: number; z: number } | null {
+  if (!ctx.map) return null;
+  const cfg = SELECT.flee;
+  const bold = (a.personality && a.personality.risk_tolerance) || 0;
+  const range = (cfg.range || 60) + bold * (cfg.boldRangeBonus || 0);   // the bold range farther for a door
+  let cands: { x: number; z: number }[];
+  try {
+    cands = ctx.map.known(a.townId, a.pos, ctx.map.places.length)
+      .filter((p) => p.affords(...cfg.affords))
+      .map((p) => ({ x: p.pos.x, z: p.pos.z }));
+  } catch { return null; }
+  if (!cands.length) return null;
+  // unit bearing of the threat from me, to score "is this refuge toward the threat?"
+  let tx = 0, tz = 0, haveThreat = false;
+  if (threat && Number.isFinite(threat.x) && Number.isFinite(threat.z)) {
+    const dx = threat.x - a.pos.x, dz = threat.z - a.pos.z, L = Math.hypot(dx, dz);
+    if (L > 1e-3) { tx = dx / L; tz = dz / L; haveThreat = true; }
+  }
+  return bestOption(cands, {
+    range,
+    distanceOf: (c) => planarDist(a.pos, c),
+    valueOf: (c) => {
+      // base worth 1; lean it down when the refuge sits toward the threat (dot of bearings > 0).
+      if (!haveThreat) return 1;
+      const dx = c.x - a.pos.x, dz = c.z - a.pos.z, L = Math.hypot(dx, dz) || 1;
+      const align = (dx / L) * tx + (dz / L) * tz;        // +1 straight at threat, −1 straight away
+      const lean = Math.max(0, align);                    // only TOWARD-threat is penalised
+      return 1 - lean * (1 - (cfg.towardThreatPenalty || 0.7));
+    },
+    skipIf: (c) => planarDist(a.pos, c) > range,           // out of my willing-sprint range
+  });
 }
 
 // AVOID — clear a believed danger zone. XOR (same divergence note as flee): steer toward
