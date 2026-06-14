@@ -65,6 +65,9 @@ export class BeliefState implements IBeliefState {
   intent: string | null;
   destInferredAt: number;
   notoriety: number;
+  believedThreat: number;
+  believedLevel: number;
+  believedOccupation: string | null;
   lastTick: number;
   confidence: number;
   hostile: boolean;
@@ -103,6 +106,16 @@ export class BeliefState implements IBeliefState {
     this.intent = null;          // 'flee'|'raid'|'home'|null — why it's headed there
     this.destInferredAt = 0;     // sim-time the dest was inferred (TTL cache; 0 = none/lapsed)
     this.notoriety = 0;          // believed player fame (fear gate); written by perception
+    // believed COMBAT STRENGTH (docs/architecture/18 M2 — closing the FORMATION gap so survival
+    // decisions CAN read a believed force estimate). believedThreat: the subject's `threat` scalar
+    // as I last saw it; believedLevel: its class total-level. Banked by the perception bridge,
+    // truth-in/belief-out (NEVER live HP). 0 = I have no estimate (never saw it). Consumed by the
+    // later fight/flee parity wave via believedStrength()/believedForceRatio(); not yet read here.
+    this.believedThreat = 0;
+    this.believedLevel = 0;
+    // believed OCCUPATION (doc 18 M2, optional cue): the trade the subject visibly plies (or the
+    // good it is currently making) — perceived off its role surface. null = unknown.
+    this.believedOccupation = null;
     this.lastTick = 0;
     this.confidence = 0;         // 0..1, decays over time
     this.hostile = false;        // do I think this agent is hostile to me?

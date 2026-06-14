@@ -34,6 +34,10 @@ interface PerceivedThing {
   disguiseFaction?: string | null;
   controlled?: boolean;
   notoriety?: number;
+  threat?: number;             // the subject's combat-strength scalar — bridged into believedThreat (doc 18 M2)
+  progression?: { totalLevel?: number };   // class/level brain — its totalLevel is the believed-level cue
+  profession?: string | null; // a VISIBLE occupation cue (apron/tools/stall) — bridged into believedOccupation
+  _trade?: string | null;     // the good it's currently making — a coarser occupation cue when profession is null
   kind?: string;
   ownerId?: EntityId;
   buildKind?: string;
@@ -113,6 +117,23 @@ export function perceive(a: Agent, ctx: FullCtx): void {
     // player's — so an NPC outlaw accrues a town-read infamy the same way. Still witness-gated belief
     // (a secret robbery breeds none); RECRUIT/the outlaw arc read this believed scalar.
     if (o.notoriety) b.notoriety = o.notoriety || 0;
+    // believed COMBAT STRENGTH (docs/architecture/18 M2, the FORMATION gap): seeing a subject
+    // records its `threat` scalar (and its class LEVEL, the second strength cue) into my belief,
+    // so a survival decision can later read a BELIEVED force estimate instead of falling back on
+    // distance + faction + personality. Truth-in (the subject's own combat scalars — its bearing,
+    // arms, the size of it — NEVER its live HP) / belief-out, the SAME sanctioned bridge as
+    // notoriety/wealth. An NPC who never saw the foe holds no estimate (believedThreat 0). Re-
+    // confirmed each sighting, faded by decay via wealthConf-style staleness on the belief itself.
+    // This only BANKS the data (doc 18 M2); the consuming fight/flee reads are a later wave.
+    if (o.threat) b.believedThreat = o.threat || 0;
+    const lvl = o.progression && o.progression.totalLevel;
+    if (lvl) b.believedLevel = lvl || 0;
+    // believed OCCUPATION (doc 18 M2, optional cue — helps the later apprentice/teach fixes): the
+    // trade a subject visibly plies (its apron, its stall, the good in its hands). Truth-in (a
+    // visible role surface) / belief-out, same bridge. Prefer the explicit profession; fall back to
+    // the good it is CURRENTLY making (_trade) for an emergent townsperson with no fixed trade.
+    const occ = (o.profession != null ? o.profession : (o._trade != null ? o._trade : null));
+    if (occ) b.believedOccupation = occ;
     // believed CAPTIVITY (CAPTIVE, the rescue arc): seeing a subject whose ground-truth `_held` is
     // set records it on my belief — truth-in / belief-out, the same sanctioned bridge as notoriety.
     // The affect deriver reads ONLY this belief (never `_held`), so the rescue DECISION stays in

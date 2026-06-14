@@ -5,6 +5,7 @@
 // neighbours (gossip) — the economic belief surface.
 
 import { nearestLandmark } from '../arena.js';
+import { TUNE } from '../constants.js';
 import { BeliefStore } from './beliefs.js';
 import { rng } from './rng.js';
 import {
@@ -47,6 +48,63 @@ const seedRecipesFor = (out: string | null /* a producer's own output, or null *
   // always include the agent's OWN crafted output even if seedKnown narrows later.
   if (out && gated.includes(out)) set.add(out);
   return set;
+};
+
+// ── Believed combat strength (docs/architecture/18 M2 — the consumption-side READ) ──────────────
+// These read the deciding agent's OWN beliefs + OWN combat scalars ONLY — never the roster, never
+// another agent's truth. They EXPOSE the banked believedThreat/believedLevel so the later parity-
+// careful fight/flee wave can weigh a believed force estimate; nothing in decide/arbitrate calls
+// them yet (the formation layer banks the data; consumption is a separate wave). Pure + guarded.
+
+// Fold the threat scalar + believed class level into one strength number, discounted by how
+// CONFIDENT (and so how fresh) the belief is — a faded sighting yields a fainter estimate, which
+// is the epistemic-honest behaviour (a stale memory of a strong foe is worth less than a fresh one).
+function strengthOf(threat: number, level: number, conf: number): number {
+  const t = Math.max(0, threat || 0);
+  const lvl = Math.max(0, level || 0);
+  const c = Math.max(0, Math.min(1, conf == null ? 1 : conf));
+  return t * (1 + lvl * SIM.strengthLevelWeight) * c;
+}
+
+// believedStrength(a, subjectId): my BELIEVED combat strength of `subjectId`, from my OWN belief
+// (believedThreat × a level bonus × confidence). 0 if I hold no belief / never saw it act as a
+// threat. Own-belief read only. Never throws.
+export function believedStrength(a: AgentShape, subjectId: EntityId): number {
+  try {
+    const b = a.beliefs && a.beliefs.get(subjectId);
+    if (!b) return 0;
+    return strengthOf(b.believedThreat, b.believedLevel, b.confidence);
+  } catch { return 0; }
+}
+
+// My OWN combat strength, read from my OWN scalars (threat + class level), discounted by my
+// current HP fraction (a wounded fighter is weaker). No belief, no roster — pure self-read.
+export function ownStrength(a: AgentShape): number {
+  try {
+    const lvl = (a.progression && a.progression.totalLevel) || 0;
+    const base = Math.max(0, a.threat || 0) * (1 + lvl * SIM.strengthLevelWeight);
+    // HP fraction: fighter.health is current HP over TUNE.maxHealth; clamp it and let
+    // strengthHpWeight blend between "ignore HP" (0) and "fully scale by HP" (1), so a full-HP
+    // agent reads ~1 and a near-dead one ~0.
+    const hp = (a.fighter && a.fighter.health) || 0;
+    const maxHp = TUNE.maxHealth || 100;
+    const hpFrac = hp > 0 ? Math.max(0, Math.min(1, hp / maxHp)) : 0;
+    const w = Math.max(0, Math.min(1, SIM.strengthHpWeight));
+    return base * (1 - w + w * hpFrac);
+  } catch { return Math.max(0, a.threat || 0); }
+}
+
+// believedForceRatio(a, subjectId): MY strength vs the BELIEVED strength of `subjectId`. >1 means
+// I believe I'm the stronger; <1 the weaker; +Infinity if I rate the foe at zero (an unseen/inert
+// subject). The later flee/fight wave reads THIS to decide whether to stand or run, in belief-space.
+// Pure, guarded, own-state + own-belief only. Never throws.
+export function believedForceRatio(a: AgentShape, subjectId: EntityId): number {
+  try {
+    const foe = believedStrength(a, subjectId);
+    const mine = ownStrength(a);
+    if (foe <= 0) return Infinity;   // I perceive no threat from it — effectively dominant
+    return mine / foe;
+  } catch { return Infinity; }
 };
 
 // The spawn config the Simulation/roster hands the constructor (loose by design).
