@@ -15,5 +15,6 @@ import './alms.js';          // charity decided by character: the altruistic fee
 import './migrate.js';       // emigration decided by character: the poor/restless answer a land-is-cheap rumour
 import './subsistence.js';   // the goalSate live trigger: hunger posed to the planner (forage/buy by cost)
 import './signalsFold.js';   // docs/architecture/13: PLAN_OUTCOME-folded catalog signals (streak/perils)
+import './newsread.js';      // NEWS MOVES PRICES: a market-side reader folds the Gazette's printed median into its OWN price belief
 
 export {};
