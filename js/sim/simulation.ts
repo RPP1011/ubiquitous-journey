@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { Fighter } from '../fighter.js';
 import { Agent } from './agent.js';
-import { ROSTER, SIM, NAMES, MONSTER, MOTIVE, CAMPS, TOWNS, SCARECROW, BUILD, LOD, KNOW, RECRUIT, OUTLAW, ALMS, GRANARY, factionHostile } from './simconfig.js';
+import { ROSTER, SIM, NAMES, MONSTER, MOTIVE, CAMPS, TOWNS, SCARECROW, BUILD, LOD, KNOW, RECRUIT, OUTLAW, ALMS, GRANARY, PERSONALITY, factionHostile } from './simconfig.js';
 import { assignHouse, founderHouse } from './houses.js';
 import { ARENA_RADIUS, BIOME, findBiomeSpot, regionAt, REGIONS, terrainHeight } from '../arena.js';
 import { resetXpStats } from '../rpg/xpstats.js';
@@ -123,14 +123,43 @@ function synthName(): string {
   return p(_SYL_A) + p(_SYL_B) + p(_SYL_C);
 }
 
+// Sample a personality. MEDIAN-PRESERVING (config PERSONALITY): every soul first draws the
+// ORIGINAL uniform spread for the five legacy traits (exactly as the old sim did — the median
+// population, and the economy soak on it, is undisturbed) plus uniform new traits. Then a MINORITY
+// (temperamentChance) are nudged toward a named archetype centroid, gaining correlated extremes
+// (a greedy-and-dishonest miser, a bold-and-vindictive hothead) — individuality in the TAILS. The
+// temperament name is stashed on the non-enumerable `_temperament` key for later narration/epithets;
+// cognition reads only the numeric traits, so the label is inert to decisions.
 function makePersonality(): Personality {
-  return {
+  const p: Personality = {
+    // the five legacy traits — UNCHANGED uniform draws (baseline distribution preserved)
     risk_tolerance: rand(0.2, 0.8),
     social_drive:   rand(0.2, 0.8),
     ambition:       rand(0.3, 0.9),
     altruism:       rand(0.2, 0.8),
     curiosity:      rand(0.2, 0.8),
+    // the new traits — a real spread for individuality, but no extreme tails for the bulk
+    greed:          rand(0.2, 0.8),
+    vindictiveness: rand(0.2, 0.8),
+    gregariousness: rand(0.2, 0.8),
+    honesty:        rand(0.2, 0.8),
+    industry:       rand(0.2, 0.8),
   };
+  let temperament = 'everyman';
+  if (rng() < PERSONALITY.temperamentChance) {
+    const arcs = PERSONALITY.archetypes;
+    let total = 0; for (const a of arcs) total += a.w;
+    let r = rng() * total, pick = arcs[0];
+    for (const a of arcs) { r -= a.w; if (r <= 0) { pick = a; break; } }
+    const J = PERSONALITY.jitter, lo = PERSONALITY.lo, hi = PERSONALITY.hi;
+    for (const t of PERSONALITY.traits) {
+      if (pick.c[t] == null) continue;                       // unpinned traits keep their uniform base
+      p[t] = Math.max(lo, Math.min(hi, pick.c[t] + (rng() - 0.5) * 2 * J));
+    }
+    temperament = pick.name;
+  }
+  Object.defineProperty(p, '_temperament', { value: temperament, enumerable: false });
+  return p;
 }
 
 export class Simulation {

@@ -220,6 +220,9 @@ export class Surveyor {
         this._maybeCommissionTavern(towns[i], ctx);
         this._maybeCommissionGranary(towns[i], ctx);
         this._maybeCommissionShrine(towns[i], ctx);
+        // THE RESIDENTIAL DEVELOPER: raise housing in chunks for the town's unhoused (config
+        // DEVELOP), the same town-funded path as the civic works above. Guarded inside.
+        if (this.sim.buildSites && this.sim.buildSites.developHousing) this.sim.buildSites.developHousing(towns[i], ctx);
       }
     } catch { /* never throw on the tick */ }
   }

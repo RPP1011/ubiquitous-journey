@@ -19,7 +19,7 @@
 import { World } from '../../js/sim/world.js';
 import { Simulation } from '../../js/sim/simulation.js';
 import { resolveCombat } from '../../js/combat.js';
-import { COMFORT, BUILD, SURVEYOR, SCHEMA, HALL, COMMODITIES } from '../../js/sim/simconfig.js';
+import { COMFORT, BUILD, SURVEYOR, SCHEMA, HALL, COMMODITIES, DEVELOP } from '../../js/sim/simconfig.js';
 import { AMBITIONS } from '../../js/sim/motivation.js';
 import { isUnhoused } from '../../js/sim/construction.js';
 
@@ -43,7 +43,12 @@ export async function constructionTest(ok, { makeFighter, stubScene }) {
   ok(sim.buildSites && sim.surveyor, 'construction: subsystems constructed');
   ok(typeof sim.buildSites.nearest === 'function', 'construction: BuildSites exposes nearest()');
 
-  const sumGold = () => sim.agents.reduce((s, a) => s + a.gold, 0);
+  // TOTAL wealth (purse + stash): the closed money loop conserves gold+stash, not purse alone.
+  // Once an agent is housed in a CELLARED home it BANKS surplus purse into its stash (act.js, a
+  // pure purse↔stash transfer) — so a gold-only sum reads banking as a false "leak". (Before the
+  // residential developer housed the town in bulk, few agents cellared, so purse-only happened to
+  // hold; it is not the invariant.)
+  const sumGold = () => sim.agents.reduce((s, a) => s + a.gold + (a.stash || 0), 0);
 
   // ── pick a deterministic BUILDER ─────────────────────────────────────────────
   // A real, spawned, working townsperson. We PIN its conditions each frame so
@@ -118,6 +123,14 @@ export async function constructionTest(ok, { makeFighter, stubScene }) {
   // invariant (the same "remove the RNG confound" technique this suite already uses). Restored below.
   const schemaWas = SCHEMA.enabled;
   SCHEMA.enabled = false;
+  // ISOLATION (developer): this fixture tests the PRIVATE build → discover-home-by-sight mechanic
+  // of one pinned builder. The residential DEVELOPER (config DEVELOP) is a separate subsystem that
+  // would house the builder out from under the controlled scenario (it commissions town-funded
+  // vacant homes the builder could move into, and its sites consume the maxConcurrentPerTown slots
+  // the private commission needs). Take it out of THIS invariant — it has its own coverage; restored
+  // below with the schema gate.
+  const developWas = DEVELOP.enabled;
+  DEVELOP.enabled = false;
   // 14400 frames (240 sim-sec). The builder dithers on work/comfort goals for the first ~40s
   // before deriving the build goal, then needs ~40s to commission→build→perceive — so completion
   // lands ~f4900, only ~2/3 through the old 7200 window. That thin margin made discovery RNG-
@@ -145,10 +158,13 @@ export async function constructionTest(ok, { makeFighter, stubScene }) {
   } catch (err) {
     ok(false, `construction: threw at stage '${stage}' frame loop -> ${err && err.message}`);
     console.error(err);
+    DEVELOP.enabled = developWas;   // restore on the early-out too (don't leak the gate to later suites)
     return;
   } finally {
     // restore the schema gate the moment the discovery loop ends — only THIS loop needed it off
-    // (the build → discover-home invariant); the rest of the suite is schema-agnostic.
+    // (the build → discover-home invariant); the rest of the suite is schema-agnostic. DEVELOP stays
+    // OFF through ALL of this suite's sub-tests (banking/comfort-routing also `find` owned homes and
+    // a developer-claimed unit would poison them) — restored at the function's end / early-out.
     SCHEMA.enabled = schemaWas;
   }
   ok(true, `construction: ${FRAMES} frames ran without throwing`);
@@ -441,6 +457,7 @@ export async function constructionTest(ok, { makeFighter, stubScene }) {
     if (h) console.log(`INFO  construction: ${builder.name} raised ${h.label || (h.buildKind + ' #' + h.id)} ` +
       `— footprint ${h.footprint.w.toFixed(1)}×${h.footprint.d.toFixed(1)}, storeys ${h.storeys}, wealth ${h.wealth}`);
   }
+  DEVELOP.enabled = developWas;   // restore the developer gate for subsequent suites (whole-suite isolation ends here)
 }
 
 // ---------------------------------------------------------------------------

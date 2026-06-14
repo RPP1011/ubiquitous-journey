@@ -71,4 +71,13 @@ export function recordDeed(sim: Sim, a: Agent, ev: ActionEvent): void {
     case 'recruited':    ep = { t, kind: 'bond', valence: 1, salience: 0.5 }; break;
   }
   if (ep) a.memory.record(ep);
+  // MOOD COLOURS THE SPELL: a memorable good turn lifts the valence moods (slow-decaying in
+  // drainNeeds), so the agent visibly carries a windfall/triumph into how it spends the next
+  // minutes — socialising, lingering, seeking an audience. Own-state; bounded; never throws.
+  if (ep && a.mood) {
+    if (ep.kind === 'windfall')      a.mood.joy   = Math.min(1, (a.mood.joy   || 0) + 0.5);
+    else if (ep.kind === 'milestone') a.mood.pride = Math.min(1, (a.mood.pride || 0) + 0.6);
+    else if (ep.kind === 'triumph')  { a.mood.pride = Math.min(1, (a.mood.pride || 0) + 0.4); a.mood.joy = Math.min(1, (a.mood.joy || 0) + 0.3); }
+    else if (ep.kind === 'bond')     a.mood.joy   = Math.min(1, (a.mood.joy   || 0) + 0.3);
+  }
 }

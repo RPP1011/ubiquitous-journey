@@ -364,6 +364,38 @@ export const GAZETTE = {
   cooldownOpp: 220,          // …or the same posted opportunity
 };
 
+// PERSONALITY — temperaments, not a uniform box. Independent uniform draws per trait produce
+// only mediocre middles: nobody is memorably anything, and correlated traits (greedy+dishonest,
+// bold+vindictive) never co-occur. Instead each soul is sampled from ONE archetype centroid with
+// jitter, so genuine extremes and trait correlations emerge. `everyman` carries the bulk of the
+// weight (the median townsperson stays near-centre — the soak's economy balance is undisturbed),
+// and the extremes are roughly symmetric (saint↔miser, coward↔hothead/striver) so population means
+// stay near the old uniform ~0.5. Traits beyond the original five default to ~0.5 where an archetype
+// doesn't name them. Tuning only — sampling lives in simulation.makePersonality.
+export const PERSONALITY = {
+  // MEDIAN-PRESERVING by design: the BULK of souls keep the original uniform spread (makePersonality
+  // draws the base traits exactly as the old sim did), so the population median — and the economy
+  // soak that rides on it — is undisturbed. Only a MINORITY (temperamentChance) are nudged toward a
+  // named archetype, gaining real, correlated extremes. So individuality grows in the TAILS without
+  // moving the centre. Tuning only — sampling lives in simulation.makePersonality.
+  temperamentChance: 0.30,  // fraction of souls who are a pronounced named temperament (else uniform)
+  jitter: 0.12,             // ± per-trait spread around the archetype centroid (clamped to lo..hi)
+  lo: 0.05, hi: 0.95,       // clamp so even an extreme keeps a sliver of the opposite
+  // the traits an archetype may pin; any it omits keeps the soul's uniform-drawn base value.
+  traits: ['risk_tolerance', 'social_drive', 'ambition', 'altruism', 'curiosity',
+           'greed', 'vindictiveness', 'gregariousness', 'honesty', 'industry'] as const,
+  // named temperaments [weight, centroid-overrides]. Weight sets each one's share of the minority.
+  archetypes: [
+    { name: 'miser',     w: 1, c: { greed: 0.85, altruism: 0.20, honesty: 0.40, ambition: 0.70, social_drive: 0.35, industry: 0.60 } },
+    { name: 'hothead',   w: 1, c: { vindictiveness: 0.85, risk_tolerance: 0.80, altruism: 0.35, honesty: 0.55 } },
+    { name: 'wanderer',  w: 1, c: { curiosity: 0.85, risk_tolerance: 0.65, industry: 0.35, ambition: 0.45 } },
+    { name: 'saint',     w: 1, c: { altruism: 0.85, honesty: 0.85, greed: 0.15, vindictiveness: 0.15, social_drive: 0.60 } },
+    { name: 'coward',    w: 1, c: { risk_tolerance: 0.15, vindictiveness: 0.25, ambition: 0.40, greed: 0.45 } },
+    { name: 'striver',   w: 1, c: { ambition: 0.90, industry: 0.85, greed: 0.60, risk_tolerance: 0.60 } },
+    { name: 'gossip',    w: 1, c: { gregariousness: 0.90, social_drive: 0.85, curiosity: 0.75, honesty: 0.45, industry: 0.40 } },
+  ] as ReadonlyArray<{ name: string; w: number; c: Record<string, number> }>,
+};
+
 // utility weights per action
 export const WEIGHT = {
   eat:       1.40,
@@ -1133,13 +1165,18 @@ export const BUILD = {
                               //   still wants a home: leisure variety is unblocked WITHOUT losing the
                               //   building-pressure demand signal.
   qualifyComfortStreak: 18,   // …for this many sim-seconds continuously (chronic, not a blip)
-  wealthGate: 60,             // …and hold at least this much surplus gold (a wealth gate, no spend)
+  wealthGate: 60,             // …and hold at least this much surplus gold (a wealth gate, no spend).
+                              //   PRIVATE building is now the rare CUSTOM-build path: the residential
+                              //   DEVELOPER (config DEVELOP) houses the masses as town-funded infrastructure,
+                              //   so this gate stays high — only the well-off raise a home of their own.
   woodNeeded: 8,              // WOOD units a home costs (reserved+consumed over the build)
   woodBuyChunk: 2,            // when short on the plot, buy up to this many wood/tick at market
   progressPerSec: 0.06,       // build progress (0..1) accrued per sec standing on the plot
   staminaPerSec: 0.04,        // energy drained per sec of building (labour cost; guarded)
   toolWearPerSec: 0.02,       // tool wear per sec building (ties tooling to construction)
-  maxConcurrentPerTown: 3,    // cap simultaneous private build sites per town (paces the town)
+  maxConcurrentPerTown: 3,    // cap simultaneous PRIVATE (custom) build sites per town (paces the rare
+                              //   owner-built home). Bulk housing is the DEVELOPER's job (config DEVELOP),
+                              //   which uses its own maxActiveSites — not this private-build pacing cap.
   commissionCooldown: 40,     // sim-seconds an owner waits after a failed/aborted commission
   abandonAfter: 220,          // abort a site with no progress for this long (owner gives up)
   tavernTownLabor: 0.5,       // public-tavern ambient town-labour accrual factor (× progressPerSec)
@@ -1186,6 +1223,24 @@ export const SURVEYOR = {
   shrineWood: 8,              // a modest build — a spire, not a hall
   shrineWealth: 2,            // but finely made (cosmetic tier for buildingGen)
   shrineBenefit: { comfort: 0.7, social: 0.4 },  // a quiet place of solace (below the tavern's pull)
+};
+
+// THE RESIDENTIAL DEVELOPER — housing as INFRASTRUCTURE, raised in CHUNKS. Real settlements
+// don't grow one owner-built hut at a time: once the street grid + plaza are laid (the CityGrid,
+// density-before-sprawl), a patron raises housing in BLOCKS and people move into the finished
+// stock. So when a town carries unhoused demand and the grid has room, the town commissions a
+// ROW of homes at once on the public town-labour path (wood + labour, gold-neutral — the same
+// channel as the tavern/granary and the displacement-rebuild backstop). Each unit is assigned to
+// a specific unhoused townsperson, who DISCOVERS it by sight (homeBeliefId) exactly as a displaced
+// owner discovers his town-rebuilt home — no telepathy; the epistemic split holds. This supplants
+// the atomized "every soul grinds its own home" path (which trapped most agents unhoused and so
+// idling in comfort-seeking); private commissioning survives as the rare custom-build (BUILD gate).
+export const DEVELOP = {
+  enabled: true,
+  blockSize: 10,        // homes broken ground on per development round (the CHUNK) per town
+  maxActiveSites: 24,   // cap concurrent town-funded home sites per town (the in-flight block)
+  minUnhoused: 3,       // only break ground once at least this many townsfolk lack a roof
+  moveInRange: 22,      // an unhoused soul within this many metres of a VACANT home moves in (≈ sight)
 };
 
 // --- city tile grid (Z-levelled) --------------------------------------------

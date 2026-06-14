@@ -377,6 +377,14 @@ export function onCombatEvents(sim: Sim, events: CombatEv[]): void {
         // culprit deriveGoals avenges if it survives). Grieving harder for a liked one.
         const wsal = 0.55 + 0.4 * liked;
         w.memory.record({ t: sim.time, kind: 'witnessed_death', withId: T.id, byId: A.id, valence: -1, salience: wsal });
+        // GRIEF: losing someone you thought well of leaves a slow-fading grief mood (drainNeeds),
+        // colouring the bereaved's days listless — a stranger's death barely registers. Own-state.
+        if (liked > 0.05 && w.mood) w.mood.grief = Math.min(1, (w.mood.grief || 0) + 0.3 + 0.5 * liked);
+        // DEEDS TRAVEL: the witness now KNOWS this killer killed — content on the belief about A
+        // that gossip carries (and garbles) onward ("they say he killed a man"). Capped like rep.
+        const wkd = wb.knownDeeds as Array<{ deed: string; label: string; t: number; hops: number }>;
+        wkd.unshift({ deed: 'killed', label: `killed ${T.name || 'someone'}`, t: sim.time, hops: 0 });
+        if (wkd.length > 6) wkd.length = 6;
         // NARRATIVE BEAT: witnessing a death is formative — grind-immune xp at
         // the episode's salience (mourning a friend marks you more). Guarded.
         if (w.progression) { try { w.progression.addNarrativeXP(wsal, sim.time); } catch { /* never throw */ } }

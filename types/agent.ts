@@ -36,10 +36,17 @@ export interface Needs {
   [k: string]: number;
 }
 
-/** Transient mood (decays; gates flee/fight). */
+/** Transient mood (decays; colours decisions). The two negative-arousal emotions gate
+ *  flee/fight; the slow-decaying valence emotions (joy/pride/loneliness/grief) wash over the
+ *  whole candidate set so the SAME agent visibly behaves differently across a good vs bad spell —
+ *  a proud agent seeks an audience, a grieving one withdraws and works listlessly. Own-state only. */
 export interface Mood {
   fear: number;
   anger: number;
+  joy: number;        // a windfall / good turn — socialise, spend, linger in public
+  pride: number;      // a class-up / kept oath / triumph — seek an audience
+  loneliness: number; // chronic unmet social need — pulls toward others
+  grief: number;      // a bonded other's death — withdraw, listless work
   [k: string]: number;
 }
 

@@ -91,7 +91,7 @@ export class Agent {
     // combat / disposition
     this.combatant = !!cfg.combatant;      // monsters & guards fight; civilians flee
     this.threat = cfg.threat || (this.combatant ? 1 : 0.3);
-    this.mood = { fear: 0, anger: 0 };     // transient, decays; gates flee/fight
+    this.mood = { fear: 0, anger: 0, joy: 0, pride: 0, loneliness: 0, grief: 0 };  // decays; colours decisions
     this._releaseTimer = 0;
     this._attackCd = rng() * 1.5;
     // NPC ability cadence: a short reflex gap between cast ATTEMPTS so an NPC
@@ -334,6 +334,14 @@ export class Agent {
     }
     this.mood.fear = Math.max(0, this.mood.fear - 0.4 * dt);
     this.mood.anger = Math.max(0, this.mood.anger - 0.3 * dt);
+    // The VALENCE moods decay far slower than fear/anger — they're a wash over a good or bad
+    // SPELL, not a startle. Grief lingers longest. Loneliness isn't an event but a state: it
+    // builds while the social need sits unmet and ebbs once company is found — so an isolated
+    // soul grows visibly withdrawn-then-needy without any explicit raise-site. All own-state.
+    this.mood.joy   = Math.max(0, (this.mood.joy   ?? 0) - 0.06 * dt);
+    this.mood.pride = Math.max(0, (this.mood.pride ?? 0) - 0.05 * dt);
+    this.mood.grief = Math.max(0, (this.mood.grief ?? 0) - 0.03 * dt);
+    this.mood.loneliness = clamp01((this.mood.loneliness ?? 0) + ((this.needs.social < 0.3 ? 0.05 : -0.08) * dt));
     if (this._tradeFlash > 0) this._tradeFlash -= dt;
     // SURVIVAL NIBBLE: a CRITICALLY hungry agent with food in its pack eats AS IT GOES — no
     // goal, no scorer competition (you can chew while marching or retreating). Threshold is

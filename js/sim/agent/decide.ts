@@ -327,14 +327,21 @@ export function scoreAndSelect(a: Agent, ctx: CognitionCtx, planStep: PlanStep |
       const lv = laborValue(a);                                  // 0..1 effective value of labour
       const wealthMotive = (0.5 + 0.5 * goldNeed) * lv;          // pay-driven, scaled by real value
       const motive = Math.max(ECON.workIntrinsicFloor * P.ambition, wealthMotive);
-      push('work', WEIGHT.work * (0.4 + P.ambition) * motive * (1 - 0.7 * overstock));
+      // MOOD COLOURS IDLE LIFE (own-state, slow-decaying): GRIEF makes work listless and pulls
+      // the bereaved away from company (withdrawal); PRIDE/JOY make a soul seek an audience and
+      // spend its good cheer socialising; chronic LONELINESS pulls toward others. So the same
+      // agent visibly lives a good week differently from a bad one. Bounded, never negative.
+      const md = a.mood;
+      const listless = 1 - 0.4 * (md.grief || 0);
+      const socialMood = Math.max(0.2, 1 + 0.6 * (md.pride || 0) + 0.5 * (md.joy || 0) + 0.7 * (md.loneliness || 0) - 0.6 * (md.grief || 0));
+      push('work', WEIGHT.work * (0.4 + P.ambition) * motive * (1 - 0.7 * overstock) * listless);
       push('rest', Math.pow(1 - a.needs.energy, 1.5) * WEIGHT.rest);
       // SOCIALISE = seek out a believed-friend (belief-only target). A known friend
       // is a stronger pull than a generic market trip — heading to a face you like is
       // what makes the town feel social rather than a crowd of strangers at a stall.
       const friend = pickSocialTarget(a);
       const friendPull = friend != null ? 1.25 : 1;
-      push('socialize', (1 - a.needs.social) * (0.5 + P.social_drive) * WEIGHT.socialize * friendPull,
+      push('socialize', (1 - a.needs.social) * (0.5 + P.social_drive) * WEIGHT.socialize * friendPull * socialMood,
         friend != null ? { withId: friend } : undefined);
 
       // COURT (docs/architecture/12 §8) — the Star-Crossed ENACTMENT: an agent with a chosen

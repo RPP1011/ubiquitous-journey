@@ -38,6 +38,23 @@ export function provenanceTag(b: IBeliefState | null | undefined) {
   return 'hearsay';
 }
 
+// A deed remembered about a subject — the CONTENT behind a reputation ("killed a man"),
+// not just its sign. Recorded first-hand (reputation.apply for player deeds, combatEvents for
+// witnessed kills) and carried — garbling — down a gossip chain by mergeFrom (deeds-travel).
+export interface KnownDeed { deed: string; label: string; t: number; hops?: number }
+
+// The telephone game for CONTENT: a deed exaggerates as it's retold. Past a few mouths a
+// striking becomes a killing, a theft becomes "a known thief". First/second-hand tellings
+// keep the true label; only a much-retold tale (hops≥3) curdles into the lurid version —
+// the same hops gate the standing/hostility garble uses. Returns the (possibly) worse label.
+const DEED_ESCALATION: Record<string, string> = {
+  struck: 'left a man for dead', attacked: 'killed a man', wounded: 'killed a man',
+  robbed: 'is a known thief', stole: 'is a known thief',
+};
+function garbleDeed(deed: string, label: string, hops: number): string {
+  return hops >= 3 && DEED_ESCALATION[deed] ? DEED_ESCALATION[deed] : label;
+}
+
 export class BeliefState implements IBeliefState {
   subjectId: EntityId;
   lastFaction: string | null;
@@ -251,6 +268,7 @@ export class BeliefStore implements IBeliefStore {
       if (other.hostile) b.hostile = true;
       b.suspicion = Math.max(b.suspicion, other.suspicion * 0.6);
       this._garble(b, other, false);
+      this._carryDeed(b, other);
       return;
     }
     b = this._ensure(other.subjectId);
@@ -263,6 +281,26 @@ export class BeliefStore implements IBeliefStore {
     if (other.hostile) b.hostile = true;
     b.suspicion = Math.max(b.suspicion, other.suspicion * 0.6);
     this._garble(b, other, true);
+    this._carryDeed(b, other);
+  }
+
+  // DEEDS TRAVEL: a reputation's CONTENT spreads, not just its sign. Carry the teller's freshest
+  // known deed about the subject onto my belief, garbling the label by how far the tale has
+  // travelled (my hops) — so "he struck a man" can reach me, third-hand, as "he killed a man".
+  // The same story coming back around isn't piled up twice (dedup by deed+time). Capped, like
+  // reputation.apply's own list. Gated + clamped; never throws (the freeze lesson).
+  _carryDeed(b: BeliefState, other: BeliefState) {
+    try {
+      const od = other.knownDeeds as KnownDeed[];
+      if (!od || !od.length) return;
+      const top = od[0];
+      if (!top || !top.deed) return;
+      const bd = b.knownDeeds as KnownDeed[];
+      if (bd.some((d) => d && d.deed === top.deed && Math.abs((d.t || 0) - (top.t || 0)) < 1)) return;
+      const hops = b.hops || 0;
+      bd.unshift({ deed: top.deed, label: garbleDeed(top.deed, top.label, hops), t: top.t || 0, hops });
+      if (bd.length > 6) bd.length = 6;
+    } catch { /* never throw */ }
   }
 
   // PLACE HEARSAY (the city-architecture follow-on): adopt a neighbour's belief about a

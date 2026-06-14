@@ -94,7 +94,10 @@ const ROWS: Row[] = [
     const overstock = clamp01(made / ECON.maxStack);
     const wealthMotive = (0.5 + 0.5 * goldNeed) * sc.lv;
     const motive = Math.max(ECON.workIntrinsicFloor * P.ambition, wealthMotive);
-    return c('work', WEIGHT.work * (0.4 + P.ambition) * motive * (1 - 0.7 * overstock));
+    // MOOD: grief makes work listless (mirror of scoreAndSelect — kept float-identical so the
+    // shadow oracle and the live arbiter agree tick-for-tick).
+    const listless = 1 - 0.4 * (a.mood.grief || 0);
+    return c('work', WEIGHT.work * (0.4 + P.ambition) * motive * (1 - 0.7 * overstock) * listless);
   } },
   { key: 'rest', primitive: 'locomote', serves: 'need', gen(a, _ctx, sc) {
     if (!a.canWork || sc.inDanger || hungryNow(a)) return null;
@@ -105,7 +108,10 @@ const ROWS: Row[] = [
     const P = a.personality;
     const friend = sc.friend;
     const friendPull = friend != null ? 1.25 : 1;
-    return c('socialize', (1 - a.needs.social) * (0.5 + P.social_drive) * WEIGHT.socialize * friendPull,
+    // MOOD: pride/joy/loneliness pull toward company, grief withdraws (mirror of scoreAndSelect,
+    // float-identical for the shadow-oracle parity check).
+    const socialMood = Math.max(0.2, 1 + 0.6 * (a.mood.pride || 0) + 0.5 * (a.mood.joy || 0) + 0.7 * (a.mood.loneliness || 0) - 0.6 * (a.mood.grief || 0));
+    return c('socialize', (1 - a.needs.social) * (0.5 + P.social_drive) * WEIGHT.socialize * friendPull * socialMood,
       friend != null ? { withId: friend } : undefined);
   } },
   { key: 'court', primitive: 'locomote', serves: 'goal', gen(a, _ctx, sc) {

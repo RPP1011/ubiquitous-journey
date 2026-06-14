@@ -261,10 +261,14 @@ export class Inspector {
       // so the player can see a grudge the agent holds on nothing but hearsay.
       const prov = provenanceTag(b);
       const provCol = (b.hops || 0) <= 0 ? '#7f9a7f' : (b.hops || 0) >= 3 ? '#d39a6b' : '#b0a070';
+      // the STORY behind the opinion: the freshest deed this agent knows/heard about the subject
+      // ("killed a man" — possibly garbled in the retelling). Reputation with narrative content.
+      const kd = (b.knownDeeds && b.knownDeeds.length) ? (b.knownDeeds[0] as { label?: string }) : null;
       const flags = [
         b.hostile ? `<span class="host">${b.rumorBorn ? 'feud (rumour)' : 'hostile'}</span>` : '',
         Math.abs(b.standing) > 0.05
           ? `<span style="color:${b.standing > 0 ? '#7fd18a' : '#e36f6f'}">${b.standing > 0 ? '+' : ''}${b.standing.toFixed(2)}</span>` : '',
+        kd && kd.label ? `<span style="color:#caa15a;font-style:italic">“${kd.label}”</span>` : '',
         `<span style="color:${provCol};font-style:italic;opacity:.85">${prov}</span>`,
       ].filter(Boolean).join(' ');
       return `<div class="brow"><span class="bn">${subj}</span>

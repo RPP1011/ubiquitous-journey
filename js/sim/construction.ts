@@ -32,7 +32,7 @@
 
 import * as THREE from 'three';
 import { rng } from './rng.js';
-import { BUILD, SURVEYOR, CITY, MAP, HALL } from './simconfig.js';
+import { BUILD, SURVEYOR, CITY, MAP, HALL, DEVELOP } from './simconfig.js';
 import { bus, makeEvent } from '../rpg/events.js';
 import { terrainHeight } from '../arena.js';
 import { BEAT } from './chronicle.js';
@@ -478,6 +478,8 @@ export class BuildSites {
       // TRUTH-SIDE displacement backstop: rebuild a displaced owner's home after a grace
       // window if he never returned to discover the ruin and re-commission it himself.
       this._drainDisplaced(ctx);
+      // MOVE-IN: unhoused townsfolk take over vacant developer homes they come near (config DEVELOP).
+      this._claimVacantHomes();
     } catch { /* never throw on the fixed tick (freeze lesson) */ }
   }
 
@@ -675,9 +677,11 @@ export class BuildSites {
               }
             }
           } catch { /* grants are best-effort flavour */ }
-        } else {
+        } else if (owner) {
+          // a PRIVATE custom-built home names its builder; a VACANT developer unit (no owner yet)
+          // is narrated by the block-level "broke ground on a row of N homes" beat, not per hut.
           this.sim.chronicle.note('build', site.ownerId,
-            `${owner ? owner.name : 'A townsperson'} raised ${hn} in ${townName}.`);
+            `${owner.name} raised ${hn} in ${townName}.`);
         }
       }
     } catch { /* chronicle is best-effort flavour */ }
@@ -835,6 +839,88 @@ export class BuildSites {
   // Town-funded rebuild of a displaced owner's home: a HOME site with the owner's id but no
   // personal labour required — it rises via the same ambient town-labour path the tavern uses
   // (_townLabour). Mints no gold (wood+labour abstraction). Returns the site or null.
+  // THE RESIDENTIAL DEVELOPER (config DEVELOP) — the town raises housing in CHUNKS, as
+  // infrastructure, instead of leaving every soul to grind its own hut. When the town carries
+  // unhoused demand and the grid has room, break ground on a ROW of homes at once on the public
+  // town-funded path (_townFundedHome → _townLabour, wood+labour, gold-neutral). Each unit is
+  // assigned to a specific unhoused townsperson, who then DISCOVERS it by sight (homeBeliefId),
+  // exactly as the displacement backstop's owner discovers his town-rebuilt home — so the
+  // epistemic split holds (perception still binds the home; the developer only SUPPLIES it).
+  // Truth-side (an omniscient town authority reads who lacks a roof, like the Surveyor reads
+  // pop) — it supplies/narrates, never drives an agent's cognition. Called from Surveyor.tick.
+  // Guarded; never throws on the fixed tick (the freeze lesson).
+  developHousing(town: { id: unknown }, ctx: Ctx): void {
+    try {
+      if (!DEVELOP.enabled || !town || !this.sim.cities) return;
+      // the in-flight block: town-funded home sites already standing in this town.
+      let active = 0;
+      for (const s of this._sites) if (s.kind === BUILD_KIND.HOME && s.town === town.id && s.townFunded) active++;
+      const cap = DEVELOP.maxActiveSites || 24;
+      if (active >= cap) return;
+      // DEMAND (truth-side, mirrors _drainDisplaced): townsfolk of this town with no sheltered home
+      // of their own AND no home site already serving them (private OR a prior developer unit) — so
+      // the developer never double-houses anyone.
+      const unhoused: Agent[] = [];
+      for (const a of this.sim.agents) {
+        if (!a.alive || a.controlled || a.faction !== 'townsfolk' || a.townId !== town.id) continue;
+        if (this._buildings.some((b) => b.buildKind === BUILD_KIND.HOME && b.ownerId === a.id && b.sheltered !== false)) continue;
+        if (this._sites.some((s) => s.kind === BUILD_KIND.HOME && s.ownerId === a.id)) continue;
+        unhoused.push(a);
+      }
+      // SUPPLY already in the pipe: finished VACANT homes waiting to be moved into, plus the
+      // in-flight block. Build only the DEFICIT (unhoused minus stock) so vacant stock doesn't
+      // pile up faster than agents claim it — the town builds to demand, not endlessly.
+      let vacant = 0;
+      for (const b of this._buildings) if (b.buildKind === BUILD_KIND.HOME && b.ownerId == null && b.sheltered !== false) vacant++;
+      const deficit = unhoused.length - vacant - active;
+      if (deficit < (DEVELOP.minUnhoused || 3)) return;
+      // break ground on a CHUNK this round — bounded by the block size, the remaining site cap,
+      // and the deficit. Homes are raised VACANT (ownerId null); an unhoused soul moves into the
+      // nearest one it comes upon (_claimVacantHomes). claimPlot null (grid full) stops the row.
+      const want = Math.min(DEVELOP.blockSize || 10, cap - active, deficit);
+      let raised = 0;
+      for (let k = 0; k < want; k++) {
+        const site = this._townFundedHome(town as BuildSite, null, ctx);   // vacant: no owner yet
+        if (!site) break;                                  // grid full — stop the row here
+        raised++;
+      }
+      if (raised > 0 && this.sim.chronicle) {
+        try {
+          this.sim.chronicle.note('build', null,
+            `${this._townName(town.id)} broke ground on ${raised === 1 ? 'a new home' : `a row of ${raised} new homes`}.`);
+        } catch { /* chronicle is best-effort flavour */ }
+      }
+    } catch { /* never throw on the fixed tick (freeze lesson) */ }
+  }
+
+  // MOVE-IN — an unhoused townsperson who comes within sight of a VACANT developer home takes it
+  // as their own. This is the truth-side ownership assignment (a world allocation, like the raid /
+  // displacement passes); the agent then DISCOVERS the home through its OWN perception, which binds
+  // homeBeliefId by sight — so cognition still owns the belief and the epistemic split holds. Any
+  // vacant home works (not one pre-assigned plot), which is what makes discovery robust: an agent
+  // criss-crossing town to work/market/comfort passes some empty house and simply moves in. A
+  // finished home claimed here is no longer counted as vacant supply. Guarded; never throws.
+  _claimVacantHomes(): void {
+    try {
+      if (!DEVELOP.enabled) return;
+      const r2 = (DEVELOP.moveInRange || 22) ** 2;
+      for (const b of this._buildings) {
+        if (b.buildKind !== BUILD_KIND.HOME || b.ownerId != null || b.sheltered === false) continue;  // vacant homes only
+        // the nearest still-unhoused townsperson of this town within sight of the empty house moves in.
+        let claimant: Agent | null = null, bestD = r2;
+        for (const a of this.sim.agents) {
+          if (!a.alive || a.controlled || a.faction !== 'townsfolk' || a.townId !== b.town) continue;
+          if (a.homeBeliefId != null) continue;                          // already believes itself housed
+          if (this._buildings.some((x) => x.buildKind === BUILD_KIND.HOME && x.ownerId === a.id)) continue;  // already owns one (truth)
+          const dx = a.pos.x - b.pos.x, dz = a.pos.z - b.pos.z;
+          const d = dx * dx + dz * dz;
+          if (d < bestD) { bestD = d; claimant = a; }
+        }
+        if (claimant) b.ownerId = claimant.id;   // truth move-in; perception binds homeBeliefId next tick (sight)
+      }
+    } catch { /* never throw on the fixed tick */ }
+  }
+
   _townFundedHome(town: BuildSite, owner: Agent | null, ctx: Ctx): BuildSite | null {
     try {
       if (!this.sim.cities) return null;
