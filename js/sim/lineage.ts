@@ -82,6 +82,7 @@ export class Lineage {
         if (LINEAGE.apprenticeEnabled) this._apprenticeships(ctx);
         this._surpass();
         this._reconcileRivals();
+        if (LINEAGE.feudGrudgeEnabled) this._feudGrudges();
       }
     } catch { /* never stall the fixed tick (the freeze lesson) */ }
   }
@@ -489,6 +490,49 @@ export class Lineage {
         : `Once bitter rivals, ${a.name} and ${b.name} have made their peace.`;
       if (this.sim.chronicle && this.sim.chronicle.note) this.sim.chronicle.note('legend', a.id, text);
       return;   // one reconciliation per pass
+    }
+  }
+
+  // INHERITED FEUDS, ACTED — make a House's dynastic grudge VISIBLE on the street. A young
+  // member of a feuding house, on PERCEIVING a member of the RIVAL house, SOURS its belief
+  // about that neighbour: a low standing + mild suspicion (NOT auto-hostility — that would
+  // over-escalate; a soured belief is enough for the existing avoid/shun behaviour to act on).
+  //
+  // EPISTEMIC DISCIPLINE: the souring agent reads only its OWN beliefs (the subjects it has
+  // freshly perceived), its OWN house, and the STATIC house-feud registry (a shared world fact,
+  // like the mental map — areHousesFeuding). The perceived neighbour's HOUSE is a static
+  // dynastic surname (a public, on-sight fact, not a hidden truth), resolved via agentsById from
+  // the believed subject id — no roster SCAN to decide who to sour. Bounded per pass; idempotent
+  // (skips a belief already soured to this level). Guarded; never throws on the tick.
+  _feudGrudges(): void {
+    const sim = this.sim;
+    if (!sim.houseFeuds || !sim.houseFeuds.size) return;        // no feuds → wholly inert
+    const tgtStanding = (typeof LINEAGE.feudGrudgeStanding === 'number') ? LINEAGE.feudGrudgeStanding : -0.4;
+    const susp = (typeof LINEAGE.feudGrudgeSuspicion === 'number') ? LINEAGE.feudGrudgeSuspicion : 0.3;
+    const cap = LINEAGE.feudGrudgePerPass || 4;
+    const confFloor = 0.5;                                       // only act on a CONFIDENT (freshly-seen) belief
+    let stamped = 0;
+    for (const a of sim.agents) {
+      if (stamped >= cap) break;
+      if (!this._civ(a) || !a.house || !a.beliefs) continue;
+      if (this._totalLevel(a) > (LINEAGE.feudYoungMaxLevel ?? 4)) continue;   // YOUNG members only
+      // does my house feud with ANY house? (cheap early-out before scanning my beliefs)
+      if (!feudingHouseOf(sim, a.house)) continue;
+      let did = false;
+      try {
+        for (const b of a.beliefs.all()) {
+          if (!b || (b.confidence || 0) < confFloor) continue;   // a subject I currently, confidently perceive
+          const o = sim.agentsById.get(b.subjectId);
+          if (!o || !o.alive || o.controlled || o.faction !== 'townsfolk' || !o.house) continue;
+          if (!areHousesFeuding(sim, a.house, o.house)) continue; // static shared world fact
+          if ((b.standing || 0) <= tgtStanding && (b.suspicion || 0) >= susp) continue; // already soured
+          b.standing = Math.min(b.standing || 0, tgtStanding);    // cool toward the rival bloodline
+          b.suspicion = Math.max(b.suspicion || 0, susp);         // "something's off about them"
+          did = true;
+          break;                                                  // one fresh grudge per agent per pass
+        }
+      } catch { /* a single bad belief must never abort the pass */ }
+      if (did) stamped++;
     }
   }
 
