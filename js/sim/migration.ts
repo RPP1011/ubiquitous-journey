@@ -25,7 +25,9 @@
 // Self-throttled: Simulation calls migration.tick(ctx, step) on the fixed loop.
 
 import { rng } from './rng.js';
-import { MIGRATE } from './simconfig.js';
+import { MIGRATE, BASE_PRICE } from './simconfig.js';
+
+const BASE_PRICE_T = BASE_PRICE as Record<string, number>;
 
 // `sim`/`ctx` (the owning Simulation + cognition context) are typed opaquely on
 // purpose, exactly like lineage.ts — this pass reads roster aggregates truth-side
@@ -46,6 +48,24 @@ export class Migration {
     this.sim = sim;
     this._acc = 0;
     this.rumours = 0;
+  }
+
+  // The destination town's REPORTED staple prices, read from the Gazette's recent
+  // market briefs (the omniscient observer layer narrating world prices — the SAME
+  // intel the arbitrage layer reads; not a roster-belief read). Returns a good→median
+  // map for the destination; empty when there's no paper or no fresh market story.
+  // Guarded — a stale/absent gazette just yields base-price fallbacks in migrate.ts.
+  _destPrices(townId: number): Record<string, number> {
+    const out: Record<string, number> = {};
+    try {
+      const arts = (this.sim.gazette && this.sim.gazette.recent) ? this.sim.gazette.recent(30) : [];
+      for (const art of arts) {
+        const b = art && art.brief;
+        if (!b || b.kind !== 'market' || b.originTown !== townId || b.good == null) continue;
+        if (out[b.good] == null && b.med != null) out[b.good] = b.med;   // freshest wins (recent() is newest-first)
+      }
+    } catch { /* no paper → base-price fallback */ }
+    return out;
   }
 
   // is `a` a living, non-controlled townsperson of town `tid`? (the census body)
@@ -89,6 +109,12 @@ export class Migration {
       // agent's own `_prospects` mailbox; the agent decides for itself (or doesn't).
       const dest = towns[lo];
       const now = this.sim.time;
+      // COMPARATIVE ADVANTAGE: the word also carries what the destination's market
+      // REPORTS staple prices at (the same Gazette intel the arbitrage layer reads) —
+      // so a migrant can weigh "does MY trade pay better there?" (migrate.ts), not just
+      // "is it emptier?". A per-good reported-price picture for the destination town,
+      // read once per pass. Missing/made goods fall back to base price in migrate.ts.
+      const destPrices = this._destPrices(dest.id);
       let stamped = 0;
       for (const a of this.sim.agents) {
         if (stamped >= (MIGRATE.rumoursPerPass || 2)) break;
@@ -96,7 +122,13 @@ export class Migration {
         if (rng() > (MIGRATE.rumourChance || 0.3)) continue;   // the word reaches SOME ears, not all
         const box = (a._prospects ||= []);
         if (box.some((p: { townId: number }) => p && p.townId === dest.id)) continue;  // already heard it
-        box.push({ townId: dest.id, name: dest.name, x: dest.center.x, z: dest.center.z, t: now });
+        // stamp the destination's REPORTED price for THIS ear's own trade (the figure it
+        // will weigh its believed margin on). A staple with no fresh report, or a made
+        // good (gazette prices staples only), falls back to base — never an own-belief read.
+        const trade = a._trade;
+        const price = (trade != null && destPrices[trade] != null)
+          ? destPrices[trade] : (trade != null ? (BASE_PRICE_T[trade] || 0) : 0);
+        box.push({ townId: dest.id, name: dest.name, x: dest.center.x, z: dest.center.z, t: now, good: trade, price });
         while (box.length > (MIGRATE.prospectCap || 2)) box.shift();
         stamped++; this.rumours++;
       }

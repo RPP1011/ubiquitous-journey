@@ -213,6 +213,10 @@ export const ECON = {
   specAmbitionMin: 0.6,       // only an ambitious (wealth-driving) soul speculates
   specMinSpareGold: 30,       // and only while it holds at least this much walking-around gold
   specMaxHold: 4,             // cap on speculative units held of one good (so it can't corner the market)
+  // SELL-TRIGGER (the hold's exit): a speculator HOLDS its glut-bought stock off the sell book
+  // while its OWN price belief stays below base×this, and RELEASES it to sell once belief recovers
+  // to/above that line (the bet paid off). At 1.0 it sells once back to par — never dumps low.
+  specSellAtFrac: 1.0,
 
   // --- TOOL QUALITY from smith mastery (price-within-band premium) ----------
   // A tool bought from a high-mastery smith carries a believed QUALITY (0..1, from the seller's
@@ -381,6 +385,12 @@ export const BOUNTY = {
   readRange: 22,            // must be within this of a market to "read" the gazette
   ttl: 160,                 // give up + go home if not done within this (sim-seconds)
   takeChance: 0.5,          // per eligible reader per read, chance to actually take it
+  // EV scoring (item 4): a reader takes the best believed reward-vs-difficulty job, not a
+  // random one. Difficulty = count×monster-threat (hunts) or the named foe's level (vendettas),
+  // discounted by the hunter's OWN level — a stronger hunter braves a harder job for the purse.
+  evXpWeight: 0.5,          // how much a job's xp reward counts toward its believed value (vs gold 1:1)
+  evNamedFoeMul: 1.5,       // a vendetta's quarry reads as this much harder per level than a faceless beast
+  evLevelDiscount: 0.1,     // each point of the hunter's own level shrinks the felt difficulty by this
 };
 
 // TOWN ALERT — reading a Gazette THREAT advisory makes a town batten down: its
@@ -403,6 +413,9 @@ export const ARBITRAGE = {
   maxConcurrent: 2,          // at most this many arbitrage hauls at once
   readRange: 22,             // must be within this of a market to read the report
   minSurplus: 3,             // must hold at least this much of the good to bother hauling
+  minEdge: 1.5,              // believed price GAP (dear-town reported price − own home belief, coin/unit)
+                             //   a haul must clear to be worth the road — a marginal edge doesn't pay for
+                             //   the wilderness crossing. The destination chosen MAXIMIZES this gap.
   ttl: 150,                  // give up + go home if the haul isn't done in this
   sellDwell: 14,             // sim-seconds at the dear market to sell what it can, then head home
   takeChance: 0.5,           // per eligible reader per read, chance to set out

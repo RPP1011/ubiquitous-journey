@@ -9,17 +9,22 @@
 // Deterministic + headless-safe (Math.random + state). Reuses the goal/act path (an
 // `arbitrage` goal decide.js routes + act.js walks) and the existing market auction.
 
-import { ARBITRAGE, ECON } from './simconfig.js';
+import { ARBITRAGE, ECON, BASE_PRICE } from './simconfig.js';
 import { rng } from './rng.js';
+import { bestOption } from './agent/select.js';
 import type { ArbitrageState, FullCtx, EntityId } from '../../types/sim.js';
+
+const BASE_PRICE_T = BASE_PRICE as Record<string, number>;
 
 // The (still-.js) Simulation is reached into loosely (agents/towns/gazette/world/
 // chronicle + a wide untyped tail), so a precise type would be all-optional noise.
 type Sim = any;   // js Simulation — justified loose type
 type Ag = any;    // js Agent off the roster — justified loose type
 
-// Per-good arbitrage picture: which towns the good runs DEAR in vs GLUTted in.
-interface GoodInfo { dear: Set<number>; glut: Set<number>; }
+// Per-good arbitrage picture: which towns the good runs DEAR in vs GLUTted in, and
+// the REPORTED price (median) each dear town printed — so the trader can weigh the
+// believed price GAP (dest − home), not just chase any town tagged "dear".
+interface GoodInfo { dear: Set<number>; glut: Set<number>; price: Map<number, number>; }
 
 export class Arbitrage {
   sim: Sim;
@@ -85,8 +90,9 @@ export class Arbitrage {
     for (const art of arts) {
       const b = art.brief; if (!b || b.kind !== 'market' || b.originTown == null) continue;
       const k = `${b.originTown}:${b.good}:${b.wanted ? 'd' : 'g'}`; if (seen.has(k)) continue; seen.add(k);
-      const inf = info[b.good] || (info[b.good] = { dear: new Set(), glut: new Set() });
+      const inf = info[b.good] || (info[b.good] = { dear: new Set(), glut: new Set(), price: new Map() });
       (b.wanted ? inf.dear : inf.glut).add(b.originTown);
+      if (b.wanted && b.med != null) inf.price.set(b.originTown, b.med);   // the dear town's reported price
     }
     if (!Object.keys(info).length) return;
 
@@ -96,17 +102,27 @@ export class Arbitrage {
       if (this._haulers().length >= (ARBITRAGE.maxConcurrent || 2)) break;
       if (!this._eligible(a)) continue;
       if (!this._nearAMarket(a, r2)) continue;
-      // find a good this trader holds in surplus, and a town worth hauling it to:
-      // somewhere it's DEAR (best), or ANY other town if it's glutted right here.
+      // find a good this trader holds in surplus, and the town worth hauling it to:
+      // among the towns where it runs DEAR, the one maximizing the BELIEVED price gap
+      // (its reported price − the trader's OWN home belief), and only if that gap clears
+      // ARBITRAGE.minEdge — a marginal gap doesn't pay for the road. (Was: first dear town,
+      // any believed gap.) bestOption ranks the candidate destinations by that gap.
+      const minEdge = ARBITRAGE.minEdge ?? 0;
       let pick: { good: string; destTownId: number } | null = null;
       for (const good in info) {
         if (a.sellQty(good) < minS) continue;     // real sellable surplus (over the keep-reserve)
         const inf = info[good];
-        let dest: number | null = null;
-        // ONLY haul to a town with REAL unmet demand for this good (buyers > sellers)
-        // — chasing a mere glut elsewhere is futile when every town oversupplies.
-        for (const td of inf.dear) if (td !== a.townId) { dest = td; break; }
-        if (dest != null && sim.towns && sim.towns[dest]) { pick = { good, destTownId: dest }; break; }
+        const home = (a.priceBeliefs && a.priceBeliefs[good]) || BASE_PRICE_T[good] || 1;
+        // candidate dear towns (excluding home + any without a live market) with their reported gap
+        const cands: { dest: number; gap: number }[] = [];
+        for (const td of inf.dear) {
+          if (td === a.townId || !(sim.towns && sim.towns[td])) continue;
+          const rep = inf.price.get(td);
+          if (rep == null) continue;              // dear, but no printed price to weigh the gap on
+          cands.push({ dest: td, gap: rep - home });
+        }
+        const win = bestOption(cands, { valueOf: (c) => c.gap });   // max believed gap
+        if (win && win.gap >= minEdge) { pick = { good, destTownId: win.dest }; break; }
       }
       if (!pick) continue;
       if (rng() > (ARBITRAGE.takeChance || 0.5)) continue;

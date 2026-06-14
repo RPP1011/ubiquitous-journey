@@ -12,6 +12,7 @@
 import { BOUNTY, MONSTER } from './simconfig.js';
 import { rng } from './rng.js';
 import { isHomeBuilder } from './construction.js';
+import { bestOption } from './agent/select.js';
 import type { Bounty, FullCtx, EntityId } from '../../types/sim.js';
 
 // The (still-.js) Simulation is reached into loosely (agents/quests/gazette/world/
@@ -81,10 +82,42 @@ export class Bounties {
       if (!this._eligible(a)) continue;
       if (!this._nearAMarket(a, r2)) continue;
       if (rng() > (BOUNTY.takeChance || 0.5)) continue;
-      const q = jobs[(rng() * jobs.length) | 0];
-      if (this._someoneOn(q.id)) continue;        // one NPC per job is plenty (still races the player)
+      // EV, not a die-roll: score each open job by believed REWARD vs believed
+      // DIFFICULTY scaled by THIS hunter's own level (a stronger hunter discounts the
+      // threat), and take the best-scoring job that isn't already taken. (Was: pick a
+      // random job among the brave.) bestOption ranks them; a non-positive EV is skipped.
+      const q = bestOption(jobs, {
+        valueOf: (j) => this._ev(a, j),
+        skipIf: (j) => this._someoneOn(j.id) || this._ev(a, j) <= 0,
+      });
+      if (!q) continue;
       this._take(a, q);
     }
+  }
+
+  // BELIEVED EXPECTED VALUE of a job for hunter `a`: reward (gold + a slice of xp) over
+  // believed difficulty, the difficulty discounted by the hunter's OWN level. Difficulty:
+  // a hunt/bounty is count × the monster threat; a vendetta (avenge) is the NAMED quarry's
+  // level (looked up from the roster as a believed strength cue — the observer-layer threat
+  // figure, the same kind the Gazette prints). Guarded; a bad job scores 0 (skipped).
+  _ev(a: Ag, q: any): number {
+    try {
+      const r = q.reward || {};
+      const reward = (r.gold || 0) + (r.xp || 0) * (BOUNTY.evXpWeight ?? 0.5);
+      if (reward <= 0) return 0;
+      const tgt = q.target || {};
+      let difficulty: number;
+      if (q.type === 'avenge') {
+        const killer = tgt.killerId != null && this.sim.agentsById ? this.sim.agentsById.get(tgt.killerId) : null;
+        const lvl = (killer && killer.progression && killer.progression.totalLevel) || 1;
+        difficulty = Math.max(1, lvl) * (BOUNTY.evNamedFoeMul ?? 1.5);
+      } else {
+        difficulty = Math.max(1, tgt.count || 1) * (MONSTER.threat || 1);
+      }
+      const myLevel = (a.progression && a.progression.totalLevel) || 0;
+      const prowess = 1 + myLevel * (BOUNTY.evLevelDiscount ?? 0.1);   // a stronger hunter shrinks the felt difficulty
+      return reward / (difficulty / prowess);
+    } catch { return 0; }
   }
 
   _eligible(a: Ag): boolean {
