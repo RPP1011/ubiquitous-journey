@@ -1753,6 +1753,12 @@ export const SIM = {
   // ANIMACY (schema substrate): a subject must move at least this far (m², squared) BETWEEN
   // consecutive sightings to register as having acted alive (filters perception jitter).
   moveEvidenceEps: 0.04,
+  // BELIEVED COMBAT STRENGTH (docs/architecture/18 M2). How the threat scalar + class level fold
+  // into one strength estimate, and how my own HP fraction scales MY strength. Used only by the
+  // believedStrength()/believedForceRatio() helpers (the later fight/flee wave reads them); the
+  // formation bridge itself banks the raw scalars. Tuning lives here, not in the helper.
+  strengthLevelWeight: 0.08,   // +this fraction of strength per believed class level
+  strengthHpWeight: 1.0,       // how strongly MY current HP fraction discounts MY own strength (0 = ignore HP)
 };
 
 // MENTAL MAP / Theory-of-Mind DESTINATION inference. The agent's known PLACES are

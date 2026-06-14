@@ -33,6 +33,9 @@ export interface BeliefState {
   intent: string | null;            // 'flee'|'raid'|'home'|… — why it's headed there
   destInferredAt: number;           // sim-time the dest was inferred (TTL cache)
   notoriety: number;                // believed player fame (fear gate)
+  believedThreat: number;           // believed combat-strength scalar (doc 18 M2 formation bridge); 0 = unseen
+  believedLevel: number;            // believed class total-level (the 2nd strength cue); 0 = unseen
+  believedOccupation: string | null;// believed trade the subject plies (or good it makes); null = unknown
   lastTick: number;
   confidence: number;               // 0..1, decays over time
   hostile: boolean;                 // do I think this subject is hostile to me?
