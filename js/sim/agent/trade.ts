@@ -6,7 +6,7 @@
 // verbatim bodies of the old Agent methods. No cycles — imports config + the
 // rpg event bus only.
 
-import { GOODS, COMMODITIES, ECON, WEALTH } from '../simconfig.js';
+import { GOODS, COMMODITIES, ECON, WEALTH, BASE_PRICE } from '../simconfig.js';
 import { ABILITY } from '../../rpg/rpgconfig.js';
 import { bus, makeEvent } from '../../rpg/events.js';
 import type { Agent, CognitionCtx, ActionEventSpec, ActionEvent } from '../../../types/sim.js';
@@ -18,6 +18,7 @@ const mkEvent = makeEvent as (spec: ActionEventSpec) => ActionEvent;
 const GOODS_T = GOODS as Record<string, { inputs: Record<string, number> | null }>;
 const ECON_KEEP = ECON.keep as Record<string, number>;
 const WEALTH_RATIO = (WEALTH.stashRatio || {}) as Record<string, number>;
+const BASE_PRICE_T = BASE_PRICE as Record<string, number>;
 
 // Deterministically move a fraction of a freshly-spawned agent's PURSE into its
 // STASH per the WEALTH config. Day-one baseline-identical: WEALTH.enabled is false,
@@ -92,19 +93,48 @@ export function wantQty(a: Agent, c: string): number {
   // famine was all gold-rich fighters). It BUYS the bigger pack — the money loop stays closed.
   if (c === 'food') {
     const keep = ECON.keep.food * ((a.combatant && a.faction === 'townsfolk') ? (ECON.rationMul || 2) : 1);
-    return Math.max(0, keep - Math.floor(a.inventory.food));
+    return Math.max(0, keep - Math.floor(a.inventory.food));  // food is consumed, not hoarded — no speculation
   }
-  if (c === 'tool') return a.inventory.tool < 1 ? 1 : 0;
-  if (c === 'potion') return a.inventory.potion < 1 ? 1 : 0;  // everyone keeps a remedy
-  // buy the recipe inputs for the good I'm currently crafting (tool: wood+ore;
-  // potion: herb) — but only if I actually KNOW that recipe (else the inputs are
-  // useless to me). Always-live + guarded. Raw producers have no inputs and buy none.
-  const inputs = tradeInputs(a);
-  if (inputs && inputs[c]) {
-    if (a._trade && !(a.recipes && a.recipes.has(a._trade))) return 0;
-    return Math.max(0, 2 - Math.floor(a.inventory[c]));
+  // the base consumption/production want, then any SPECULATIVE hoard on top (a non-perishable good
+  // a wealthy ambitious soul sees as glutted — see speculativeWant). Both are plain BUY transfers.
+  let want = 0;
+  if (c === 'tool') want = a.inventory.tool < 1 ? 1 : 0;
+  else if (c === 'potion') want = a.inventory.potion < 1 ? 1 : 0;  // everyone keeps a remedy
+  else {
+    // buy the recipe inputs for the good I'm currently crafting (tool: wood+ore; potion: herb) —
+    // but only if I actually KNOW that recipe (else the inputs are useless to me). Always-live +
+    // guarded. Raw producers have no inputs and buy none.
+    const inputs = tradeInputs(a);
+    if (inputs && inputs[c]) {
+      if (a._trade && !(a.recipes && a.recipes.has(a._trade))) return 0;
+      want = Math.max(0, 2 - Math.floor(a.inventory[c]));
+    }
   }
-  return 0;
+  return want + speculativeWant(a, c);
+}
+
+// SPECULATION / HOARDING (item 2) — a wealthy, ambitious soul buys a glutted non-perishable good to
+// HOLD, betting the tâtonnement lifts the price later. The glut signal is BELIEF-CLEAN: the agent's
+// OWN price belief for the good (which the market drove DOWN toward the depressed clearing price) has
+// fallen well below the good's base price — so it perceives the good as cheap right now. Gated on a
+// wealth-driving ambition + spare gold, capped per good, so it stays rare. Returns the EXTRA units to
+// bid beyond its consumption/production want. Pure buy demand; the buy itself (applyBuy) is conserved.
+// Reads only own personality / ambition / gold / priceBeliefs / inventory — never the roster. Guarded.
+function speculativeWant(a: Agent, c: string): number {
+  try {
+    if (c === 'food') return 0;                                  // food perishes — provisioned, never hoarded
+    const P = a.personality || {};
+    const driven = (a.ambition && a.ambition.kind === 'wealth') || (P.ambition ?? 0) >= (ECON.specAmbitionMin || 0.6);
+    if (!driven) return 0;
+    if ((a.gold || 0) < (ECON.specMinSpareGold || 30)) return 0;  // only with walking-around money to spare
+    const base = BASE_PRICE_T[c]; if (!base) return 0;
+    const belief = a.priceBeliefs[c] || base;
+    if (belief >= base * (ECON.specBelowFrac || 0.75)) return 0;   // not a glut — its belief hasn't fallen enough
+    const held = a.inventory[c] || 0;
+    const cap = ECON.specMaxHold || 4;
+    if (held >= cap) return 0;                                    // already holding my speculative fill
+    return 1;                                                     // bid one more unit of the cheap good to hold
+  } catch { return 0; }
 }
 export function sellQty(a: Agent, c: string): number { return Math.max(0, Math.floor(a.surplus(c))); }
 

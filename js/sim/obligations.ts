@@ -48,7 +48,10 @@ export function obligationsOf(agent: Agent): Obligation[] {
 // deferred actions to take now (pay the coin, testify, re-derive the recurring duty). Mutates the
 // agent's ledger (removes fired + lapsed). `firedTriggers` is the set of triggerKey()s perception
 // raised this tick. Guarded; never throws; a missing/empty ledger is a no-op returning [].
-export function settleObligations(agent: Agent, firedTriggers: Set<string> | null, now: number): Obligation[] {
+// `onLapse` (optional) is called with each DEFAULTED obligation (a pay/repay that lapsed unkept) so
+// the caller can leak the social consequence — the credit-default standing hit (ledger.ts) routes the
+// FORSWORN-style belief fold through it. Defaulting still folds the per-agent tally here regardless.
+export function settleObligations(agent: Agent, firedTriggers: Set<string> | null, now: number, onLapse?: (o: Obligation) => void): Obligation[] {
   if (!agent || !Array.isArray(agent._obligations) || !agent._obligations.length) return [];
   const fired: Obligation[] = [];
   try {
@@ -61,7 +64,10 @@ export function settleObligations(agent: Agent, firedTriggers: Set<string> | nul
       // LAPSE: the window passed without the trigger ever firing — drop it (the promise expired).
       // §13 D.creditLoad: a lapsed obligation is a DEFAULT — fold a per-agent default tally (own-state;
       // the town aggregate reads these in the observer pass). Only a real obligation (pay/repay) defaults.
-      if (now >= o.expiry) { if (o.action === 'pay' || o.action === 'repay') foldObligationDefault(agent, 1); return false; }
+      if (now >= o.expiry) {
+        if (o.action === 'pay' || o.action === 'repay') { foldObligationDefault(agent, 1); if (onLapse) { try { onLapse(o); } catch { /* never throw */ } } }
+        return false;
+      }
       return true;
     });
   } catch { /* never throw on the tick */ }

@@ -37,8 +37,15 @@ registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
 
   // (2) SETTLE — build the fired-triggers set from this agent's OWN fresh perception: a counterparty
   // I currently hold a confident, freshly-updated belief about counts as "met". Plus time triggers
-  // (recurrence) are handled inside settleObligations by `now`.
-  const fired = settleObligations(a, perceivedTriggers(a, now), now);
+  // (recurrence) are handled inside settleObligations by `now`. A DEFAULTED debt (a pay/repay that
+  // lapsed unkept — chiefly a CREDIT debt never settled within its term) leaks its social consequence
+  // through onLapse: the conserved witnessDeed primitive sours the creditor's belief toward this
+  // defaulter + spreads bystander suspicion (per-perceiver, witness-gated — the FORSWORN-style leak).
+  const fired = settleObligations(a, perceivedTriggers(a, now), now, (o) => {
+    if (o.action !== 'repay' && o.action !== 'pay') return;
+    if (o.counterparty == null || !ctx || !ctx.resolver || !ctx.resolver.witnessDeed) return;
+    ctx.resolver.witnessDeed(a, o.counterparty, 'default', LEDGER.defaultSeverity || 0.3);
+  });
 
   // (3) DISCHARGE — each fired obligation becomes its deferred goal (the repay the promise deferred).
   for (const o of fired) {

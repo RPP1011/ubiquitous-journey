@@ -250,6 +250,7 @@ export interface Agent {
   _recipeKnow?: Map<string, { conf: number; hops: number; t: number }>;  // graded Recipe(good) home (§6; binary `recipes` Set is the craftable view)
   _theyBelieve?: Map<string, { conf: number }>;                     // Believes(subject,topic), one level (key `subj:topicKey`)
   _obligations?: Obligation[];                                      // the commitment ledger (Phase 5)
+  _toolQuality?: number;                                            // believed mean quality 0..1 of tools held (from a high-mastery smith; market.ts)
   _held?: boolean;                                                  // a captive's held state (capture sets it, free flips it)
   _captorId?: EntityId;                                            // who captured this agent (CAPTIVE; ground truth, execution)
   _freedBy?: EntityId;                                              // who cut this agent's bonds (Affect: free)
