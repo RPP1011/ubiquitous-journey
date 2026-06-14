@@ -10,7 +10,8 @@ import * as THREE from 'three';
 import { DIR, TUNE } from '../../constants.js';
 import { ARENA_RADIUS } from '../../arena.js';
 import { POI_KIND } from '../world.js';
-import { GOODS, ECON, SIM, SOCIAL, BAND, BUILD, COMFORT, NOVELTY, RECIPES, CAUTION, ROMANCE , ALMS, GRANARY, WEALTH } from '../simconfig.js';
+import { GOODS, ECON, SIM, SOCIAL, BAND, BUILD, COMFORT, NOVELTY, RECIPES, CAUTION, ROMANCE , ALMS, GRANARY, WEALTH, QUIRK } from '../simconfig.js';
+import { quirkOf } from './decide.js';
 import { castSpec, onCooldown, requirementsMet } from '../../rpg/abilities/interpreter.js';
 import { slowMul } from '../../rpg/abilities/effects.js';
 import { ABILITY } from '../../rpg/rpgconfig.js';
@@ -69,6 +70,24 @@ export function act(a: Agent, dt: number, ctx: CognitionCtx): void {
     a.inventory.potion -= 1;
     a.fighter.health = Math.min(TUNE.maxHealth, a.fighter.health + 45);
   }
+
+  // SHOW-OFF LINGER (the showoff quirk, act-side — NOT scored, so no S2 impact): a show-off who
+  // has JUST landed a kill basks a moment at the spot before moving on. We detect the kill by the
+  // own-state life.kills delta (incremented truth-side in combatEvents), arm a brief linger window,
+  // and while it holds — and the agent isn't still mid-fight — it stands fast (a beat of swagger).
+  // Pure flavour on own-state only; fully guarded (the freeze lesson — life may be absent on a stub).
+  try {
+    const kills = (a.life && a.life.kills) || 0;
+    if (a._lastKills == null) a._lastKills = kills;
+    if (kills > a._lastKills && quirkOf(a) === 'showoff') {
+      a._quirkLingerUntil = (ctx.time || 0) + (QUIRK.showoffLinger || 0);
+    }
+    a._lastKills = kills;
+    if (a._quirkLingerUntil != null && (ctx.time || 0) < a._quirkLingerUntil &&
+        a.goal && a.goal.kind !== 'fight' && a.goal.kind !== 'flee') {
+      a.fighter.setMoving(0); a._updateLabel(); return;   // basking at the kill — a beat, then on
+    }
+  } catch { /* never throw on the tick */ }
 
   // DISPATCH (Phase 2b — the steering substrate). The locomotion-shaped goal.kinds
   // are DATA: a steer-fill (in steer.js) returns the {attractors/repulsors/speed}
