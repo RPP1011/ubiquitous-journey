@@ -1168,6 +1168,34 @@ export const STEER = {
                       //   no oscillation around the centreline)
 };
 
+// --- HAUNTS & DAILY RHYTHM (legible place + time, steer-only, own-state) ------
+// Two GENTLE locomotion biases that make idle agents recognisable by WHERE and WHEN —
+// without touching any candidate score (S2 parity-safe). Both are own-state reads only
+// (the agent's own _haunt point + its own deterministic diurnal phase + ctx.time), folded
+// into the WANDER steer-fill as a SECOND, weaker attractor (the true wander target stays the
+// PRIMARY attractor, like the ROAD blend), so an idle agent drifts back toward "its spot"
+// instead of roaming uniformly — breaking the wander/market-dwell monoculture.
+//
+// HAUNT: the agent stamps _haunt (a favourite {x,z}) where it had a GOOD MOMENT — a windfall
+// caution outcome or a positive goal closure (own-state, in act.js). The wander field then
+// pulls gently back toward it. `pull` stays WELL below STEER.wAttract so the haunt only
+// BIASES the roam (the random wander target remains primary): a preference, never a trap.
+//
+// RHYTHM: each agent gets a deterministic per-id diurnal PHASE (early-riser .. night-owl), so
+// at its own "dusk" the haunt pull strengthens (×duskBoost) — some drift to-spot early, some
+// late. ctx.time / dayLength gives the time-of-day; the per-id phase shifts each agent's dusk
+// window. Gentle bias, never a behaviour gate (the agent still wanders, just leans homeward).
+export const HAUNT = {
+  pull:       0.35,   // base haunt attractor weight in the wander field (vs STEER.wAttract 1.0) — gentle
+  duskBoost:  1.8,    // multiply `pull` during the agent's own dusk window (homeward-at-dusk lean)
+  recordSal:  0.5,    // only a good moment at/above this salience stamps the haunt (avoid trivia)
+  moveToward: 0.15,   // on a fresh good moment, ease the stored haunt this fraction toward the new spot
+                      //   (a haunt drifts to where good things keep happening; 0 = first-spot-sticks)
+  dayLength:  240,    // sim-seconds per in-world day (the diurnal clock period)
+  duskWidth:  0.16,   // half-width of the dusk window as a fraction of the day (phase within this of its dusk centre → dusk)
+  maxDist:    120,    // ignore a haunt farther than this from the agent (stale/cross-map) — no long treks
+};
+
 // --- NPC bands (parties as an AI abstraction beyond the player) --------------
 // Townsfolk who like each other (mutual positive belief-standing, which emerges
 // from chatting) and are near each other form small adventuring/mutual-defense

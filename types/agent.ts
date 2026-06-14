@@ -244,6 +244,7 @@ export interface Agent {
   _diedOfHunger?: boolean;         // death was starvation, not a blade (the reaper's beat text)
   _buildAccum: number;
   wanderTarget: Vector3 | null;
+  _haunt?: { x: number; z: number } | null;   // HAUNT: a favourite spot stamped where a good moment happened — the wander steer-fill drifts back toward it (own-state, gentle)
   _repaid: Record<EntityId, boolean>;
   // REASONING-COST counters (Phase 3 — measurement only; read truth-side, never in cognition)
   _decideCalls: number;

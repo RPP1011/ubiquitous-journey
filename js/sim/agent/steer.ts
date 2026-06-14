@@ -40,7 +40,7 @@ import * as THREE from 'three';
 import { rng } from '../rng.js';
 import { ARENA_RADIUS, LANDMARKS } from '../../arena.js';
 import { roadPull } from '../roads.js';
-import { SIM, STEER, SOCIAL, ECON, GOODS, PARTY, ROMANCE, MOTIVE } from '../simconfig.js';
+import { SIM, STEER, SOCIAL, ECON, GOODS, PARTY, ROMANCE, MOTIVE, HAUNT } from '../simconfig.js';
 import { POI_KIND } from '../world.js';
 import { _stepAlong, groundY } from './movement.js';
 import type { Agent, CognitionCtx, EntityId } from '../../../types/sim.js';
@@ -267,10 +267,47 @@ function fillSightsee(a: Agent, _ctx: CognitionCtx): Field | null {
   return attractField(a.sightTarget, false);
 }
 
+// HAUNTS & DAILY RHYTHM (own-state, parity-safe — below the scorer). A per-agent diurnal
+// PHASE derived deterministically from the agent id (early-riser .. night-owl): the dusk
+// CENTRE is the agent's own phase fraction of the day, and `dusk` is true when the current
+// time-of-day (ctx.time / dayLength) lies within HAUNT.duskWidth of that centre (wrapping
+// the [0,1) day). At its own dusk the haunt pull strengthens (×duskBoost) — a homeward lean.
+// Pure own-state + ctx.time; never throws.
+function diurnalPhase(a: Agent): number {
+  // a stable [0,1) fraction from the numeric/string id — a cheap deterministic hash.
+  const s = String(a.id);
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 100000;
+  return (h % 1000) / 1000;
+}
+function isDusk(a: Agent, ctx: CognitionCtx): boolean {
+  const day = HAUNT.dayLength || 240;
+  const frac = ((ctx.time || 0) % day) / day;          // time-of-day in [0,1)
+  let d = Math.abs(frac - diurnalPhase(a));
+  if (d > 0.5) d = 1 - d;                               // wrap across the day boundary
+  return d <= (HAUNT.duskWidth || 0.16);
+}
+// The gentle haunt force for the wander field: an attractor toward the agent's OWN _haunt
+// (the spot of a past good moment), weight HAUNT.pull (×duskBoost at the agent's own dusk).
+// Skipped when no haunt is set or it lies beyond HAUNT.maxDist (stale/cross-map — no treks).
+// Returned as a SECOND, weaker force so the random wander target stays the PRIMARY attractor
+// (facing/arrival unchanged), exactly like the ROAD blend.
+function hauntForce(a: Agent, ctx: CognitionCtx): Force | null {
+  const h = a._haunt;
+  if (!h || !Number.isFinite(h.x) || !Number.isFinite(h.z)) return null;
+  if (Math.hypot(h.x - a.pos.x, h.z - a.pos.z) > (HAUNT.maxDist || 120)) return null;
+  const w = (HAUNT.pull || 0.35) * (isDusk(a, ctx) ? (HAUNT.duskBoost || 1) : 1);
+  return { pos: { x: h.x, z: h.z }, weight: w };
+}
+
 // WANDER (the default) — pick a roam target and amble to it, regenerating when within
 // 1m of the current one. Four EXACT radial cases (own-state anchors only, no live read):
 // dungeon roam-room / camp patrol / monster frontier-prowl / townsfolk home-band. Walk.
-function fillWander(a: Agent, _ctx: CognitionCtx): Field | null {
+// TOWNSFOLK get a gentle HAUNT bias (a second, weaker attractor toward their favourite
+// spot + a dusk-strengthened homeward lean) so idle townsfolk are recognisable by place +
+// time instead of roaming uniformly. Territorial wanderers (dungeon/camp/monster) keep
+// their EXACT old field — their anchor IS their place, no social haunt applies.
+function fillWander(a: Agent, ctx: CognitionCtx): Field | null {
   if (!a.wanderTarget || a.pos.distanceTo(a.wanderTarget) < 1.0) {
     if (a.roam) {
       // dungeon dwellers pace within their room (set at spawn): a small patrol radius
@@ -296,6 +333,15 @@ function fillWander(a: Agent, _ctx: CognitionCtx): Field | null {
       const ang = rng() * Math.PI * 2, r = rng() * maxR;
       a.wanderTarget = new THREE.Vector3(c.x + Math.cos(ang) * r, 0, c.z + Math.sin(ang) * r);
     }
+  }
+  // Territorial wanderers (dungeon roam / camp combatant / monster frontier) keep their EXACT
+  // old single-attractor field — their anchor IS their place. Townsfolk get the gentle HAUNT
+  // blend: the random wander target stays PRIMARY (weight STEER.wAttract), with a weaker second
+  // attractor toward their favourite spot (dusk-strengthened). Skipped when no haunt is known.
+  const townsfolk = !a.roam && !a.campAnchor && a.faction !== 'monster';
+  if (townsfolk) {
+    const hf = hauntForce(a, ctx);
+    if (hf) return { attractors: [{ pos: a.wanderTarget, weight: STEER.wAttract }, hf], run: false };
   }
   return attractField(a.wanderTarget, false);
 }
