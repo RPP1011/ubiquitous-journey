@@ -177,6 +177,44 @@ export const ECON = {
   slightMargin: 0.2,          // price must deviate from base by this fraction to gall a party
   slightAmount: 0.05,         // base standing hit (then scaled 0.4..1.4 by greed × up to 3 by severity)
 
+  // --- NPC↔NPC REPUTATION-PRICED TRADE (the standing skew, generalized) -----
+  // The player-favor skew (reputation.favoredPrice) now also runs between NPCs: a seller
+  // reads its OWN belief-standing toward the buyer and slides the CLEARING price within the
+  // bid/ask band — a believed friend gets it cheaper, a disliked buyer is gouged dearer. The
+  // SAME price governs BOTH transfers (the seller receives exactly what the buyer pays), so
+  // the money loop stays closed; favour only shifts WHERE in the [ask..bid] band the deal lands.
+  npcFavorMax: 0.4,           // fraction of the [ask..bid] half-band a full ±1 standing slides the clearing price
+
+  // --- SPECULATION / HOARDING (the glut-buyer) ------------------------------
+  // A wealthy, ambitious soul AT a market that sees a good clear well UNDER its own price belief
+  // (a glut) buys a little surplus to HOLD — betting the tatonnement lifts the price later. Pure
+  // buy transfers (gold→seller, good→buyer); gated on ambition + spare gold so it's rare. The held
+  // stock is the agent's own glut, which its priceGossip later marks down — a real speculative risk.
+  specBelowFrac: 0.75,        // a clearing price this far BELOW belief (price < belief×this) reads as a glut worth hoarding
+  specAmbitionMin: 0.6,       // only an ambitious (wealth-driving) soul speculates
+  specMinSpareGold: 30,       // and only while it holds at least this much walking-around gold
+  specMaxHold: 4,             // cap on speculative units held of one good (so it can't corner the market)
+
+  // --- TOOL QUALITY from smith mastery (price-within-band premium) ----------
+  // A tool bought from a high-mastery smith carries a believed QUALITY (0..1, from the seller's
+  // tool-mastery at clear time). A quality tool commands a premium WITHIN the bid/ask band — the
+  // buyer pays more, the seller receives that same more (conserved). Stamped on the buyer's
+  // per-agent _toolQuality at purchase. (Quality-scaled wear lives in the produce path, off-limits
+  // to this slice — see report; only the price-within-band premium is wired here.)
+  qualityMasteryRef: 16,      // tool-mastery units that read as a "master's" tool (quality → 1)
+  qualityPremiumMax: 0.5,     // fraction of the seller's [mid..bid] head-room a top-quality tool claims
+
+  // --- CREDIT & DEFAULTERS (deferred trade on the seller's belief) ----------
+  // A trusted buyer (the seller's OWN belief-standing ≥ creditStanding) short of gold may take a
+  // good ON CREDIT: the good moves now, the coin is a DEFERRED transfer armed in the buyer's
+  // obligation ledger (a 'repay' due at creditTerm). Kept on the ledger as a tracked debt; a buyer
+  // who lets it LAPSE takes a standing hit that gossips outward (the existing FORSWORN belief path).
+  // The debt is a deferred transfer, never a mint (the good moved; the coin owed is real, owed to a
+  // specific creditor). Conservative scope: small loans, only to the well-trusted, capped per agent.
+  creditStanding: 0.4,        // seller's belief-standing toward buyer at/above which it extends credit
+  creditMax: 8,               // max gold value of a single credit sale
+  creditTerm: 240,            // sim-seconds the buyer has to repay before it lapses (a default)
+
   // --- LOGISTICS: the market is a PLACE, not a town-wide ether -------------
   // Trade only clears between agents physically AT a market (within marketRange of a
   // market POI). So a remote producer must HAUL its load in to sell + restock — a
@@ -646,6 +684,11 @@ export const CAPTIVE = {
 export const LEDGER = {
   max: 8,                // hard cap on outstanding obligations per agent (bounded, like the belief table)
   commitExpiry: 300,     // sim-seconds an armed commitment persists before it lapses unkept
+  // CREDIT DEFAULT (item 4): the severity of the FORSWORN-style social leak when a pay/repay debt
+  // lapses unkept — passed to the conserved witnessDeed primitive (sours the creditor's belief
+  // toward the defaulter + spreads bystander suspicion, per-perceiver). Small: a default is a slight,
+  // not a capital crime — repeat defaulters compound it (each lapse is a fresh fold).
+  defaultSeverity: 0.3,
 };
 
 // --- ARCS: the emergent-arc / saga registry (docs/architecture/12 §3 — the narrative spine) ----
