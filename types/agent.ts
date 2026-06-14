@@ -191,6 +191,9 @@ export interface Agent {
                                       //   stamped by Groups on completion; decide reads it with
                                       //   my OWN place-belief of that id (discovered by sight)
   _groupFormedAt?: number | null;     // anchor-side: when this group formed (the hall endurance gate)
+  _quitBand?: EntityId | null;        // DEFECTION/MUTINY: a follower set this (own decision, off its
+                                      //   own soured belief of the leader) to mutiny; Groups._prune
+                                      //   honours it (the execution-side revert + the visible fracture)
   _schemaGoalLock?: { kind: string; until: number } | null;
   _slain?: Set<EntityId>;
   _liveOaths?: number;                // sworn-and-unresolved oath count (oath economics: gnaw/courage/purpose)
