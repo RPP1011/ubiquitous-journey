@@ -40,7 +40,7 @@ import * as THREE from 'three';
 import { rng } from '../rng.js';
 import { ARENA_RADIUS, LANDMARKS } from '../../arena.js';
 import { roadPull } from '../roads.js';
-import { SIM, STEER, SOCIAL, ECON, GOODS, PARTY, ROMANCE, MOTIVE, HAUNT, SELECT } from '../simconfig.js';
+import { SIM, STEER, SOCIAL, ECON, GOODS, PARTY, ROMANCE, MOTIVE, HAUNT, DANGER, SELECT } from '../simconfig.js';
 import { POI_KIND } from '../world.js';
 import { _stepAlong, groundY } from './movement.js';
 import { bestOption, planarDist } from './select.js';
@@ -81,12 +81,28 @@ function withRoad(a: Agent, tgt: XZ, run: boolean): Field {
     const rp = roadPull(a.pos.x, a.pos.z, tgt.x, tgt.z, STEER.roadSnapDist || 25);
     if (rp) field.attractors!.push({ pos: rp, weight: STEER.wRoad });
   }
+  // BANKED DANGER (doc 18 item 4): a light berth from a banked bad spot near the route — the
+  // destination stays the PRIMARY attractor, the repulsor just bends the path around it. dangerForce
+  // is defined below (hoisted fn); guarded to a no-op when no spot is near. Own-state only.
+  const df = dangerForce(a);
+  if (df) field.repulsors = [df];
   return field;
 }
 
 const _away = new THREE.Vector3();   // scratch for the pure-repulsor synthetic target
 
 const valid = (p: XZ | null | undefined): p is XZ => !!p && Number.isFinite(p.x) && Number.isFinite(p.z);
+
+// PURSUE THE INFERRED DESTINATION (doc 18 item 3): a tracked subject's belief already carries an
+// INFERRED destination (destPos — where perception.ts reasoned the quarry/friend is making for, from
+// its observed heading + known geography). When present + valid, head THERE (intercept) instead of
+// the now-stale last-seen spot (lastPos). Belief-only — destPos is a static geography point the
+// agent's OWN inference committed, never a live read. Falls back to lastPos when no destination known.
+function pursuitPos(b: { destPos?: XZ | null; lastPos: XZ } | null | undefined): XZ | null {
+  if (!b) return null;
+  if (b.destPos && valid(b.destPos)) return b.destPos;
+  return valid(b.lastPos) ? b.lastPos : null;
+}
 
 // steer(a, field, dt) -> boolean (arrived at the primary attractor, halted).
 //   field = { attractors:[{pos,weight}], repulsors:[{pos,weight}], speed, run, snapTo? }
@@ -301,6 +317,28 @@ function hauntForce(a: Agent, ctx: CognitionCtx): Force | null {
   return { pos: { x: h.x, z: h.z }, weight: w };
 }
 
+// BANKED DANGER REPULSOR (doc 18 item 4) — the mirror of hauntForce. Among the agent's OWN banked
+// danger spots (perception.ts: believed-hostile lastPos / witnessed-death positions, decaying), the
+// NEAREST one within DANGER.nearRoute earns a LIGHT repulsor (weight DANGER.pull × its banked weight)
+// so a traveller/wanderer leans away from the seam a bandit haunts without ever fleeing. Returned as a
+// SECOND, weaker force (the route/wander target stays primary, like the road/haunt blends). Own-state
+// only; skipped when no spot is near. Pure; never throws.
+function dangerForce(a: Agent): Force | null {
+  const spots = a._dangerSpots;
+  if (!spots || !spots.length) return null;
+  const r2 = (DANGER.nearRoute || 45) * (DANGER.nearRoute || 45);
+  let near: { x: number; z: number; w: number } | null = null, bestD = Infinity;
+  for (const s of spots) {
+    const dx = s.x - a.pos.x, dz = s.z - a.pos.z, d = dx * dx + dz * dz;
+    if (d > r2 || d >= bestD) continue;
+    bestD = d; near = s;
+  }
+  if (!near) return null;
+  const w = (DANGER.pull || 0.4) * Math.max(0, Math.min(1, near.w));
+  if (w <= 0) return null;
+  return { pos: { x: near.x, z: near.z }, weight: w };
+}
+
 // WANDER (the default) — pick a roam target and amble to it, regenerating when within
 // 1m of the current one. Four EXACT radial cases (own-state anchors only, no live read):
 // dungeon roam-room / camp patrol / monster frontier-prowl / townsfolk home-band. Walk.
@@ -342,7 +380,14 @@ function fillWander(a: Agent, ctx: CognitionCtx): Field | null {
   const townsfolk = !a.roam && !a.campAnchor && a.faction !== 'monster';
   if (townsfolk) {
     const hf = hauntForce(a, ctx);
-    if (hf) return { attractors: [{ pos: a.wanderTarget, weight: STEER.wAttract }, hf], run: false };
+    const df = dangerForce(a);   // a light berth from a banked danger spot near the roam (doc 18 item 4)
+    if (hf || df) {
+      const attractors: Force[] = [{ pos: a.wanderTarget, weight: STEER.wAttract }];
+      if (hf) attractors.push(hf);
+      const field: Field = { attractors, run: false };
+      if (df) field.repulsors = [df];
+      return field;
+    }
   }
   return attractField(a.wanderTarget, false);
 }
@@ -418,7 +463,10 @@ function fillComfort(a: Agent, _ctx: CognitionCtx): Field | null {
 function fillSocialize(a: Agent, ctx: CognitionCtx): Field | null {
   if (a.goal!.toPos) return attractField(a.goal!.toPos, false);
   const rel = (a.goal!.withId != null) ? a.beliefs.get(a.goal!.withId) : null;
-  if (rel && rel.confidence > SOCIAL.knownConf) return attractField(rel.lastPos, false);
+  if (rel && rel.confidence > SOCIAL.knownConf) {
+    const p = pursuitPos(rel);   // head where I INFER the friend is making for (doc 18 item 3), else last-seen
+    if (p) return attractField(p, false);
+  }
   const m = ctx.world.nearest(POI_KIND.MARKET, a.pos);
   return m ? attractField(m.pos, false) : null;
 }
@@ -533,8 +581,10 @@ function fillHide(a: Agent, _ctx: CognitionCtx): Field | null {
 function fillShadow(a: Agent, _ctx: CognitionCtx): Field | null {
   const sb = (a.goal!.subjectId != null) ? a.beliefs.get(a.goal!.subjectId) : null;
   if (!sb || sb.confidence < SIM.actOnBeliefMin) return null;   // lost track -> idle
-  if (a.pos.distanceTo(sb.lastPos) <= (SOCIAL.shadowGap || 6)) return null;  // within gap: HOLD
-  return attractField(sb.lastPos, false);
+  const p = pursuitPos(sb);   // trail toward where I INFER the suspect is heading (doc 18 item 3), else last-seen
+  if (!p) return null;
+  if (planarDist(a.pos, p) <= (SOCIAL.shadowGap || 6)) return null;  // within gap: HOLD
+  return attractField(p, false);
 }
 
 // COURT (docs/architecture/12 §8) — the Star-Crossed enactment: seek the believed position of the
@@ -545,8 +595,10 @@ function fillCourt(a: Agent, _ctx: CognitionCtx): Field | null {
   if (id == null) return null;
   const sb = a.beliefs.get(id);
   if (!sb || sb.confidence < SIM.actOnBeliefMin) return null;        // lost track of my love -> idle
-  if (a.pos.distanceTo(sb.lastPos) <= (ROMANCE.courtGap || 2.5)) return null;  // at the stand-off: HOLD (linger)
-  return attractField(sb.lastPos, false);
+  const p = pursuitPos(sb);   // seek where I INFER my sweetheart is making for (doc 18 item 3), else last-seen
+  if (!p) return null;
+  if (planarDist(a.pos, p) <= (ROMANCE.courtGap || 2.5)) return null;  // at the stand-off: HOLD (linger)
+  return attractField(p, false);
 }
 
 // Resolve the band leader to a { pos, alive } REF for fillFollow. The controlled

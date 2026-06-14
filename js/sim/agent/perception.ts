@@ -8,7 +8,7 @@
 
 import { terrainHeight, concealmentAt } from '../../arena.js';
 import { inferDestination, BeliefState } from '../beliefs.js';
-import { SIM, SOURCE, BAND, COMMODITIES, ECON, MAP, SIGNALS, ESTEEM as WEALTHCUE, HEARSAY, factionHostile } from '../simconfig.js';
+import { SIM, SOURCE, BAND, COMMODITIES, ECON, MAP, SIGNALS, ESTEEM as WEALTHCUE, HEARSAY, DANGER, factionHostile } from '../simconfig.js';
 import { noteSnub } from '../signals.js';
 import { PERCEPT_KIND } from '../percept.js';
 import { STAGE, REASON } from '../trace.js';
@@ -159,6 +159,9 @@ export function perceive(a: Agent, ctx: FullCtx): void {
   // heading + known geography. This is what lets a pursuer intercept a quarry that fled
   // out of sight toward an inferable place, with no omniscient roster read.
   inferLostQuarries(a, ctx);
+  // BANKED DANGER GEOGRAPHY (doc 18 item 4): maintain the decaying set of believed-bad spots the
+  // travel/wander steer fills lean away from. Own beliefs/memory only — never a truth read.
+  bankDanger(a, ctx);
 }
 
 // Perceive a BUILDING percept (Phase 2a, places-as-percepts): write a PLACE-belief into my own
@@ -228,6 +231,75 @@ function inferLostQuarries(a: Agent, ctx: FullCtx): void {
           t: now, subjectId: b.subjectId, a: b.destId || 'frontier', b: b.intent || null,
         });
       }
+    }
+  } catch { /* never throw on the tick */ }
+}
+
+// BANKED DANGER GEOGRAPHY (doc 18 item 4): the mirror of HAUNT. Maintain a small DECAYING set of
+// remembered bad spots — where the agent confidently believes a hostile is/was, and where it
+// witnessed a death — so the travel/wander steer fills can lean lightly AWAY from them (a felt
+// geography of where it is unwise to linger). OBSERVER-banked from the agent's OWN beliefs + own
+// episodic memory (a believed-hostile's lastPos, a witnessed_death position) — NEVER a truth read in
+// cognition (the same own-scope inputs perception already reads). Bounded (DANGER.cap), decaying
+// (per perceive pass), merge-deduped, range-gated. Pure own-state; guarded; never throws.
+function bankDanger(a: Agent, ctx: FullCtx): void {
+  try {
+    const now = ctx.time || 0;
+    let spots = a._dangerSpots;
+    // decay the existing set first (the last-banked time drives the bleed), dropping the faint.
+    if (spots && spots.length) {
+      const kept: { x: number; z: number; w: number; t: number }[] = [];
+      for (const s of spots) {
+        const w = s.w - (DANGER.decayPerSec || 0.06) * Math.max(0, now - s.t);
+        if (w > (DANGER.minWeight || 0.12)) kept.push({ x: s.x, z: s.z, w, t: now });
+      }
+      spots = a._dangerSpots = kept;
+    }
+    // candidate bad spots THIS pass: a believed-hostile I confidently hold near me (its lastPos), and
+    // any fresh witnessed_death I recall. Own beliefs + own memory only.
+    const cands: { x: number; z: number }[] = [];
+    const r2 = (DANGER.bankRange || 90) * (DANGER.bankRange || 90);
+    for (const b of a.beliefs.all()) {
+      if (!b || b.placeKind) continue;                       // a place is not a moving danger
+      if (b.confidence < SIM.actOnBeliefMin) continue;
+      if (!(b.hostile || (a.considerHostile && a.considerHostile(b)))) continue;
+      if (!b.lastPos || !Number.isFinite(b.lastPos.x)) continue;
+      const dx = b.lastPos.x - a.pos.x, dz = b.lastPos.z - a.pos.z;
+      if (dx * dx + dz * dz > r2) continue;                  // only my own neighbourhood
+      cands.push({ x: b.lastPos.x, z: b.lastPos.z });
+    }
+    try {
+      const eps = a.memory ? a.memory.recent(8) : [];
+      for (const ep of eps) {
+        if (!ep || ep.kind !== 'witnessed_death') continue;
+        // a witnessed_death episode carries no position, but I hold beliefs about its participants —
+        // the killer (byId) and the fallen (withId). Their believed lastPos marks WHERE the bloodshed
+        // was (own-belief, the same scope perception reads). Prefer the killer's spot (the live danger).
+        const pb = (ep.byId != null && a.beliefs.get(ep.byId)) || (ep.withId != null && a.beliefs.get(ep.withId)) || null;
+        const p = pb && pb.lastPos;
+        if (!p || !Number.isFinite(p.x)) continue;
+        const dx = p.x - a.pos.x, dz = p.z - a.pos.z;
+        if (dx * dx + dz * dz > r2) continue;
+        cands.push({ x: p.x, z: p.z });
+      }
+    } catch { /* a memory hiccup must not abort banking */ }
+    if (!cands.length) return;
+    if (!spots) spots = a._dangerSpots = [];
+    const md2 = (DANGER.mergeDist || 14) * (DANGER.mergeDist || 14);
+    for (const c of cands) {
+      // refresh an existing nearby spot (no duplicate pile-up), else add a fresh one.
+      let merged = false;
+      for (const s of spots) {
+        const dx = s.x - c.x, dz = s.z - c.z;
+        if (dx * dx + dz * dz <= md2) { s.w = DANGER.bankWeight || 1.0; s.t = now; merged = true; break; }
+      }
+      if (!merged) spots.push({ x: c.x, z: c.z, w: DANGER.bankWeight || 1.0, t: now });
+    }
+    // bound: keep the freshest/strongest, evict the faintest.
+    const cap = DANGER.cap || 4;
+    if (spots.length > cap) {
+      spots.sort((p, q) => q.w - p.w || q.t - p.t);
+      spots.length = cap;
     }
   } catch { /* never throw on the tick */ }
 }

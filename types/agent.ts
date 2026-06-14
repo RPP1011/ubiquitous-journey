@@ -245,6 +245,7 @@ export interface Agent {
   _buildAccum: number;
   wanderTarget: Vector3 | null;
   _haunt?: { x: number; z: number } | null;   // HAUNT: a favourite spot stamped where a good moment happened — the wander steer-fill drifts back toward it (own-state, gentle)
+  _dangerSpots?: { x: number; z: number; w: number; t: number }[];   // DANGER (doc 18): banked decaying bad spots (believed-hostile lastPos / witnessed death) — the travel/wander steer-fills lean lightly away (own-state, gentle)
   _repaid: Record<EntityId, boolean>;
   // REASONING-COST counters (Phase 3 — measurement only; read truth-side, never in cognition)
   _decideCalls: number;

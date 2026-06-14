@@ -204,6 +204,19 @@ export const ECON = {
   // the money loop stays closed; favour only shifts WHERE in the [ask..bid] band the deal lands.
   npcFavorMax: 0.4,           // fraction of the [ask..bid] half-band a full ±1 standing slides the clearing price
 
+  // --- BELIEVED-MOTIVE TRUST (doc 18 §collapse-gap; this slice item 1) -------
+  // standing alone laundered the rich `believedMotive`/`motiveConf` fields. Here the SELLER's own
+  // attributed motive about the buyer (a confident read of a notable witnessed act) shifts the deal
+  // ON TOP of standing: a buyer the seller has pegged a THIEF / AGGRESSOR / SLANDERER is gouged a
+  // little harder (extra distrust nudges the clearing price toward the bid) and may be DENIED credit
+  // outright; a buyer read as a DEFENDER / lawful-JUSTICE / VOUCHER (a benign motive) gets a small
+  // extra discount (nearer the ask) and an easier credit nod. Belief-only (the seller's own store),
+  // conf-scaled, bounded; falls back to the plain standing-skew on any gap. Never the player.
+  motiveTrustConf: 0.45,      // the seller acts on an attributed motive only at/above this motiveConf
+  motiveDistrustSkew: 0.18,   // extra fraction of the [mid..bid] head-room a confident HOSTILE motive gouges
+  motiveTrustSkew: 0.12,      // extra fraction of the [ask..mid] head-room a confident BENIGN motive discounts
+  motiveCreditBlock: true,    // a confident hostile-motive buyer is refused credit regardless of standing
+
   // --- SPECULATION / HOARDING (the glut-buyer) ------------------------------
   // A wealthy, ambitious soul AT a market that sees a good clear well UNDER its own price belief
   // (a glut) buys a little surplus to HOLD — betting the tatonnement lifts the price later. Pure
@@ -756,6 +769,14 @@ export const RECRUIT = {
   foeNearRange: 22,      // believed candidate↔foe distance under which the leader infers a shared-foe read
   sharedFoeTilt: 0.5,    // offer-payoff tilt (×) when the leader believes the candidate also fears the foe
   sharedFoeFollow: 0.15, // bump to the recorded one-level follow-prediction for a shared-foe candidate
+  // BELIEVED-MOTIVE COMPLIANCE (doc 18 §collapse-gap; this slice item 1): the candidate's join
+  // decision already reads its own belief-standing toward the offerer. Here its own attributed
+  // MOTIVE about that offerer colours the bar ON TOP of standing: a candidate that has pegged the
+  // would-be leader a THIEF / AGGRESSOR / SLANDERER (a confident hostile motive) RAISES its join
+  // bar (it won't march for a known brigand) — while one that read the leader a DEFENDER / lawful /
+  // VOUCHER LOWERS the bar (an easier sell). Own-belief only, conf-scaled, bounded; 0 when no
+  // confident attribution. Mirrors ECON.motiveTrustConf.
+  motiveTrustConf: 0.45, // the candidate acts on an attributed leader-motive only at/above this motiveConf
 };
 
 // --- WARBAND: the recruiter follow-through (docs/architecture/10-lld §19 item 4, §12) -------
@@ -783,6 +804,12 @@ export const WARBAND = {
   defectGrief: 0.35,     // a recent witnessed band-mate death sours the leader's standing by this much first
   defectSour: -0.5,      // the standing the defector re-plants on its former leader (the fracture)
   defectGriefSecs: 25,   // a witnessed-death memory this recent (sim-secs) counts as a fresh grievance
+  // BELIEVED-MOTIVE COMPLIANCE (doc 18 §collapse-gap; this slice item 1): the candidate's own
+  // attributed MOTIVE about the offerer shifts the join standing bar (RECRUIT.motiveTrustConf gates
+  // when it acts). A confident hostile read raises the bar (warier of a known brigand); a confident
+  // benign read lowers it (an easier sell). Bounded.
+  motiveDistrustBar: 0.25, // a confident HOSTILE offerer-motive raises the join standing bar by this much
+  motiveTrustBar: 0.15,  // a confident BENIGN offerer-motive lowers the join standing bar by this much
 };
 
 // --- AFFECT: changing another entity's physical state (docs/architecture/10, Phase 5) ----
@@ -1247,6 +1274,26 @@ export const HAUNT = {
   dayLength:  240,    // sim-seconds per in-world day (the diurnal clock period)
   duskWidth:  0.16,   // half-width of the dusk window as a fraction of the day (phase within this of its dusk centre → dusk)
   maxDist:    120,    // ignore a haunt farther than this from the agent (stale/cross-map) — no long treks
+};
+
+// --- BANKED DANGER GEOGRAPHY (doc 18 §formation/proxy gap; this slice item 4) -
+// The mirror of HAUNT: where HAUNT banks a remembered GOOD spot to drift back toward, DANGER banks
+// a small decaying set of remembered BAD spots (where a believed-hostile was last seen, where a
+// witnessed death happened) to lean AWAY from. This is OBSERVER-banked from the agent's own
+// perception/memory (a believed-hostile's lastPos, a witnessed_death position) — never a truth read
+// in cognition — and consumed only as a LIGHT repulsor in the travel/wander steer fills (a second,
+// weaker force; the route target stays primary, like the road/haunt blends). So an agent's idle
+// roaming and short hauls naturally avoid the seam a bandit haunts or the spot a neighbour fell,
+// without ever fleeing — a felt, learned geography of where it is unwise to linger. Bounded + decays.
+export const DANGER = {
+  cap:        4,      // max banked danger spots per agent (oldest/faintest evicted)
+  bankRange:  90,     // only bank a danger spot within this of the agent (its own neighbourhood)
+  mergeDist:  14,     // a fresh spot within this of an existing one REFRESHES it (no duplicate pile-up)
+  decayPerSec: 0.06,  // weight bled per second (a danger memory fades unless re-banked)
+  bankWeight: 1.0,    // weight a freshly-banked spot starts at (a re-bank tops it back to this)
+  minWeight:  0.12,   // a spot fades out below this (dropped)
+  pull:       0.4,    // repulsor weight in the travel/wander fields (vs STEER.wAttract 1.0) — light
+  nearRoute:  45,     // only a danger spot within this of the agent repels (a local berth, not cross-map)
 };
 
 // --- NPC bands (parties as an AI abstraction beyond the player) --------------
@@ -2060,6 +2107,14 @@ export const LINEAGE = {
                             //   the bond persists after, so they bear children even once
                             //   they drift apart to work — this is what lets the loop pulse
   pairStanding: 0.3,        // mutual belief-standing each must hold of the other to be fond
+  // COURT BY THE DEEPER BOND (doc 18 §collapse-gap; this slice item 2): courtship used to pick the
+  // NEAREST fond candidate by raw proximity. Now a fond pair is SCORED so a DURABLE bond (the slow
+  // `sentiment` EMA) and a stronger mutual standing are preferred over a fresh equal-standing
+  // acquaintance who merely happens to be closer — a deep connection wins a slightly longer walk.
+  // Reads each side's OWN belief about the other (sentiment + standing) + proximity; bounded.
+  courtBondWeight: 0.5,     // weight on the mean mutual sentiment (the durable bond) in the court score
+  courtStandingWeight: 0.3, // weight on the mean mutual standing magnitude (a stronger affinity than the floor)
+  courtDistRange: 16,       // distance-discount range (m) for the court score (≈ mateRange; nearer still helps)
   fedHunger: 0.4,           // both parents' hunger must be >= this (well-enough fed)
   gestationSecs: 12,        // sim-seconds a couple must stay FIT (fed+safe) to bear a child
   birthCooldownSecs: 30,    // after a birth, a parent rests this long before another
