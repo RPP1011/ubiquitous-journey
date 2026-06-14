@@ -147,6 +147,24 @@ export function onCombatEvents(sim: Sim, events: CombatEv[]): void {
       targetId: T.id, magnitude: risk, t: sim.time, allies,
     }));
 
+    // docs/architecture/17 §6/§8.2: ALSO publish the public `strike` DEED for the ToM inference path
+    // (mirrors the theft/say publishDeed in simulation.ts). EXECUTION layer — the vision-gated roster
+    // scan inside publishDeed is sanctioned; the INFERENCE that follows (motivation/infer.ts) reads only
+    // the observer's OWN beliefs/memory. Honest surface tag is 'aggression' (a deceiver presents the
+    // 'defense' cover — it only BIASES a witness, never sets the belief). Lethality: a kill ~1, a
+    // non-lethal blow lower (the deed's magnitude is the §7.2a puzzle/salience gate). Guarded.
+    try {
+      if (sim.publishDeed && !A.controlled) {
+        const lethality = ev.type === 'dead' ? 1 : Math.min(0.8, 0.3 + 0.5 * risk);
+        const honest = 'aggression';
+        const surfaceTag = (A._deceives ? 'defense' : honest);
+        sim.publishDeed({
+          actorId: A.id, primitive: 'strike', targetId: T.id,
+          surfaceTag, sceneCues: {}, magnitude: lethality, t: sim.time,
+        });
+      }
+    } catch { /* never throw on the tick */ }
+
     // a NEMESIS brought down at last — a communal triumph (the recurring boss falls).
     // (A WARLORD gets the grander "war is won" beat from the director instead.)
     if (ev.type === 'dead' && T.nemesis && !T.warlord && sim.chronicle && sim.chronicle.note) {
@@ -371,6 +389,14 @@ export function onCombatEvents(sim: Sim, events: CombatEv[]): void {
       // belief about it (so a witnessed brawler reads as alive, never inert).
       wb.recordAnimacy('struck');
       wb.suspicion = Math.min(1, wb.suspicion + 0.3);
+      // docs/architecture/17 §8.2: a witness to a NON-LETHAL blow records that it saw A throw a punch
+      // at T (byId = the aggressor A, withId = the struck T). This is the OBSERVER CUE substrate: if T
+      // later strikes A back, a witness whose OWN memory holds THIS episode reads that return blow as
+      // DEFENCE (iSawProvocation), while a witness who saw only the second blow reads it as aggression —
+      // two truths from one deed. Own-state write; capped by the memory ring; guarded.
+      if (ev.type === 'hit' && w.memory) {
+        try { w.memory.record({ t: sim.time, kind: 'witnessed_aggression', byId: A.id, withId: T.id, valence: -1, salience: 0.4 }); } catch { /* never throw */ }
+      }
       if (ev.type === 'dead' && T.faction !== MONSTER.faction && w.memory) {
         const liked = Math.max(0, w.beliefs.get(T.id)?.standing || 0);
         // withId = the fallen friend (subject of grief); byId = the killer (the
