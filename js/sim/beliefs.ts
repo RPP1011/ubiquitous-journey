@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 import { rng } from './rng.js';
 import { ARENA_RADIUS } from '../arena.js';
-import { SIM, SOURCE, HEARSAY, MAP } from './simconfig.js';
+import { SIM, SOURCE, HEARSAY, SENTIMENT, MAP } from './simconfig.js';
 import type {
   AnimacyTally, AssocBelief, BeliefState as IBeliefState, BeliefStore as IBeliefStore,
   PlantOpts, EntityId, MentalMap, Place, Vec2Like,
@@ -69,6 +69,7 @@ export class BeliefState implements IBeliefState {
   assocSightings: number;
   believedWealth: number;
   wealthConf: number;
+  sentiment: number;
 
   constructor(subjectId: EntityId) {
     this.subjectId = subjectId;
@@ -132,6 +133,27 @@ export class BeliefState implements IBeliefState {
     // belief field — nudged by a visible cue (recordWealthCue), faded by decay. NEVER ground truth.
     this.believedWealth = 0;
     this.wealthConf = 0;
+    // RELATIONSHIP SENTIMENT (SENTIMENT): a slow EMA of "do I generally like being near this
+    // person?", built across many small pleasant/cold interactions rather than any single deed.
+    // Bounded to ±SENTIMENT.cap, eased toward a pleasant target by repeated proximity (perception's
+    // chat affinity), decayed gently toward neutral, and folded back as a small COLOUR on standing.
+    // Starts neutral; never ground truth.
+    this.sentiment = 0;
+  }
+
+  // RELATIONSHIP SENTIMENT upkeep (SENTIMENT). Called from the chat-affinity bridge when this
+  // observer shares a peaceful moment with the subject. Eases sentiment toward the pleasant
+  // target (a slow EMA), then COLOURS standing a little toward where sentiment now sits — so a
+  // long history of small kindnesses lifts the relationship even with no dramatic event, and
+  // existing standing-reading behaviour benefits without touching decide. Bounded; never throws.
+  accrueSentiment() {
+    try {
+      const cap = SENTIMENT.cap;
+      const tgt = Math.min(cap, SENTIMENT.pleasantTarget);
+      this.sentiment = Math.max(-cap, Math.min(cap, this.sentiment + (tgt - this.sentiment) * SENTIMENT.emaGain));
+      // colour standing toward sentiment (bounded by clampStanding) — a gentle pull, not a set.
+      this.standing = clampStanding(this.standing + (this.sentiment - this.standing) * SENTIMENT.colourGain);
+    } catch { /* never throw on the tick */ }
   }
 
   // nudge the believed-wealth estimate toward `implies` (0..1) by `weight` — a perceived prosperity
@@ -142,6 +164,34 @@ export class BeliefState implements IBeliefState {
     const imp = Math.max(0, Math.min(1, implies || 0));
     this.believedWealth = Math.max(0, Math.min(1, this.believedWealth + (imp - this.believedWealth) * w));
     this.wealthConf = Math.min(1, this.wealthConf + w * (1 - this.wealthConf));
+  }
+
+  // WITNESSED EXONERATION — the VOUCH (HEARSAY.vouch*). A first-hand FOND belief beats hearsay:
+  // mergeFrom already won't let a tale overturn my fresher belief, but a vouch goes further — I
+  // talk BACK. Given my OWN first-hand belief `mine` about a subject (fond + confident) and a
+  // teller's belief `theirs` about that same subject which marks it hostile / holds a lower
+  // standing, I nudge THEIR belief up toward mine — defending a friend's name. The push scales
+  // with MY first-hand confidence, is bounded (never past mine — I plead, I don't overwrite), and
+  // only lifts a RUMOUR-born hostility (never a witnessed one — I can't talk a man out of what he
+  // saw with his own eyes). Belief→belief only; the caller is the gossip bridge (sanctioned to
+  // touch the teller's store). Returns true if a vouch landed (trace/test visibility). Never throws.
+  static vouch(mine: BeliefState | null | undefined, theirs: BeliefState | null | undefined): boolean {
+    try {
+      if (!mine || !theirs) return false;
+      if ((mine.hops || 0) !== 0) return false;               // only on my OWN first-hand knowledge
+      if (mine.placeKind || theirs.placeKind) return false;   // places have no reputation to defend
+      if ((mine.standing || 0) < HEARSAY.vouchStanding) return false;   // I must hold them FOND
+      if ((mine.confidence || 0) < HEARSAY.vouchConf) return false;     // …and CONFIDENTLY so
+      const slandered = theirs.hostile || (theirs.standing || 0) < mine.standing;
+      if (!slandered) return false;                           // nothing to push back on
+      const push = HEARSAY.vouchStrength * (mine.confidence || 0);      // bounded by my conf
+      if ((theirs.standing || 0) < mine.standing)
+        theirs.standing = clampStanding(theirs.standing + (mine.standing - theirs.standing) * push);
+      if (theirs.hostile && theirs.rumorBorn && push >= HEARSAY.vouchHostileHeal) {
+        theirs.hostile = false; theirs.rumorBorn = false;     // a strong plea clears a hearsay feud
+      }
+      return true;
+    } catch { return false; /* never throw on the tick */ }
   }
 
   // record one piece of liveness evidence on this belief (lazy-allocates the tally on the
@@ -369,6 +419,14 @@ export class BeliefStore implements IBeliefStore {
       // a believed-wealth read goes stale like any other: fade its confidence so an unrefreshed
       // prosperity estimate becomes uncertain (the recognition channel weights by wealthConf).
       if (b.wealthConf > 0) b.wealthConf = Math.max(0, b.wealthConf - SIM.confidenceDecay * dt);
+      // RELATIONSHIP SENTIMENT (SENTIMENT) drifts GENTLY back toward neutral when unreinforced —
+      // a like/dislike fades without renewed pleasant proximity (forgetting), but far slower than
+      // confidence, so it is a LASTING relationship memory. Symmetric (both signs decay to 0);
+      // places carry no sentiment so this no-ops for them. Bounded.
+      if (b.sentiment) {
+        const step = SENTIMENT.decayPerSec * dt;
+        b.sentiment = b.sentiment > 0 ? Math.max(0, b.sentiment - step) : Math.min(0, b.sentiment + step);
+      }
     }
   }
 }

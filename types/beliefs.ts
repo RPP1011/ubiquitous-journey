@@ -54,6 +54,7 @@ export interface BeliefState {
   assocSightings: number;           // raw surveil-sighting accumulator (pre-consolidation)
   believedWealth: number;           // believed prosperity of the subject, 0..1 (docs/architecture/12 §6)
   wealthConf: number;               // how sure (firmed by first-hand cues, faded by decay)
+  sentiment: number;                // slow relationship EMA (−cap..cap): lasting like/dislike from repeated proximity; COLOURS standing (SENTIMENT)
   // docs/architecture/17 §7.2a: the LAST SALIENT motive this observer attributed to the subject (the
   // ToM inference output) + how sure. Sparse — written ONLY when a confident read of a notable act
   // lands (most cells never carry one); the deception layer fools exactly this. Optional/decaying.
@@ -61,6 +62,9 @@ export interface BeliefState {
   motiveConf?: number;
   believedKindness?: number;        // a slow character estimate (0..1), like believedWealth (§4a)
 
+  // ease the slow relationship sentiment toward its pleasant target on one peaceful interaction,
+  // then COLOUR standing a little toward it (SENTIMENT). Belief→own-belief only. Guarded.
+  accrueSentiment(): void;
   // record one piece of liveness evidence ('struck'|'blocked'|'harmedMe'|'moved'). Guarded.
   recordAnimacy(kind: 'struck' | 'blocked' | 'harmedMe' | 'moved'): void;
   // nudge the believed-wealth estimate toward `implies` (0..1) by `weight` — a perceived
