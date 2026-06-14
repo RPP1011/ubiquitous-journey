@@ -36,6 +36,7 @@ import { cautionTest } from './suites/caution.mjs';
 import { memoryGoalTest, npcCastTest } from './suites/memoryGoals.mjs';
 import { perceptTest } from './suites/percept.mjs';
 import { schemasTest } from './suites/schemas.mjs';
+import { depthProbeTest } from './suites/depth.mjs';
 import { motivationTest, motivationInferenceTest, motivationDeceptionTest, motivationGuileTest, motivationDeliberateTest, motivationDeedPathTest, motivationShadowTest } from './suites/motivation.mjs';
 import { wealthCheck } from './suites/wealth.mjs';
 import { recipeTest } from './suites/recipes.mjs';
@@ -102,6 +103,10 @@ perceptTest(ok, helpers);
 // Phase-2a reasoning framework (Step 1): IR + vocab evaluators + interpreter, in isolation.
 // Catalogue empty ⇒ behaviour unchanged; the substrate writes' output-stability is the soak.
 schemasTest(ok);
+// Decision-DEPTH probe (docs/architecture/18 §M4): the consumption-side analogue of the epistemic
+// scan — asserts decisions VARY with personality / the rich belief fields (lenient now, tighten as
+// the M1–M3 site-fixes land). Fast, deterministic, hand-built fixtures (no soak RNG).
+depthProbeTest(ok, helpers);
 // Motivation layer (docs/architecture/17 §3) P1 foundation: the MOTIVATIONS registry in isolation.
 motivationTest(ok);
 // Motivation P4 inference: one deed, two witnesses, two attributed motives (per-witness divergence).

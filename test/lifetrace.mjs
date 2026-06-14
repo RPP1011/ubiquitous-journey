@@ -33,14 +33,17 @@ import {
   arcLoad, regardGap, dependence, esteemTruthGap, snubsFelt, quietIndex,
 } from '../js/sim/signals.js';
 import { runHealthChecks, runCohort } from './health.mjs';
+import { scoreAndSelect, nearestComfortSource } from '../js/sim/agent/decide.js';
+import { laborValue } from '../js/sim/agent/occupation.js';
 
 // ---- CLI parsing: --flag <value> pairs, plus a bare positional simSeconds (back-compat) ----------
 function parseArgs(argv) {
-  const out = { seed: undefined, duration: 1800, agent: undefined, digest: false, health: false, cohort: 0 };
+  const out = { seed: undefined, duration: 1800, agent: undefined, digest: false, health: false, cohort: 0, knowledge: false };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const t = argv[i];
     if (t === '--digest') out.digest = true;
+    else if (t === '--knowledge') out.knowledge = true;
     else if (t === '--health-checks') out.health = true;
     else if (t === '--cohort') out.cohort = Math.max(1, Number(argv[++i]) | 0 || 8);
     else if (t === '--seed') out.seed = Number(argv[++i]);
@@ -55,7 +58,7 @@ function parseArgs(argv) {
 
 const ARGS = parseArgs(process.argv.slice(2));
 if (ARGS.help) {
-  console.log('usage: bun test/lifetrace.mjs [--seed <n>] [--duration <simSeconds>] [--agent <name|id|most-eventful>] [--digest] [--health-checks] [--cohort <N>]');
+  console.log('usage: bun test/lifetrace.mjs [--seed <n>] [--duration <simSeconds>] [--agent <name|id|most-eventful>] [--digest] [--knowledge] [--health-checks] [--cohort <N>]');
   process.exit(0);
 }
 const SIM_SECONDS = Number.isFinite(ARGS.duration) ? ARGS.duration : 1800;
@@ -184,9 +187,10 @@ const alive = !!(a && a.alive);
 // FLAGS COMPOSE: --digest, --health-checks and --cohort can be passed together in one run and each
 // prints its own section. Only when NONE of them is set do we fall back to the raw biography dump.
 if (ARGS.digest) emitDigest();
+if (ARGS.knowledge) emitKnowledgeAnecdotes();
 if (ARGS.health) emitHealthChecks();
 if (ARGS.cohort) emitCohort(ARGS.cohort);
-if (!ARGS.digest && !ARGS.health && !ARGS.cohort) emitRawBiography();
+if (!ARGS.digest && !ARGS.knowledge && !ARGS.health && !ARGS.cohort) emitRawBiography();
 
 sim.dispose();
 
@@ -397,6 +401,98 @@ function emitRawBiography() {
   console.log(beats.length ? beats.reverse().map((b) => `  [${(b.t || 0).toFixed(0)}s] ${b.text}`).join('\n') : '  (the chronicle never named them)');
 
   emitTownWide();
+}
+
+// ---------------------------------------------------------------------------
+// KNOWLEDGE-EXPLOITATION ANECDOTES (docs/architecture/18 §Measurement, qualitative half). The
+// named-NPC stories that show knowledge being EXPLOITED — the readable companion to the quantitative
+// knowledgeprobe. Read-only over the end-of-run roster + chronicle; nothing drives a decision. Each
+// section surfaces a different domain so the impact report can span ≥3. On the baseline tree several
+// will read "(none — the gap)": that absence IS the finding, and reads as the before-state.
+function emitKnowledgeAnecdotes() {
+  const ctx = sim._ctx();
+  const L = [];
+  L.push(`\n=============== KNOWLEDGE-EXPLOITATION ANECDOTES (whole run, named NPCs) ===============`);
+  const living = sim.agents.filter((x) => x && x.alive && !x.controlled && x.faction === 'townsfolk');
+
+  // A) FLEE TO A KNOWN REFUGE — an agent currently fleeing whose goal aims at a believed safe place.
+  L.push(`\n  ── A · Fled to a place they KNEW ──`);
+  let fleeStories = 0;
+  for (const x of sim.agents) {
+    if (!x.alive || x.controlled) continue;
+    const g = x.goal;
+    if (!g || g.kind !== 'flee') continue;
+    let refuge = null; try { refuge = nearestComfortSource(x, ctx); } catch { /* */ }
+    if (g.toPos && refuge && refuge.pos && Math.hypot(g.toPos.x - refuge.pos.x, g.toPos.z - refuge.pos.z) < 6) {
+      L.push(`    · ${x.name} fled toward the ${refuge.kind} they knew, not blindly away.`);
+      if (++fleeStories >= 4) break;
+    }
+  }
+  if (!fleeStories) L.push(`    (none — flee is a radial repulsor today; nobody routes to a known refuge. THE GAP.)`);
+
+  // B) COMPARATIVE-ADVANTAGE MIGRATION — an emigrant whose move tracked where its trade pays better.
+  L.push(`\n  ── B · Emigrated where their trade paid ──`);
+  const migBeats = (sim.chronicle.recent(800) || []).filter((b) => b.kind === 'migration' && b.text);
+  let migStories = 0;
+  for (const b of migBeats.slice(-6)) {
+    // find the named mover + report its believed labour value (the margin signal the move IGNORED).
+    const mover = sim.agents.find((x) => x.name && b.text.indexOf(x.name) !== -1);
+    let lv = null; if (mover) { try { lv = laborValue(mover); } catch { /* */ } }
+    L.push(`    · ${b.text.replace(/[[\]]/g, '')}${lv != null ? `  (their believed labour value: ${lv.toFixed(2)})` : ''}`);
+    migStories++;
+  }
+  L.push(`    note: the destination was a received town-rumour — comparative advantage did NOT pick it (THE GAP).`);
+  void migStories;
+
+  // C) REFUSED / SOURED A DEAL WITH A BELIEVED WRONGDOER — an agent holding a strong NEGATIVE
+  // standing or a HOSTILE belief about a known counterparty (the price-skew gouges them; a believed-
+  // thief refusal would build on exactly this read).
+  L.push(`\n  ── C · Held a grudge that coloured their dealings ──`);
+  let grudgeStories = 0;
+  for (const x of living) {
+    if (!x.beliefs || typeof x.beliefs.all !== 'function') continue;
+    let worst = null;
+    for (const b of x.beliefs.all()) {
+      if (!b || b.subjectId == null) continue;
+      const other = sim.agentsById.get(b.subjectId);
+      if (!other || other.controlled || other.faction !== 'townsfolk') continue;
+      if ((b.standing || 0) <= -0.4 && (!worst || b.standing < worst.standing)) worst = b;
+    }
+    if (worst) {
+      L.push(`    · ${x.name} would gouge ${nameOf(worst.subjectId)} in any deal (standing ${worst.standing.toFixed(2)}${worst.hostile ? ', believed hostile' : ''}).`);
+      if (++grudgeStories >= 4) break;
+    }
+  }
+  if (!grudgeStories) L.push(`    (none above the grudge floor this run — trades read standing, but no believed-thief REFUSAL exists yet.)`);
+
+  // D) SAME PRICES, DIFFERENT SOULS — take a real living trader, hold its beliefs/needs FIXED, and
+  // show two temperaments choosing differently. The headline M3 "the coward and the striver, same
+  // prices, diverged" anecdote, demonstrated on an ACTUAL townsperson's belief state.
+  L.push(`\n  ── D · Same knowledge, different character ──`);
+  const NEUTRAL_MOOD = { fear: 0, anger: 0, joy: 0, grief: 0, pride: 0, loneliness: 0 };
+  const win = (x, persona) => {
+    const c = Object.create(Object.getPrototypeOf(x));
+    Object.assign(c, x);
+    c.personality = Object.assign({}, x.personality, persona);
+    c.mood = Object.assign({}, NEUTRAL_MOOD);
+    try { return (scoreAndSelect(c, ctx, null) || {}).kind || null; } catch { return null; }
+  };
+  const coward = { risk_tolerance: 0.05, ambition: 0.3, social_drive: 0.4, curiosity: 0.3 };
+  const striver = { risk_tolerance: 0.6, ambition: 0.97, social_drive: 0.2, curiosity: 0.3 };
+  const butterfly = { risk_tolerance: 0.4, ambition: 0.25, social_drive: 0.97, curiosity: 0.5 };
+  let dStories = 0;
+  for (const x of living) {
+    if (!x.canWork) continue;
+    const kc = win(x, coward), ks = win(x, striver), kb = win(x, butterfly);
+    const set = new Set([kc, ks, kb].filter((k) => k != null));
+    if (set.size > 1) {
+      L.push(`    · Given ${x.name}'s exact beliefs: a coward would ${kc}, a striver would ${ks}, a social soul would ${kb}.`);
+      if (++dStories >= 4) break;
+    }
+  }
+  if (!dStories) L.push(`    (none — with these beliefs every temperament chose alike. THE M3 GAP: personality is not yet the dial.)`);
+
+  console.log(L.join('\n'));
 }
 
 // ---------------------------------------------------------------------------
