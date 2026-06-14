@@ -20,6 +20,31 @@ import type { Agent, CognitionCtx, PlanStep, EntityId } from '../../../types/sim
 
 const REACH = 2.2;
 
+// RECURSIVE ToM (one level deeper than the `follow` prediction): does the LEADER believe THE
+// CANDIDATE also fears the foe? The leader cannot read the candidate's mind — but it CAN reason over
+// two of its OWN beliefs: where it believes the candidate stands, and where it believes a hostile
+// foe is. If it believes the candidate has been close to a believed-hostile foe, it infers the
+// candidate has likely SEEN and JUDGED that foe a threat too — a shared grievance, an easier sell.
+// This is the leader's model of the candidate's belief ("I believe you believe the foe hostile"),
+// grounded entirely in the leader's own epistemic scope. Returns 0..1 (how confidently shared).
+function sharedFoeFearOf(a: Agent, candId: EntityId): number {
+  if (!a.beliefs) return 0;
+  const cb = a.beliefs.get(candId);                 // my belief about where the candidate is
+  if (!cb || cb.confidence < SIM.actOnBeliefMin) return 0;
+  const near2 = (RECRUIT.foeNearRange || 22) * (RECRUIT.foeNearRange || 22);
+  let best = 0;
+  for (const f of a.beliefs.all()) {                // scan MY beliefs for a foe I think it's near
+    if (!f || f.subjectId === candId || f.confidence < SIM.actOnBeliefMin) continue;
+    if (!(f.hostile || (a.considerHostile && a.considerHostile(f)))) continue;   // I believe it hostile
+    const dx = f.lastPos.x - cb.lastPos.x, dz = f.lastPos.z - cb.lastPos.z;
+    if (dx * dx + dz * dz > near2) continue;          // candidate not believed near this foe
+    // confidence in the SHARED read = min of how sure I am of each of the two beliefs.
+    const conf = Math.min(cb.confidence, f.confidence);
+    if (conf > best) best = conf;
+  }
+  return best;
+}
+
 // recruit(candidate): approach; on reach, make the OFFER the candidate perceives AND record the
 // leader's OWN one-level prediction that the candidate will follow (compliance off its standing).
 registerExecutor('recruit', (a, step, dt, ctx) => {
@@ -29,16 +54,25 @@ registerExecutor('recruit', (a, step, dt, ctx) => {
   if (!tp) { a.fighter.setMoving(0); return; }
   if (a.pos.distanceTo(tp) > REACH) { steer(a, { attractors: [{ pos: tp }] }, dt); return; }
   a.fighter.setMoving(0);
+  // RECURSIVE ToM: a candidate the leader believes ALSO fears the foe is an easier sell — the leader
+  // both firms its one-level follow-prediction and tilts the offer richer for it. Own-scope (its two
+  // beliefs about candidate + foe); never a roster read. 0 when no believed-shared-foe (ordinary recruit).
+  const shared = sharedFoeFearOf(a, candId);
   // the leader's PREDICTION (one-level Believes): how likely THIS candidate is to follow, read off
-  // the cue it can see (the candidate's believed standing toward it). Calibrated, not a dice-roll.
+  // the cue it can see (the candidate's believed standing toward it), FIRMED when it also fears the
+  // foe. Calibrated, not a dice-roll.
   const b = a.beliefs ? a.beliefs.get(candId) : null;
-  recordBelieves(a, candId, 'follow', complianceOf(b ? b.standing : 0));
+  const follow = complianceOf(b ? b.standing : 0) + shared * (RECRUIT.sharedFoeFollow || 0);
+  recordBelieves(a, candId, 'follow', follow);
   // make the OFFER the candidate perceives (its own store) — the Inform, nothing more. INFAMY DRAWS A
   // FOLLOWING (docs/architecture/12 §9.3): a notorious leader makes a MORE COMPELLING offer — the
   // payoff is tilted by the leader's own notoriety (own-state; the town reads it via the generalised
   // notoriety bridge, so a warming candidate weighs a richer believed payoff). Infamy literally recruits.
+  // A SHARED FOE tilts it richer still: the easier sell gets the more compelling pitch.
   const noto = (a as Agent & { notoriety?: number }).notoriety || 0;
-  const payoff = RECRUIT.candidateStrength * (1 + noto * (RECRUIT.notorietyTilt || 0));
+  const payoff = RECRUIT.candidateStrength
+    * (1 + noto * (RECRUIT.notorietyTilt || 0))
+    * (1 + shared * (RECRUIT.sharedFoeTilt || 0));
   if (ctx.resolver && ctx.resolver.makeOffer) ctx.resolver.makeOffer(a, candId, payoff);
 });
 
@@ -92,6 +126,47 @@ registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
   // decided: ask to join the offerer's band (execution flips the shared band flags). On success the
   // offer is spent; on failure (band full / leader gone) we leave it to re-weigh next tick.
   if (ctx.resolver.joinBand(a, bestId, WARBAND.maxFollowers || 6) && a._offers) delete a._offers[bestId];
+});
+
+// DEFECTION / MUTINY (the mirror of the join — a warband fracturing FROM WITHIN): a follower whose
+// OWN belief of its leader has SOURED decides, for itself, to mutiny. This is cognition — it reads
+// ONLY the follower's own belief-standing toward its leader and its own episodic memory (a recently
+// witnessed band-mate death it lays at the leader's feet), never the roster / ground truth (the
+// epistemic split holds). A grievance first ERODES the leader's standing (its own belief shifts);
+// once that standing falls past the bar the follower re-plants a low standing on the former leader
+// (the visible fracture) and sets `_quitBand` — the EXECUTION-side revert (Groups._prune, the shared
+// band machinery) leaves the band cleanly and propagates the fracture to its ex-mates' perception.
+// No foreign-mind write, no Director fiat. Heavily guarded; bounded + rare (gated on a real souring).
+registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
+  if (!a || !a.alive || a.controlled || !a.beliefs) return;
+  const leaderId = a.bandLeaderId;
+  if (leaderId == null) return;                                  // not a follower — nothing to defect from
+  if (a.inParty && ctx && ctx.playerId != null && leaderId === ctx.playerId) return;  // never mutiny the player's party
+  if (a._quitBand != null) return;                               // already decided this tick (await the prune)
+  const rel = a.beliefs.get(leaderId);                           // MY belief about my leader (the only cue)
+  if (!rel) return;
+  // A FRESH GRIEVANCE: a band-mate I held in regard fell within living memory — a death I lay at the
+  // leader's feet. Read ONLY my own episodic memory (witnessed_death of someone I liked); it erodes
+  // the leader's standing in MY belief first (the souring), so the bar below is reached honestly.
+  const now = ctx ? ctx.time : 0;
+  let grieved = false;
+  try {
+    const eps = a.memory ? a.memory.recent(8) : [];
+    for (const ep of eps) {
+      if (!ep || ep.kind !== 'witnessed_death' || ep.withId == null) continue;
+      if (now - (ep.t || 0) > (WARBAND.defectGriefSecs || 25)) continue;        // not fresh enough
+      const fr = a.beliefs.get(ep.withId);                                       // did I regard the fallen?
+      if (fr && (fr.standing || 0) > 0.2) { grieved = true; break; }
+    }
+  } catch { /* never throw on the tick */ }
+  if (grieved) rel.standing = Math.max(-1, (rel.standing || 0) - (WARBAND.defectGrief || 0.35));
+  // the mutiny gate: my own belief of the leader has soured past the bar (from the grievance above,
+  // a gossiped snub, a forsworn-leader standing hit, or combat feedback — all ordinary belief shifts).
+  if ((rel.standing || 0) > (WARBAND.defectStanding || -0.25)) return;
+  // DECIDED: re-plant a low standing on the former leader (the fracture is in MY belief), and set the
+  // own-state flag the execution-side revert honours. The flag-flip is execution; the choice was mine.
+  rel.standing = Math.min(rel.standing, (WARBAND.defectSour || -0.5));
+  a._quitBand = leaderId;
 });
 
 // THE LEADER SIDE (belief-only deriver, the recruiter capstone, BOTH halves): a bold agent that

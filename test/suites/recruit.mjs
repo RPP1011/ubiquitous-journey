@@ -6,12 +6,103 @@
 // candidate's OWN belief (it warmed toward the leader) — no goal was written into it from outside.
 import { FeatureStage } from './_stage.mjs';
 import { goalMuster, believesConf } from '../../js/sim/planner.js';
+import { WARBAND, RECRUIT } from '../../js/sim/simconfig.js';
 
 export function recruitTest(ok, helpers) {
   recruitBeliefHalf(ok, helpers);
   warbandFollowThrough(ok, helpers);
   warbandDirectedAssault(ok, helpers);
+  warbandDefection(ok, helpers);
+  recursiveTomRecruit(ok, helpers);
   warbandSmoke(ok, helpers);
+}
+
+// ---- DEFECTION / MUTINY: a warband fractures FROM WITHIN (the mirror of the join) ----------
+// Proves a follower whose OWN belief of its leader has soured (a witnessed band-mate's death it
+// lays at the leader's feet, or any other belief-souring) decides FOR ITSELF to mutiny: it drops
+// the band flags through the shared revert seam and re-plants a low standing on its former leader.
+// Reads only the follower's own beliefs/memory — never the roster, no Director fiat.
+function warbandDefection(ok, helpers) {
+  {
+    // (A) a follower whose belief of the leader is already SOURED below the bar -> mutinies.
+    const st = new FeatureStage(helpers);
+    const leader = st.add('Cad', 0, 0, { personality: { risk_tolerance: 0.9 } });
+    const f1 = st.add('Mal', 1, 0), f2 = st.add('Nye', -1, 0);
+    for (const f of [f1, f2]) { f.bandLeaderId = leader.id; f.inParty = true; f.groupType = 'warband'; f.combatant = true; }
+    // Mal's OWN belief of its leader has curdled (a snub / forsworn leader / combat feedback — any
+    // ordinary belief-souring); past the mutiny bar. Nye still thinks well of the leader (stays).
+    f1.beliefs.observe(leader.id, leader.faction, leader.pos, st.sim.time, false);
+    const mr = f1.beliefs.get(leader.id); if (mr) mr.standing = (WARBAND.defectStanding || -0.25) - 0.2;
+    f2.beliefs.observe(leader.id, leader.faction, leader.pos, st.sim.time, false);
+    const nr = f2.beliefs.get(leader.id); if (nr) nr.standing = 0.6;
+    ok(f1.bandLeaderId === leader.id && f2.bandLeaderId === leader.id, 'defect 0: both start in the band');
+    const ran = st.run(() => f1.bandLeaderId == null, { maxFrames: 400, pin: [[leader, 0, 0], [f1, 1, 0], [f2, -1, 0]] });
+    ok(f1.bandLeaderId == null && !f1.inParty,
+      `defect 1: a soured follower mutinied — its OWN decision dropped the band flags (bandLeaderId=${f1.bandLeaderId}, ${ran}f)`);
+    ok((f1.beliefs.get(leader.id).standing) <= (WARBAND.defectSour || -0.5) + 1e-6,
+      `defect 2: the deserter re-planted a low standing on its former leader (${f1.beliefs.get(leader.id).standing.toFixed(2)}) — the fracture`);
+    ok((leader.beliefs.get(f1.id) ? leader.beliefs.get(f1.id).standing : 99) <= (WARBAND.defectSour || -0.5) + 1e-6,
+      'defect 3: the leader thinks worse of the deserter (the visible fracture, execution-side perception)');
+    ok(f2.bandLeaderId === leader.id,
+      'defect 4: a loyal band-mate (its own belief still warm) does NOT mutiny — the split is per-follower belief');
+    st.dispose();
+  }
+  {
+    // (B) GRIEF DRIVES IT: a follower starts loyal, then WITNESSES a liked band-mate fall — its own
+    // memory erodes the leader's standing past the bar, and it deserts. No external standing edit.
+    const st = new FeatureStage(helpers);
+    const leader = st.add('Orm', 0, 0, { personality: { risk_tolerance: 0.9 } });
+    const griever = st.add('Pell', 1, 0), fallen = st.add('Rua', -1, 0);
+    for (const f of [griever, fallen]) { f.bandLeaderId = leader.id; f.inParty = true; f.groupType = 'warband'; f.combatant = true; }
+    griever.beliefs.observe(leader.id, leader.faction, leader.pos, st.sim.time, false);
+    const gr = griever.beliefs.get(leader.id); if (gr) gr.standing = 0.1;   // loyal-ish, but fragile
+    griever.beliefs.observe(fallen.id, fallen.faction, fallen.pos, st.sim.time, false);
+    const fr = griever.beliefs.get(fallen.id); if (fr) fr.standing = 0.7;   // a dear band-mate
+    // the griever's OWN memory: it saw Rua fall just now (a fresh grievance it lays at the leader).
+    st.inject(griever, { t: st.sim.time, kind: 'witnessed_death', withId: fallen.id, valence: -0.8, salience: 0.9 });
+    const ran = st.run(() => griever.bandLeaderId == null, { maxFrames: 400, pin: [[leader, 0, 0], [griever, 1, 0]] });
+    ok(griever.bandLeaderId == null && !griever.inParty,
+      `defect 5: a fresh witnessed band-mate death soured the leader past the bar — the griever deserted (${ran}f)`);
+    st.dispose();
+  }
+}
+
+// ---- RECURSIVE ToM RECRUITMENT: recruit those who ALSO believe the foe a threat (an easier sell) --
+// Proves the muster gate goes one level deeper than the `follow` prediction: a would-be leader that
+// believes a candidate is ALSO near/aware of the foe (its OWN belief about the candidate's belief of
+// the foe) makes a MORE COMPELLING offer to it. The leader reads only two of its own beliefs
+// (candidate position + foe) — never a roster read to decide.
+function recursiveTomRecruit(ok, helpers) {
+  const offerPayoffFor = (sharedFoe) => {
+    const st = new FeatureStage(helpers);
+    const leader = st.add('Sig', 0, 0, { personality: { risk_tolerance: 0.9 } });
+    const cand = st.add('Tove', 6, 0);
+    for (const k in leader.needs) leader.needs[k] = 1;
+    leader.beliefs.observe(cand.id, cand.faction, cand.pos, st.sim.time, false);
+    const lrel = leader.beliefs.get(cand.id); if (lrel) lrel.standing = 0.6;
+    cand.beliefs.observe(leader.id, leader.faction, leader.pos, st.sim.time, false);
+    if (sharedFoe) {
+      // the leader believes a hostile foe sits RIGHT BY the candidate (so it infers the candidate
+      // fears it too — a shared grievance). The foe is NOT a recruit candidate (it is hostile).
+      const foe = st.add('Vrak', 7, 0, { faction: 'bandit', combatant: true });
+      leader.beliefs.observe(foe.id, foe.faction, foe.pos, st.sim.time, true);
+    }
+    leader.pushGoal(goalMuster(1.5), st.ctx());
+    st.run(() => !!(cand._offers && cand._offers[leader.id]),
+      { maxFrames: 1500, pin: sharedFoe ? [[cand, 6, 0]] : [[cand, 6, 0]], refresh: [[leader, cand]] });
+    const off = cand._offers && cand._offers[leader.id];
+    const payoff = off ? off.payoff : 0;
+    const follow = believesConf(leader, cand.id, 'follow');
+    st.dispose();
+    return { payoff, follow };
+  };
+  const base = offerPayoffFor(false);
+  const shared = offerPayoffFor(true);
+  ok(base.payoff > 0 && shared.payoff > 0, `rtom 0: both candidates received an offer (base=${base.payoff.toFixed(2)}, shared=${shared.payoff.toFixed(2)})`);
+  ok(shared.payoff > base.payoff + 1e-6,
+    `rtom 1: the leader makes a MORE COMPELLING offer to a candidate it believes also fears the foe (${base.payoff.toFixed(2)} -> ${shared.payoff.toFixed(2)}) — recursive ToM, one level deeper`);
+  ok(shared.follow > base.follow + 1e-6,
+    `rtom 2: the leader's one-level follow-prediction is firmer for the shared-foe candidate (${base.follow.toFixed(2)} -> ${shared.follow.toFixed(2)})`);
 }
 
 // ---- the recruiter CAPSTONE: muster -> MARCH on the foe (the missing directed-assault half) ----

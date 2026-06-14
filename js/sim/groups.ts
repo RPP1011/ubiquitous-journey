@@ -18,7 +18,7 @@
 // Kept separate from the player's Party: this never touches a member whose leader
 // is the player, so recruited companions and emergent NPC groups coexist.
 
-import { BAND, GROUP_TYPES, GROUP_NAMES, HALL } from './simconfig.js';
+import { BAND, GROUP_TYPES, GROUP_NAMES, HALL, WARBAND } from './simconfig.js';
 import { rng } from './rng.js';
 import { isHomeBuilder, BUILD_KIND } from './construction.js';
 
@@ -291,10 +291,47 @@ export class Groups {
     } catch { return null; }
   }
 
+  // DEFECTION / MUTINY — the EXECUTION half (the cognition half is recruiter.ts' defect deriver).
+  // A follower that DECIDED to mutiny (off its own soured belief of the leader) set `_quitBand` to
+  // its leader id; honour it here on the shared revert seam. Leaving the band is the clean revert;
+  // the FRACTURE is then visible socially — the leader's standing toward the deserter sours, and
+  // the ex-mates (a legitimate execution-side roster read — perception, not cognition) sour toward
+  // the deserter too (a band breaking up is witnessed). Conserved + guarded; never throws.
+  _handleDefection(F: Ag): boolean {
+    if (F._quitBand == null) return false;
+    const leaderId = F._quitBand;
+    F._quitBand = null;
+    if (F.controlled || F.bandLeaderId == null || F.bandLeaderId !== leaderId) return false;
+    if (leaderId === this._playerId()) return false;            // never desert the player's party here
+    const L = this.sim.agentsById.get(leaderId);
+    try {
+      // the fracture in OTHERS' beliefs (execution-side perception): the leader + the ex-mates think
+      // worse of the deserter; the deserter already re-planted its own low standing in cognition.
+      const sour = WARBAND.defectSour || -0.5;
+      const mates = this._followersOf(leaderId);
+      if (L && L.alive && L.beliefs) { const r = L.beliefs.get(F.id); if (r) r.standing = Math.min(r.standing, sour); }
+      for (const m of mates) {
+        if (m === F || !m.alive || !m.beliefs) continue;
+        const r = m.beliefs.get(F.id); if (r) r.standing = Math.min(r.standing, sour);
+      }
+      // a round on the leader's EXISTING warband arc: the band fractured (observer-layer; guarded).
+      // Only escalate a tale already opened by the recruiter muster — a desertion from an emergent
+      // (groups._join) band, keyed differently, files no spurious `warband:` arc here.
+      const sagas = this.sim.sagas;
+      if (sagas && typeof sagas.findArc === 'function' && sagas.findArc('warband:' + leaderId)) {
+        sagas.appendRound({ kind: 'warband', key: 'warband:' + leaderId, principals: [leaderId] },
+          `${F.name} deserted ${L && L.name ? L.name + "'s" : 'the'} war-band.`);
+      }
+    } catch { /* never throw on the tick */ }
+    this._revert(F);                                            // leave the band cleanly (shared seam)
+    return true;
+  }
+
   _prune(): void {
     const pid = this._playerId();
     for (const F of this.sim.agents) {
       if (F.controlled) continue;
+      if (this._handleDefection(F)) continue;                  // a mutineer left this tick — done with F
       if (F.bandLeaderId != null && F.bandLeaderId !== pid) {
         const L = this.sim.agentsById.get(F.bandLeaderId);
         if (F.alive && (!L || !L.alive)) {

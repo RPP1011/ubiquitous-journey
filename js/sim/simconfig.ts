@@ -585,6 +585,15 @@ export const RECRUIT = {
   offerWarmth: 0.08,     // how much perceiving an offer warms a candidate toward the leader (its OWN belief)
   musterRiskTol: 0.6,    // risk_tolerance at/above which a leader will try to muster against a strong foe
   notorietyTilt: 0.6,    // a notorious leader's offer payoff is tilted by notoriety×this (infamy draws a following, §9.3)
+  // RECURSIVE ToM (one level deeper than the `follow` prediction): a would-be leader reads its OWN
+  // belief about THE CANDIDATE'S belief about the foe — if it believes the candidate ALSO sees the
+  // foe as a threat (the candidate believed near a believed-hostile foe), that candidate is an
+  // EASIER SELL, so the offer is more compelling AND the recorded follow-prediction is firmer. The
+  // leader's own epistemic scope only (two of its own beliefs — candidate position + foe), never a
+  // roster read. Bounded: applies only when a believed-hostile foe is in the leader's own beliefs.
+  foeNearRange: 22,      // believed candidate↔foe distance under which the leader infers a shared-foe read
+  sharedFoeTilt: 0.5,    // offer-payoff tilt (×) when the leader believes the candidate also fears the foe
+  sharedFoeFollow: 0.15, // bump to the recorded one-level follow-prediction for a shared-foe candidate
 };
 
 // --- WARBAND: the recruiter follow-through (docs/architecture/10-lld §19 item 4, §12) -------
@@ -602,6 +611,16 @@ export const WARBAND = {
   joinRiskTol: 0.45,     // risk_tolerance scale: the bolder accept a thinner offer (× this damps the bar)
   offerTtl: 30,          // sim-seconds an unanswered offer stays actionable before it lapses
   maxFollowers: 6,       // hard cap on an NPC leader's recruited band (matches PARTY.maxSize ceiling)
+  // DEFECTION / MUTINY — the mirror of the join: a follower whose OWN belief of its leader has
+  // SOURED (a witnessed band-mate's death it lays at the leader's feet, a forsworn leader, a snub —
+  // all of which erode standing through the existing belief mechanisms) drops its band flags and
+  // re-plants low standing on its former leader. A warband fractures FROM WITHIN, off the
+  // follower's own beliefs/memory — never by Director fiat. Reading only own state; the flag-flip is
+  // execution (the shared Groups revert seam). Bounded + rare so warbands still form and resolve.
+  defectStanding: -0.25, // believed-standing toward the leader at/below which a follower mutinies
+  defectGrief: 0.35,     // a recent witnessed band-mate death sours the leader's standing by this much first
+  defectSour: -0.5,      // the standing the defector re-plants on its former leader (the fracture)
+  defectGriefSecs: 25,   // a witnessed-death memory this recent (sim-secs) counts as a fresh grievance
 };
 
 // --- AFFECT: changing another entity's physical state (docs/architecture/10, Phase 5) ----
