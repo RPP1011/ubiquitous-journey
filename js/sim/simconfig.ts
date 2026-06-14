@@ -539,6 +539,22 @@ export const MOTIVE = {
                             //   soft-avoid arms gradually, never a cliff that destabilizes the soak.
   reciprocityWarm: 0.10,    // standing it WARMS on a confident benign motive (defense/justice/vouch).
   reciprocitySuspicion: 0.12, // suspicion the cool adds (feeds decide.pickSuspectToAvoid's soft berth).
+  // --- mined-memory drives (Phase: survived/triumph/milestone/forsworn → goals) ---
+  // Lasting dispositions derived from stored-but-unused episode kinds. Each is a PLAN-LESS
+  // disposition goal (like grieve) that simply biases/decays — never a new act() behaviour.
+  warySalienceMin: 0.6,     // a `survived` (near-death) memory must be at least this salient to plant lasting wariness of its foe
+  waryExpiry: 360,          // sim-seconds a wariness (avoid-the-foe-who-near-killed-me) disposition lingers
+  gloryExpiry: 200,         // sim-seconds a return-to-glory (relive a triumph/milestone) pull persists
+  glorySalienceMin: 0.6,    // a triumph/milestone must be this salient to seed a return-to-glory pull (milestones are 0.7)
+  shameExpiry: 300,         // sim-seconds a shame-avoidance (shun the wronged party) disposition lingers
+  // --- NPC-vs-NPC avenge (generalised beyond the player) ---
+  avengeBondMin: 0.25,      // believed standing toward the FALLEN that makes them "bonded" enough to avenge (a friend, not a stranger)
+  avengeWitnessSalienceMin: 0.55,  // a witnessed_death/bloodshed memory must be this salient to trigger a bonded-other avenge
+  // --- vendettas harden into lifelong feuds ---
+  vendettaThreshold: 3,     // repeated avenge-triggers from the SAME subject past this count make the grudge NON-EXPIRING
+  vendettaFrictionCap: 16,  // bound on the per-(self→subject) friction tally (anti-unbounded-growth)
+  // --- personal named life-goal (assignAmbition rival/role-model target) ---
+  ambitionRivalStandingMin: 0.3,  // a believed subject must stand at least this high to become a mastery/renown agent's rival-to-surpass
 };
 
 // --- QUANTITIES: numeric-threshold plan composition (docs/architecture/10, Phase 1) ----
