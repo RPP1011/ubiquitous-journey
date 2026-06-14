@@ -7,7 +7,9 @@
 // Behaviour-preserving: verbatim bodies of the old Agent methods. No cycles —
 // imports config, pure helpers, motivation, and the occupation chooser.
 
-import { SIM, WEIGHT, ECON, COMMODITIES, GROUP_TYPES, LEGEND, SOCIAL, COMFORT, NOVELTY, BUILD, ESTEEM as WEALTH, ROMANCE, MOTIVE, ALMS, GRANARY, MIGRATE, QUIRK, DUEL, factionHostile } from '../simconfig.js';
+import { SIM, WEIGHT, ECON, COMMODITIES, GROUP_TYPES, LEGEND, SOCIAL, COMFORT, NOVELTY, BUILD, ESTEEM as WEALTH, ROMANCE, MOTIVE, ALMS, GRANARY, MIGRATE, QUIRK, DUEL, SURVIVAL, factionHostile } from '../simconfig.js';
+import { believedForceRatio } from '../agent.js';
+import { TUNE } from '../../constants.js';
 import { rng } from '../rng.js';
 import { updateAmbition, ambitionFavor, ambitionWantsFight, deriveGoals, pruneGoals } from '../motivation.js';
 import { chooseOccupation, laborValue } from './occupation.js';
@@ -28,6 +30,37 @@ const GROUP_TYPES_T = GROUP_TYPES as Record<string, { cohesion?: string; combata
 interface Candidate { kind: string; score: number; [k: string]: unknown }
 
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
+
+// SURVIVAL FORCE-RATIO MODULATION (docs/architecture/18 M3) — the believed-strength READ the
+// fight/flee pushes were blind to. Returns the two bounded multipliers applied IDENTICALLY here
+// (scoreAndSelect) and in arbitrate's fight/flee rows — both call THIS function, so the products are
+// FLOAT-IDENTICAL by construction (the S2 parity net), exactly like quirkMul/laborValue. Reads OWN
+// beliefs (believedForceRatio → my own strength vs the believed enemy's) + OWN HP only; the epistemic
+// split holds. Gentle + median-preserving: at an even matchup (rc=0.5) AND full HP every term is ~1,
+// so the median fight/flee is unchanged — only the lopsided cases tip. Pure; never throws.
+export function survivalMod(a: Agent, enemyId: EntityId): { fightMul: number; fleeMul: number } {
+  // rc∈[0,1]: ratio squashed monotonically. ratio = my strength / believed enemy strength (+Inf when
+  // I rate the foe at zero — an unseen/inert subject → rc≈1, I back myself). rc=0.5 is the even matchup.
+  const ratio = believedForceRatio(a, enemyId);
+  const rc = ratio === Infinity ? 1 : clamp01(ratio / (ratio + 1));
+  // own HP fraction (a wounded fighter fights less, flees more). Guarded — professionless/full = 1.
+  const hp = (a.fighter && a.fighter.health) || 0;
+  const maxHp = TUNE.maxHealth || 100;
+  const hpFrac = clamp01(hp / maxHp);
+  const fightMul = (SURVIVAL.fightFloor + SURVIVAL.fightSpan * rc) * (SURVIVAL.fightHpFloor + SURVIVAL.fightHpSpan * hpFrac);
+  const fleeMul = (SURVIVAL.fleeFloor + SURVIVAL.fleeSpan * (1 - rc)) * (SURVIVAL.fleeHpFloor + SURVIVAL.fleeHpSpan * (1 - hpFrac));
+  return { fightMul, fleeMul };
+}
+
+// NOTORIETY FEAR (docs/architecture/18 M3) — generalises the player-only LEGEND flee gate: how much a
+// believed-notorious HOSTILE adds to a timid civilian's flee score. Reads ONLY my OWN belief about the
+// foe (its banked notoriety) — an NPC villain unsettles the street like the player does. Pure; the
+// flee push folds this in (no separate player-keyed branch). 0 when I hold no belief / no notoriety.
+export function notorietyFear(a: Agent, enemyId: EntityId): number {
+  const b = a.beliefs && a.beliefs.get(enemyId);
+  if (!b) return 0;
+  return SURVIVAL.notorietyFleeWeight * (b.notoriety || 0);
+}
 
 // QUIRKS — a stable behavioural tic, DERIVED at read time (no spawn write). The quirk is a pure
 // function of the agent's id + personality, so both the live arbiter (arbitrate) and the reference
@@ -217,19 +250,27 @@ export function decide(a: Agent, ctx: CognitionCtx): void {
   }
 
   // THE BUTCHER'S SHADOW: the street empties before a known killer. A FEARFUL townsperson
-  // (low nerve) gives a notoriously violent player a wide berth — a visible bubble of
-  // unease around an infamous reputation. Bounded (only the timid, only up close, only
-  // a true villain) so it unsettles the town without emptying it. The bold are unmoved.
+  // (low nerve) gives a notoriously violent FOE a wide berth — a visible bubble of unease
+  // around an infamous reputation. Bounded (only the timid, only up close, only a true
+  // villain) so it unsettles the town without emptying it. The bold are unmoved.
+  // GENERALISED (docs/architecture/18 M3): no longer player-keyed — ANY believed-notorious
+  // HOSTILE (an NPC villain, a feared raider captain, the player) triggers the berth. I scan
+  // MY OWN beliefs for the nearest confident, notorious, considered-hostile subject within the
+  // fear bubble (belief-only — a scalar id + lastPos, never a live handle). A finer in-danger
+  // fold of notoriety into the flee SCORE lives in survivalMod's caller (notorietyFear); this
+  // pre-scorer reflex is the WIDER unease berth that fires short of the danger band.
   if (LEGEND && LEGEND.enabled && a.autonomous && a.faction === 'townsfolk' &&
       a.guardianOf == null && !a.inParty && !a.combatant && a.personality &&
       a.personality.risk_tolerance < (LEGEND.fearRisk || 0.42)) {
-    // BELIEF-GATED FEAR: read my OWN belief about the player (a scalar id, never a live
-    // handle). I only dread a villain I've actually SEEN (a confident belief carrying its
-    // notoriety, written by perception) and that I believe is right beside me. An NPC who
-    // never laid eyes on the player feels nothing.
-    const pb = ctx.playerId != null ? a.beliefs.get(ctx.playerId) : null;
-    if (pb && pb.confidence >= SIM.actOnBeliefMin && (pb.notoriety || 0) >= (LEGEND.villainAt || 0.66) &&
-        a.pos.distanceTo(pb.lastPos) < (LEGEND.fearRange || 9)) { a.goal = { kind: 'flee', fromId: ctx.playerId! }; return; }
+    let dreadId: EntityId | null = null, dd = (LEGEND.fearRange || 9);
+    for (const b of a.beliefs.all()) {
+      if (b.placeKind || b.subjectId === a.id) continue;
+      if (b.confidence < SIM.actOnBeliefMin || (b.notoriety || 0) < (LEGEND.villainAt || 0.66)) continue;
+      if (!a.considerHostile(b) || !b.lastPos) continue;     // a notorious FOE (latched / hostile faction), not a famed friend
+      const d = a.pos.distanceTo(b.lastPos);
+      if (d < dd) { dd = d; dreadId = b.subjectId; }
+    }
+    if (dreadId != null) { a.goal = { kind: 'flee', fromId: dreadId }; return; }
   }
 
   // BOUNTY-HUNTER: a townsperson who answered a Gazette bounty hunts its quarry —
@@ -402,10 +443,16 @@ export function scoreAndSelect(a: Agent, ctx: CognitionCtx, planStep: PlanStep |
     // never chases one into the village to raze it (the structural anti-massacre
     // rule; director RAIDERS have no homeAnchor, so they still assault the town).
     const tethered = a.homeAnchor && a.homeAnchor.distanceTo(enemy.pos) > (a.leashR || 50);
+    // BELIEVED FORCE RATIO (M3): scale the personality-base fight DOWN / flee UP when I believe I'm
+    // outmatched or wounded (survivalMod reads my OWN belief of the foe + my OWN HP). Personality
+    // stays the co-factor (the daredevil's higher 0.4+risk base still out-fights the coward at the
+    // same ratio). Same call in arbitrate's rows → FLOAT-IDENTICAL (the S2 net). Notoriety of a
+    // believed-villain folds into flee (generalises the old player-only LEGEND gate, below).
+    const { fightMul, fleeMul } = survivalMod(a, enemy.id);
     if (brave && !tethered)
-      push('fight', WEIGHT.fight * (0.4 + P.risk_tolerance) + a.mood.anger, { targetId: enemy.id });
+      push('fight', (WEIGHT.fight * (0.4 + P.risk_tolerance) + a.mood.anger) * fightMul, { targetId: enemy.id });
     if (!a.combatant && inDanger)
-      push('flee', WEIGHT.flee * (1.2 - P.risk_tolerance) + a.mood.fear + 0.5, { fromId: enemy.id });
+      push('flee', (WEIGHT.flee * (1.2 - P.risk_tolerance) + a.mood.fear + 0.5) * fleeMul + notorietyFear(a, enemy.id), { fromId: enemy.id });
   }
 
   // economic / life scheduling (every townsperson — occupation is emergent now).

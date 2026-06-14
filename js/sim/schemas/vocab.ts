@@ -17,7 +17,8 @@
 // guarded and returns a benign default on any anomaly; the interpreter never throws.
 
 import { inferDestination } from '../beliefs.js';
-import { SIM, SCHEMA, factionHostile } from '../simconfig.js';
+import { believedStrength, ownStrength } from '../agent.js';
+import { SIM, SCHEMA, SURVIVAL, factionHostile } from '../simconfig.js';
 import type {
   EntityId, Comparator, SubjectRef, PredNode, InferNode, RespNode,
   ReasonEnv, GoalDescriptor, Episode,
@@ -181,10 +182,14 @@ export const PRED_EVAL: Record<string, PredEvalFn> = {
     }
   },
 
-  // outmatchedBy(ref): do I believe the resolved subject can beat me? A coarse threat
-  // comparison from MY belief + my own level — never the subject's true stats. Uses the
-  // believed faction's danger (monster/bandit read as dangerous) as a proxy when I have
-  // no finer model. Guarded.
+  // outmatchedBy(ref): do I believe the resolved subject can beat me? Now a BELIEVED FORCE-RATIO
+  // test (docs/architecture/18 M3): my own combat strength vs the believed strength of the subject
+  // (believedStrength: believedThreat × a level bonus × confidence) — never the subject's true stats.
+  // I am "outmatched" when my own strength is below SURVIVAL.hideRatioBar of the believed foe's, so the
+  // high-priority go-to-ground HIDE schema fires when (and only when) the matchup is genuinely lopsided.
+  // When I hold NO finer strength estimate (the foe was never seen acting as a threat → believedStrength
+  // 0), fall back to the old coarse test: a believed-hostile / hostile-faction subject outmatches a
+  // civilian me. Own belief + own stats only — the epistemic split holds. Guarded.
   outmatchedBy(node, env) {
     const [ref] = node.args;
     const id = resolveSubj(ref, env);
@@ -193,7 +198,12 @@ export const PRED_EVAL: Record<string, PredEvalFn> = {
     if (!b) return false;
     const me = env.agent;
     if (me.combatant) return false;                         // I back myself in a fight
-    // a believed-hostile of a fighting faction outmatches a civilian me.
+    const foe = believedStrength(me, id);
+    if (foe > 0) {
+      // a finer model exists: outmatched when MY strength is below the bar fraction of the believed foe's.
+      return ownStrength(me) < SURVIVAL.hideRatioBar * foe;
+    }
+    // no finer model (unseen-as-threat): the coarse faction/hostile prior, as before.
     return !!b.hostile || factionHostile(me.faction, b.lastFaction);
   },
 
