@@ -24,7 +24,7 @@
 import * as THREE from 'three';
 import { rng } from './rng.js';
 import { Agent } from './agent.js';
-import { LINEAGE, SIM } from './simconfig.js';
+import { LINEAGE, SIM, RECIPES } from './simconfig.js';
 import { terrainHeight } from '../arena.js';
 import { assignHouse, areHousesFeuding, endHouseFeud, feudingHouseOf } from './houses.js';
 
@@ -280,6 +280,27 @@ export class Lineage {
       // child inherits from BOTH parents stacks). Guarded.
       this._inheritTags(child, A);
       this._inheritTags(child, B);
+
+      // LOST RECIPES (docs/architecture/10-lld §6): a fresh townsperson is seeded with
+      // EVERY gated recipe (agent.ts `seedRecipesFor`), but a child should only inherit
+      // a CRAFT it could plausibly have learnt from kin. Re-derive its recipe Set as the
+      // recipes at least one PARENT actually knows, each kept with prob childInheritP.
+      // So: a craft NEITHER parent knows is NOT passed on (it can die out of a bloodline
+      // and must be re-taught), and even a known one is sometimes missed — engaging the
+      // live `learn` deriver and graded forgetting. Guarded: never throws on the tick.
+      try {
+        const gated: string[] = (RECIPES && RECIPES.gated) || [];
+        if (gated.length && child.recipes) {
+          const p = (RECIPES && typeof RECIPES.childInheritP === 'number') ? RECIPES.childInheritP : 1;
+          const inherited = new Set<string>();
+          for (const g of gated) {
+            const aKnows = A.recipes && A.recipes.has(g);
+            const bKnows = B.recipes && B.recipes.has(g);
+            if ((aKnows || bKnows) && rng() < p) inherited.add(g);
+          }
+          child.recipes = inherited;   // map is still empty ⇒ lazy-seeded full-conf from this Set on first forgetTick
+        }
+      } catch { /* a recipe-thinning hiccup must never abort the birth */ }
 
       // GOLD CONSERVED: a child starts with 0 gold by construction; if a dowry is
       // configured, MOVE it from the wealthier parent (debit parent, credit child)
