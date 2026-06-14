@@ -255,10 +255,26 @@ export function gossipBeliefs(a: Agent, ctx: FullCtx): void {
     // how a price rumour spreads. This lives in the gossip BRIDGE (where reading another
     // agent's beliefs is sanctioned), not in cognition. Per fixed tick (step), scaled to
     // approximate the old per-frame drift (priceGossipPerTick). Beliefs only; bounded.
+    //
+    // TRUST-WEIGHTED: an overheard price is NOT swallowed whole — I weight the drift by how
+    // much I TRUST the teller (my OWN standing toward them, read from my OWN belief — already
+    // inside the sanctioned bridge). A trusted neighbour (positive standing) moves my price
+    // belief strongly; a stranger (standing ~0) only at the baseline trickle; a disliked one
+    // (negative standing) barely shifts me at all. So a price rumour no longer converges the
+    // whole town in a single tick — standing gates how fast it spreads, which is what leaves a
+    // price gap open long enough for a clever trader to exploit. Bounded to [0,1]; mints nothing.
     if (!a.controlled && a.priceBeliefs && o.priceBeliefs) {
-      const rate = ECON.priceGossipPerTick != null ? ECON.priceGossipPerTick : (ECON.priceGossip * 10);
-      for (const c of COMMODITIES) {
-        a.priceBeliefs[c] += (o.priceBeliefs[c] - a.priceBeliefs[c]) * rate;
+      const base = ECON.priceGossipPerTick != null ? ECON.priceGossipPerTick : (ECON.priceGossip * 10);
+      const standing = a.beliefs.get(o.id)?.standing || 0;   // my own opinion of the teller, -1..1
+      const tw = ECON.priceTrustWeight != null ? ECON.priceTrustWeight : 0.6;
+      // baseline (1-tw) trickle from anyone; the rest scales with standing. Negative standing
+      // pulls the multiplier below baseline (a doubted rumour), clamped ≥0 (never repels a belief).
+      const trust = Math.max(0, Math.min(1, (1 - tw) + tw * standing));
+      const rate = base * trust;
+      if (rate > 0) {
+        for (const c of COMMODITIES) {
+          a.priceBeliefs[c] += (o.priceBeliefs[c] - a.priceBeliefs[c]) * rate;
+        }
       }
     }
     // chatting peacefully builds familiarity: a small positive standing toward

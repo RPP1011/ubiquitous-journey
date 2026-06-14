@@ -169,6 +169,16 @@ export const ECON = {
   priceLearn: 0.25,           // participant belief moves toward the clearing price
   priceGossip: 0.04,          // per-sec drift toward a chatting neighbour
   priceGossipPerTick: 0.04 / 6, // per fixed-tick (tickHz=6) drift — the gossip-bridge form
+  priceTrustWeight: 0.6,      // how much an overheard price drift scales with my STANDING toward the
+                              // teller: a (1-w) baseline trickle from anyone + w·standing on top (so a
+                              // trusted neighbour spreads a price rumour fast, a stranger slowly, a
+                              // disliked one barely). 0 = old symmetric trust-everyone behaviour.
+  // NEWS MOVES PRICES (newsread.ts): a townsperson near a market who "reads the paper" nudges its OWN
+  // price belief for a reported staple toward the Gazette's printed median — so an "ore runs short"
+  // headline raises local asks before a hauler arrives. A nudge, not a whipsaw: low rate + a hard cap.
+  newsReadRate: 0.05,         // per cognition tick, fraction of the gap to the printed median I close
+  newsReadMaxAge: 90,         // secs: an article older than this is stale news, ignored
+  newsReadStep: 0.5,          // hard cap on the per-tick price-belief shift from one reading (units)
   tatonnementUp: 1.004,       // unfilled buyers raise their bid belief each tick
   tatonnementDown: 0.996,     // unfilled sellers lower their ask belief each tick
   priceBounds: [1, 40],
