@@ -61,12 +61,21 @@ function resolveOath(a: Agent, kind: string, targetId: unknown, reason: 'kept' |
       // FORSWORN — the permanent scar: each broken vow lowers the comfort CEILING for
       // life (OATHS.forswornCapStep, applied in drainNeeds), marks the biography, and
       // files a FORMATIVE memory (salience above the LTM bar — a life remembers the
-      // word it broke). Own-state only; OTHERS learning of it (the social leak) is the
-      // betrayal-as-choice feature, deliberately separate.
+      // word it broke). Own-state only here in cognition.
       if (a.life) a.life.forsworn = (a.life.forsworn || 0) + 1;
       if (a.memory && typeof a.memory.record === 'function') {
         try { a.memory.record({ t: 0, kind: 'forsworn', withId: targetId as EntityId, valence: -1, salience: 0.75 }); } catch { /* */ }
       }
+      // BETRAYAL-AS-CHOICE (the social leak — formerly deliberately separate): ARM an own-state
+      // marker. The OBSERVER layer (patrician.ts, a society pass with roster access) drains it and
+      // plants a FORSWORN deed into NEARBY witnesses' beliefs about this breaker — so others learn
+      // of the broken word and it rides gossip. STAMP only: no roster read from cognition, so the
+      // epistemic split holds (the breaker writes nothing but its own flag). `count` rides the
+      // running life.forsworn so the brand reads its full tally when the leak fires.
+      try {
+        (a as { _forswornLeak?: { t: number; targetId: unknown; count: number } })._forswornLeak =
+          { t: now, targetId, count: (a.life && a.life.forsworn) || 1 };
+      } catch { /* never throw on the tick */ }
     } else {
       if (a.mood) {
         // a vow KEPT: the vindicated walk tall — fear breaks (on top of the closure

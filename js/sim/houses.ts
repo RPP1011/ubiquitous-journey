@@ -27,6 +27,29 @@ export function founderHouse(i: number): string | null {
   return (s && s.length) ? s[i % s.length] : null;
 }
 
+// ---- OATHBREAKER BRAND (betrayal-as-choice) --------------------------------
+// A soul who breaks ENOUGH vows (life.forsworn ≥ HOUSES.forswornBrandAt) earns a dark
+// epithet that reads in every future chronicle beat — the negative dynastic counterpart to
+// "the Bold". Branded ONCE per life, and only on a not-yet-named agent (an epithet already
+// won — hero or villain — is never clobbered). Pure name/chronicle effect: no gold, no
+// belief, no truth. Returns the epithet awarded (or null). Called by the observer layer
+// (patrician.ts) when the social leak fires, so the brand spreads with the news.
+export function brandForsworn(sim: Sim, a: Ag): string | null {
+  try {
+    if (!HOUSES || !HOUSES.enabled || !a || a.epithet) return null;
+    const at = (HOUSES as { forswornBrandAt?: number }).forswornBrandAt ?? 3;
+    if (((a.life && a.life.forsworn) || 0) < at) return null;
+    const pool = (HOUSES as { forswornNames?: string[] }).forswornNames;
+    if (!pool || !pool.length) return null;
+    const epithet = pool[(Number(a.id) || 0) % pool.length];   // deterministic, varied by id
+    a.epithet = epithet;
+    a.given = a.given || a.name;
+    a.name = `${a.name} ${epithet}`;                           // keeps their name + earns the dark title
+    try { if (sim && sim.chronicle && sim.chronicle.note) sim.chronicle.note('legend', a.id, `${a.name} is named ${epithet} — a breaker of sworn words.`); } catch { /* */ }
+    return epithet;
+  } catch { return null; }   // never throw on the tick
+}
+
 // ---- HOUSE FEUDS (multi-generational sagas) --------------------------------
 // A durable feud between two HOUSES (not just two people) — children born into a
 // feuding house inherit the grudge, so the strife outlives its founders until a
