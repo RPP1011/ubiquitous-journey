@@ -1822,6 +1822,43 @@ export const EPITHETS = {
   escapeCooldown: 18,      // sim-seconds between counted narrow escapes (one scare per window)
 };
 
+// --- CHARACTER EPITHETS: descriptive bynames coined from temperament + trait extremes ---
+// Pure OBSERVER-layer narration (biography.js / chronicle.js): the EPITHETS block above is
+// the EARNED, deed-driven Nemesis byname; this one is the soul's STANDING character read off
+// its personality — a `miser` is "the Tight-Fisted", a `wanderer` "the Restless". It drives
+// no decision; it only colours how the chronicle/biography names a soul. The trait fields are
+// the Phase-1 personality additions (greed/vindictiveness/gregariousness/honesty/industry +
+// the `_temperament` tag); every read is guarded so an agent that predates them simply yields
+// no character epithet. Tuning-only (the thresholds + the phrase tables).
+export const CHARACTER = {
+  enabled: true,
+  hi: 0.8,                  // a trait at/above this reads as an EXTREME (defining) virtue/vice
+  lo: 0.2,                  // …and at/below this as its opposite extreme
+  // temperament → byname (the dominant read; checked first, one per soul).
+  temperaments: {
+    miser:    'the Tight-Fisted',
+    hothead:  'the Quick-Tempered',
+    wanderer: 'the Restless',
+    saint:    'the Kind',
+    coward:   'the Timid',
+    striver:  'the Ambitious',
+    gossip:   'the Tale-Bearer',
+    // 'everyman' is deliberately omitted — an ordinary soul earns no standing byname.
+  } as Record<string, string>,
+  // a trailing descriptive CLAUSE (biography) coined from a single trait at an extreme — used
+  // when no temperament byname applies (or as colour alongside it). First match wins.
+  traitClauses: [
+    { trait: 'vindictiveness', hi: true,  text: 'who never forgets a slight' },
+    { trait: 'honesty',        hi: true,  text: 'true of word' },
+    { trait: 'honesty',        hi: false, text: 'of slippery word' },
+    { trait: 'greed',          hi: true,  text: 'with a covetous eye' },
+    { trait: 'industry',       hi: true,  text: 'never idle' },
+    { trait: 'industry',       hi: false, text: 'given to idleness' },
+    { trait: 'gregariousness', hi: true,  text: 'who knows everyone' },
+    { trait: 'gregariousness', hi: false, text: 'who keeps to themselves' },
+  ] as Array<{ trait: string; hi: boolean; text: string }>,
+};
+
 // --- FAITH: belief-powered gods (Discworld's Small Gods) ----------------------
 // The sim already runs on BELIEF — so a god whose power IS its number of believers
 // fits the engine natively. Faith spreads by proximity (the faithful proselytise),

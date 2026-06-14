@@ -16,6 +16,7 @@
 import { bus } from '../rpg/events.js';
 import { CHRONICLE, MONSTER, factionHostile } from './simconfig.js';
 import { noteBeat } from './signals.js';
+import { characterByname } from './biography.js';
 import type { ActionEvent } from '../../types/sim.js';
 
 // `sim` is the owning Simulation (a separate, wave-2 cluster still in .js); typed opaquely
@@ -121,6 +122,19 @@ export class Chronicle {
   }
 
   _now(): number { try { return (this.sim && this.sim.time) || 0; } catch { return 0; } }
+
+  // a name dressed with the agent's STANDING character byname for the SAGA voice — "Garrik,
+  // the Tight-Fisted". Observer-layer narration coined from personality (characterByname is
+  // guarded + reads nothing live to decide). Falls back to the bare name. Guarded.
+  _legendName(id: unknown): string {
+    const name = this._nameOf(id);
+    try {
+      const a = this.sim && this.sim.agentsById && this.sim.agentsById.get(id);
+      const byname = a ? characterByname(a) : null;
+      if (byname && name !== 'someone') return `${name}, ${byname}`;
+    } catch { /* fall through to bare name */ }
+    return name;
+  }
 
   // push a beat onto the ring, de-duplicated per (kind, subject) within a short
   // window so a flurry of identical events collapses to one entry. Guarded.
@@ -258,7 +272,7 @@ export class Chronicle {
       if (!a || a.controlled) return;
       const cls = a.progression && a.progression.primaryClass();
       const cname = (cls && cls.name) || 'a new calling';
-      this._push(BEAT.PRODIGY, ev.actorId, `${a.name} rose as ${cname}.`);
+      this._push(BEAT.PRODIGY, ev.actorId, `${this._legendName(ev.actorId)} rose as ${cname}.`);
     } catch { /* never throw */ }
   }
 
@@ -273,7 +287,7 @@ export class Chronicle {
       if (!a || a.controlled) return;
       const cls = a.progression && a.progression.primaryClass();
       const cname = (cls && cls.name) || 'their craft';
-      this._push(BEAT.PRODIGY, ev.actorId, `${a.name} reached level ${lvl} as ${cname}.`);
+      this._push(BEAT.PRODIGY, ev.actorId, `${this._legendName(ev.actorId)} reached level ${lvl} as ${cname}.`);
     } catch { /* never throw */ }
   }
 

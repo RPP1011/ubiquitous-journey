@@ -15,7 +15,7 @@ import { schema, validate } from './ir.js';
 import {
   all, any, not,
   believe, witnessed, selfNeed, selfIs, outmatchedBy, nearKnown, nearSubject, perceivedNow,
-  selfEngaged, observedAnimacy,
+  selfEngaged, observedAnimacy, selfTrait, selfPoor, hostileNearFriend,
   setIntent, inferDest, raise, raiseThenSet,
   goal, intercept, fleeTo, shadow, avoid,
 } from './vocab.js';
@@ -112,6 +112,56 @@ export const SCHEMAS: AuthoredSchema[] = [
     // tick) — sized so inertThreshold accruals complete in a handful of seconds, matching the
     // spec's "after a few blows" intent (not the 20s the priority-band note loosely sketched).
     priority: 0.6, ttl: 4,
+  },
+
+  // 7. RUBBERNECK — the OPPOSITE of #5 (flee-the-brawl): a BOLD, CURIOUS soul who saw a blow
+  //    struck nearby is drawn TOWARD the commotion to gawk, not away. Same evidence (a witnessed
+  //    STRUCK from a believed subject within range) gated on character: only the unafraid + the
+  //    nosy crane their necks. A passive sightsee disposition (non-direct → stack-borne, expires).
+  {
+    id: 'rubberneck', subject: 'believed',
+    when: all(
+      witnessed('@a', 'STRUCK'),                      // I saw @a deal/take a blow…
+      nearSubject('@a', 8),                           // …and the scene is within 8m by my belief
+      not(selfIs('combatant')),                       // (a fighter wades in, it doesn't gawk)
+      selfTrait('risk_tolerance', '>', 0.6),          // BOLD enough not to flee
+      selfTrait('curiosity', '>', 0.55),              // and NOSY enough to come look
+    ),
+    infer: setIntent('gawk'),
+    respond: goal('sightsee'),                        // drift toward the commotion (own-map fill)
+    priority: 0.45, ttl: 6,
+  },
+
+  // 8. RAISE THE ALARM — I believe a hostile is loitering near someone I think well of (a
+  //    friend's believed lastPos). I sound a warning. Pure belief×belief read of MY OWN table
+  //    (the threat and the friend are both my beliefs) — no roster scan, no truth. A warn
+  //    disposition (the say/alert intent; non-direct → stack-borne).
+  {
+    id: 'raise-the-alarm', subject: 'self',
+    when: all(
+      hostileNearFriend(7),                           // a believed-hostile within 7m of a friend
+      not(selfIs('combatant')),                       // a fighter intervenes; the rest raise the cry
+    ),
+    infer: setIntent('warn'),
+    respond: goal('warn'),                            // sound the alarm (a say/social disposition)
+    priority: 0.5, ttl: 6,
+  },
+
+  // 9. VULTURE — I witnessed a death nearby and I'm POOR: I move to pick the corpse over. The
+  //    fallen is the bound believed subject (the witnessed_death's withId), its lastPos my cue.
+  //    Reads only MY memory + MY belief of where it fell + MY own purse — a grim, emergent,
+  //    poverty-gated scavenging. A loot disposition (non-direct → stack-borne).
+  {
+    id: 'vulture', subject: 'believed',
+    when: all(
+      witnessed('@x', 'DEATH'),                       // I saw @x fall…
+      nearSubject('@x', 9),                           // …and the corpse is near by my belief
+      selfPoor(8),                                    // …and my purse is thin enough to stoop to it
+      not(selfIs('combatant')),                       // (the freebooter who scavenges is no soldier)
+    ),
+    infer: setIntent('scavenge'),
+    respond: goal('loot'),                            // pick the corpse over (own-belief lastPos cue)
+    priority: 0.4, ttl: 8,
   },
 ];
 
