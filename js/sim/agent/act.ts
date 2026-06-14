@@ -65,6 +65,10 @@ export function act(a: Agent, dt: number, ctx: CognitionCtx): void {
   // it (no work, no wander, no flight). Only `free` (its bonds cut) lifts `_held`.
   if (a._held) { a.fighter.setMoving(0); a._updateLabel(); return; }
   a.priceGossip(ctx, dt);
+  // THE SOCIAL CAST (doc 18 — the social dead-weight gap): on the talk/gossip path, a charmer /
+  // schemer holding a ready social spec works a nearby target it has DESIGNS on (win over a
+  // cool acquaintance, or sour a rival). Character-gated, throttled; own beliefs only. One hook.
+  trySocialCastAbility(a, ctx);
   // drink a remedy when badly hurt — keeps a recurring demand for potions
   if (a.fighter.health < TUNE.maxHealth * 0.5 && (a.inventory.potion || 0) >= 1) {
     a.inventory.potion -= 1;
@@ -566,7 +570,7 @@ export function combatStep(a: Agent, dt: number, ctx: CognitionCtx): void {
     // SURVIVAL FIRST: badly hurt and holding a READY self-targeted heal/shield spec
     // (second_wind) -> spend this cast cadence on staying alive instead of attacking.
     // Own state + own abilities only; fully guarded (ability-less monsters no-op).
-    if (!trySelfCastAbility(a, ctx)) {
+    if (!trySelfCastAbility(a, ctx) && !tryAllyCastAbility(a, ctx)) {
       // a spec resolves on a REAL body, so casting requires the target to be a perceived
       // live agent — the resolver returns it ONLY when vision-confirmed (a belief about a
       // scarecrow returns null and simply can't be cast at; the melee swing below still
@@ -685,6 +689,121 @@ export function bestSelfAbility(a: Agent, now: number): AbilitySpec | null {
     return spec;
   }
   return null;
+}
+
+// THE ALLY-SUPPORT CAST (doc 18 — the social/support dead-weight gap). A healer/warder that holds a
+// READY ally-targeted heal/shield spec spends this cast cadence MENDING a comrade instead of
+// attacking — but ONLY when it BELIEVES a comrade-in-arms is fighting nearby. The chooser reads ONLY
+// the agent's OWN beliefs: a recently-seen, NON-hostile believed-ally (a party-mate / warband-mate /
+// same-faction soul, positive standing) within cast range. `castSpec` then resolves the actual
+// ally body geometrically over the true roster (execution, exactly like the offensive cast) — so
+// the belief picks WHETHER to support, ground truth picks WHO. Fully guarded (the freeze lesson:
+// ability-less / professionless / ctx-less agents no-op). True if a support spec fired.
+export function tryAllyCastAbility(a: Agent, ctx: CognitionCtx): boolean {
+  try {
+    if (!ctx || !a.abilities || a.abilities.size === 0 || !a.beliefs) return false;
+    const f = a.fighter;
+    if (!f || !f.alive) return false;
+    const now = ctx.time || 0;
+    const spec = bestAllyAbility(a, now);
+    if (!spec) return false;
+    // belief-only ally cue: do I BELIEVE a comrade is close enough to mend? A non-hostile,
+    // recently-seen, well-regarded believed-ally within the spec's reach (own beliefs/standing —
+    // never the roster). One within reach is the whole trigger; the heal/shield no-ops harmlessly
+    // on a full-health body, so a slightly-stale belief only wastes a cast, never throws.
+    const reach = Math.max(spec.header.range || 0, 1) + (SIM.arriveDist || 1.5);
+    let near = false;
+    for (const b of a.beliefs.all()) {
+      if (!b || b.subjectId === a.id || b.placeKind) continue;          // a person-belief
+      if (b.hostile || (b.standing || 0) < (ABILITY.allyStandingMin ?? 0)) continue;  // a comrade, not a foe
+      if ((b.confidence || 0) < (ABILITY.allyMinConf ?? 0.3)) continue; // recently/firmly enough placed
+      if (sameSide(a, b.lastFaction) && a.pos.distanceTo(b.lastPos) <= reach) { near = true; break; }
+    }
+    if (!near) return false;
+    // EXECUTION: the resolver bridge hands castSpec the full sim ctx; the interpreter scans the
+    // true roster for the nearest valid ALLY (wants()), heals/shields it, and owns the cooldown.
+    if (ctx.resolver && ctx.resolver.cast) return ctx.resolver.cast(spec, a);
+    return castSpec(spec, a, ctx);
+  } catch { return false; }   // never throw on the tick
+}
+
+// Is `faction` on this agent's own side (a comrade)? Same faction, or a party/warband bond — read
+// off the agent's OWN flags, never the roster. A null/unknown believed faction is NOT a comrade.
+function sameSide(a: Agent, faction: string | null): boolean {
+  if (faction == null) return a.inParty === true || a.bandLeaderId != null;   // party/band overrides faction
+  if (a.faction && faction === a.faction) return true;
+  return a.inParty === true || a.bandLeaderId != null;
+}
+
+// The first READY ally-targeted spec with a heal/shield effect. Support specs are rare (most agents
+// hold none), so first-ready is the whole policy — mirrors bestSelfAbility, but for comrades.
+export function bestAllyAbility(a: Agent, now: number): AbilitySpec | null {
+  for (const spec of a.abilities.values()) {
+    if (!spec || !spec.header || spec.header.target !== 'ally') continue;
+    if (!spec.effects || !spec.effects.some((e) => e.op === 'heal' || e.op === 'shield')) continue;
+    if (onCooldown(a, spec, now)) continue;
+    return spec;
+  }
+  return null;
+}
+
+// The believed "social charge" of a plant_belief spec: <0 = CHARM (raises a target's standing
+// toward me), >0 = a RUMOUR (sours it). Mirrors the effects.ts sign convention. 0 = not a social spec.
+function plantCharge(spec: AbilitySpec): number {
+  let q = 0;
+  for (const e of spec.effects || []) if (e.op === 'plant_belief') q += (e.amount || 0);
+  return q;
+}
+// The first READY plant_belief spec of the requested polarity (charm/rumour). Both kinds are rare.
+function bestSocialAbility(a: Agent, charm: boolean, now: number): AbilitySpec | null {
+  for (const spec of a.abilities.values()) {
+    if (!spec || !spec.header || onCooldown(a, spec, now)) continue;
+    const t = spec.header.target;
+    if (t !== 'any' && t !== 'ally' && t !== 'enemy') continue;
+    const q = plantCharge(spec);
+    if (charm ? q < 0 : q > 0) return spec;
+  }
+  return null;
+}
+
+// THE SOCIAL CAST (doc 18 — NPCs grind into Speaker/Trickster and are GRANTED silver_tongue /
+// plant_rumor, yet no chooser ever spends them: pure dead weight). The talk-path hook closes that.
+// Reading ONLY its own beliefs + standing, a holder of a ready social spec looks for a target it has
+// DESIGNS on: a CHARMER (gregarious) works a nearby acquaintance whose standing is COOL but not
+// hostile, to WIN it over; a SCHEMER (vindictive) works a nearby RIVAL it dislikes, to SOUR it
+// further. castSpec resolves the actual body geometrically (execution) — the belief picks the
+// INTENT, ground truth the target. Character-gated + throttled so it's a flourish, not a tic. Fully
+// guarded (the freeze lesson). Returns true if a social spec fired.
+export function trySocialCastAbility(a: Agent, ctx: CognitionCtx): boolean {
+  try {
+    if (!ctx || !a.abilities || a.abilities.size === 0 || !a.beliefs || a.faction === 'monster') return false;
+    const now = ctx.time || 0;
+    if (now - ((a._lastSocialCast as number) ?? -Infinity) < (ABILITY.socialCastEvery ?? 6)) return false;
+    const P = a.personality || {};
+    // do I have the appetite to work a room? gregarious → charm; vindictive → sour a rival.
+    const wantCharm = (P.gregariousness ?? 0) >= (ABILITY.charmGregarious ?? 0.6);
+    const wantSour = (P.vindictiveness ?? 0) >= (ABILITY.sourVindictive ?? 0.6);
+    if (!wantCharm && !wantSour) return false;
+    // scan OWN person-beliefs for a nearby (recently-seen) target matching an intent I hold a spec for.
+    let charmTarget = false, sourTarget = false;
+    for (const b of a.beliefs.all()) {
+      if (!b || b.subjectId === a.id || b.placeKind) continue;
+      if ((b.confidence || 0) < (ABILITY.socialMinConf ?? 0.3)) continue;
+      if (a.pos.distanceTo(b.lastPos) > (ABILITY.socialRange ?? 7)) continue;
+      const st = b.standing || 0;
+      if (wantCharm && !b.hostile && st > (ABILITY.charmLo ?? -0.4) && st < (ABILITY.charmHi ?? 0.3)) charmTarget = true;
+      if (wantSour && (b.hostile || st < (ABILITY.sourBelow ?? -0.2))) sourTarget = true;
+      if (charmTarget && sourTarget) break;
+    }
+    // souring a rival reads as the more pointed act — prefer it when both a rival and a cool
+    // acquaintance are about and I hold both kinds of spec.
+    const spec = (wantSour && sourTarget && bestSocialAbility(a, false, now))
+      || (wantCharm && charmTarget && bestSocialAbility(a, true, now)) || null;
+    if (!spec) return false;
+    a._lastSocialCast = now;
+    if (ctx.resolver && ctx.resolver.cast) return ctx.resolver.cast(spec, a);
+    return castSpec(spec, a, ctx);
+  } catch { return false; }   // never throw on the tick
 }
 
 // Pick the best READY offensive spec for the current engagement. Offensive =

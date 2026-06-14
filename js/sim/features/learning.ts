@@ -14,8 +14,13 @@ import { KNOW, SIM, RECIPES } from '../simconfig.js';
 import { POI_KIND } from '../world.js';
 import { steer } from '../agent/steer.js';
 import { goTo } from '../agent/movement.js';
-import { learnRecipe, forgetTick } from '../recipeKnow.js';
+import { learnRecipe, forgetTick, recipeConf } from '../recipeKnow.js';
+import { tradeMargin } from '../agent/occupation.js';
+import { GOODS } from '../simconfig.js';
 import type { Agent, CognitionCtx, PlanStep, KnowTopic } from '../../../types/sim.js';
+
+// simconfig GOODS is inferred without an index signature (allowJs); these objects ARE string-keyed.
+const GOODS_T = GOODS as Record<string, { inputs: Record<string, number> | null; raw: boolean } | undefined>;
 
 // Accrue `gain` confidence into a topic's HOME (own-state). The one place knowledge is WRITTEN.
 function accrueTopic(a: Agent, topic: KnowTopic | undefined, gain: number, now: number): void {
@@ -99,17 +104,32 @@ registerEffectHolds('observe', learned);
 registerEffectHolds('ask', learned);
 registerEffectHolds('study', learned);
 
-// THE LIVE DERIVER (own-state only): a crafter that wants to make a recipe-gated good it does NOT
-// know forms a Know(recipe) goal. Dormant unless recipes are actually withheld; correct +
-// unit-tested regardless. Bounded by pushGoal dedup.
+// THE LIVE DERIVER (own-state only): a crafter forms a Know(recipe) goal to FIRM UP its most
+// LUCRATIVE recipe-gated good (doc 18 §3 — exploit knowledge-about-knowledge). The old version fired
+// only on its OWN trade when ABSENT (recipeConf below the craftable bar); now it scores every
+// recipe-gated good it ASPIRES to make by believed NET MARGIN (`tradeMargin`, own price beliefs)
+// across all goods whose `recipeConf < 1` — so a half-learned high-margin recipe is firmed up before
+// a fully-mastered cheap one, and the agent invests learning where the return is best. The goal
+// carries that margin as its `value` (the believed worth of the firmer recipe). Bounded by pushGoal
+// dedup (one learn goal at a time → pick the BEST-margin one). Own-state/own-belief only.
 registerDeriver((a: Agent, ctx: CognitionCtx | null) => {
-  if (!a || !a.alive || a.controlled || a.faction === 'monster') return;
-  const good = a._trade;
-  if (!good || !a.recipes || a.recipes.has(good)) return;            // nothing to learn
-  const g = goalLearn({ kind: 'recipe', good });
-  g.priority = 0.45; g.from = 'apprentice';
-  g.expiresAt = (ctx ? ctx.time : 0) + 160;
-  a.pushGoal(g, ctx);
+  if (!a || !a.alive || a.controlled || a.faction === 'monster' || !a.recipes) return;
+  let want: string | null = null, bestMargin = -Infinity;
+  for (const good in GOODS_T) {
+    const g = GOODS_T[good];
+    if (!g || g.raw || !g.inputs) continue;          // raw goods need no recipe
+    if (recipeConf(a, good) >= 1) continue;           // already mastered — nothing to firm up
+    // only the goods I genuinely aspire to make: my CURRENT trade (own-trade learn), or any gated
+    // craft I already half-know (in the Set). A craft I neither ply nor know is apprentice.ts's job.
+    if (good !== a._trade && !a.recipes.has(good)) continue;
+    const m = tradeMargin(a, good);                   // believed effective value of this craft's labour
+    if (m > bestMargin) { bestMargin = m; want = good; }
+  }
+  if (!want) return;                                  // nothing worth firming up
+  const goal = goalLearn({ kind: 'recipe', good: want });
+  goal.priority = 0.45; goal.value = bestMargin; goal.from = 'apprentice';
+  goal.expiresAt = (ctx ? ctx.time : 0) + 160;
+  a.pushGoal(goal, ctx);
 });
 
 // THE FORGET PASS (graded recipes, §6) — a per-cognition-tick maintenance hook (registered as a

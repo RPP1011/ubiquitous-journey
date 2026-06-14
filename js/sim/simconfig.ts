@@ -662,6 +662,9 @@ export const APPRENTICE = {
   teacherStanding: -0.2, // …and not actively disliked (a soured neighbour is no master to apprentice to)
   expiry: 160,           // sim-seconds the Know(recipe) aspiration persists (matches learning's window)
   priority: 0.42,        // just under learning.ts's own-trade learn (0.45) — broadening is secondary
+  knownTeacherBonus: 1.5,// multiply a lacked craft's believed margin when I believe a practitioner of it
+                         //   is about (the believedOccupation cue) — so the aspiration prefers a craft I
+                         //   could actually apprentice to over a dearer one with no teacher in mind
 };
 
 // --- ROB: the take-from-a-person acquire row (docs/architecture/10, Phase 3) -----------
