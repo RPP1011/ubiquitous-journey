@@ -637,6 +637,16 @@ function fillFollow(a: Agent, ctx: CognitionCtx): Field | null {
   return { attractors: [{ pos: { x: tx, z: tz }, weight: STEER.wAttract }], run: gap > PARTY.catchUpDist };
 }
 
+// PROTECT (docs/architecture/19 §6) — body-block: steer to the interpose point decideParty stamped
+// between a beleaguered ally and its attacker (goal.toPos), RUN (covering is urgent). On arrival act()
+// swaps to 'fight' on the attacker (goal.targetId). Own-state target (the stamped point) — no roster
+// read; belief-/carve-out-gated like every fill. Null with no toPos (idle → the act epilogue).
+function fillProtect(a: Agent, _ctx: CognitionCtx): Field | null {
+  const p = a.goal && a.goal.toPos;
+  if (!p) return null;
+  return { attractors: [{ pos: { x: p.x, z: p.z }, weight: STEER.wAttract }], run: true };
+}
+
 // MIGRATE — an uprooting migrant HURRIES (RUN, like a bounty march: the road is
 // dangerous and the new life waits — at a walk the journey-tracker probe watched
 // the flee/comfort churn around a war-torn home town eat the whole journey clock)
@@ -672,6 +682,7 @@ export const STEER_FILLS: Record<string, SteerFill> = {
   shadow: fillShadow,
   court: fillCourt,
   follow: fillFollow,
+  protect: fillProtect,   // §6 body-block toward the interpose point (then act swaps to 'fight')
   wander: fillWander,
   // PERSISTENT-AMBITION STANDING-ACTIVITY FILL (Phase B1) — renown's frontier march
   seek_glory: fillSeekGlory,

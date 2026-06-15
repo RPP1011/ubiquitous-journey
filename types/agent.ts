@@ -231,6 +231,15 @@ export interface Agent {
   _releaseTimer: number;
   _attackCd: number;
   _castCd: number;
+  // COORD (docs/architecture/19): the per-tick band-combat snapshot cache — the decideParty cascade
+  // and the combo-aware cast hook read it once per cognition tick (keyed by _bandViewT === ctx.time).
+  _bandView?: import('./ctx.js').BandView | null;
+  _bandViewT?: number;
+  // §10 believed-capability layer: the combo ROLE I believe each ally can do (control/burst/support),
+  // accrued from witnessing its tagged casts (provenance-graded, lazy-decayed at read by roleHalfLife).
+  _allyRole?: Map<EntityId, { control: number; burst: number; support: number; t: number }>;
+  _comboHoldUntil?: number;        // §8b: a burst member briefly holds fire expecting an ally to open the window
+  _partyForce?: number;            // §7 diagnostic: last computed effective force (own + believed allied)
   _tradeFlash: number;
   _comfortLowSince: number | null;
   _starveSecs?: number;            // seconds hunger has sat empty (drainNeeds starvation clock)

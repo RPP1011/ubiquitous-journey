@@ -7,7 +7,7 @@
 // Behaviour-preserving: verbatim bodies of the old Agent methods. No cycles —
 // imports config, pure helpers, motivation, and the occupation chooser.
 
-import { SIM, WEIGHT, ECON, COMMODITIES, GROUP_TYPES, LEGEND, SOCIAL, COMFORT, NOVELTY, BUILD, ESTEEM as WEALTH, ROMANCE, MOTIVE, ALMS, GRANARY, MIGRATE, QUIRK, DUEL, SURVIVAL, factionHostile } from '../simconfig.js';
+import { SIM, WEIGHT, ECON, COMMODITIES, GROUP_TYPES, LEGEND, SOCIAL, COMFORT, NOVELTY, BUILD, ESTEEM as WEALTH, ROMANCE, MOTIVE, ALMS, GRANARY, MIGRATE, QUIRK, DUEL, SURVIVAL, COORD, factionHostile } from '../simconfig.js';
 import { believedForceRatio } from '../agent.js';
 import { TUNE } from '../../constants.js';
 import { rng } from '../rng.js';
@@ -17,7 +17,7 @@ import { arbitrate, shadowCheck } from '../motivation/arbitrate.js';
 import { qualifyHome, isUnhoused } from '../construction.js';
 import { foldGoalDwell } from '../signals.js';
 import { STAGE, REASON } from '../trace.js';
-import type { Agent, CognitionCtx, Goal, EntityId, Stage, Reason, PlanStep } from '../../../types/sim.js';
+import type { Agent, CognitionCtx, Goal, EntityId, Stage, Reason, PlanStep, BandView, AllyCombatRef, FoeCombatRef } from '../../../types/sim.js';
 import type { Vector3 } from 'three';
 
 // trace.js infers STAGE/REASON members as plain `string`; retype for Trace.note.
@@ -882,6 +882,88 @@ export function nearestComfortSource(a: Agent, ctx: CognitionCtx): { pos: Vector
   } catch { return null; }
 }
 
+// ── COORDINATION CASCADE helpers (docs/architecture/19). Every read here is the agent's OWN state,
+// its OWN beliefs (believedForceRatio), or the vision-gated band SNAPSHOT (resolver.bandCombatState —
+// belief-style refs, never a live object). No ground-truth field is dereferenced off a foe/ally ref,
+// so the epistemic split (and the FOREIGN_DEREF belt) holds. The snapshot is cached per cognition tick.
+
+/** The band-combat snapshot, cached per agent per cognition tick (the resolver scan is execution-side). */
+function bandView(a: Agent, ctx: CognitionCtx, leader: Agent | null): BandView | null {
+  if (a._bandViewT === ctx.time && a._bandView !== undefined) return a._bandView;
+  const v = (ctx.resolver && ctx.resolver.bandCombatState) ? ctx.resolver.bandCombatState(a, leader) : null;
+  a._bandViewT = ctx.time; a._bandView = v;
+  return v;
+}
+
+const planar = (ax: number, az: number, bx: number, bz: number): number => Math.hypot(ax - bx, az - bz);
+
+/** §5: how many useful attackers a foe absorbs — scaled up by how much stronger I believe it is. */
+function foeCap(a: Agent, foeId: EntityId): number {
+  const r = believedForceRatio(a, foeId);                 // my strength / foe's believed strength
+  const scale = (!isFinite(r) || r <= 0) ? 1 : Math.max(1, Math.min(3, 1 / r));
+  return Math.max(1, Math.ceil((COORD.maxPerFoe || 2) * scale));
+}
+
+/** §7: a hurt + believed-outmatched combatant breaks off — UNLESS hale allies back it up. Allied
+ *  force is read straight off the snapshot (visible band-mates' health = perceptual ToM, the split). */
+function breakOff(a: Agent, ctx: CognitionCtx, foeId: EntityId, leader: Agent | null): boolean {
+  const maxHp = TUNE.maxHealth || 100;
+  const hp = (a.fighter ? a.fighter.health : maxHp) / maxHp;
+  if (hp >= (COORD.fleeHpFrac ?? 0.35)) return false;     // only the badly hurt consider it
+  const v = bandView(a, ctx, leader);
+  const backing = v ? v.allies.reduce((s, m) => s + m.hpFrac, 0) : 0;
+  const effective = believedForceRatio(a, foeId) + (COORD.allyStrengthWeight || 0.6) * backing;
+  a._partyForce = effective;
+  return effective < (COORD.standRatio ?? 1);
+}
+
+/** The §4-§8 target policy: protect a beleaguered ally → focus-fire the band's foe (biased to an
+ *  open combo window) → spread off a saturated foe; press or break off per allied strength. Returns
+ *  a coordinated Goal, or null to fall through to the proximity `enemy` decideParty resolved. */
+function coordTarget(a: Agent, ctx: CognitionCtx, enemyId: EntityId | null, leader: Agent | null): Goal | null {
+  const v = bandView(a, ctx, leader);
+  if (!v || !v.foes.length) return null;
+  const now = ctx.time;
+  const leaderId = a.bandLeaderId;
+  const reach = (SIM.arriveDist || 1.6) + 0.8;            // melee-ish reach for the in-reach test
+
+  // ── §6 PROTECT (highest priority): a beleaguered ally (esp. the leader) with an attacker → that
+  // attacker. Weighted: the leader counts harder, the more-wounded counts harder.
+  let prot: AllyCombatRef | null = null, protW = 0;
+  for (const ally of v.allies) {
+    if (ally.hpFrac >= (COORD.protectHpFrac ?? 0.4) || ally.strikingId == null) continue;
+    const w = (ally.id === leaderId ? (COORD.leaderProtectBias || 1.5) : 1) * (1 - ally.hpFrac);
+    if (w > protW) { protW = w; prot = ally; }
+  }
+  if (prot) {
+    const sid = prot.strikingId, ppos = prot.pos, pid = prot.id;
+    const threat = v.foes.find((f) => f.id === sid);
+    if (threat) {
+      if (planar(a.pos.x, a.pos.z, threat.pos.x, threat.pos.z) <= reach) return { kind: 'fight', targetId: threat.id };
+      // out of reach → interpose between the ally and its attacker (body-block), fight on arrival.
+      const ix = ppos.x + (threat.pos.x - ppos.x) * 0.6, iz = ppos.z + (threat.pos.z - ppos.z) * 0.6;
+      return { kind: 'protect', targetId: threat.id, allyId: pid, toPos: { x: ix, z: iz } };
+    }
+  }
+
+  // ── §4 FOCUS-FIRE + §8a OPENING + §5 SPREAD: score foes in range, pick the best un-saturated one.
+  let pick: FoeCombatRef | null = null, ps = -Infinity, fallback: FoeCombatRef | null = null, fs = -Infinity;
+  for (const f of v.foes) {
+    const dist = planar(a.pos.x, a.pos.z, f.pos.x, f.pos.z);
+    if (dist > (COORD.focusRange || 14)) continue;
+    const opening = (f.ccUntil > now || f.exposed) ? (COORD.openingBonus || 2.5) : 0;
+    const s = f.attackerCount * (COORD.focusBonus || 2) + (1 - f.hpFrac) * (COORD.finishWeight || 1.5)
+            + opening - dist * (COORD.focusDistPenalty || 0.05);
+    if (s > fs) { fs = s; fallback = f; }                  // best raw focus (used if ALL are saturated)
+    if (f.attackerCount >= foeCap(a, f.id)) continue;       // §5 saturated → peel off this one
+    if (s > ps) { ps = s; pick = f; }
+  }
+  const chosen = pick || fallback;                          // everything saturated → still fight the best
+  if (!chosen) return null;
+  if (breakOff(a, ctx, chosen.id, leader)) return { kind: 'flee', fromId: chosen.id };   // §7
+  return { kind: 'fight', targetId: chosen.id };
+}
+
 // companion decision: defend the leader. Engage a believed-hostile within
 // vision of me OR of the leader; otherwise keep formation (goal 'follow').
 export function decideParty(a: Agent, ctx: CognitionCtx): void {
@@ -933,5 +1015,19 @@ export function decideParty(a: Agent, ctx: CognitionCtx): void {
   // even on the march, a safe-but-starving companion stops to eat (it has no economic
   // scheduler of its own, so without this band members slowly starved).
   if (!enemy && (a.inventory.food || 0) > 0.05 && a.needs.hunger < (ECON.eatUrgent || 0.4)) { a.goal = { kind: 'eat' }; return; }
+  // ── COORDINATION CASCADE (docs/architecture/19 §4-§8): a COMBATANT in a band re-shapes its target
+  // from the vision-gated band snapshot — protect a beleaguered ally, exploit an opening, focus-fire
+  // the band's foe, spread off a saturated one. Belief-/snapshot-gated (the split holds); on any miss
+  // it falls through to the proximity `enemy` resolved above. Guarded — never throws (the freeze lesson).
+  if (combatant && ctx.resolver) {
+    try {
+      const cg = coordTarget(a, ctx, enemy ? enemy.id : null, leader);
+      if (cg) { a.goal = cg; return; }
+    } catch { /* fall through to the proximity target below */ }
+  }
+  // §7 on the fallback target too: a hurt, outmatched, unbacked member breaks off rather than die.
+  if (enemy && combatant) {
+    try { if (breakOff(a, ctx, enemy.id, leader)) { a.goal = { kind: 'flee', fromId: enemy.id }; return; } } catch { /* keep fighting */ }
+  }
   a.goal = enemy ? { kind: 'fight', targetId: enemy.id } : { kind: 'follow' };
 }

@@ -77,10 +77,18 @@ export function perceive(a: Agent, ctx: FullCtx): void {
     // for the body); using 3D here would let a hill's elevation spuriously
     // "hide" an adjacent agent. Keep perception on the ground plane.
     const ddx = a.pos.x - o.pos.x, ddz = a.pos.z - o.pos.z;
+    const reach = SIM.visionRange * vantage;            // (== the old `SIM.visionRange * vantage`)
+    // BYTE-IDENTICAL squared pre-reject (docs/architecture/21 §3.B6): the old code ran Math.hypot
+    // (a sqrt) for EVERY perceivable just to reject the out-of-range majority. Skip the sqrt when a
+    // point is CLEARLY beyond range. The ×1.0001 margin is ~1e12× larger than hypot's ~1e-16
+    // rounding error, so ANY point the exact hypot gate would accept has ddx²+ddz² ≤ reach²·1.0001
+    // and falls through to that gate below — the accept/reject decision and `d` are bit-for-bit
+    // unchanged (this is NOT the behaviour-changing hypot→squared swap; hypot stays the exact gate).
+    if (ddx * ddx + ddz * ddz > reach * reach * 1.0001) continue;
     const d = Math.hypot(ddx, ddz);
-    if (d > SIM.visionRange * vantage) continue;        // cheap reject first
+    if (d > reach) continue;                            // cheap reject first (exact gate, unchanged)
     const cover = concealmentAt(o.pos.x, o.pos.z);      // 0..0.7
-    const eff = SIM.visionRange * vantage * (1 - SIM.concealWeight * cover);
+    const eff = reach * (1 - SIM.concealWeight * cover);
     if (d > eff) continue;                              // hidden by wood / low ground
     // PLACES-AS-PERCEPTS (Phase 2a): a finished building is a perceivable PLACE, not a person.
     // I file a PLACE-belief (placeKind + believed `sheltered` = its perceivable alive state),

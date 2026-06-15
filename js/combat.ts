@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { rng } from './sim/rng.js';
 import { TUNE } from './constants.js';
 import { RPG } from './rpg/rpgconfig.js';
-import { EFFECTS } from './rpg/abilities/effects.js';
+import { EFFECTS, applyExpose } from './rpg/abilities/effects.js';
 import type { Fighter, CombatEvent } from '../types/sim.js';
 import type { CastCtx } from '../types/sim.js';
 
@@ -81,7 +81,7 @@ export function resolveCombat(
             }
           }
         } else {
-          result = target.takeHit(swingDmg, attacker.dir);
+          result = target.takeHit(applyExpose(target, swingDmg, ctx?.time || 0), attacker.dir);
         }
         attacker.pendingSpec = null;   // one spec consumed per swing
       } else {

@@ -10,10 +10,11 @@ import * as THREE from 'three';
 import { DIR, TUNE } from '../../constants.js';
 import { ARENA_RADIUS } from '../../arena.js';
 import { POI_KIND } from '../world.js';
-import { GOODS, ECON, SIM, SOCIAL, BAND, BUILD, COMFORT, NOVELTY, RECIPES, CAUTION, ROMANCE , ALMS, GRANARY, WEALTH, QUIRK, HAUNT } from '../simconfig.js';
+import { GOODS, ECON, SIM, SOCIAL, BAND, BUILD, COMFORT, NOVELTY, RECIPES, CAUTION, ROMANCE , ALMS, GRANARY, WEALTH, QUIRK, HAUNT, COORD } from '../simconfig.js';
 import { quirkOf } from './decide.js';
 import { castSpec, onCooldown, requirementsMet } from '../../rpg/abilities/interpreter.js';
-import { slowMul } from '../../rpg/abilities/effects.js';
+import { slowMul, ccUntilOf, exposeActive } from '../../rpg/abilities/effects.js';
+import { believedRole } from '../coordination.js';
 import { ABILITY } from '../../rpg/rpgconfig.js';
 import { isMelee } from '../../rpg/abilities/ir.js';
 import { bus, makeEvent } from '../../rpg/events.js';
@@ -248,6 +249,12 @@ export function act(a: Agent, dt: number, ctx: CognitionCtx): void {
       }
     } else if (k === 'hide' && arrived) {
       a.fighter.setMoving(0);   // go to ground: stand still at the concealing place
+    } else if (k === 'protect' && arrived) {
+      // PROTECT (docs/architecture/19 §6): I've interposed between a beleaguered ally and its
+      // attacker — now turn and fight that attacker. Swap to 'fight' (dispatched BEFORE the fill
+      // table), so the next frame's combatStep closes and swings. Threat gone → fall back to follow.
+      a.goal = (goal.targetId != null) ? { kind: 'fight', targetId: goal.targetId } : { kind: 'follow' };
+      a.fighter.setMoving(0);
     }
   }
   // Settle the body onto the terrain surface every frame — NOT just inside goTo.
@@ -570,13 +577,25 @@ export function combatStep(a: Agent, dt: number, ctx: CognitionCtx): void {
     // SURVIVAL FIRST: badly hurt and holding a READY self-targeted heal/shield spec
     // (second_wind) -> spend this cast cadence on staying alive instead of attacking.
     // Own state + own abilities only; fully guarded (ability-less monsters no-op).
-    if (!trySelfCastAbility(a, ctx) && !tryAllyCastAbility(a, ctx)) {
+    // §8b SETUP: a CONTROLLER opens a window for a believed-burst ally BEFORE any offensive cast.
+    if (!trySelfCastAbility(a, ctx) && !tryAllyCastAbility(a, ctx) && !tryComboSetup(a, ctx)) {
       // a spec resolves on a REAL body, so casting requires the target to be a perceived
       // live agent — the resolver returns it ONLY when vision-confirmed (a belief about a
       // scarecrow returns null and simply can't be cast at; the melee swing below still
       // lands geometrically on whatever body is actually there).
       const realTarget = ctx.resolver ? ctx.resolver.castTarget(a, targetId) : null;
-      if (realTarget) tryCastAbility(a, realTarget, dist, ctx);
+      if (realTarget) {
+        const tnow = ctx.time || 0;
+        // §8b HOLD: a burster briefly holds fire if a believed-control ally is about to open this foe,
+        // so its big hit lands AFTER the window opens — not wasted before it. Bounded by comboHoldMax.
+        if (!comboHold(a, ctx, realTarget)) {
+          // §8a COMBO EXPLOIT: if the engaged foe is already in an OPEN window — an ally just CC'd it
+          // (ccUntil) or it's EXPOSED — spend the cast on a BURST spec NOW, into the opening. Execution-
+          // side status read of the resolver-confirmed live body (the split holds).
+          const open = ccUntilOf(realTarget.fighter, tnow) > tnow || exposeActive(realTarget.fighter, tnow);
+          tryCastAbility(a, realTarget, dist, ctx, open);
+        }
+      }
     }
   }
   if (dist > reach) {
@@ -612,7 +631,7 @@ export function combatStep(a: Agent, dt: number, ctx: CognitionCtx): void {
 // existing swing routes the damage via combat.js). Everything is guarded so the
 // fixed tick can NEVER throw on an ability-less / ctx-less / dead-target agent
 // (the freeze lesson). Returns true if a spec was cast or armed.
-export function tryCastAbility(a: Agent, target: Agent, dist: number, ctx: CognitionCtx): boolean {
+export function tryCastAbility(a: Agent, target: Agent, dist: number, ctx: CognitionCtx, openWindow = false): boolean {
   try {
     // `target` is a RESOLVER-confirmed live body (vision-gated, supplied by combatStep via
     // ctx.resolver.castTarget) — casting a spec is geometric EXECUTION on a real agent.
@@ -620,7 +639,7 @@ export function tryCastAbility(a: Agent, target: Agent, dist: number, ctx: Cogni
     const f = a.fighter;
     if (!f || !f.alive) return false;
     const now = ctx.time || 0;
-    const spec = bestOffensiveAbility(a, dist, now, target.id);
+    const spec = bestOffensiveAbility(a, dist, now, target.id, openWindow);
     if (!spec) return false;
     // MELEE specs ride the swing: only commit when the body is free to start one
     // and isn't already carrying a spec, so castSpec's cooldown burn maps 1:1 to
@@ -636,6 +655,70 @@ export function tryCastAbility(a: Agent, target: Agent, dist: number, ctx: Cogni
     if (ctx.resolver && ctx.resolver.cast) return ctx.resolver.cast(spec, a);
     return castSpec(spec, a, ctx);
   } catch { return false; }   // never throw on the tick
+}
+
+// §8b PREDICTIVE COMBO (docs/architecture/19): the band > the sum of its parts. Both helpers read ONLY
+// the agent's own abilities, its OWN capability beliefs (believedRole), and the vision-gated band
+// snapshot (belief-style refs). The control spec / burst hit then resolve geometrically over the true
+// roster (execution). Fully guarded (the freeze lesson). Banded agents only; everyone else no-ops.
+
+// the first READY control/expose spec (a setup the agent can open a window with).
+function bestControlAbility(a: Agent, now: number): AbilitySpec | null {
+  for (const spec of a.abilities.values()) {
+    if (!spec || !spec.header) continue;
+    const tgt = spec.header.target;
+    if (tgt !== 'enemy' && tgt !== 'any') continue;
+    if (!spec.effects || !spec.effects.some((e) => e.op === 'stun' || e.op === 'slow' || e.op === 'knockback' || e.op === 'expose')) continue;
+    if (onCooldown(a, spec, now)) continue;
+    return spec;
+  }
+  return null;
+}
+
+// SET UP a combo: a controller, BELIEVING a band-mate adjacent to a foe is a burster, casts its
+// control/expose spec to open that foe's window (the spec resolves the nearest foe geometrically).
+// Returns true if it cast — the setter then skips its own offensive cast this cadence.
+export function tryComboSetup(a: Agent, ctx: CognitionCtx): boolean {
+  try {
+    if (!ctx || !a.abilities || a.abilities.size === 0 || a.bandLeaderId == null) return false;
+    if (!ctx.resolver || !ctx.resolver.bandCombatState) return false;
+    const now = ctx.time || 0;
+    const ctrl = bestControlAbility(a, now);
+    if (!ctrl) return false;                                  // I'm not a controller right now
+    const view = ctx.resolver.bandCombatState(a, null);
+    if (!view || !view.foes.length || !view.allies.length) return false;
+    let want = false;
+    for (const ally of view.allies) {
+      if (ally.strikingId == null) continue;
+      if (believedRole(a, ally.id, now) !== 'burst') continue;       // first-order ToM: a burst ally
+      const foe = view.foes.find((f) => f.id === ally.strikingId);
+      if (foe && !(foe.ccUntil > now || foe.exposed)) { want = true; break; }   // it's on a foe NOT yet open
+    }
+    if (!want) return false;
+    if (ctx.resolver.cast) return ctx.resolver.cast(ctrl, a);
+    return castSpec(ctrl, a, ctx);
+  } catch { return false; }
+}
+
+// HOLD a burst: should `a` briefly hold its offensive cast because a believed-CONTROL band-mate is
+// about to open `target`'s window? Bounded by COORD.comboHoldMax (a wrong prediction costs at most one
+// delayed cast — the §8c safety). Returns true to skip the offensive cast this cadence.
+export function comboHold(a: Agent, ctx: CognitionCtx, target: Agent): boolean {
+  try {
+    if (!target || a.bandLeaderId == null || !ctx.resolver || !ctx.resolver.bandCombatState) return false;
+    const now = ctx.time || 0;
+    if (a._comboHoldUntil && now < a._comboHoldUntil) return true;          // currently holding
+    const view = ctx.resolver.bandCombatState(a, null);
+    if (!view) { a._comboHoldUntil = 0; return false; }
+    const tid = target.id;
+    const foe = view.foes.find((f) => f.id === tid);
+    if (!foe || foe.ccUntil > now || foe.exposed) { a._comboHoldUntil = 0; return false; }   // open/gone → burst now
+    const ctrlAlly = view.allies.some((m) => m.strikingId === tid && believedRole(a, m.id, now) === 'control');
+    if (!ctrlAlly) { a._comboHoldUntil = 0; return false; }
+    if (a._comboHoldUntil && now >= a._comboHoldUntil) return false;        // already waited once → attack
+    a._comboHoldUntil = now + (COORD.comboHoldMax || 0.6);                  // fresh setup → start a brief hold
+    return true;
+  } catch { return false; }
 }
 
 // THE BUFF HOOK (NPC self-use of the economy specs — haggle at the stall,
@@ -811,7 +894,7 @@ export function trySocialCastAbility(a: Agent, ctx: CognitionCtx): boolean {
 // knockback). At range we prefer NON-melee reach (projectile/area/instant ranged)
 // that can actually hit; adjacent we prefer melee. Ties break on damage. Ready =
 // off the interpreter cooldown. Returns a validated catalog/generated spec or null.
-export function bestOffensiveAbility(a: Agent, dist: number, now: number, targetId: unknown = null): AbilitySpec | null {
+export function bestOffensiveAbility(a: Agent, dist: number, now: number, targetId: unknown = null, openWindow = false): AbilitySpec | null {
   let best: AbilitySpec | null = null, bestScore = -Infinity;
   for (const spec of a.abilities.values()) {
     if (!spec || !spec.header) continue;
@@ -836,6 +919,9 @@ export function bestOffensiveAbility(a: Agent, dist: number, now: number, target
     const adjacent = dist <= 2.4;
     if (adjacent) { if (melee) score += 1000; }
     else { if (!melee) score += 1000; }
+    // §8a: into an OPEN window (the foe is CC'd / exposed), prefer the hardest BURST — a spec with a
+    // real damage effect — so the member spends its big hit NOW rather than a control/utility cast.
+    if (openWindow && spec.effects && spec.effects.some((e) => e.op === 'damage')) score += (COORD.openingCastBonus || 1000);
     if (score > bestScore) { bestScore = score; best = spec; }
   }
   return best;

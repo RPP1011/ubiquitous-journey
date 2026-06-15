@@ -16,16 +16,34 @@ import { SCHEMA } from '../simconfig.js';
 import { evalPred, evalInfer, evalRespond } from './vocab.js';
 import { STAGE, REASON } from '../trace.js';
 import type {
-  Agent, CognitionCtx, NormalizedSchema, ReasonEnv, GoalDescriptor, Stage, Reason,
+  Agent, CognitionCtx, NormalizedSchema, ReasonEnv, GoalDescriptor, Stage, Reason, EntityId,
 } from '../../../types/sim.js';
 
 // the per-tick claim flag the direct-goal responses contend over.
 interface TickState { directClaimed: boolean; }
 // the agent's TTL fire-stamp cache (a private detail not on the shared Agent surface).
+// docs/architecture/21 §3.B1b: a NESTED Map (schemaId -> (subjectId | null-for-self) -> last-fire
+// time) replaces the old string-keyed Record `${id}|${subject}` so `fireOne` allocates NO per-eval
+// key string. Byte-identical: the same (schema,subject)→stamp mapping, the same hits/misses.
 type ReasonAgent = Agent & {
-  _schemaFired?: Record<string, number>;
+  _schemaFired?: Map<string, Map<EntityId | null, number>>;
   _schemaFireCount?: number;
 };
+
+// docs/architecture/21 §3.B1b — the catalogue's priority order is STATIC, but `reason` re-sorted it
+// per agent per tick (a fresh array + sort each call). Memoize by array identity (the production
+// catalogue is one stable `ACTIVE` reference): the stable descending-priority sort runs ONCE per
+// distinct catalogue. The `len` guard re-sorts if a (test) catalogue is mutated in place. JS sort is
+// stable, so ties keep input order — BYTE-IDENTICAL ordering to the old inline `[...].sort`.
+const _orderCache = new WeakMap<NormalizedSchema[], { len: number; out: NormalizedSchema[] }>();
+function orderedCatalogue(catalogue: NormalizedSchema[]): NormalizedSchema[] {
+  if (catalogue.length <= 1) return catalogue;
+  const hit = _orderCache.get(catalogue);
+  if (hit && hit.len === catalogue.length) return hit.out;
+  const out = [...catalogue].sort((p, q) => (q.priority || 0) - (p.priority || 0));
+  _orderCache.set(catalogue, { len: catalogue.length, out });
+  return out;
+}
 
 // Direct-goal responses (set agent.goal AND stamp a min-dwell lock so decide honours them
 // across a one-tick belief flicker). The flagship disposition kinds (hide/shadow/avoid) are
@@ -59,18 +77,16 @@ export function reason(agent: Agent, ctx: CognitionCtx | null, catalogue: Normal
       now,
       subjectId: null,
     };
-    if (!ag._schemaFired) ag._schemaFired = Object.create(null);
+    if (!ag._schemaFired) ag._schemaFired = new Map();
     let fired = 0;
     // schemas are evaluated in priority order; the FIRST direct-goal response to fire claims
     // a.goal for the tick. This flag stops a later, lower-priority direct goal from clobbering
     // it (applyRespond reads/sets it). Infer-only and disposition state-writes still run.
     const tickState: TickState = { directClaimed: false };
 
-    // priority-sorted: a high-priority disposition (flee/hide) is considered before a
-    // low one (suspect). Stable enough — catalogue is tiny. Don't mutate the catalogue.
-    const ordered = catalogue.length > 1
-      ? [...catalogue].sort((p, q) => (q.priority || 0) - (p.priority || 0))
-      : catalogue;
+    // priority-sorted: a high-priority disposition (flee/hide) is considered before a low one
+    // (suspect). Memoized by catalogue identity (B1b) — the sort no longer runs per agent per tick.
+    const ordered = orderedCatalogue(catalogue);
 
     for (const s of ordered) {
       if (!s) continue;
@@ -94,16 +110,21 @@ export function reason(agent: Agent, ctx: CognitionCtx | null, catalogue: Normal
 // not TTL-suppressed). Applies infer + respond on a fire.
 function fireOne(s: NormalizedSchema, env: ReasonEnv, now: number, tickState: TickState): boolean {
   const ag = env.agent as ReasonAgent;
-  const fired = ag._schemaFired || (ag._schemaFired = Object.create(null));
-  // TTL CACHE: skip a schema/subject pair re-fired within its ttl seconds.
-  const key = `${s.id}|${env.subjectId ?? '*'}`;
-  const stamp = fired[key];
+  const fired = ag._schemaFired || (ag._schemaFired = new Map());
+  // TTL CACHE: skip a (schema,subject) pair re-fired within its ttl seconds. Nested Map keyed by
+  // schema id then subject id (null = self) — same logical key as the old `${id}|${subject}` string,
+  // no per-eval string allocation (B1b). subjectId is never null for a believed-subject schema and
+  // always null for a self schema, so null is an unambiguous self key, distinct from any real id.
+  const subj = env.subjectId;
+  let perSubject = fired.get(s.id);
+  const stamp = perSubject ? perSubject.get(subj) : undefined;
   if (stamp != null && (now - stamp) < (s.ttl || 0)) return false;
 
   if (s.when && !evalPred(s.when, env)) return false;
 
   // PASSED — record the fire stamp (suppresses re-firing for ttl), then act.
-  fired[key] = now;
+  if (!perSubject) { perSubject = new Map(); fired.set(s.id, perSubject); }
+  perSubject.set(subj, now);
   // TRACE (write-only, never read back): a schema FIRED — the "why I reasoned this" beat.
   // Only actual fires are logged (bounded; a `when`-false on every other schema/tick would
   // flood the ring). `a` = schema id, subject = the believed subject it fired about. Own data.

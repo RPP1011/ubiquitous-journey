@@ -5,7 +5,10 @@
 import * as THREE from 'three';
 import { Fighter } from '../fighter.js';
 import { Agent } from './agent.js';
-import { ROSTER, SIM, NAMES, MONSTER, MOTIVE, CAMPS, TOWNS, SCARECROW, BUILD, LOD, KNOW, RECRUIT, OUTLAW, ALMS, GRANARY, PERSONALITY, factionHostile } from './simconfig.js';
+import { ROSTER, SIM, NAMES, MONSTER, MOTIVE, CAMPS, TOWNS, SCARECROW, BUILD, LOD, KNOW, RECRUIT, OUTLAW, ALMS, GRANARY, PERSONALITY, COORD, factionHostile } from './simconfig.js';
+import { TUNE } from '../constants.js';
+import { ccUntilOf, exposeActive } from '../rpg/abilities/effects.js';
+import type { Agent as AgentI } from '../../types/agent.js';   // the shared roster-element shape (sim.agents)
 import { assignHouse, founderHouse } from './houses.js';
 import { ARENA_RADIUS, BIOME, findBiomeSpot, regionAt, REGIONS, terrainHeight } from '../arena.js';
 import { resetXpStats } from '../rpg/xpstats.js';
@@ -41,6 +44,7 @@ import { castSpec } from '../rpg/abilities/interpreter.js';
 import { POI_KIND } from './world.js';
 import { PLAN } from './planner.js';
 import { installDeedRouter, recordDeed } from './deedRouter.js';
+import { installCoordWitness } from './coordination.js';
 import { bus, makeEvent as makeEventRaw } from '../rpg/events.js';
 import { onCombatEvents } from './combatEvents.js';
 import { MentalMap } from './mentalmap.js';
@@ -184,6 +188,7 @@ export class Simulation {
   houseFeuds: Set<unknown>;
   tradesThisTick: number;
   _busOff: (() => void) | null;
+  _coordOff: (() => void) | null;   // §10 capability-witness bus subscription (docs/architecture/19)
   _resolver?: ResolverFacade;
   _deathSeen?: Set<EntityId>;
   _spawned?: boolean;
@@ -218,11 +223,16 @@ export class Simulation {
   constructor(scene: SceneLike, world: IWorld, opts: { makeFighter?: MakeFighter; seed?: number } = {}) {
     this.scene = scene;
     this.world = world;
-    // SEEDED DETERMINISM: arm the shared PRNG before any spawn rolls. With no seed this is a no-op
-    // (the stream stays unseeded ⇒ rng() === Math.random(), so the unseeded soak is byte-identical);
-    // with a seed, every routed stochastic site draws the same sequence ⇒ reproducible runs. Set
-    // here (not lazily) so world-build rolls (personalities/names/positions) are already seeded.
-    setSeed(opts.seed);
+    // SEEDED DETERMINISM: arm the shared PRNG before any spawn rolls — but ONLY when an explicit seed
+    // is given. A seedless construction must NOT clobber an already-armed AMBIENT stream: the headless
+    // suite calls setSeed(0xC00D19) ONCE up front and then every suite builds a Simulation with no seed,
+    // so an UNCONDITIONAL setSeed(opts.seed) here would run setSeed(undefined), DISARM the ambient seed,
+    // and silently make the whole suite run on Math.random() — nondeterministic (identical code+seed →
+    // different results). With a seed, every routed stochastic site draws the same sequence ⇒
+    // reproducible runs. Set here (not lazily) so world-build rolls (personalities/names/positions) are
+    // already seeded. (Genuinely no seed AND no ambient ⇒ rng() === Math.random(), so the unseeded
+    // browser/soak path stays byte-identical.)
+    if (opts.seed !== undefined) setSeed(opts.seed);
     // body factory: the browser builds visual Fighters (default); a headless
     // harness injects a logic-only HeadlessFighter so the sim runs with no
     // renderer/DOM. Everything downstream only touches the shared interface.
@@ -256,6 +266,8 @@ export class Simulation {
     // Progression (+ autobiographical memory for salient deeds). Wired in
     // deedRouter.js; returns the unsubscribe handle.
     this._busOff = installDeedRouter(this);
+    // §10 capability witness: accrue each band-mate's combo ROLE from its seen casts (docs/architecture/19).
+    this._coordOff = installCoordWitness(this);
 
     // RPG reputation ledger (player-only). playerId is set later in addPlayer().
     this.reputation = new Reputation(null);
@@ -357,6 +369,7 @@ export class Simulation {
   // listeners don't stack and multiply XP on a fresh instance).
   dispose(): void {
     if (this._busOff) { this._busOff(); this._busOff = null; }
+    if (this._coordOff) { this._coordOff(); this._coordOff = null; }
     if (this.quests && this.quests.dispose) this.quests.dispose();
     if (this.party && this.party.disband) this.party.disband();
     if (this.groups && this.groups.disband) this.groups.disband();
@@ -845,6 +858,59 @@ export class Simulation {
           for (const o of sim.agents) if (o.alive && o.bandLeaderId === leader.id) n++;
           return (RECRUIT.selfStrength || 1) + n * (RECRUIT.candidateStrength || 1);
         } catch { return 0; }
+      },
+      // COMPANION COORDINATION (docs/architecture/19 §3): one vision-gated scan of `observer`'s band
+      // combat state. Returns belief-style snapshots — visible band-mates (health + the foe each
+      // APPEARS to engage, inferred by proximity, NOT a goal read) and the foes engaging the band
+      // (how many of us are on each, its crowd-control / expose window). Execution-side (it scans the
+      // roster, exactly like enemyNearLeader); cognition never holds the objects. Guarded; never throws
+      // on the tick. Null when `observer` is unbanded; empty foes when the band sees none.
+      bandCombatState(observer, leader) {
+        try {
+          if (!observer || !observer.alive) return null;
+          const lid = observer.bandLeaderId;
+          if (lid == null) return null;
+          const maxHp = TUNE.maxHealth || 100;
+          const now = sim.time, vr2 = SIM.visionRange * SIM.visionRange;
+          const reach2 = (COORD.strikeReach || 2.6) * (COORD.strikeReach || 2.6);
+          const hpFracOf = (a: AgentI): number => Math.max(0, Math.min(1, (a.fighter ? a.fighter.health : maxHp) / maxHp));
+          // the band: the leader (id === lid) + everyone banded to it (incl. observer).
+          const band: AgentI[] = [];
+          for (const o of sim.agents) if (o.alive && (o.id === lid || o.bandLeaderId === lid)) band.push(o);
+          // foes: alive hostiles to MY faction, NOT band-mates, visible to me OR the leader
+          // (the enemyNearLeader vision-share rule). Disguise/inert resolve truth-side here.
+          const foes: AgentI[] = [];
+          for (const o of sim.agents) {
+            if (!o.alive || o.controlled) continue;
+            if (o.id === lid || o.bandLeaderId === lid) continue;
+            if (!factionHostile(observer.faction, o.faction)) continue;
+            const seen = observer.pos.distanceToSquared(o.pos) <= vr2
+              || (!!leader && leader.alive && leader.pos.distanceToSquared(o.pos) <= vr2);
+            if (seen) foes.push(o);
+          }
+          if (!foes.length) return { allies: [], foes: [] };
+          // each band member's APPARENT target: the nearest foe within strike reach of it.
+          const strike = new Map<AgentI, AgentI | null>();
+          for (const m of band) {
+            let best: AgentI | null = null, bd = reach2;
+            for (const f of foes) { const d = m.pos.distanceToSquared(f.pos); if (d < bd) { bd = d; best = f; } }
+            strike.set(m, best);
+          }
+          const allies = [];
+          for (const m of band) {
+            if (m === observer || observer.pos.distanceToSquared(m.pos) > vr2) continue;   // only what I can see
+            const t = strike.get(m) || null;
+            allies.push({ id: m.id, pos: { x: m.pos.x, y: m.pos.y, z: m.pos.z }, hpFrac: hpFracOf(m), strikingId: t ? t.id : null });
+          }
+          const foeRefs = [];
+          for (const f of foes) {
+            let n = 0;
+            for (const m of band) if (strike.get(m) === f) n++;
+            foeRefs.push({ id: f.id, pos: { x: f.pos.x, y: f.pos.y, z: f.pos.z }, hpFrac: hpFracOf(f),
+              attackerCount: n, ccUntil: ccUntilOf(f.fighter, now), exposed: exposeActive(f.fighter, now) });
+          }
+          return { allies, foes: foeRefs };
+        } catch { return null; }
       },
       // Live world position of subjectId — ONLY when vision-confirmed (used by the player's
       // controlled `approach`/`fight` execution, which legitimately tracks a seen target).

@@ -52,18 +52,26 @@ vendored and import-mapped.
 
 ## Seeded determinism (`js/sim/rng.ts`, `test/seedrepro.mjs`)
 
-`rng.ts` is a seedable **mulberry32 singleton** (`rng()`/`setSeed()`/`getSeed()`)
-routed through ~33 files' stochastic call sites. **Unseeded, `rng()` falls straight
-through to `Math.random()`** — the existing soak is byte-identical. `Simulation`'s
-constructor takes an optional `{ seed }` and arms the stream **before any spawn roll**
-(pass the seed through the opts — a bare `setSeed()` before construction gets
-clobbered), so two same-seed runs draw the identical sequence. Residual divergence
-(direct `Math.random` holdouts, LOD draw-order, the async ability-catalog load) is
-documented in `rng.js` and `test/seedrepro.mjs`, which proves the property: same-seed
-identical over a 60 s run, different seeds diverge. Suites that assert on a
-deliberately-faint behaviour (e.g. the soft-avoid berth, which a wanderlust ambition
-roll can legitimately out-score) pin a seed instead of flaking — and restore the
-unseeded stream after, so later suites keep their stochastic soak.
+`rng.ts` is a seedable **mulberry32 singleton** routed through ~33 files' stochastic
+call sites — the WHOLE game source taps `rng()`; there are **no direct `Math.random()`
+holdouts** left in `js/**` (only `vendor/three.module.js` and `rng.ts`'s own unseeded
+fallback). Unseeded, `rng()` falls through to `Math.random()`; `setSeed(n)` arms a
+deterministic stream, and `getState()`/`setState()` snapshot/restore the EXACT stream
+position so a sub-scope can run on its own seed without shifting everything downstream.
+
+**The headless suite is SEEDED end-to-end** (`test/headless.mjs` calls `setSeed()` up
+front), so every run is reproducible and flake-free instead of riding the platform RNG.
+`Simulation`'s constructor takes an optional `{ seed }` that **overrides** the ambient
+stream per-sim, and only re-seeds when one is given (an undefined seed leaves the ambient
+as-is — so the global harness seed is the default a seedless build inherits, while the
+**game**, which never seeds, stays non-deterministic by design). Two patterns layer on
+top: a suite that needs a *specific* draw passes `{ seed }` and restores the ambient seed
+after (the soft-avoid berth, `signals.mjs`); a suite with residual RNG-edge gates that
+frame-pinning can't fully tame (`constructionTest`'s builder-housed + guildhall-converge)
+is wrapped at its **call site** in `getState()`/`setSeed(C)`/`setState()` — it runs from
+a verified seed `C`, then the ambient stream resumes exactly where it left off so every
+later suite stays byte-identical. `test/seedrepro.mjs` proves the underlying property:
+same-seed identical over a 60 s run, different seeds diverge.
 
 ## The eval-tool layer (standalone probes, NOT gates)
 

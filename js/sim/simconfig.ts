@@ -1175,6 +1175,48 @@ export const PARTY = {
   teleportDist: 90,         // snap a hopelessly-lost companion to the leader
 };
 
+// --- COORD: Theory-of-Mind party combat coordination (docs/architecture/19) ----
+// Always-live tuning (no on/off flag — gating is by branch, per CLAUDE.md). A banded
+// agent's decideParty cascade reads a vision-gated band snapshot (resolver.bandCombatState)
+// plus these weights to focus-fire a shared target, spread off a saturated foe, protect a
+// beleaguered ally, press an attack when backed up, and time ability combos. Every snapshot
+// read is belief-/perception-gated (the epistemic split holds — see doc 19 §3).
+export const COORD = {
+  // ── the ToM read (§3) ──
+  strikeReach: 2.6,          // a foe within this of a band-mate is "the foe that ally is engaging"
+  focusRange: 14,            // don't abandon a foe on top of me to join a fight across the field
+
+  // ── focus-fire (§4) ──
+  focusBonus: 2.0,           // score per ally already committed to a foe
+  finishWeight: 1.5,         // pull toward the most-wounded foe (finish it)
+  focusDistPenalty: 0.05,    // per metre to the foe
+
+  // ── anti-gang / spread (§5) ──
+  maxPerFoe: 2,              // useful attackers on a baseline foe; scaled up by believed foe strength
+
+  // ── protect the beleaguered (§6) ──
+  protectHpFrac: 0.4,        // an ally below this fraction WITH an attacker is "beleaguered"
+  leaderProtectBias: 1.5,    // the leader is worth covering harder than a peer
+
+  // ── allied-strength resolve (§7) — applied ONLY in the decideParty commit (never survivalMod) ──
+  allyStrengthWeight: 0.6,   // weight on each visible hale ally's health when sizing my effective force
+  fleeHpFrac: 0.35,          // only a combatant hurt below this even CONSIDERS breaking off
+  standRatio: 1.0,           // effective force (own believed ratio + allied backing) below which it flees
+
+  // ── combos (§8/§9) ──
+  openingBonus: 2.5,         // targeting pull toward a CC'd / exposed foe
+  openingCastBonus: 1000,    // cast-NOW score when the engaged target has an open window (matches act.ts adjacency scale)
+  comboHoldMax: 0.6,         // s a burst member holds, expecting a control ally to open the window first
+  exposeAmp: 1.5,            // default damage multiplier inside an expose window
+  exposeAmpMax: 2.0,         // ceiling the expose op clamps its amp to
+
+  // ── believed-capability layer (§10) ──
+  burstMin: 30,              // a spec dealing ≥ this single-target damage reads as a 'burst' role
+  bandPriorConf: 0.25,       // weak on-join prior about band-mates' combo roles (below roleMinConf)
+  roleMinConf: 0.35,         // below this I don't act on a believed role
+  roleHalfLife: 240,         // s; lazy-at-read decay of a capability belief (use it or lose it)
+};
+
 // --- STEER: the potential-field locomotion primitive (Phase 2b) -------------
 // One executor (js/sim/agent/steer.js) drives ALL locomotion-shaped behaviours
 // from a weighted force field: attractors pull, repulsors push, the agent steps

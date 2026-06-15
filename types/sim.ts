@@ -44,6 +44,7 @@ export type {
 
 export type {
   SiteHandle, BuildSiteFacade, ResolverFacade, CognitionCtx, FullCtx, ArcPorts,
+  BandView, AllyCombatRef, FoeCombatRef,
 } from './ctx.js';
 
 export type {

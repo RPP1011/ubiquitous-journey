@@ -15,6 +15,7 @@
 
 import { PARTY } from './simconfig.js';
 import { bus, makeEvent } from '../rpg/events.js';
+import { seedBandPriors } from './coordination.js';
 
 // `sim` (the owning Simulation — a separate, wave-2 cluster still in .js) and the party
 // MEMBERS + leader (Agents, via the long-tail party flags they branch on) are typed
@@ -78,6 +79,9 @@ export class Party {
     a.bandLeaderId = L.id;              // the band is a warband led by this leader
     a.groupType = 'warband';
     if (L && L.groupType == null) L.groupType = 'warband';   // tag the anchor (UI/relations)
+    // §10 BANDED PRIOR (docs/architecture/19): seed weak both-way capability priors with the existing
+    // band so combo coordination has something to reason on before the first witnessed cast. Guarded.
+    try { seedBandPriors(a, [L, ...this.members].filter((m) => m && m !== a), this.sim.time || 0); } catch { /* never break a recruit */ }
     this.members.push(a);
     bus.emit(makeEvent({ actorId: a.id, verb: 'recruited', tags: [], magnitude: 1, t: this.sim.time }));
     return true;

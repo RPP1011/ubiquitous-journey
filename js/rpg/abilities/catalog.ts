@@ -115,9 +115,21 @@ const frost_bolt = A({
   grantsTags: ['CAST', 'MAGIC', 'FROST'],
 });
 
+// docs/architecture/19 §9 — the combo SETUP ability: mark a foe's weakness from range so a band-mate's
+// next blow lands amplified (the expose op opens a damage-amplify window; any burst spec exploits it
+// generically via applyExpose). A hunter skill — the marksman sets up the bruiser. The exploiters are
+// the existing burst specs (power_strike / lunge / frost_bolt); they need no change.
+const expose_weakness = A({
+  id: 'expose_weakness', name: '[Expose Weakness]', classKey: 'hunter', tier: 2,
+  header: { target: 'enemy', range: 10, cooldown: 9, area: { kind: 'self' }, delivery: { kind: 'instant' } },
+  effects: [effect('expose', { amount: 1.5, dur: 4, tags: ['MARK', 'SETUP'] })],
+  grantsTags: ['CAST', 'CONTROL', 'SETUP'],
+});
+
 export const ABILITY_CATALOG = {
   power_strike, lunge, whirlwind, second_wind, cleaving_blow,
   silver_tongue, plant_rumor, read_mind, haggle, master_craft, frost_bolt,
+  expose_weakness,
 };
 
 // CLASS_MILESTONES: classKey -> { level: abilityId }. When Progression levels a
@@ -126,7 +138,7 @@ export const ABILITY_CATALOG = {
 export const CLASS_MILESTONES: Record<string, Record<number, string>> = {
   warrior:    { 1: 'power_strike', 4: 'lunge', 8: 'second_wind' },
   brawler:    { 1: 'cleaving_blow', 5: 'whirlwind' },
-  hunter:     { 1: 'frost_bolt' },
+  hunter:     { 1: 'frost_bolt', 5: 'expose_weakness' },
   trickster:  { 1: 'read_mind', 5: 'plant_rumor' },
   speaker:    { 2: 'silver_tongue' },
   merchant:   { 1: 'haggle' },

@@ -26,6 +26,14 @@ export interface ArcPorts {
 /** An opaque build-site handle (resolved by the execution facade; never inspected by cognition). */
 export type SiteHandle = unknown;
 
+/** docs/architecture/19 §3 — the vision-gated band-combat snapshot a companion reads to coordinate.
+ *  Belief-style refs ONLY: ids + pos snapshots + observable scalars, never a live roster object. An
+ *  ally's `strikingId` is the foe it APPEARS to engage (inferred by proximity, NOT a goal read); a
+ *  foe's `attackerCount` is how many band-mates are on it, `ccUntil`/`exposed` its open combo window. */
+export interface AllyCombatRef { id: EntityId; pos: PosSnapshot; hpFrac: number; strikingId: EntityId | null; }
+export interface FoeCombatRef { id: EntityId; pos: PosSnapshot; hpFrac: number; attackerCount: number; ccUntil: number; exposed: boolean; }
+export interface BandView { allies: AllyCombatRef[]; foes: FoeCombatRef[]; }
+
 /** The BUILD-STATE EXECUTION FACADE (debt #2 retirement). Reached only via the resolver in
  *  act() (execution) — never named on the cognition ctx. SIX members. */
 export interface BuildSiteFacade {
@@ -50,6 +58,11 @@ export interface ResolverFacade {
   // the leader's OWN believed warband strength (base + living followers banded to it) — lets a
   // mustered war-leader judge it is strong enough to march on the believed foe. Execution-side.
   warbandStrength(leader: Agent): number;
+  // COMPANION COORDINATION (docs/architecture/19 §3): a single vision-gated scan of `observer`'s band
+  // combat state — visible band-mates (health + the foe each appears to strike) and the foes engaging
+  // the band (attacker count, crowd-control / expose windows). Belief-style snapshots only; execution-
+  // side and guarded. Null when `observer` is not banded. The caller caches it per observer per tick.
+  bandCombatState(observer: Agent, leader: Agent | null): BandView | null;
   seenPos(observer: Agent, subjectId: EntityId): PosSnapshot | null;
   isLiveAgent(subjectId: EntityId): boolean;
   marketClear(a: Agent, good: string, buying: boolean): boolean;

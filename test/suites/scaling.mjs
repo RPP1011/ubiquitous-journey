@@ -5,7 +5,8 @@
 // This is the FAST variant (smaller N) so it doesn't bloat the headless fast path;
 // the full standalone proof (larger N, LOD-off vs LOD-on comparison, richer table)
 // lives in `test/scaling.mjs` (run alongside depth.mjs). It window-averages ~40
-// windows (like the standalone) to tame the unseeded run-to-run candidate-count swing.
+// windows (like the standalone). The headless harness seeds the PRNG, so the metric is now
+// deterministic run-to-run; the window-average + headroom fractions remain as robustness.
 //
 // It drives the WHOLE sim headlessly exactly like depth.mjs (sim.update ->
 // fighter.update -> resolveCombat -> onCombatEvents), samples a DepthProbe on a 1 Hz
@@ -26,17 +27,15 @@ const SIZES = [
 ];
 const FRAMES = 2400, dt = 1 / 60, SAMPLE_EVERY = 60;   // ~40s, ~40 windows
 // per-agent growth must stay under (frac × the N ratio). The metric is dominated by
-// `_decideCands` (the utility-candidate count), a HIGH-VARIANCE term under the sim's
-// unseeded Math.random() — BOTH the growth numerator and the N-ratio ceiling co-vary
-// run-to-run and straddle a tight boundary. We tame that variance two ways: (a) start
-// at a DENSER N_prev (~60, already past the worst of the saturation ramp) so the step
-// is more N-driven than ramp-driven, and (b) average ~40 windows (matching the
-// standalone test/scaling.mjs, which is stable for exactly this reason). The sparse
-// fraction keeps REAL margin below the worst-case unseeded swing while still bounding
-// any genuinely super-linear (quadratic-total) blow-up well under the N ratio.
+// `_decideCands` (the utility-candidate count). The headless harness now SEEDS the shared PRNG, so
+// this metric is DETERMINISTIC run-to-run (it used to swing under the platform Math.random()); the
+// fractions below are kept as the generous headroom that proved stable across seeds — they still
+// strictly bound any genuinely super-linear (quadratic-total) blow-up well under the N ratio. We also
+// (a) start at a DENSER N_prev (~60, past the worst of the saturation ramp) so the step is more
+// N-driven than ramp-driven, and (b) average ~40 windows (matching the standalone test/scaling.mjs).
 const SUBLINEAR_FRAC = 0.90;          // dense step (N_prev ≥ 100): tight
-const SUBLINEAR_FRAC_SPARSE = 1.30;   // sparse step (N_prev < 100): margin vs unseeded swing,
-                                      //   still strictly bounds super-linear growth (< N ratio + 30%)
+const SUBLINEAR_FRAC_SPARSE = 1.30;   // sparse step (N_prev < 100): headroom, still bounds super-linear
+                                      //   growth (< N ratio + 30%)
 
 async function runOne(townsfolkPerTown, makeFighter, stubScene) {
   const world = new World(stubScene);

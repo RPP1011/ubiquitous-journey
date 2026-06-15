@@ -8,6 +8,7 @@
 import * as THREE from 'three';
 import { DIR } from '../../constants.js';
 import { TUNE } from '../../constants.js';
+import { COORD } from '../../sim/simconfig.js';
 import type { Vector3 } from 'three';
 import type { EffectFn, EffectOp, FighterDir, Fighter } from '../../../types/sim.js';
 
@@ -19,6 +20,8 @@ interface AbilityStatusBag {
   shield: number;
   dashUntil: number;
   slowFactor?: number;
+  _exposeUntil?: number;   // combo window expiry (docs/architecture/19 §9): damage amps then clears it
+  _exposeAmp?: number;     // damage multiplier applied to the next hit while the window is open
 }
 // a Fighter as this module sees it: the shared body + our private status/health-bar hooks.
 type StatusFighter = Fighter & {
@@ -42,6 +45,34 @@ function status(f: StatusFighter): AbilityStatusBag {
   return (f._abilityStatus ||= { slowUntil: 0, shield: 0, dashUntil: 0 });
 }
 
+// docs/architecture/19 §3/§8a — the combat-state scalars the band snapshot exposes, read by the
+// COORD coordination cascade. Both read ONLY the transient status bag (+ the stagger machine); pure
+// and guarded (the freeze lesson). `ccUntilOf` = the absolute sim-time a target is "controlled"
+// until — a CC OPENING a coordinating ally exploits — taken as the later of (stagger remaining made
+// absolute) and (an active slow window). `exposeActive` = a combo window (the §9 expose op) is open.
+export function ccUntilOf(f: StatusFighter | null | undefined, now: number): number {
+  if (!f) return 0;
+  const stagger = (f.state === 'stagger' && (f.staggerTimer || 0) > 0) ? now + f.staggerTimer : 0;
+  const slow = f._abilityStatus ? f._abilityStatus.slowUntil : 0;
+  return Math.max(stagger, slow);
+}
+export function exposeActive(f: StatusFighter | null | undefined, now: number): boolean {
+  const st = f && f._abilityStatus;
+  return !!(st && (st._exposeUntil || 0) > now);
+}
+
+// docs/architecture/19 §9 — the combo PAYOFF: amplify (and CONSUME) an open expose window. Called
+// from BOTH damage paths — EFFECTS.damage (spec/ranged) AND the plain-swing fallback in combat.ts —
+// so an ordinary companion swing into an exposed foe lands the combo too (the audit's dual-path
+// finding). Pure; returns the (possibly amplified) damage and clears the window when it fires.
+export function applyExpose(f: StatusFighter | null | undefined, dmg: number, now: number): number {
+  if (!exposeActive(f, now)) return dmg;
+  const st = (f as StatusFighter)._abilityStatus!;
+  const out = dmg * (st._exposeAmp || 1);
+  st._exposeUntil = 0; st._exposeAmp = 1;   // one-shot: the window closes on the landing hit
+  return out;
+}
+
 export const EFFECTS: Record<EffectOp, EffectFn> = {
   // raw damage routed through the block-aware Fighter.takeHit; returns true on a
   // landed (non-blocked) hit so on_hit/on_kill triggers can chain off it.
@@ -51,7 +82,9 @@ export const EFFECTS: Record<EffectOp, EffectFn> = {
     const dir = dirTo(caster.pos, target.pos);
     // a shield soaks flat damage first (see shield op)
     const st = status(tf);
-    let dmg = e.amount;
+    // docs/architecture/19 §9: an open expose window amplifies (and consumes) this hit BEFORE the
+    // shield soak — a combo land. No-op (returns dmg unchanged) when no window is open.
+    let dmg = applyExpose(tf, e.amount, ctx?.time || 0);
     if (st.shield > 0) { const a = Math.min(st.shield, dmg); st.shield -= a; dmg -= a; }
     if (dmg <= 0) return false;
     const res = tf.takeHit(dmg, dir);
@@ -84,6 +117,20 @@ export const EFFECTS: Record<EffectOp, EffectFn> = {
     const st = status(tf);
     st.slowUntil = Math.max(st.slowUntil, (ctx?.time || 0) + (e.dur || 1));
     st.slowFactor = e.amount > 0 ? e.amount : 0.5;
+    return true;
+  },
+
+  // docs/architecture/19 §9 — the combo SETUP: open a damage-amplify window on the target (consumed
+  // by applyExpose on the next landing hit, both damage paths). A HOSTILE op (the interpreter's
+  // friendly-fire guard keeps it off allies). Timed like slow; `amount` is a MULTIPLIER (not raw
+  // magnitude), self-clamped to COORD.exposeAmpMax so a generated/LLM spec can't make it a nuke.
+  expose(e, caster, target, ctx) {
+    const tf = target?.fighter;
+    if (!tf || !tf.alive) return false;
+    const st = status(tf);
+    st._exposeUntil = Math.max(st._exposeUntil || 0, (ctx?.time || 0) + (e.dur || 1));
+    const amp = Math.max(1, Math.min(COORD.exposeAmpMax || 2, e.amount || COORD.exposeAmp || 1.5));
+    st._exposeAmp = Math.max(st._exposeAmp || 1, amp);
     return true;
   },
 

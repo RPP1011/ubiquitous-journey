@@ -28,7 +28,7 @@ import { recognizeWealth } from '../../js/sim/agent/decide.js';
 import { World } from '../../js/sim/world.js';
 import { Simulation } from '../../js/sim/simulation.js';
 import { Agent } from '../../js/sim/agent.js';
-import { setSeed } from '../../js/sim/rng.js';
+import { setSeed, getSeed } from '../../js/sim/rng.js';
 import * as THREE from 'three';
 import { readFileSync } from 'node:fs';
 
@@ -651,9 +651,10 @@ export function softAvoidTest(ok, { makeFighter, stubScene }) {
   // time, and a wanderlust roll lifts `wander` via ambitionFavor past the deliberately-faint 0.35
   // avoid — so without a seed S-B1 flakes ~1/5 (the avoid berth is a wisp, not a dictator, by design).
   // Pinning the seed makes the ambition rolls deterministic so the goal-ordering assertions are stable.
-  // The seed is passed THROUGH the Simulation opts (its constructor calls setSeed(opts.seed), which
-  // would otherwise clobber a bare setSeed here); restored to unseeded at the end so later suites keep
-  // their stochastic soak behaviour.
+  // The seed is passed THROUGH the Simulation opts (its constructor sets it when provided); we SAVE
+  // the ambient seed first and RESTORE it at the end, so later suites keep running under the headless
+  // harness's global seed (deterministic) rather than being knocked back to unseeded.
+  const prevSeed = getSeed();
   const world = new World(stubScene);
   const sim = new Simulation(stubScene, world, { makeFighter, seed: 1234 });
   let nid = 1;
@@ -710,6 +711,6 @@ export function softAvoidTest(ok, { makeFighter, stubScene }) {
     a.decide(cog());
     ok(a.goal && a.goal.kind !== 'avoid', `softavoid S-B4: a believed-hostile drives flee/fight, not the soft-avoid (goal=${a.goal && a.goal.kind})`);
   }
-  setSeed(undefined);   // restore the platform RNG so subsequent suites stay unseeded
+  setSeed(prevSeed);   // restore the ambient (headless) seed so subsequent suites stay deterministic
   sim.dispose();
 }

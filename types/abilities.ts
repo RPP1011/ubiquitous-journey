@@ -8,6 +8,7 @@ import type { FullCtx } from './ctx.js';
 /** Effect ops (EFFECT_OPS). */
 export type EffectOp =
   | 'damage' | 'heal' | 'stun' | 'slow' | 'knockback' | 'dash' | 'shield'
+  | 'expose'                        // combo SETUP: a damage-amplify window (docs/architecture/19 §9)
   | 'plant_belief' | 'scry'
   | 'trade_edge' | 'craft_boost';   // economy ops: own-state windows on the CASTER
 

@@ -169,7 +169,7 @@ function runChained(spec: AbilitySpec, primary: AbilityEffect, caster: Agent, ta
 // the economy windows) — routed to the caster wherever effects dispatch.
 const CASTER_OPS = new Set<EffectOp>(['heal', 'shield', 'dash', 'trade_edge', 'craft_boost']);
 // ops that harm a target — never applied to allies (friendly-fire guard above)
-const HOSTILE_OPS = new Set<EffectOp>(['damage', 'stun', 'slow', 'knockback']);
+const HOSTILE_OPS = new Set<EffectOp>(['damage', 'stun', 'slow', 'knockback', 'expose']);
 
 function resolveTargets(spec: AbilitySpec, caster: Agent, ctx: CastCtx | null): Agent[] {
   const h = spec.header;
