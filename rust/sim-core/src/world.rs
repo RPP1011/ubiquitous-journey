@@ -75,6 +75,11 @@ pub struct World {
     pub sim_rng: DeterministicRng, // world-level draws for director/lineage/etc. (serial ⇒ deterministic)
     pub chronicle: Vec<Beat>,      // world-history feed (observer; append-only, bounded by the system)
     pub quests: Vec<Quest>,        // the quest board
+    // chronicle detection-state (own to systems::chronicle): last-tick snapshots so the observer can
+    // detect transitions (a death = `alive` flipped false; a class-up = `total_level` rose). Additive,
+    // observer-only — never read to drive a decision. Lazily sized to `n` by the chronicle system.
+    pub chron_seen_dead: Vec<bool>,
+    pub chron_prev_level: Vec<u16>,
 }
 
 impl World {
@@ -123,6 +128,8 @@ impl World {
             sim_rng: DeterministicRng::seed(seed, 0x50C1E7),
             chronicle: Vec::new(),
             quests: Vec::new(),
+            chron_seen_dead: Vec::new(),
+            chron_prev_level: Vec::new(),
         };
         for i in 0..n {
             let r = TOWN_RADIUS * gen.next_f32().sqrt();
