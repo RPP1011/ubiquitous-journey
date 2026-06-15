@@ -64,6 +64,7 @@ fn upsert(bt: &mut BeliefTable, p: &Perceivable, conf: u16, tick: u32) {
         b.level = p.level;
         b.notoriety = p.notoriety;
         b.threat = p.threat;
+        b.wealth = p.wealth_cue;
         b.last_tick = tick;
         return;
     }
@@ -76,6 +77,7 @@ fn upsert(bt: &mut BeliefTable, p: &Perceivable, conf: u16, tick: u32) {
         level: p.level,
         notoriety: p.notoriety,
         threat: p.threat,
+        wealth: p.wealth_cue,
         last_tick: tick,
         standing: 0,
         flags: 0,

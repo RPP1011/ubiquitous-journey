@@ -272,6 +272,7 @@ fn seed_grudge(world: &mut World, observer: u32, subject: u32, now: u32) {
             level: slvl,
             notoriety: 0,
             threat: 0,
+            wealth: 0,
             last_tick: now,
             standing: -16_000,
             flags: 0x01,

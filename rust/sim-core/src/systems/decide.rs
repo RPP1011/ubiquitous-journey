@@ -30,7 +30,7 @@ use crate::components::{
     EpisodeKind, Faction, Goal, GoalStack, Intention, IntentionKind, Plan, Profession, BELIEF_CAP,
 };
 use crate::exec::registry::{run_derivers, DeriveCtx};
-use crate::planner::{compile_planstep, solve_plan, step_effect_holds, Atom, Pv};
+use crate::planner::{compile_current, solve_plan, step_effect_holds, Atom, Pv};
 use crate::world::World;
 
 /// Need thresholds — a need is only a candidate once it dips below its seek bar.
@@ -248,8 +248,8 @@ fn serve(gstack: &mut GoalStack, idx: usize, pl: &mut Plan, pv: &Pv) -> Option<G
             break;
         }
     }
-    match pl.current() {
-        Some(step) => Some(compile_planstep(&step, pv)),
+    match compile_current(pl, pv) {
+        Some(g) => Some(g),
         None => {
             // plan consumed but the predicate hasn't fired (e.g. a quarry slipped away) → unreachable.
             gstack.items[idx].flags |= Intention::F_UNREACHABLE;

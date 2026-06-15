@@ -15,7 +15,8 @@
 //! staleness entirely — robustly deterministic, no persistent Plan column needed.
 
 use crate::components::{
-    BeliefTable, EpisodeKind, Goal, Memory, PlanStep, N_COMMODITIES, NONE_ID, PLAN_CAP,
+    BeliefTable, EpisodeKind, Goal, InteractVerb, Memory, Plan, PlanStep, N_COMMODITIES, NONE_ID,
+    PLAN_CAP,
 };
 use crate::world::N_WORK_SITES;
 
@@ -58,6 +59,10 @@ enum Verb {
     Sell,
     Approach,
     Attack,
+    Rob,  // take coin from a believed mark by force (→ Goal::Interact{Rob})
+    Give, // hand a good to a benefactor (→ Goal::Interact{Give})
+    Pay,  // hand coin to a benefactor (→ Goal::Interact{Pay})
+    Loot, // strip a fallen target (→ Goal::Interact{Loot})
 }
 
 /// One bound plan step (the concrete params an effect-match chose).
@@ -347,6 +352,10 @@ fn compile(step: Step, pv: &Pv) -> Goal {
         }
         Verb::Buy | Verb::Sell => Goal::Market { site: pv.market },
         Verb::Approach | Verb::Attack => fight_goal(pv, step.subject),
+        Verb::Rob | Verb::Give | Verb::Pay | Verb::Loot => {
+            let to = believed_pos(pv, Place::Subject(step.subject)).unwrap_or(pv.pos);
+            action_goal(verb_u8(step.verb), step.subject, to)
+        }
     }
 }
 
@@ -370,6 +379,10 @@ const VERB_BUY: u8 = 3;
 const VERB_SELL: u8 = 4;
 const VERB_APPROACH: u8 = 5;
 const VERB_ATTACK: u8 = 6;
+const VERB_ROB: u8 = 7;
+const VERB_GIVE: u8 = 8;
+const VERB_PAY: u8 = 9;
+const VERB_LOOT: u8 = 10;
 
 #[inline]
 fn verb_u8(v: Verb) -> u8 {
@@ -381,6 +394,10 @@ fn verb_u8(v: Verb) -> u8 {
         Verb::Sell => VERB_SELL,
         Verb::Approach => VERB_APPROACH,
         Verb::Attack => VERB_ATTACK,
+        Verb::Rob => VERB_ROB,
+        Verb::Give => VERB_GIVE,
+        Verb::Pay => VERB_PAY,
+        Verb::Loot => VERB_LOOT,
     }
 }
 
@@ -461,6 +478,36 @@ pub fn compile_planstep(ps: &PlanStep, pv: &Pv) -> Goal {
         VERB_BUY | VERB_SELL => Goal::Market { site: pv.market },
         VERB_APPROACH | VERB_ATTACK => fight_goal(pv, ps.subject),
         _ => Goal::Idle,
+    }
+}
+
+/// The executor goal for a subject-directed plan: the plan's TERMINAL verb (attack vs rob/give/pay/
+/// loot) decides whether the agent fights or interacts on arrival, while it walks toward `to`.
+#[inline]
+fn action_goal(terminal_verb: u8, subj: u32, to: [f32; 2]) -> Goal {
+    match terminal_verb {
+        VERB_ROB => Goal::Interact { verb: InteractVerb::Rob as u8, target: subj, to },
+        VERB_GIVE => Goal::Interact { verb: InteractVerb::Give as u8, target: subj, to },
+        VERB_PAY => Goal::Interact { verb: InteractVerb::Pay as u8, target: subj, to },
+        VERB_LOOT => Goal::Interact { verb: InteractVerb::Loot as u8, target: subj, to },
+        // VERB_ATTACK (and any approach/goto fallback): the combat path.
+        _ => Goal::Fight { target: subj, to },
+    }
+}
+
+/// Compile the cached plan's CURRENT step to an executor goal, terminal-aware: a SUBJECT-directed leg
+/// (place_kind 2 — goto/approach/act on the mark) emits the plan's terminal ACTION goal (Fight or
+/// Interact{verb}) so the agent both walks to the subject AND does the right thing on arrival; a
+/// resource leg (market/node) compiles step-by-step (Work/Market). `None` when the plan is consumed.
+pub fn compile_current(plan: &Plan, pv: &Pv) -> Option<Goal> {
+    let step = plan.current()?;
+    if step.place_kind == 2 {
+        let subj = step.subject;
+        let to = believed_pos(pv, Place::Subject(subj)).unwrap_or(pv.pos);
+        let terminal = plan.steps[(plan.len as usize).saturating_sub(1)].verb;
+        Some(action_goal(terminal, subj, to))
+    } else {
+        Some(compile_planstep(&step, pv))
     }
 }
 

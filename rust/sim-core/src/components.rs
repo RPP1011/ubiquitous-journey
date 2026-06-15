@@ -325,6 +325,7 @@ pub struct PersonBelief {
     pub level: u8,
     pub notoriety: u16,
     pub threat: u16,
+    pub wealth: u16, // believed wealth cue (perceived prosperity — the heist/esteem signal)
     pub last_tick: u32,
     pub standing: i16, // −32768..32767 quantization of −1..1 (relationship)
     pub flags: u8,     // bit0 hostile
