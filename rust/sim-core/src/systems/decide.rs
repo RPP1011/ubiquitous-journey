@@ -285,6 +285,7 @@ fn intention_atom(it: &Intention) -> Option<Atom> {
         }
         x if x == IntentionKind::SeekFortune as u8 => Some(Atom::GoldGe(it.amt)),
         x if x == IntentionKind::Steal as u8 => Some(Atom::Took(it.subject)),
+        x if x == IntentionKind::Donate as u8 => Some(Atom::Gave(it.subject)),
         _ => None,
     }
 }
@@ -307,6 +308,7 @@ fn intention_satisfied(it: &Intention, pv: &Pv) -> bool {
         x if x == IntentionKind::Steal as u8 => {
             pv.memory.has(EpisodeKind::Robbed, it.subject) || pv.gold >= it.amt
         }
+        x if x == IntentionKind::Donate as u8 => pv.memory.has(EpisodeKind::Gave, it.subject),
         // plan-less dispositions pop on expiry only (handled in prune_goals).
         _ => false,
     }
@@ -517,6 +519,54 @@ mod tests {
             Goal::Fight { target, .. } => assert_eq!(target, 9, "should fight the foe menacing the friend"),
             other => panic!("a brave soul should defend (Fight), got {other:?}"),
         }
+    }
+
+    /// END-TO-END: a wealthy generous townsperson with a food surplus gives to a believed-poor
+    /// neighbour — and the recipient comes away with a `Succoured` memory (the repay seed).
+    #[test]
+    fn generous_soul_gives_alms_to_a_poor_neighbour() {
+        use crate::components::Commodity;
+        let mut w = World::spawn(0xA1335, 8);
+        let (donor, poor) = (0usize, 1usize);
+        w.faction[donor] = Faction::Townsfolk as u8;
+        w.faction[poor] = Faction::Townsfolk as u8;
+        w.needs[donor] = Needs::default();
+        w.econ[donor].gold = 50_000;
+        w.econ[donor].inventory[Commodity::Food as usize] = 5;
+        w.personality[donor].altruism = 0.95;
+        w.pos[donor] = [0.0, 0.0];
+        w.pos[poor] = [1.5, 0.0];
+        w.wealth[poor] = 0; // the perceivable "poor" cue
+        w.econ[poor].inventory[Commodity::Food as usize] = 0;
+        w.beliefs[donor].clear();
+        w.beliefs[donor].subjects[0] = poor as u32;
+        w.beliefs[donor].bodies[0] = PersonBelief {
+            subject: poor as u32,
+            last_x: 1.5,
+            last_z: 0.0,
+            confidence: 60000,
+            wealth: 0,
+            ..Default::default()
+        };
+        w.beliefs[donor].len = 1;
+        w.goals[donor] = GoalStack::default();
+        w.memory[donor] = Memory::default();
+        w.memory[poor] = Memory::default();
+
+        let total_food: i32 = w.econ.iter().map(|e| e.inventory[Commodity::Food as usize]).sum();
+        for _ in 0..6 {
+            w.tick();
+        }
+        assert!(
+            w.econ[poor].inventory[Commodity::Food as usize] > 0,
+            "the poor neighbour should have received food"
+        );
+        assert!(
+            w.memory[poor].has(EpisodeKind::Succoured, donor as u32),
+            "the recipient should remember being succoured (the repay seed)"
+        );
+        let total_after: i32 = w.econ.iter().map(|e| e.inventory[Commodity::Food as usize]).sum();
+        assert_eq!(total_after, total_food, "food conserved (moved, not minted)");
     }
 
     /// The intention pops once the foe is believed slain (a Slew memory satisfies the predicate).

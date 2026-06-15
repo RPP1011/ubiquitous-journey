@@ -35,6 +35,16 @@ const STEAL_HEIST: i64 = 1_500;
 /// How long a heist intention stays live before the urge cools.
 const STEAL_EXPIRY: u32 = 600;
 
+const PRI_DONATE: u16 = 520;
+/// The alms gate: a WEALTHY (gold above) + GENEROUS (altruism above) soul with a FOOD surplus.
+const DONATE_RICH: i64 = 8_000;
+const DONATE_GENEROUS: f32 = 0.65;
+const DONATE_FOOD_KEEP: i32 = 1; // give only when holding more than this many Food units
+/// A believed-poor neighbour (wealth cue below) within range is a worthy recipient.
+const DONATE_POOR_CUE: u16 = 8_000;
+const DONATE_RANGE: f32 = 22.0;
+const DONATE_EXPIRY: u32 = 300;
+
 const PRI_DEFEND: u16 = 850;
 /// Only a brave-enough soul defends a friend (aggression above).
 const DEFEND_BRAVE: f32 = 0.5;
@@ -137,6 +147,55 @@ pub fn steal(gstack: &mut GoalStack, ctx: &DeriveCtx) {
             amt: ctx.gold + STEAL_HEIST,
             born: ctx.now,
             expire: ctx.now + STEAL_EXPIRY,
+        });
+    }
+}
+
+/// DONATE — alms (`js/sim/features/alms.ts`): a WEALTHY + GENEROUS soul with a food surplus gives to
+/// the believed-poorest neighbour in reach. Belief-only (the recipient's poverty is a perceived cue).
+/// Records `Succoured` on the recipient → the seed of a later repay (the reciprocity chain).
+pub fn donate(gstack: &mut GoalStack, ctx: &DeriveCtx) {
+    if ctx.faction != Faction::Townsfolk as u8
+        || ctx.gold < DONATE_RICH
+        || ctx.personality.altruism < DONATE_GENEROUS
+        || ctx.inventory[0] <= DONATE_FOOD_KEEP
+    {
+        return; // not a wealthy generous soul with food to spare
+    }
+    let bt = ctx.beliefs;
+    let r2 = DONATE_RANGE * DONATE_RANGE;
+    // the believed-POOREST neighbour in range (deterministic: lowest wealth, then lowest id), not
+    // already given to.
+    let mut best: Option<(u16, u32)> = None;
+    for k in 0..bt.len as usize {
+        let b = &bt.bodies[k];
+        if b.wealth >= DONATE_POOR_CUE {
+            continue;
+        }
+        let dx = ctx.pos[0] - b.last_x;
+        let dz = ctx.pos[1] - b.last_z;
+        if dx * dx + dz * dz > r2 {
+            continue;
+        }
+        if ctx.memory.has(EpisodeKind::Gave, b.subject) {
+            continue;
+        }
+        match best {
+            Some((bw, bid)) if b.wealth > bw || (b.wealth == bw && b.subject >= bid) => {}
+            _ => best = Some((b.wealth, b.subject)),
+        }
+    }
+    if let Some((_, poor)) = best {
+        gstack.push(Intention {
+            kind: IntentionKind::Donate as u8,
+            flags: 0,
+            priority: PRI_DONATE,
+            subject: poor,
+            place: 0,
+            _pad: [0; 3],
+            amt: 0,
+            born: ctx.now,
+            expire: ctx.now + DONATE_EXPIRY,
         });
     }
 }

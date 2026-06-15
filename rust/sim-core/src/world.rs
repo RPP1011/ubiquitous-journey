@@ -393,6 +393,31 @@ impl World {
                             _pad2: 0,
                         });
                     }
+                    // a GIVE/PAY deed (act verbs 10/11) stamps the donor's `Gave` marker (settles its
+                    // donate/repay) AND a `Succoured` memory on the RECIPIENT (who may repay later) —
+                    // the alms→succoured→repay chain. Serial own-writes ⇒ deterministic.
+                    if (verb == 10 || verb == 11) && (target as usize) < self.n && target as usize != actor {
+                        self.memory[actor].record(Episode {
+                            kind: EpisodeKind::Gave as u8,
+                            place: 0,
+                            valence: 1,
+                            _pad: 0,
+                            with: target,
+                            t: self.tick,
+                            salience: 30000,
+                            _pad2: 0,
+                        });
+                        self.memory[target as usize].record(Episode {
+                            kind: EpisodeKind::Succoured as u8,
+                            place: 0,
+                            valence: 1,
+                            _pad: 0,
+                            with: actor as u32,
+                            t: self.tick,
+                            salience: 45000,
+                            _pad2: 0,
+                        });
+                    }
                     // Fold the deed (magnitude-scaled, tag-indexed) into the ACTOR's OWN
                     // behaviour profile, HERE in the deterministic serial merge. This is the
                     // coordination point: `drain_intents` clears the queue, so progression can't
