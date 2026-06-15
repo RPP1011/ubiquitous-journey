@@ -222,6 +222,9 @@ impl World {
         }
         // build the static affordance map once from the finished geography.
         w.map = MentalMap::build(w.market, &w.work_sites, w.town_center, ARENA_CLAMP);
+        // plant the initial relationship CONSTELLATIONS (rival apprentices, …) the drama systems grow
+        // into tropes — ONCE, at the end of worldgen (serial ⇒ M-invariant; spawns carry 0 gold).
+        systems::seeding::seed_narratives(&mut w);
         w
     }
 
