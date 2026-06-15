@@ -275,6 +275,10 @@ impl Goal {
 pub const MAX_CLASSES: usize = 4;
 /// A sentinel "no class" key for empty held-class slots.
 pub const NO_CLASS: u8 = 0xFF;
+/// Max known abilities held per agent (the JS player-key UI maps 1-4; headless NPCs autocast). Inline.
+pub const MAX_ABILITIES: usize = 4;
+/// A sentinel "no ability" id for empty known-ability slots (mirrors `abilities::NO_ABILITY`).
+pub const NO_ABILITY: u16 = u16::MAX;
 
 /// types/agent.ts Progression — the per-agent class/level brain (the Wave-1 core subset of
 /// `js/rpg/progression.js`). Deeds fold (magnitude-scaled, tag-indexed) into `behavior_profile`,
@@ -291,6 +295,9 @@ pub struct Progression {
     /// Held class template ids (NO_CLASS = empty slot). Small inline array.
     pub classes: [u8; MAX_CLASSES],
     pub n_classes: u8,
+    /// Known ability ids (catalog indices; NO_ABILITY = empty slot). Granted at class tier milestones
+    /// (`abilities::grant_milestones`), read by the autocaster (`abilities::cast`). Small inline set.
+    pub abilities: [u16; MAX_ABILITIES],
 }
 impl Default for Progression {
     fn default() -> Self {
@@ -300,6 +307,7 @@ impl Default for Progression {
             xp: 0,
             classes: [NO_CLASS; MAX_CLASSES],
             n_classes: 0,
+            abilities: [NO_ABILITY; MAX_ABILITIES],
         }
     }
 }

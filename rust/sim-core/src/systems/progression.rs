@@ -212,6 +212,11 @@ fn run_matcher(prog: &mut Progression) {
     if prog.total_level >= TOTAL_LEVEL_CAP {
         prog.xp = 0; // capped: stop banking (mirrors JS).
     }
+
+    // GRANT ABILITY MILESTONES: a held class whose total level clears a tier milestone unlocks the
+    // catalog ability for that (class, level) — the JS `CLASS_MILESTONES` grant. Pure own-write on the
+    // `abilities` column (dedup + capped); the autocaster (`abilities::cast`) reads it next tick.
+    crate::abilities::grant_milestones(prog);
 }
 
 #[cfg(test)]

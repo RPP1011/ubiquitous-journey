@@ -58,6 +58,12 @@ pub fn world_hash(w: &World) -> u64 {
         h = fold(h, &pr.xp.to_le_bytes());
         h = fold(h, &[pr.n_classes]);
         h = fold(h, &pr.classes);
+        // known abilities (granted at class milestones) + the ability-cast cooldown — the autocaster's
+        // state. Covered so any non-determinism in the milestone grant / autocast is caught.
+        for a in pr.abilities {
+            h = fold(h, &a.to_le_bytes());
+        }
+        h = fold(h, &w.ability_cd[i].to_bits().to_le_bytes());
         // episodic memory (Wave-4 GOAP — derivation source; must be covered so any non-determinism
         // in the serial assault/slew/windfall stamping is caught).
         let mem = &w.memory[i];

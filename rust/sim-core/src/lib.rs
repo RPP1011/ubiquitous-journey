@@ -10,6 +10,7 @@
 // expected until then. Re-tighten (remove this) once the core systems land.
 #![allow(dead_code)]
 
+pub mod abilities;
 pub mod components;
 pub mod exec;
 pub mod grid;
@@ -20,7 +21,9 @@ pub mod perceive;
 pub mod reason;
 pub mod planner;
 pub mod rng;
+pub mod rpgxp;
 pub mod systems;
+pub mod tags;
 pub mod world;
 
 use world::World;
