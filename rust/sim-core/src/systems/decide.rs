@@ -47,6 +47,8 @@ const FLEE_RANGE2: f32 = FLEE_RANGE * FLEE_RANGE;
 
 /// Town radius wander points are drawn within (matches worldgen's cluster radius).
 const TOWN_RADIUS: f32 = 180.0;
+/// Per-tick chance a WANDERLUST townsperson roams instead of working (the see-the-world drive).
+const WANDERLUST_PULL: f32 = 0.18;
 
 pub fn decide(world: &mut World) {
     let market = world.market;
@@ -60,6 +62,7 @@ pub fn decide(world: &mut World) {
         ref memory,
         ref econ,
         ref personality,
+        ref ambition,
         ref faction,
         ref profession,
         ref pos,
@@ -198,12 +201,24 @@ pub fn decide(world: &mut World) {
                 }
             }
 
-            // 5. LIVELIHOOD: a working townsperson works its craft, with an occasional market trip.
+            // 5. LIVELIHOOD: a working townsperson works its craft — biased by its AMBITION (the data
+            //    echo of `ambitionFavor`): a WANDERLUST soul roams instead, a WEALTH soul trades more,
+            //    a MASTERY soul keeps to its craft. Own-state trait.
             let prof = profession[i];
             if prof != Profession::None as u8 && townsfolk {
-                // AMBITION bias (the first echo of `ambitionFavor`): an ambitious soul trades more
-                // often (chases wealth), a content one keeps to its craft. Own-state trait.
-                let market_chance = MARKET_CHANCE * (0.5 + personality[i].ambition);
+                let amb = ambition[i];
+                if amb == crate::components::AMB_WANDERLUST && my_rng.next_f32() < WANDERLUST_PULL {
+                    let r = TOWN_RADIUS * my_rng.next_f32().sqrt();
+                    let a = my_rng.next_f32() * std::f32::consts::TAU;
+                    *g = Goal::Wander { to: [town_center[0] + r * a.cos(), town_center[1] + r * a.sin()] };
+                    return;
+                }
+                let mut market_chance = MARKET_CHANCE * (0.5 + personality[i].ambition);
+                if amb == crate::components::AMB_WEALTH {
+                    market_chance *= 1.8;
+                } else if amb == crate::components::AMB_MASTERY {
+                    market_chance *= 0.4;
+                }
                 if my_rng.next_f32() < market_chance {
                     *g = Goal::Market { site: market };
                 } else {
@@ -379,6 +394,7 @@ mod tests {
                 w.beliefs[i].clear();
                 w.memory[i] = Memory::default();
                 w.goals[i] = GoalStack::default();
+                w.ambition[i] = crate::components::AMB_MASTERY; // pin non-wanderlust so it works/trades
                 found = true;
             }
         }

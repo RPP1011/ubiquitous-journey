@@ -140,6 +140,35 @@ impl Default for Personality {
     }
 }
 
+/// Ambition kinds — the slow archetypal drive each agent carries (`js/sim/motivation.js` AMBITIONS).
+/// A data-only bias on the existing decide() choices, not a new behaviour.
+pub const AMB_WEALTH: u8 = 0; // amass wealth → trade more
+pub const AMB_MASTERY: u8 = 1; // master a craft → work more
+pub const AMB_RENOWN: u8 = 2; // win renown → stand and fight (via aggression)
+pub const AMB_WANDERLUST: u8 = 3; // see the world → roam more
+pub const AMB_BELONGING: u8 = 4; // belong → seek company
+
+/// Assign an ambition weighted by personality (mirrors `assignAmbition`'s weight functions), using a
+/// single uniform draw `r` ∈ [0,1). Deterministic. Monsters/raiders get wanderlust by default.
+pub fn pick_ambition(p: &Personality, r: f32) -> u8 {
+    let w = [
+        0.15 + 1.3 * p.ambition,                       // wealth
+        0.12 + 0.78 * p.ambition + 0.52 * p.curiosity, // mastery
+        0.06 + 1.3 * p.risk_tolerance,                 // renown
+        0.09 + 1.3 * p.curiosity,                      // wanderlust
+        0.09 + 1.3 * p.social_drive,                   // belonging
+    ];
+    let total: f32 = w.iter().sum();
+    let mut acc = r * total;
+    for (i, &wi) in w.iter().enumerate() {
+        acc -= wi;
+        if acc <= 0.0 {
+            return i as u8;
+        }
+    }
+    AMB_WEALTH
+}
+
 /// types/agent.ts Mood (decays; colours decisions).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Mood {

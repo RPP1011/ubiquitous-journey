@@ -45,6 +45,7 @@ pub struct World {
     pub needs: Vec<Needs>,
     pub mood: Vec<Mood>,
     pub personality: Vec<Personality>,
+    pub ambition: Vec<u8>, // slow archetypal drive (AMB_*) — biases the livelihood choice in decide
     pub goal: Vec<Goal>,
     pub econ: Vec<Economy>,
     pub combat: Vec<CombatBody>,
@@ -129,6 +130,7 @@ impl World {
             needs: Vec::with_capacity(n),
             mood: Vec::with_capacity(n),
             personality: Vec::with_capacity(n),
+            ambition: Vec::with_capacity(n),
             goal: Vec::with_capacity(n),
             econ: Vec::with_capacity(n),
             combat: Vec::with_capacity(n),
@@ -196,14 +198,22 @@ impl World {
             w.needs.push(Needs::default());
             w.mood.push(Mood::default());
             // sample the stable archetype traits (uniform 0..1; the worldgen rng keeps it deterministic).
-            w.personality.push(Personality {
+            let pers = Personality {
                 ambition: gen.next_f32(),
                 curiosity: gen.next_f32(),
                 risk_tolerance: gen.next_f32(),
                 social_drive: gen.next_f32(),
                 altruism: gen.next_f32(),
                 aggression: gen.next_f32(),
-            });
+            };
+            // assign a personality-weighted ambition (monsters get wanderlust — they roam, don't trade).
+            let amb = if f == Faction::Monster {
+                crate::components::AMB_WANDERLUST
+            } else {
+                crate::components::pick_ambition(&pers, gen.next_f32())
+            };
+            w.personality.push(pers);
+            w.ambition.push(amb);
             w.goal.push(Goal::Idle);
             let mut e = Economy::default();
             e.gold = (40.0 + gen.next_f32() * 80.0) as i64 * 100; // minor units
@@ -252,6 +262,7 @@ impl World {
         self.needs.push(Needs::default());
         self.mood.push(Mood::default());
         self.personality.push(Personality::default());
+        self.ambition.push(crate::components::AMB_WANDERLUST);
         self.goal.push(Goal::Idle);
         self.econ.push(Economy::default());
         self.combat.push(CombatBody::default());
