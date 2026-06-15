@@ -27,6 +27,7 @@ pub mod director;
 pub mod faith;
 pub mod groups;
 pub mod houses;
+pub mod intrigue;
 pub mod lineage;
 pub mod patrician;
 pub mod quests;
