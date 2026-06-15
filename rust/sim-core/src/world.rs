@@ -269,11 +269,17 @@ impl World {
         let n = self.n;
         self.surface.clear();
         for i in 0..n {
+            // The PERCEIVED faction (the disguise mask, §3.1 / docs 02): if a disguise is active, the
+            // surface — what every observer's `perceive` reads — shows the apparent faction, NOT the
+            // true `faction[i]`. This is the load-bearing deception wiring (intrigue spies): cognition
+            // is fooled while ground-truth combat (which reads `faction[i]`) still resolves truly.
+            let perceived_faction =
+                if self.disguise[i] != NO_DISGUISE { self.disguise[i] } else { self.faction[i] };
             self.surface.push(Perceivable {
                 id: i as u32,
                 x: self.pos[i][0],
                 z: self.pos[i][1],
-                faction: self.faction[i],
+                faction: perceived_faction,
                 flags: if self.alive[i] { 1 } else { 0 },
                 level: self.level[i],
                 _pad: 0,
@@ -440,6 +446,7 @@ impl World {
         systems::lineage::tick(self);
         systems::faith::tick(self);
         systems::groups::tick(self);
+        systems::intrigue::tick(self);
         systems::quests::tick(self);
     }
 

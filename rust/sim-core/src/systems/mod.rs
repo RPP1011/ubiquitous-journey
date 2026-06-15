@@ -26,5 +26,6 @@ pub mod chronicle;
 pub mod director;
 pub mod faith;
 pub mod groups;
+pub mod intrigue;
 pub mod lineage;
 pub mod quests;
