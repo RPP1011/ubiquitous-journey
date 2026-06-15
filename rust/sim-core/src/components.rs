@@ -191,7 +191,11 @@ pub enum Goal {
     Rest,
     Comfort { to: [f32; 2] },
     Flee { from: u32 },
-    Fight { target: u32 },
+    /// Hunt a believed-hostile/avenge target: `target` is the subject id (combat strikes it when in
+    /// reach, reading its BELIEVED pos); `to` is the approach point locomotion walks toward (the
+    /// target's last-believed position, refreshed each cognition tick by `decide`). Carrying `to` is
+    /// what lets an avenger/raider actually CLOSE the distance — previously a Fight stood still.
+    Fight { target: u32, to: [f32; 2] },
     Home { to: [f32; 2] },
 }
 impl Goal {
@@ -209,11 +213,13 @@ impl Goal {
             Goal::Home { .. } => GoalKind::Home,
         }
     }
-    /// The locomotion target this goal implies (None ⇒ stand still / in-place verb).
+    /// The locomotion target this goal implies (None ⇒ stand still / in-place verb). A Fight now
+    /// steps toward its believed approach point (`to`), so the hunter closes the gap before striking.
     pub fn move_target(&self) -> Option<[f32; 2]> {
         match self {
             Goal::Work { site } | Goal::Market { site } => Some(*site),
             Goal::Wander { to } | Goal::Comfort { to } | Goal::Home { to } => Some(*to),
+            Goal::Fight { to, .. } => Some(*to),
             _ => None,
         }
     }
@@ -338,3 +344,121 @@ pub struct Quest {
 
 pub const NO_BAND: i32 = -1; // band_leader sentinel (not in a band).
 pub const NO_GOD: u8 = 0; // faith sentinel (no faith).
+
+// ───────────────────────────── episodic memory (the goal-derivation source, §ToM) ─────────────────────────────
+//
+// The thin Rust analogue of `js/sim/memory.js` — a tiny, bounded, per-agent ring of salient episodes
+// the GOAP layer reads to DERIVE intentions (an `assaulted` episode → an avenge goal; a `windfall` →
+// seek-fortune). Inline/`Copy` so it streams like every other column. Written ONLY in serial phases
+// (the intent merge stamps assault/slew; the director's serial society pass stamps windfall) ⇒
+// deterministic; read (own-row only) in the parallel `decide`.
+
+pub const MEMORY_CAP: usize = 8;
+
+/// types/memory.ts MemoryKind (the Wave-4 GOAP subset). Numeric so the determinism hash covers it.
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum EpisodeKind {
+    Assaulted = 0,      // `with` struck me — derives an avenge intention (the flagship vendetta seed)
+    Slew = 1,           // I dealt `with` its death blow — the `_slain` marker that SETTLES an avenge
+    Windfall = 2,       // a fortune to be had at `place` — derives a seek-fortune intention
+    WitnessedDeath = 3, // saw `with` fall — a grief disposition (plan-less)
+}
+
+/// One salient episode (the dense, inline memory cell).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Episode {
+    pub kind: u8,
+    pub place: u8,
+    pub valence: i8,
+    pub _pad: u8,
+    pub with: u32,     // the other party (avenge culprit / slain victim / …); u32::MAX = none
+    pub t: u32,        // sim-tick recorded (intention TTLs measure from here)
+    pub salience: u16, // how vivid — drives eviction (the salient survive) + intention priority
+    pub _pad2: u16,
+}
+
+/// A bounded per-agent episodic memory (the salient survive; the dull are evicted).
+#[derive(Clone, Copy, Debug)]
+pub struct Memory {
+    pub len: u8,
+    pub items: [Episode; MEMORY_CAP],
+}
+impl Default for Memory {
+    fn default() -> Self {
+        Memory { len: 0, items: [Episode::default(); MEMORY_CAP] }
+    }
+}
+impl Memory {
+    /// Record an episode. DEDUP by (kind, with): a fresh assault from the same foe REFRESHES the
+    /// existing entry (no churn, no inflation). When full, evict the lowest-salience slot iff the
+    /// newcomer is at least as salient (so the vivid survive). Serial-only ⇒ order-independent.
+    pub fn record(&mut self, ep: Episode) {
+        for k in 0..self.len as usize {
+            let e = &mut self.items[k];
+            if e.kind == ep.kind && e.with == ep.with {
+                *e = ep;
+                return;
+            }
+        }
+        if (self.len as usize) < MEMORY_CAP {
+            self.items[self.len as usize] = ep;
+            self.len += 1;
+            return;
+        }
+        let mut lo = 0usize;
+        for k in 1..MEMORY_CAP {
+            if self.items[k].salience < self.items[lo].salience {
+                lo = k;
+            }
+        }
+        if ep.salience >= self.items[lo].salience {
+            self.items[lo] = ep;
+        }
+    }
+    /// Do I hold an episode of `kind` about `with`? (the `_slain`/grief lookups.)
+    #[inline]
+    pub fn has(&self, kind: EpisodeKind, with: u32) -> bool {
+        self.items[..self.len as usize].iter().any(|e| e.kind == kind as u8 && e.with == with)
+    }
+}
+
+// ───────────────────────────── director (the drama manager) ─────────────────────────────
+//
+// The persistent budget/pacing state of the points-budget trope engine (the Rust analogue of the
+// `js/sim/director/*` cluster — ported to its SPIRIT, not its 20 tropes). Mutated only in the SERIAL
+// society phase ⇒ trivially deterministic; rolls come from `World::sim_rng`.
+
+#[derive(Clone, Copy, Debug)]
+pub struct DirectorState {
+    pub points: i64,        // drama BUDGET — accrues with prosperity, drained by deaths, spent on tropes
+    pub tension: f32,       // peril gauge (living attacker count); a high peak that resolves opens relief
+    pub relief_until: u32,  // tick until which new drama is suppressed (the post-peak breather)
+    pub last_trope_at: u32, // any-trope cooldown clock
+    pub last_raid_at: u32,  // raid-specific cooldown clock
+    pub last_pop: i32,      // last sampled town population (-1 = unsampled; death-detection + accrual)
+    pub had_threat: bool,   // tension was at/above the peak last eval (peak-resolved detector)
+    // telemetry — read by tests/inspection, never asserted on internally.
+    pub raids: u32,
+    pub feuds: u32,
+    pub opportunities: u32,
+    pub crises: u32,
+}
+impl Default for DirectorState {
+    fn default() -> Self {
+        DirectorState {
+            points: 0,
+            tension: 0.0,
+            relief_until: 0,
+            last_trope_at: 0,
+            last_raid_at: 0,
+            last_pop: -1,
+            had_threat: false,
+            raids: 0,
+            feuds: 0,
+            opportunities: 0,
+            crises: 0,
+        }
+    }
+}

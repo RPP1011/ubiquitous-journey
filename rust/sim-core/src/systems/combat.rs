@@ -88,7 +88,7 @@ pub fn resolve(world: &mut World) {
             let bt = &beliefs[i];
             let target = match goal[i] {
                 // an explicit fight goal: act on it ONLY while the belief about it survives.
-                Goal::Fight { target } => bt.find(target).map(|idx| (target, idx)),
+                Goal::Fight { target, .. } => bt.find(target).map(|idx| (target, idx)),
                 // no fight goal: the nearest in-range belief flagged hostile (bit0) is fair game.
                 _ => nearest_hostile(bt, pos[i]),
             };

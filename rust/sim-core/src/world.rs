@@ -5,8 +5,8 @@
 //! intents), so the whole tick stays deterministic (M=1 ≡ M=N).
 
 use crate::components::{
-    BeliefTable, Beat, CombatBody, Commodity, Economy, Faction, Goal, Mood, Needs, Perceivable,
-    Profession, Progression, Quest, NO_BAND, NO_GOD,
+    BeliefTable, Beat, CombatBody, Commodity, DirectorState, Economy, Episode, EpisodeKind, Faction,
+    Goal, Memory, Mood, Needs, Perceivable, Profession, Progression, Quest, NO_BAND, NO_GOD,
 };
 use crate::grid::Grid;
 use crate::intent::{Intent, IntentQueue};
@@ -49,6 +49,8 @@ pub struct World {
     pub town: Vec<u16>,
     pub rng: Vec<DeterministicRng>,
     pub progression: Vec<Progression>,
+    // ── Wave-4 GOAP column: episodic memory (the goal-derivation source; written in serial phases) ──
+    pub memory: Vec<Memory>,
     // ── Wave-3 society columns ──
     pub faith: Vec<u8>,         // small-god id (0 = none, NO_GOD)
     pub band_leader: Vec<i32>,  // band/clan leader id (-1 = none, NO_BAND)
@@ -73,6 +75,7 @@ pub struct World {
 
     // ── Wave-3 society/observer state (mutated in the SERIAL society phase) ──
     pub sim_rng: DeterministicRng, // world-level draws for director/lineage/etc. (serial ⇒ deterministic)
+    pub director: DirectorState,   // the drama manager's budget/pacing state (serial society phase)
     pub chronicle: Vec<Beat>,      // world-history feed (observer; append-only, bounded by the system)
     pub quests: Vec<Quest>,        // the quest board
     // chronicle detection-state (own to systems::chronicle): last-tick snapshots so the observer can
@@ -113,6 +116,7 @@ impl World {
             town: Vec::with_capacity(n),
             rng: Vec::with_capacity(n),
             progression: Vec::with_capacity(n),
+            memory: Vec::with_capacity(n),
             faith: Vec::with_capacity(n),
             band_leader: Vec::with_capacity(n),
             house: Vec::with_capacity(n),
@@ -126,6 +130,7 @@ impl World {
             town_center: [0.0, 0.0],
             base_price: [10, 8, 12, 30, 15, 40],
             sim_rng: DeterministicRng::seed(seed, 0x50C1E7),
+            director: DirectorState::default(),
             chronicle: Vec::new(),
             quests: Vec::new(),
             chron_seen_dead: Vec::new(),
@@ -169,6 +174,7 @@ impl World {
             w.town.push(0);
             w.rng.push(DeterministicRng::seed(seed, i as u64));
             w.progression.push(Progression::default());
+            w.memory.push(Memory::default());
             w.beliefs.push(BeliefTable::default());
             w.beliefs_prev.push(BeliefTable::default());
             w.faith.push(NO_GOD);
@@ -202,6 +208,7 @@ impl World {
         self.town.push(0);
         self.rng.push(DeterministicRng::seed(self.seed, i as u64));
         self.progression.push(Progression::default());
+        self.memory.push(Memory::default());
         self.faith.push(NO_GOD);
         self.band_leader.push(NO_BAND);
         self.house.push(0);
@@ -264,16 +271,46 @@ impl World {
                         self.econ[from].gold += price;
                     }
                 }
-                Intent::Strike { from: _, to, dmg } => {
-                    let to = to as usize;
+                Intent::Strike { from, to, dmg } => {
+                    let (from, to) = (from as usize, to as usize);
                     if to >= self.n || !self.alive[to] {
                         continue;
                     }
                     self.combat[to].health -= dmg;
+                    // EPISTEMIC SEED (the vendetta loop): the victim REMEMBERS being struck — an
+                    // `assaulted` episode the GOAP layer reads next tick to derive an avenge
+                    // intention. Serial write to the victim's OWN memory row (deterministic). Self-
+                    // strikes (from == to) leave no grudge.
+                    if from != to && from < self.n {
+                        self.memory[to].record(Episode {
+                            kind: EpisodeKind::Assaulted as u8,
+                            place: 0,
+                            valence: -1,
+                            _pad: 0,
+                            with: from as u32,
+                            t: self.tick,
+                            salience: 50000,
+                            _pad2: 0,
+                        });
+                    }
                     if self.combat[to].health <= 0.0 {
                         self.combat[to].health = 0.0;
                         self.combat[to].state = crate::components::FighterState::Dead as u8;
                         self.alive[to] = false;
+                        // The killer's `_slain` marker: an avenge intention against `to` is now
+                        // SETTLED (it pops on this Slew episode rather than hunting a corpse).
+                        if from != to && from < self.n {
+                            self.memory[from].record(Episode {
+                                kind: EpisodeKind::Slew as u8,
+                                place: 0,
+                                valence: 1,
+                                _pad: 0,
+                                with: to as u32,
+                                t: self.tick,
+                                salience: 60000,
+                                _pad2: 0,
+                            });
+                        }
                     }
                 }
                 Intent::Deed { actor, verb, magnitude, target: _ } => {

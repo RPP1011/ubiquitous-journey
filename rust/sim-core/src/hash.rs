@@ -52,6 +52,17 @@ pub fn world_hash(w: &World) -> u64 {
         h = fold(h, &pr.xp.to_le_bytes());
         h = fold(h, &[pr.n_classes]);
         h = fold(h, &pr.classes);
+        // episodic memory (Wave-4 GOAP — derivation source; must be covered so any non-determinism
+        // in the serial assault/slew/windfall stamping is caught).
+        let mem = &w.memory[i];
+        h = fold(h, &[mem.len]);
+        for j in 0..mem.len as usize {
+            let ep = &mem.items[j];
+            h = fold(h, &[ep.kind]);
+            h = fold(h, &ep.with.to_le_bytes());
+            h = fold(h, &ep.t.to_le_bytes());
+            h = fold(h, &ep.salience.to_le_bytes());
+        }
         // belief table (the dominant state)
         let bt = &w.beliefs[i];
         h = fold(h, &[bt.len]);
@@ -83,5 +94,19 @@ pub fn world_hash(w: &World) -> u64 {
         h = fold(h, &q.count.to_le_bytes());
         h = fold(h, &q.got.to_le_bytes());
     }
+    // Wave-4 director (the drama budget/pacing) — serial-phase state, covered so any non-determinism
+    // in trope selection / accrual is caught by the M-invariance gate.
+    let d = &w.director;
+    h = fold(h, &d.points.to_le_bytes());
+    h = fold(h, &d.tension.to_bits().to_le_bytes());
+    h = fold(h, &d.relief_until.to_le_bytes());
+    h = fold(h, &d.last_trope_at.to_le_bytes());
+    h = fold(h, &d.last_raid_at.to_le_bytes());
+    h = fold(h, &d.last_pop.to_le_bytes());
+    h = fold(h, &[d.had_threat as u8]);
+    h = fold(h, &d.raids.to_le_bytes());
+    h = fold(h, &d.feuds.to_le_bytes());
+    h = fold(h, &d.opportunities.to_le_bytes());
+    h = fold(h, &d.crises.to_le_bytes());
     h
 }

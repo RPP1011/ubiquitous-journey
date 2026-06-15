@@ -15,6 +15,7 @@ pub mod grid;
 pub mod hash;
 pub mod intent;
 pub mod perceive;
+pub mod planner;
 pub mod rng;
 pub mod systems;
 pub mod world;
