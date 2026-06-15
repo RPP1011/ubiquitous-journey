@@ -390,6 +390,7 @@ impl World {
         systems::gossip::gossip(self); // parallel: read prev beliefs, write own
         systems::combat::resolve(self); // parallel decide → Strike intents
         systems::market::clear(self); // parallel decide → Transfer intents
+        systems::act::act(self); // parallel on-arrival interaction verbs → Hand/Deed intents
         self.drain_intents(); // serial deterministic merge
         systems::progression::tick(self); // parallel: own progression from deeds
         self.society_phase(); // serial: director/lineage/faith/groups/quests/chronicle
@@ -422,6 +423,7 @@ impl World {
         systems::gossip::gossip(self);
         systems::combat::resolve(self);
         systems::market::clear(self);
+        systems::act::act(self);
         self.drain_intents();
         systems::progression::tick(self);
         self.society_phase();

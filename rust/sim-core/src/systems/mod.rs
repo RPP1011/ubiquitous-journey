@@ -12,6 +12,7 @@
 //! Cross-agent pattern (intents): collect per item via `par_iter().filter_map().collect::<Vec<_>>()`,
 //! then `world.intents.items.extend(collected)` serially; the scheduler drains them deterministically.
 
+pub mod act;
 pub mod combat;
 pub mod decide;
 pub mod gossip;

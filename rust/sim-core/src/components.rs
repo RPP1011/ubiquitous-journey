@@ -59,6 +59,7 @@ pub enum GoalKind {
     Flee = 7,
     Fight = 8,
     Home = 9,
+    Interact = 10,
 }
 
 /// types/combat.ts FighterState — the directional-melee swing state machine.
@@ -223,6 +224,22 @@ pub enum Goal {
     /// what lets an avenger/raider actually CLOSE the distance — previously a Fight stood still.
     Fight { target: u32, to: [f32; 2] },
     Home { to: [f32; 2] },
+    /// Approach a subject and perform a non-combat world-interaction verb on arrival (give/pay/rob/
+    /// loot/free/wreck/…). `to` is the approach point (the subject's believed pos, refreshed each tick);
+    /// the `act` phase fires `verb` when in reach. The non-combat sibling of `Fight`.
+    Interact { verb: u8, target: u32, to: [f32; 2] },
+}
+
+/// The non-combat interaction verbs a `Goal::Interact` carries (the conserved social/economic acts).
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum InteractVerb {
+    Give = 0, // hand a good to the target (gift / repay-in-kind)
+    Pay = 1,  // hand coin to the target (repay-in-coin)
+    Rob = 2,  // take coin from the target by force
+    Loot = 3, // take coin from a fallen target
+    Free = 4, // cut a captive's bonds (dormant until captivity state lands)
+    Wreck = 5, // sabotage a structure (dormant until building state lands)
 }
 impl Goal {
     pub fn kind(&self) -> GoalKind {
@@ -237,6 +254,7 @@ impl Goal {
             Goal::Flee { .. } => GoalKind::Flee,
             Goal::Fight { .. } => GoalKind::Fight,
             Goal::Home { .. } => GoalKind::Home,
+            Goal::Interact { .. } => GoalKind::Interact,
         }
     }
     /// The locomotion target this goal implies (None ⇒ stand still / in-place verb). A Fight now
@@ -245,7 +263,7 @@ impl Goal {
         match self {
             Goal::Work { site } | Goal::Market { site } => Some(*site),
             Goal::Wander { to } | Goal::Comfort { to } | Goal::Home { to } => Some(*to),
-            Goal::Fight { to, .. } => Some(*to),
+            Goal::Fight { to, .. } | Goal::Interact { to, .. } => Some(*to),
             _ => None,
         }
     }
