@@ -413,6 +413,59 @@ pub struct DefenseState {
                     // (a tower's Strike lands a tick later in the merge), so only shots is tallied.
 }
 
+/// The wilderness-expedition subsystem's serial-phase state (`js/sim/expeditions.ts`). A roster of
+/// companies currently afield + a throttle clock + a kill/triumph tally. SIMPLIFIED port: the
+/// dungeon-delve substrate (teleport / `_descend` / `_endDelve`) is intentionally dropped (there is
+/// no dungeon in the Rust port) — a company instead marches to a WILDERNESS ring, fights a few
+/// spawned "horrors" there, and returns. Mirrors the TS `Expeditions` class fields.
+#[derive(Clone, Debug, Default)]
+pub struct ExpeditionState {
+    pub acc: u32,                // ticks since the last formation attempt (the `_acc` throttle).
+    pub last_form: u32,          // tick of the last company formed (the `_lastForm` cooldown clock).
+    pub companies: Vec<Company>, // companies currently afield (the TS `active` list, captain-keyed).
+    // telemetry — read by tests/inspection, never asserted on internally (the TS `stats`).
+    pub mounted: u32,  // total companies ever formed.
+    pub triumphs: u32, // returns with no fallen (and foes slain).
+    pub losses: u32,   // returns with a fallen / a lost captain / a wiped company.
+    pub slain: u32,    // total horrors slain across all expeditions.
+}
+
+/// One adventuring company afield. The captain leads followers whose `band_leader == captain`.
+#[derive(Clone, Copy, Debug)]
+pub struct Company {
+    pub captain: u32,        // the captain agent id (leads the band).
+    pub phase: u8,           // 0 out (marching to the wilds), 1 hunt (fighting horrors), 2 return.
+    pub target: [f32; 2],    // the current march point (the wilderness ring, then home).
+    pub started_at: u32,     // tick the company set out.
+    pub hunt_until: u32,     // tick the hunt ends (timer) once in the wilds.
+    pub kills_at0: u32,      // baseline horror-kill tally at muster (so the slain count is the delta).
+    pub horrors: [i32; MAX_HORRORS], // spawned horror ids (-1 = empty slot).
+    pub n_horrors: u8,       // how many horror slots are filled.
+    pub members: [i32; MAX_COMPANY], // captain + followers (-1 = empty slot); stable for the run.
+    pub n_members: u8,
+}
+impl Default for Company {
+    fn default() -> Self {
+        Company {
+            captain: 0,
+            phase: 0,
+            target: [0.0, 0.0],
+            started_at: 0,
+            hunt_until: 0,
+            kills_at0: 0,
+            horrors: [-1; MAX_HORRORS],
+            n_horrors: 0,
+            members: [-1; MAX_COMPANY],
+            n_members: 0,
+        }
+    }
+}
+
+/// Max horrors spawned per expedition (the `EXPEDITION.delveMonsters`/`huntMonsters` analogue).
+pub const MAX_HORRORS: usize = 5;
+/// Max company size (captain + up to `partySize-1` followers).
+pub const MAX_COMPANY: usize = 6;
+
 pub const NO_BAND: i32 = -1; // band_leader sentinel (not in a band).
 pub const NO_GOD: u8 = 0; // faith sentinel (no faith).
 
