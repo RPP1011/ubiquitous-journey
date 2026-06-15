@@ -390,6 +390,12 @@ impl World {
                                 salience: 60000,
                                 _pad2: 0,
                             });
+                            // fold a Kill into the killer's narrative-signal tallies (doc-13 foldDeed).
+                            crate::signals::fold_deed(
+                                &mut self.signals[from],
+                                crate::components::DeedTag::Kill,
+                                self.tick,
+                            );
                         }
                     }
                 }
@@ -412,6 +418,17 @@ impl World {
                     let actor = actor as usize;
                     if actor >= self.n {
                         continue;
+                    }
+                    // fold the deed into the actor's narrative-signal tallies (the doc-13 `foldDeed`):
+                    // theft (rob), gift (give/pay). Kills are folded in the Strike merge above. Makes
+                    // the signals catalog LIVE (observer telemetry; deterministic serial own-write).
+                    let dtag = match verb {
+                        12 => Some(crate::components::DeedTag::Theft),
+                        10 | 11 => Some(crate::components::DeedTag::Gift),
+                        _ => None,
+                    };
+                    if let Some(t) = dtag {
+                        crate::signals::fold_deed(&mut self.signals[actor], t, self.tick);
                     }
                     // a successful ROB (deed verb 12, from `systems::act`) stamps the robber's `Robbed`
                     // marker about the mark — the `_slain`-style signal that SETTLES the steal intention
