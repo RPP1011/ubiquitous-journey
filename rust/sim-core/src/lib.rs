@@ -5,11 +5,18 @@
 //! DETERMINISTIC within Rust (identical golden hash across runs AND across core counts, M=1 ≡ M=8).
 //! See the determinism gate in `tests/determinism.rs` and the scaling numbers from `soak_bench`.
 
+// Wave-1 substrate: the component catalog / intent vocabulary / enum variants are defined ahead of
+// the systems that consume them (the fan-out fills the `systems::*` stubs), so unused items are
+// expected until then. Re-tighten (remove this) once the core systems land.
+#![allow(dead_code)]
+
 pub mod components;
 pub mod grid;
 pub mod hash;
+pub mod intent;
 pub mod perceive;
 pub mod rng;
+pub mod systems;
 pub mod world;
 
 use world::World;

@@ -18,10 +18,13 @@ fn main() {
     let cores = std::thread::available_parallelism()
         .map(|c| c.get())
         .unwrap_or(8);
-    let thread_counts: Vec<usize> = [1usize, 2, 4, 8]
+    let mut thread_counts: Vec<usize> = [1usize, 2, 4, 8, 16, 24, 32, 48, 64]
         .into_iter()
         .filter(|&t| t <= cores.max(1))
         .collect();
+    if !thread_counts.contains(&cores.max(1)) {
+        thread_counts.push(cores.max(1)); // always include the full core count
+    }
 
     println!(
         "sim-core soak_bench — N={} frames={} cores={} seed={:#x}",
