@@ -7,7 +7,7 @@
 use crate::components::{
     BeliefTable, Beat, CombatBody, Commodity, DirectorState, Economy, Episode, EpisodeKind, Faction,
     Goal, GoalStack, Memory, Mood, Needs, Perceivable, Personality, Plan, Profession, Progression,
-    Quest, WatchState, NO_BAND, NO_GOD,
+    DefenseState, Quest, WatchState, NO_BAND, NO_GOD,
 };
 use crate::grid::Grid;
 use crate::intent::{Intent, IntentQueue};
@@ -96,6 +96,7 @@ pub struct World {
     // ── Wave-H society/observer world state ──
     pub house_feuds: Vec<(u32, u32)>, // active house-vs-house feuds (canonical lo<hi pairs) — houses.rs
     pub watch: WatchState,            // the Night Watch institution's hysteresis/captaincy state (serial)
+    pub defenses: DefenseState,       // the watchtower ring's shot tally (serial society phase)
 }
 
 /// A perceived faction sentinel: no disguise active.
@@ -160,6 +161,7 @@ impl World {
             chron_prev_level: Vec::new(),
             house_feuds: Vec::new(),
             watch: WatchState::default(),
+            defenses: DefenseState::default(),
         };
         for i in 0..n {
             let r = TOWN_RADIUS * gen.next_f32().sqrt();
@@ -222,6 +224,8 @@ impl World {
         }
         // build the static affordance map once from the finished geography.
         w.map = MentalMap::build(w.market, &w.work_sites, w.town_center, ARENA_CLAMP);
+        // seed the initial relationship constellations (rival apprentices, etc.) for the director.
+        systems::seeding::seed_narratives(&mut w);
         w
     }
 
@@ -449,6 +453,7 @@ impl World {
     /// cross-agent merge is serial + deterministic. Systems are filled by the fan-out.
     pub fn tick(&mut self) {
         systems::needs::drain(self); // parallel: own needs decay + in-place verbs
+        crate::reason::reason(self); // parallel: reactive flee/hide overlay (pre-empts decide)
         systems::decide::decide(self); // parallel: own goal from needs/beliefs
         systems::locomotion::step(self); // parallel: own pos toward goal
         self.build_surface(); // serial: project + grid
@@ -473,6 +478,7 @@ impl World {
         systems::patrician::tick(self); // brokers truces between the most mutually-hostile townsfolk
         systems::watch::tick(self); // musters/stands-down the Night Watch by threat (hysteresis)
         systems::intrigue::tick(self); // spies: disguise masks, false-belief/price plants, unmask
+        systems::defenses::tick(self); // watchtower ring fires on apparent town-hostiles near the core
         systems::lineage::tick(self);
         systems::faith::tick(self);
         systems::groups::tick(self);
@@ -483,6 +489,7 @@ impl World {
     /// for `soak_bench`). Mirrors `tick`'s phase order exactly.
     pub fn step_timing(&mut self) -> f64 {
         systems::needs::drain(self);
+        crate::reason::reason(self);
         systems::decide::decide(self);
         systems::locomotion::step(self);
         self.build_surface();

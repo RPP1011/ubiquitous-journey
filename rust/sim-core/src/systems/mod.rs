@@ -23,6 +23,7 @@ pub mod progression;
 // Wave-3 society / observer systems (the SERIAL society phase). Each runs throttled, mutates the
 // shared world directly (spawns go via `World::spawn_agent`), and is deterministic by being serial.
 pub mod chronicle;
+pub mod defenses;
 pub mod director;
 pub mod faith;
 pub mod groups;
@@ -31,4 +32,5 @@ pub mod intrigue;
 pub mod lineage;
 pub mod patrician;
 pub mod quests;
+pub mod seeding;
 pub mod watch;

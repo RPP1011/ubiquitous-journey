@@ -399,6 +399,13 @@ impl Default for WatchState {
     }
 }
 
+/// The watchtower ring's serial-phase tally. `js/sim/defenses.ts`.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DefenseState {
+    pub shots: u32, // total tower shots fired (the TS `stats.shots`). Kills aren't tower-attributable
+                    // (a tower's Strike lands a tick later in the merge), so only shots is tallied.
+}
+
 pub const NO_BAND: i32 = -1; // band_leader sentinel (not in a band).
 pub const NO_GOD: u8 = 0; // faith sentinel (no faith).
 

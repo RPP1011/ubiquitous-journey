@@ -17,6 +17,7 @@ pub mod hash;
 pub mod intent;
 pub mod mentalmap;
 pub mod perceive;
+pub mod reason;
 pub mod planner;
 pub mod rng;
 pub mod systems;
