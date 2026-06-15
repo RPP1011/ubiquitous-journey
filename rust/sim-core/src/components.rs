@@ -491,6 +491,7 @@ pub enum IntentionKind {
     Shun = 6,        // plan-less shame-avoidance (from `forsworn`) — pops on expiry
     Delve = 7,       // venture to a place (from `relic`) — pops on expiry/relic flag
     Steal = 8,       // rob a believed-rich mark (the urchin heist) — predicate: robbed/gold target
+    Defend = 9,      // a brave soul fights a believed-hostile threatening a believed-friend (Dead pred)
 }
 
 pub const NONE_ID: u32 = u32::MAX;

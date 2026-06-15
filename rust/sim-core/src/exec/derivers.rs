@@ -35,6 +35,16 @@ const STEAL_HEIST: i64 = 1_500;
 /// How long a heist intention stays live before the urge cools.
 const STEAL_EXPIRY: u32 = 600;
 
+const PRI_DEFEND: u16 = 850;
+/// Only a brave-enough soul defends a friend (aggression above).
+const DEFEND_BRAVE: f32 = 0.5;
+/// A belief reads as a FRIEND above this standing (i16 quantization of +1..−1).
+const DEFEND_FRIEND_STANDING: i16 = 4_000;
+/// A hostile this close to a believed friend is threatening it.
+const DEFEND_NEAR: f32 = 16.0;
+/// How long a defend intention stays live before re-evaluating.
+const DEFEND_EXPIRY: u32 = 90;
+
 /// AVENGE — an `assaulted` memory whose culprit I have NOT slain ⇒ a standing grudge (the flagship
 /// vendetta). Locatability is checked at plan time (an un-locatable culprit yields no plan ⇒ pruned).
 pub fn avenge(gstack: &mut GoalStack, ctx: &DeriveCtx) {
@@ -127,6 +137,61 @@ pub fn steal(gstack: &mut GoalStack, ctx: &DeriveCtx) {
             amt: ctx.gold + STEAL_HEIST,
             born: ctx.now,
             expire: ctx.now + STEAL_EXPIRY,
+        });
+    }
+}
+
+/// DEFEND — the `hostileNearFriend` behavior (`js/sim/schemas/catalogue.ts` raise-the-alarm, the
+/// aggressive read): a BRAVE townsperson who believes a hostile is menacing a believed FRIEND resolves
+/// to put the threat down (a Fight, overriding the flee reflex). Belief×belief only — the friend and
+/// the threat are both believed. The pro-social counterweight to feud/steal aggression.
+pub fn defend(gstack: &mut GoalStack, ctx: &DeriveCtx) {
+    if ctx.faction != Faction::Townsfolk as u8 || ctx.personality.aggression < DEFEND_BRAVE {
+        return;
+    }
+    let bt = ctx.beliefs;
+    let near2 = DEFEND_NEAR * DEFEND_NEAR;
+    // the nearest believed-hostile that sits near a believed-friend (deterministic: lowest id).
+    let mut target: Option<u32> = None;
+    for h in 0..bt.len as usize {
+        let hb = &bt.bodies[h];
+        if hb.flags & 0x01 == 0 {
+            continue; // not believed hostile
+        }
+        let mut menacing = false;
+        for f in 0..bt.len as usize {
+            if f == h {
+                continue;
+            }
+            let fb = &bt.bodies[f];
+            if fb.standing <= DEFEND_FRIEND_STANDING {
+                continue; // not a believed friend
+            }
+            let dx = hb.last_x - fb.last_x;
+            let dz = hb.last_z - fb.last_z;
+            if dx * dx + dz * dz <= near2 {
+                menacing = true;
+                break;
+            }
+        }
+        if menacing {
+            target = Some(match target {
+                Some(t) => t.min(hb.subject),
+                None => hb.subject,
+            });
+        }
+    }
+    if let Some(foe) = target {
+        gstack.push(Intention {
+            kind: IntentionKind::Defend as u8,
+            flags: 0,
+            priority: PRI_DEFEND,
+            subject: foe,
+            place: 0,
+            _pad: [0; 3],
+            amt: 0,
+            born: ctx.now,
+            expire: ctx.now + DEFEND_EXPIRY,
         });
     }
 }

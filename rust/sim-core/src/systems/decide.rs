@@ -145,8 +145,9 @@ pub fn decide(world: &mut World) {
                 run_derivers(gstack, &dctx);
                 prune_goals(gstack, &pv, now);
 
-                // 2. AVENGE: the top AGGRESSIVE intention (a locatable grudge) hunts — overriding flee.
-                if let Some(idx) = top_of_kind(gstack, IntentionKind::Avenge) {
+                // 2. STAND AND FIGHT: the top AGGRESSIVE intention (a locatable grudge to avenge, or a
+                //    threat to a friend to repel) hunts — overriding the flee reflex.
+                if let Some(idx) = top_aggressive(gstack) {
                     if let Some(goal_set) = serve(gstack, idx, pl, &pv) {
                         *g = goal_set;
                         return;
@@ -279,18 +280,26 @@ fn prune_goals(gstack: &mut GoalStack, pv: &Pv, now: u32) {
 #[inline]
 fn intention_atom(it: &Intention) -> Option<Atom> {
     match it.kind {
-        x if x == IntentionKind::Avenge as u8 => Some(Atom::Dead(it.subject)),
+        x if x == IntentionKind::Avenge as u8 || x == IntentionKind::Defend as u8 => {
+            Some(Atom::Dead(it.subject))
+        }
         x if x == IntentionKind::SeekFortune as u8 => Some(Atom::GoldGe(it.amt)),
         x if x == IntentionKind::Steal as u8 => Some(Atom::Took(it.subject)),
         _ => None,
     }
 }
 
+/// Is this an AGGRESSIVE intention (one that stands and fights, overriding the flee reflex)?
+#[inline]
+fn is_aggressive(kind: u8) -> bool {
+    kind == IntentionKind::Avenge as u8 || kind == IntentionKind::Defend as u8
+}
+
 /// Is an intention's predicate satisfied (so it should pop)? Belief/own-state only.
 fn intention_satisfied(it: &Intention, pv: &Pv) -> bool {
     match it.kind {
         // believed-dead: I struck it down (Slew memory) OR I hold no belief about it any more.
-        x if x == IntentionKind::Avenge as u8 => {
+        x if x == IntentionKind::Avenge as u8 || x == IntentionKind::Defend as u8 => {
             pv.memory.has(EpisodeKind::Slew, it.subject) || pv.beliefs.find(it.subject).is_none()
         }
         x if x == IntentionKind::SeekFortune as u8 => pv.gold >= it.amt,
@@ -303,11 +312,11 @@ fn intention_satisfied(it: &Intention, pv: &Pv) -> bool {
     }
 }
 
-/// The highest-priority intention of a given kind (the avenge-first arbitration), or None.
-fn top_of_kind(gstack: &GoalStack, kind: IntentionKind) -> Option<usize> {
+/// The highest-priority AGGRESSIVE intention (avenge/defend) — the stand-and-fight arbitration, or None.
+fn top_aggressive(gstack: &GoalStack) -> Option<usize> {
     let mut best: Option<usize> = None;
     for k in 0..gstack.len as usize {
-        if gstack.items[k].kind != kind as u8 {
+        if !is_aggressive(gstack.items[k].kind) {
             continue;
         }
         best = Some(match best {
@@ -480,6 +489,34 @@ mod tests {
         assert!(w.econ[mark].gold < mark_before, "the rich mark should have been robbed");
         assert!(w.econ[thief].gold > 0, "the thief should have taken coin");
         assert_eq!(w.total_gold(), total, "gold conserved (moved by force, not minted)");
+    }
+
+    /// A brave townsperson who believes a hostile is menacing a believed friend stands and fights it
+    /// (overriding the flee reflex) — the pro-social `hostileNearFriend` behavior.
+    #[test]
+    fn brave_soul_defends_a_threatened_friend() {
+        let mut w = World::spawn(0xDEFE4D, 64);
+        let i = (0..w.n)
+            .find(|&i| w.faction[i] == Faction::Townsfolk as u8)
+            .expect("a townsperson exists");
+        w.needs[i] = Needs::default();
+        w.personality[i].aggression = 0.9;
+        w.memory[i] = Memory::default();
+        w.goals[i] = GoalStack::default();
+        let bt = &mut w.beliefs[i];
+        bt.clear();
+        // a believed FRIEND at (20,0)…
+        bt.subjects[0] = 5;
+        bt.bodies[0] = PersonBelief { subject: 5, last_x: 20.0, last_z: 0.0, confidence: 60000, standing: 8000, ..Default::default() };
+        // …and a believed HOSTILE right beside it.
+        bt.subjects[1] = 9;
+        bt.bodies[1] = PersonBelief { subject: 9, last_x: 22.0, last_z: 0.0, confidence: 60000, flags: 0x01, ..Default::default() };
+        bt.len = 2;
+        decide(&mut w);
+        match w.goal[i] {
+            Goal::Fight { target, .. } => assert_eq!(target, 9, "should fight the foe menacing the friend"),
+            other => panic!("a brave soul should defend (Fight), got {other:?}"),
+        }
     }
 
     /// The intention pops once the foe is believed slain (a Slew memory satisfies the predicate).
