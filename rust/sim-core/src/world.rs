@@ -7,7 +7,7 @@
 use crate::components::{
     BeliefTable, Beat, CombatBody, Commodity, DirectorState, Economy, Episode, EpisodeKind, Faction,
     Goal, GoalStack, Memory, Mood, Needs, Perceivable, Personality, Plan, Profession, Progression,
-    DefenseState, Quest, WatchState, NO_BAND, NO_GOD,
+    DefenseState, Quest, TropeState, WatchState, NO_BAND, NO_GOD,
 };
 use crate::grid::Grid;
 use crate::intent::{Intent, IntentQueue};
@@ -98,6 +98,7 @@ pub struct World {
     pub house_feuds: Vec<(u32, u32)>, // active house-vs-house feuds (canonical lo<hi pairs) — houses.rs
     pub watch: WatchState,            // the Night Watch institution's hysteresis/captaincy state (serial)
     pub defenses: DefenseState,       // the watchtower ring's shot tally (serial society phase)
+    pub tropes: TropeState,           // the relationship-trope engine's cooldown/telemetry state (serial)
 }
 
 /// A perceived faction sentinel: no disguise active.
@@ -164,6 +165,7 @@ impl World {
             house_feuds: Vec::new(),
             watch: WatchState::default(),
             defenses: DefenseState::default(),
+            tropes: TropeState::default(),
         };
         for i in 0..n {
             let r = TOWN_RADIUS * gen.next_f32().sqrt();
@@ -480,6 +482,7 @@ impl World {
     fn society_phase(&mut self) {
         systems::chronicle::tick(self);
         systems::director::tick(self);
+        systems::tropes::tick(self); // the relationship-trope engine (reunion/betrayal/feud/house-feud …)
         systems::patrician::tick(self); // brokers truces between the most mutually-hostile townsfolk
         systems::watch::tick(self); // musters/stands-down the Night Watch by threat (hysteresis)
         systems::intrigue::tick(self); // spies: disguise masks, false-belief/price plants, unmask

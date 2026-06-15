@@ -413,6 +413,27 @@ pub struct DefenseState {
                     // (a tower's Strike lands a tick later in the merge), so only shots is tallied.
 }
 
+/// Number of relationship-trope KINDs (the per-kind cooldown array width). Mirrors `tropes::TropeKind`.
+pub const N_TROPES: usize = 9;
+
+/// The relationship-trope engine's serial-phase state (`js/sim/director/tropes.ts`). The TS dispatcher
+/// keeps a global one-trope-per-window clock (`d._lastTropeAt`) PLUS a PER-KIND cooldown map
+/// (`d._kindAt[flag]`) so the feed ROTATES through the whole catalogue instead of repeating one trope.
+/// The SoA analogue is a fixed array of last-fire ticks (one slot per trope KIND, indexed by
+/// `tropes::TropeKind`) beside the global clock — NO HashMap (determinism: no hash iteration in a
+/// behaviour path). `u32::MAX` = "never fired" (so the first roll is never spuriously on-cooldown).
+#[derive(Clone, Copy, Debug)]
+pub struct TropeState {
+    pub last_any_at: u32,              // global one-trope-per-window clock (the TS `_lastTropeAt`)
+    pub last_kind_at: [u32; N_TROPES], // per-kind cooldown clocks (the TS `_kindAt[flag]`)
+    pub fires: u32,                    // telemetry: total relationship-tropes fired (read by tests)
+}
+impl Default for TropeState {
+    fn default() -> Self {
+        TropeState { last_any_at: u32::MAX, last_kind_at: [u32::MAX; N_TROPES], fires: 0 }
+    }
+}
+
 pub const NO_BAND: i32 = -1; // band_leader sentinel (not in a band).
 pub const NO_GOD: u8 = 0; // faith sentinel (no faith).
 
