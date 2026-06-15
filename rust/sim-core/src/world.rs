@@ -372,6 +372,9 @@ impl World {
                             salience: 50000,
                             _pad2: 0,
                         });
+                        // being struck stokes ANGER (decays in needs.rs) — the transient "fight back
+                        // when provoked" that complements the persistent avenge grudge. Own-write.
+                        self.mood[to].anger = (self.mood[to].anger + 0.35).min(1.0);
                     }
                     if self.combat[to].health <= 0.0 {
                         self.combat[to].health = 0.0;

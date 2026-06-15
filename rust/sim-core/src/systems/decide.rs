@@ -51,6 +51,8 @@ const TOWN_RADIUS: f32 = 180.0;
 const WANDERLUST_PULL: f32 = 0.18;
 /// How near a believed monster/raider a RENOWN-seeker will charge it for glory (instead of fleeing).
 const GLORY_RANGE: f32 = 45.0;
+/// Anger past this (0..1) makes a provoked agent turn and fight a believed-hostile rather than flee.
+const ANGER_FIGHT: f32 = 0.5;
 
 pub fn decide(world: &mut World) {
     let market = world.market;
@@ -60,6 +62,7 @@ pub fn decide(world: &mut World) {
 
     let World {
         ref needs,
+        ref mood,
         ref beliefs,
         ref memory,
         ref econ,
@@ -189,7 +192,7 @@ pub fn decide(world: &mut World) {
             // 3. THREAT: flee the NEAREST believed-hostile near where I believe it is (no grudge).
             let bt = &beliefs[i];
             let (mx, mz) = (pos[i][0], pos[i][1]);
-            let mut flee_from: Option<u32> = None;
+            let mut flee_from: Option<(u32, [f32; 2])> = None;
             let mut best_d2 = FLEE_RANGE2;
             for b in 0..(bt.len as usize).min(BELIEF_CAP) {
                 let cell = &bt.bodies[b];
@@ -199,13 +202,21 @@ pub fn decide(world: &mut World) {
                 let dx = mx - cell.last_x;
                 let dz = mz - cell.last_z;
                 let d2 = dx * dx + dz * dz;
-                if d2 < best_d2 || (d2 == best_d2 && flee_from.map_or(true, |s| cell.subject < s)) {
+                if d2 < best_d2
+                    || (d2 == best_d2 && flee_from.map_or(true, |(s, _)| cell.subject < s))
+                {
                     best_d2 = d2;
-                    flee_from = Some(cell.subject);
+                    flee_from = Some((cell.subject, [cell.last_x, cell.last_z]));
                 }
             }
-            if let Some(from) = flee_from {
-                *g = Goal::Flee { from };
+            if let Some((from, fpos)) = flee_from {
+                // PROVOKED: a sufficiently ANGRY agent turns and fights its tormentor rather than
+                // fleeing (the mood-coloured decision; anger decays, so it's a transient stand).
+                if mood[i].anger >= ANGER_FIGHT {
+                    *g = Goal::Fight { target: from, to: fpos };
+                } else {
+                    *g = Goal::Flee { from };
+                }
                 return;
             }
 
