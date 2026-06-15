@@ -65,6 +65,7 @@ pub fn decide(world: &mut World) {
         ref pos,
         ref home,
         ref work_sites,
+        ref map,
         ref alive,
         ref mut goal,
         ref mut goals,
@@ -101,7 +102,13 @@ pub fn decide(world: &mut World) {
                 } else if energy_def >= comfort_def {
                     *g = Goal::Rest;
                 } else {
-                    *g = Goal::Comfort { to: home[i] };
+                    // seek the nearest believed hearth (a COMFORT-affording place), else fall back to
+                    // my own home anchor — the first MentalMap consumer.
+                    let to = map
+                        .nearest(crate::mentalmap::AFF_COMFORT, pos[i], 220.0)
+                        .map(|p| [p.x, p.z])
+                        .unwrap_or(home[i]);
+                    *g = Goal::Comfort { to };
                 }
                 return;
             }

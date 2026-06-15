@@ -11,6 +11,7 @@ use crate::components::{
 };
 use crate::grid::Grid;
 use crate::intent::{Intent, IntentQueue};
+use crate::mentalmap::MentalMap;
 use crate::perceive::perceive;
 use crate::rng::DeterministicRng;
 use crate::systems;
@@ -76,6 +77,7 @@ pub struct World {
     pub work_sites: [[f32; 2]; N_WORK_SITES],
     pub town_center: [f32; 2],
     pub base_price: [i64; crate::components::N_COMMODITIES],
+    pub map: MentalMap, // affordance-queried static places (read-only after worldgen)
 
     // ── Wave-3 society/observer state (mutated in the SERIAL society phase) ──
     pub sim_rng: DeterministicRng, // world-level draws for director/lineage/etc. (serial ⇒ deterministic)
@@ -136,6 +138,7 @@ impl World {
             work_sites,
             town_center: [0.0, 0.0],
             base_price: [10, 8, 12, 30, 15, 40],
+            map: MentalMap::default(),
             sim_rng: DeterministicRng::seed(seed, 0x50C1E7),
             director: DirectorState::default(),
             chronicle: Vec::new(),
@@ -199,6 +202,8 @@ impl World {
             w.band_leader.push(NO_BAND);
             w.house.push(0);
         }
+        // build the static affordance map once from the finished geography.
+        w.map = MentalMap::build(w.market, &w.work_sites, w.town_center, ARENA_CLAMP);
         w
     }
 

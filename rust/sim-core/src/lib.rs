@@ -15,6 +15,7 @@ pub mod exec;
 pub mod grid;
 pub mod hash;
 pub mod intent;
+pub mod mentalmap;
 pub mod perceive;
 pub mod planner;
 pub mod rng;
