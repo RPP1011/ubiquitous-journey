@@ -49,6 +49,8 @@ const FLEE_RANGE2: f32 = FLEE_RANGE * FLEE_RANGE;
 const TOWN_RADIUS: f32 = 180.0;
 /// Per-tick chance a WANDERLUST townsperson roams instead of working (the see-the-world drive).
 const WANDERLUST_PULL: f32 = 0.18;
+/// How near a believed monster/raider a RENOWN-seeker will charge it for glory (instead of fleeing).
+const GLORY_RANGE: f32 = 45.0;
 
 pub fn decide(world: &mut World) {
     let market = world.market;
@@ -155,6 +157,32 @@ pub fn decide(world: &mut World) {
                         *g = goal_set;
                         return;
                     }
+                }
+            }
+
+            // 2b. SEEK GLORY: a RENOWN-seeker hunts a believed monster/raider for glory — it stands and
+            //     fights an attacker-faction foe instead of fleeing (the renown ambition's teeth).
+            if townsfolk && ambition[i] == crate::components::AMB_RENOWN {
+                let bt = &beliefs[i];
+                let mut foe: Option<(u32, [f32; 2])> = None;
+                let mut best = (GLORY_RANGE * GLORY_RANGE, u32::MAX);
+                for b in 0..(bt.len as usize).min(BELIEF_CAP) {
+                    let cell = &bt.bodies[b];
+                    let attacker = cell.faction == Faction::Monster as u8 || cell.faction == Faction::Raider as u8;
+                    if cell.flags & 0x01 == 0 || !attacker {
+                        continue;
+                    }
+                    let dx = pos[i][0] - cell.last_x;
+                    let dz = pos[i][1] - cell.last_z;
+                    let d2 = dx * dx + dz * dz;
+                    if d2 < best.0 || (d2 == best.0 && cell.subject < best.1) {
+                        best = (d2, cell.subject);
+                        foe = Some((cell.subject, [cell.last_x, cell.last_z]));
+                    }
+                }
+                if let Some((target, to)) = foe {
+                    *g = Goal::Fight { target, to };
+                    return;
                 }
             }
 
