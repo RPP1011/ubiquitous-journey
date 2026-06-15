@@ -136,5 +136,8 @@ pub fn world_hash(w: &World) -> u64 {
     h = fold(h, &d.crises.to_le_bytes());
     h = fold(h, &w.watch.calm.to_le_bytes());
     h = fold(h, &w.watch.captain.to_le_bytes());
+    // town defences (the watchtower ring's tally) — serial-phase state, covered so any non-determinism
+    // in tower target selection / firing is caught by the M-invariance gate.
+    h = fold(h, &w.defenses.shots.to_le_bytes());
     h
 }

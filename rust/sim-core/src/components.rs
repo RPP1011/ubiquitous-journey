@@ -736,3 +736,18 @@ impl Default for DirectorState {
         }
     }
 }
+
+// ───────────────────────────── town defences (the watchtower ring) ─────────────────────────────
+//
+// The world-level tally of the watchtower ring (the Rust analogue of `Defenses.stats`). The towers
+// themselves are computed deterministically each pass from `world.town_center` (no per-tower state to
+// persist — the substrate has one dense, flat town), so only the running shot/kill counters live here.
+// Mutated only in the SERIAL society phase ⇒ trivially deterministic. Telemetry — read by tests /
+// inspection, never asserted on internally.
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DefenseState {
+    pub shots: u32, // total tower shots fired (the TS `stats.shots`)
+    // (the TS `stats.kills` is dropped: a tower's Strike lands a tick later in the deterministic merge,
+    //  which doesn't carry tower-source attribution — `shots` is the faithful, deterministic tally.)
+}
