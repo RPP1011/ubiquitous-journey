@@ -142,5 +142,29 @@ pub fn world_hash(w: &World) -> u64 {
     h = fold(h, &w.watch.calm.to_le_bytes());
     h = fold(h, &w.watch.captain.to_le_bytes());
     h = fold(h, &w.defenses.shots.to_le_bytes());
+    // Wilderness-expeditions: the afield-companies roster + throttle + tally (serial-phase state).
+    let ex = &w.expeditions;
+    h = fold(h, &ex.acc.to_le_bytes());
+    h = fold(h, &ex.last_form.to_le_bytes());
+    h = fold(h, &ex.mounted.to_le_bytes());
+    h = fold(h, &ex.triumphs.to_le_bytes());
+    h = fold(h, &ex.losses.to_le_bytes());
+    h = fold(h, &ex.slain.to_le_bytes());
+    h = fold(h, &(ex.companies.len() as u64).to_le_bytes());
+    for c in &ex.companies {
+        h = fold(h, &c.captain.to_le_bytes());
+        h = fold(h, &[c.phase, c.n_horrors, c.n_members]);
+        h = fold(h, &c.target[0].to_bits().to_le_bytes());
+        h = fold(h, &c.target[1].to_bits().to_le_bytes());
+        h = fold(h, &c.started_at.to_le_bytes());
+        h = fold(h, &c.hunt_until.to_le_bytes());
+        h = fold(h, &c.kills_at0.to_le_bytes());
+        for id in c.horrors {
+            h = fold(h, &id.to_le_bytes());
+        }
+        for id in c.members {
+            h = fold(h, &id.to_le_bytes());
+        }
+    }
     h
 }

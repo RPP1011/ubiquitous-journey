@@ -25,6 +25,7 @@ pub mod progression;
 pub mod chronicle;
 pub mod defenses;
 pub mod director;
+pub mod expeditions;
 pub mod faith;
 pub mod groups;
 pub mod houses;
