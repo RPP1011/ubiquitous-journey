@@ -27,9 +27,9 @@
 use rayon::prelude::*;
 
 use crate::components::{
-    EpisodeKind, Faction, Goal, GoalStack, Intention, IntentionKind, Memory, Plan, Profession,
-    BELIEF_CAP, NONE_ID,
+    EpisodeKind, Faction, Goal, GoalStack, Intention, IntentionKind, Plan, Profession, BELIEF_CAP,
 };
+use crate::exec::registry::{run_derivers, DeriveCtx};
 use crate::planner::{compile_planstep, solve_plan, step_effect_holds, Atom, Pv};
 use crate::world::World;
 
@@ -47,18 +47,6 @@ const FLEE_RANGE2: f32 = FLEE_RANGE * FLEE_RANGE;
 
 /// Town radius wander points are drawn within (matches worldgen's cluster radius).
 const TOWN_RADIUS: f32 = 180.0;
-
-/// How long a grudge stays live (ticks) before it cools out (mirrors `MOTIVE.avengeExpiry`).
-const AVENGE_EXPIRY: u32 = 1200;
-/// How long a heard-of windfall stays actionable (ticks).
-const FORTUNE_EXPIRY: u32 = 1800;
-/// The gold a seek-fortune intention drives toward (minor units, ~140 gold).
-const FORTUNE_TARGET: i64 = 14_000;
-
-/// Intention priorities (quantized 0..1 ×1000), mirroring the TS `g.priority` values.
-const PRI_AVENGE: u16 = 900;
-const PRI_SEEK_FORTUNE: u16 = 600;
-const PRI_GRIEVE: u16 = 550;
 
 pub fn decide(world: &mut World) {
     let market = world.market;
@@ -135,7 +123,17 @@ pub fn decide(world: &mut World) {
             //        then serve the top via the cached plan. Townsfolk carry grudge-goals; monsters/
             //        raiders fight by reflex (combat's nearest-hostile) without a goal-plan.
             if townsfolk {
-                derive_goals(gstack, &memory[i], now);
+                let dctx = DeriveCtx {
+                    faction: faction[i],
+                    profession: profession[i],
+                    gold: econ[i].gold,
+                    inventory: econ[i].inventory,
+                    pos: pos[i],
+                    beliefs: &beliefs[i],
+                    memory: &memory[i],
+                    now,
+                };
+                run_derivers(gstack, &dctx);
                 prune_goals(gstack, &pv, now);
 
                 // 2. AVENGE: the top AGGRESSIVE intention (a locatable grudge) hunts — overriding flee.
@@ -249,63 +247,6 @@ fn serve(gstack: &mut GoalStack, idx: usize, pl: &mut Plan, pv: &Pv) -> Option<G
     }
 }
 
-/// `deriveGoals`: scan OWN salient memory and push standing intentions onto the persistent stack
-/// (idempotent — `push` dedups + refreshes). Wave-4 covers the avenge/seek-fortune/grieve derivations;
-/// repay/wary/glory/shun/delve land with the full-parity pass (task: full deriveGoals).
-fn derive_goals(gstack: &mut GoalStack, memory: &Memory, _now: u32) {
-    for k in 0..memory.len as usize {
-        let ep = memory.items[k];
-        match ep.kind {
-            x if x == EpisodeKind::Assaulted as u8 => {
-                // a wrong remembered → avenge the culprit (unless I've already slain it).
-                if ep.with != NONE_ID && !memory.has(EpisodeKind::Slew, ep.with) {
-                    gstack.push(Intention {
-                        kind: IntentionKind::Avenge as u8,
-                        flags: 0,
-                        priority: PRI_AVENGE,
-                        subject: ep.with,
-                        place: 0,
-                        _pad: [0; 3],
-                        amt: 0,
-                        born: ep.t,
-                        expire: ep.t + AVENGE_EXPIRY,
-                    });
-                }
-            }
-            x if x == EpisodeKind::Windfall as u8 => {
-                gstack.push(Intention {
-                    kind: IntentionKind::SeekFortune as u8,
-                    flags: 0,
-                    priority: PRI_SEEK_FORTUNE,
-                    subject: NONE_ID,
-                    place: ep.place,
-                    _pad: [0; 3],
-                    amt: FORTUNE_TARGET,
-                    born: ep.t,
-                    expire: ep.t + FORTUNE_EXPIRY,
-                });
-            }
-            x if x == EpisodeKind::WitnessedDeath as u8 => {
-                // a plan-less mourning disposition (biases, decays — no plan).
-                if ep.with != NONE_ID {
-                    gstack.push(Intention {
-                        kind: IntentionKind::Grieve as u8,
-                        flags: 0,
-                        priority: PRI_GRIEVE,
-                        subject: ep.with,
-                        place: 0,
-                        _pad: [0; 3],
-                        amt: 0,
-                        born: ep.t,
-                        expire: ep.t + 900,
-                    });
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
 /// `pruneGoals`: drop intentions whose predicate is satisfied, whose TTL expired, or which the planner
 /// flagged unreachable. Iterate high→low index so swap-removal never skips an entry.
 fn prune_goals(gstack: &mut GoalStack, pv: &Pv, now: u32) {
@@ -372,7 +313,7 @@ fn top_of_kind(gstack: &GoalStack, kind: IntentionKind) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::components::{Episode, GoalKind, Needs, PersonBelief};
+    use crate::components::{Episode, GoalKind, Memory, Needs, PersonBelief};
     use crate::world::World;
 
     #[test]

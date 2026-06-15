@@ -11,6 +11,7 @@
 #![allow(dead_code)]
 
 pub mod components;
+pub mod exec;
 pub mod grid;
 pub mod hash;
 pub mod intent;
