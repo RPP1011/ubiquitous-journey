@@ -212,6 +212,9 @@ fn run_matcher(prog: &mut Progression) {
     if prog.total_level >= TOTAL_LEVEL_CAP {
         prog.xp = 0; // capped: stop banking (mirrors JS).
     }
+    // grant any class-tier ability milestones the new level unlocks (the JS CLASS_MILESTONES grant;
+    // pure own-write on the `abilities` column — the autocaster reads it next tick).
+    crate::abilities::grant_milestones(prog);
 }
 
 #[cfg(test)]

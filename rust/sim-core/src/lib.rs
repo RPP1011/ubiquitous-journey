@@ -10,8 +10,11 @@
 // expected until then. Re-tighten (remove this) once the core systems land.
 #![allow(dead_code)]
 
+pub mod abilities;
 pub mod components;
 pub mod exec;
+pub mod rpgxp;
+pub mod tags;
 pub mod grid;
 pub mod hash;
 pub mod intent;

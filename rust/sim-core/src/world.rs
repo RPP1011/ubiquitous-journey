@@ -52,6 +52,7 @@ pub struct World {
     pub town: Vec<u16>,
     pub rng: Vec<DeterministicRng>,
     pub progression: Vec<Progression>,
+    pub ability_cd: Vec<f32>, // per-agent ability-cast cooldown (s); ticked + gated by abilities::cast
     // ── Wave-4 GOAP columns: episodic memory + the persistent goal-stack + cached plan ──
     pub memory: Vec<Memory>,
     pub goals: Vec<GoalStack>, // standing intentions (deriveGoals→pushGoal; persists across ticks)
@@ -134,6 +135,7 @@ impl World {
             town: Vec::with_capacity(n),
             rng: Vec::with_capacity(n),
             progression: Vec::with_capacity(n),
+            ability_cd: Vec::with_capacity(n),
             memory: Vec::with_capacity(n),
             goals: Vec::with_capacity(n),
             plan: Vec::with_capacity(n),
@@ -210,6 +212,7 @@ impl World {
             w.town.push(0);
             w.rng.push(DeterministicRng::seed(seed, i as u64));
             w.progression.push(Progression::default());
+            w.ability_cd.push(0.0);
             w.memory.push(Memory::default());
             w.goals.push(GoalStack::default());
             w.plan.push(Plan::default());
@@ -254,6 +257,7 @@ impl World {
         self.town.push(0);
         self.rng.push(DeterministicRng::seed(self.seed, i as u64));
         self.progression.push(Progression::default());
+        self.ability_cd.push(0.0);
         self.memory.push(Memory::default());
         self.goals.push(GoalStack::default());
         self.plan.push(Plan::default());
@@ -461,6 +465,7 @@ impl World {
         self.snapshot_beliefs(); // serial: freeze the read set for gossip
         systems::gossip::gossip(self); // parallel: read prev beliefs, write own
         systems::combat::resolve(self); // parallel decide → Strike intents
+        crate::abilities::cast(self); // parallel NPC autocast → extra Strike intents / self-buff own-writes
         systems::market::clear(self); // parallel decide → Transfer intents
         systems::act::act(self); // parallel on-arrival interaction verbs → Hand/Deed intents
         self.drain_intents(); // serial deterministic merge
@@ -499,6 +504,7 @@ impl World {
         self.snapshot_beliefs();
         systems::gossip::gossip(self);
         systems::combat::resolve(self);
+        crate::abilities::cast(self);
         systems::market::clear(self);
         systems::act::act(self);
         self.drain_intents();
