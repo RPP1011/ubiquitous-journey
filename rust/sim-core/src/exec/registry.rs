@@ -31,6 +31,7 @@ pub static DERIVERS: &[Deriver] = &[
     super::derivers::steal,
     super::derivers::defend,
     super::derivers::donate,
+    super::derivers::repay,
 ];
 
 /// Run every registered deriver over the agent's goal stack (own-state only ⇒ deterministic).

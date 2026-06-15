@@ -285,7 +285,9 @@ fn intention_atom(it: &Intention) -> Option<Atom> {
         }
         x if x == IntentionKind::SeekFortune as u8 => Some(Atom::GoldGe(it.amt)),
         x if x == IntentionKind::Steal as u8 => Some(Atom::Took(it.subject)),
-        x if x == IntentionKind::Donate as u8 => Some(Atom::Gave(it.subject)),
+        x if x == IntentionKind::Donate as u8 || x == IntentionKind::Repay as u8 => {
+            Some(Atom::Gave(it.subject))
+        }
         _ => None,
     }
 }
@@ -308,7 +310,9 @@ fn intention_satisfied(it: &Intention, pv: &Pv) -> bool {
         x if x == IntentionKind::Steal as u8 => {
             pv.memory.has(EpisodeKind::Robbed, it.subject) || pv.gold >= it.amt
         }
-        x if x == IntentionKind::Donate as u8 => pv.memory.has(EpisodeKind::Gave, it.subject),
+        x if x == IntentionKind::Donate as u8 || x == IntentionKind::Repay as u8 => {
+            pv.memory.has(EpisodeKind::Gave, it.subject)
+        }
         // plan-less dispositions pop on expiry only (handled in prune_goals).
         _ => false,
     }
@@ -567,6 +571,53 @@ mod tests {
         );
         let total_after: i32 = w.econ.iter().map(|e| e.inventory[Commodity::Food as usize]).sum();
         assert_eq!(total_after, total_food, "food conserved (moved, not minted)");
+    }
+
+    /// A grateful soul who was succoured repays its benefactor in kind (closes the reciprocity loop).
+    #[test]
+    fn grateful_soul_repays_its_benefactor() {
+        use crate::components::Commodity;
+        let mut w = World::spawn(0x9EA7, 8);
+        let (debtor, benefactor) = (0usize, 1usize);
+        w.faction[debtor] = Faction::Townsfolk as u8;
+        w.faction[benefactor] = Faction::Townsfolk as u8;
+        w.needs[debtor] = Needs::default();
+        w.econ[debtor].inventory[Commodity::Food as usize] = 4;
+        w.pos[debtor] = [0.0, 0.0];
+        w.pos[benefactor] = [1.5, 0.0];
+        w.beliefs[debtor].clear();
+        w.beliefs[debtor].subjects[0] = benefactor as u32;
+        w.beliefs[debtor].bodies[0] = PersonBelief {
+            subject: benefactor as u32,
+            last_x: 1.5,
+            last_z: 0.0,
+            confidence: 60000,
+            ..Default::default()
+        };
+        w.beliefs[debtor].len = 1;
+        w.goals[debtor] = GoalStack::default();
+        // I remember being succoured by the benefactor while desperate.
+        w.memory[debtor] = Memory::default();
+        w.memory[debtor].record(Episode {
+            kind: EpisodeKind::Succoured as u8,
+            with: benefactor as u32,
+            t: w.tick,
+            salience: 45000,
+            ..Default::default()
+        });
+        let total_food: i32 = w.econ.iter().map(|e| e.inventory[Commodity::Food as usize]).sum();
+        for _ in 0..6 {
+            w.tick();
+        }
+        // the debt is discharged (the debtor gave to its benefactor) and food is conserved. (The
+        // benefactor, now succoured in turn, may give back — an emergent reciprocity cascade — so we
+        // assert the robust signal, not a net food level.)
+        assert!(
+            w.memory[debtor].has(EpisodeKind::Gave, benefactor as u32),
+            "the debt should be discharged (a Gave marker on the debtor)"
+        );
+        let total_after: i32 = w.econ.iter().map(|e| e.inventory[Commodity::Food as usize]).sum();
+        assert_eq!(total_after, total_food, "food conserved across the reciprocity");
     }
 
     /// The intention pops once the foe is believed slain (a Slew memory satisfies the predicate).

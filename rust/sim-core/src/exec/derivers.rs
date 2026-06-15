@@ -35,6 +35,12 @@ const STEAL_HEIST: i64 = 1_500;
 /// How long a heist intention stays live before the urge cools.
 const STEAL_EXPIRY: u32 = 600;
 
+const PRI_REPAY: u16 = 700;
+/// Repay only when holding more than this many Food units to spare for the benefactor.
+const REPAY_FOOD_KEEP: i32 = 1;
+/// How long a debt of gratitude stays live before it fades.
+const REPAY_EXPIRY: u32 = 600;
+
 const PRI_DONATE: u16 = 520;
 /// The alms gate: a WEALTHY (gold above) + GENEROUS (altruism above) soul with a FOOD surplus.
 const DONATE_RICH: i64 = 8_000;
@@ -148,6 +154,37 @@ pub fn steal(gstack: &mut GoalStack, ctx: &DeriveCtx) {
             born: ctx.now,
             expire: ctx.now + STEAL_EXPIRY,
         });
+    }
+}
+
+/// REPAY — the obligation ledger's discharge (`js/sim/features/ledger.ts`): a `Succoured` memory (I
+/// was helped while desperate) ⇒ repay the benefactor in kind once I can spare it. Closes the
+/// alms→succoured→repay reciprocity loop. Belief-gated: I must still be able to locate the benefactor.
+pub fn repay(gstack: &mut GoalStack, ctx: &DeriveCtx) {
+    if ctx.faction != Faction::Townsfolk as u8 || ctx.inventory[0] <= REPAY_FOOD_KEEP {
+        return; // nothing to give back yet
+    }
+    for k in 0..ctx.memory.len as usize {
+        let ep = ctx.memory.items[k];
+        if ep.kind != EpisodeKind::Succoured as u8 || ep.with == NONE_ID {
+            continue;
+        }
+        let benefactor = ep.with;
+        if ctx.memory.has(EpisodeKind::Gave, benefactor) || ctx.beliefs.find(benefactor).is_none() {
+            continue; // already repaid, or I've lost track of them
+        }
+        gstack.push(Intention {
+            kind: IntentionKind::Repay as u8,
+            flags: 0,
+            priority: PRI_REPAY,
+            subject: benefactor,
+            place: 0,
+            _pad: [0; 3],
+            amt: 0,
+            born: ep.t,
+            expire: ep.t + REPAY_EXPIRY,
+        });
+        break; // discharge one debt at a time
     }
 }
 
