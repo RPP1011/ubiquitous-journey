@@ -1,28 +1,36 @@
-//! FAN-OUT UNIT: decide. Ports `js/sim/agent/decide.ts` + `js/sim/motivation.js` (goal derivation)
-//! + the GOAP layer (`js/sim/planner.ts`) — to their SPIRIT (doc 22 §9, NO TS parity).
+//! FAN-OUT UNIT: decide. Ports `js/sim/agent/decide.ts` + `js/sim/motivation.js` (goal derivation +
+//! the persistent goal stack) + the GOAP layer (`js/sim/planner.ts`) — to behavioral parity (only
+//! determinism diverges, doc 22 §9).
 //!
-//! WHAT THIS IMPLEMENTS (parallel, own-write — `world.goal`/`world.rng`, reading own `needs`/`beliefs`/
-//! `memory`/`econ`/`pos`/… + the static world). Per agent, settle `goal[i]` in priority order — every
-//! read is OWN state (the epistemic split: never another agent's live columns):
-//!   1. SURVIVAL — the largest need deficit past its seek bar claims the body (Eat/Rest/Comfort).
-//!   2. AVENGE (GOAP) — a live grudge: an `assaulted` memory whose culprit I haven't slain, isn't
-//!      stale, and I can still locate (a belief about it). I plan `Dead(culprit)` through the
-//!      backward-chaining `planner`; its first step compiles to a MOVING Fight that hunts the foe.
-//!   3. THREAT — a believed-hostile near where I believe it is, with no grudge to settle ⇒ Flee.
-//!   4. SEEK-FORTUNE (GOAP) — a `windfall` memory while poor ⇒ plan `GoldGe(target)` (sell surplus
-//!      at the believed market). The director's OPPORTUNITY trope plants these.
+//! THE FAITHFUL SKELETON (Wave-4): intentions are NOT recomputed transiently — they live on a
+//! PERSISTENT `GoalStack` (the analogue of `agent.goals`), are pushed by `derive_goals` (`deriveGoals`)
+//! with their own priority/expiry/flags, deduped by identity, and drained by `prune_goals`
+//! (`pruneGoals`) when satisfied / expired / unreachable. The top intention is served by a CACHED
+//! `Plan` (the analogue of `_currentPlanStep`): the backward-chainer fills it once, a cursor advances
+//! as each step's effect lands, and it is rebuilt only when the served goal changes or the plan is
+//! exhausted/infeasible. So the stack-dependent features to come (oaths, caution, closure XP, arc
+//! resolution) have a persistent goal + plan object to attach to.
+//!
+//! Per-agent priority order (every read is OWN state — the epistemic split):
+//!   1. SURVIVAL reflex — the largest need deficit past its seek bar (Eat/Rest/Comfort).
+//!   2. AVENGE — the top intention if it is an aggressive grudge with an actionable plan ⇒ a moving
+//!      Fight that hunts the culprit (overrides flee — a grudge-holder stands and hunts).
+//!   3. THREAT — a believed-hostile near where I believe it is, no grudge to settle ⇒ Flee.
+//!   4. OTHER INTENTIONS — the top non-aggressive intention with an actionable plan (e.g. seek-fortune
+//!      → sell surplus at the believed market).
 //!   5. LIVELIHOOD — a working townsperson works its craft, with the occasional market trip.
 //!   6. WANDER — a random point near town.
 //!
-//! Determinism: read/write only row `i`; randomness only via `rng[i]`; the planner is a pure per-agent
-//! search over own state. No cross-agent reads, no HashMap / float-reduce ⇒ M=1 ≡ M=N.
+//! Determinism: read/write only row `i`; the stack/plan are own columns; the planner is a pure
+//! per-agent search; randomness only via `rng[i]`. No cross-agent reads / HashMap / float-reduce.
 
 use rayon::prelude::*;
 
 use crate::components::{
-    BeliefTable, EpisodeKind, Faction, Goal, Memory, Profession, BELIEF_CAP,
+    EpisodeKind, Faction, Goal, GoalStack, Intention, IntentionKind, Memory, Plan, Profession,
+    BELIEF_CAP, NONE_ID,
 };
-use crate::planner::{plan, Atom, Pv};
+use crate::planner::{compile_planstep, solve_plan, step_effect_holds, Atom, Pv};
 use crate::world::World;
 
 /// Need thresholds — a need is only a candidate once it dips below its seek bar.
@@ -47,6 +55,11 @@ const FORTUNE_EXPIRY: u32 = 1800;
 /// The gold a seek-fortune intention drives toward (minor units, ~140 gold).
 const FORTUNE_TARGET: i64 = 14_000;
 
+/// Intention priorities (quantized 0..1 ×1000), mirroring the TS `g.priority` values.
+const PRI_AVENGE: u16 = 900;
+const PRI_SEEK_FORTUNE: u16 = 600;
+const PRI_GRIEVE: u16 = 550;
+
 pub fn decide(world: &mut World) {
     let market = world.market;
     let town_center = world.town_center;
@@ -65,153 +78,295 @@ pub fn decide(world: &mut World) {
         ref work_sites,
         ref alive,
         ref mut goal,
+        ref mut goals,
+        ref mut plan,
         ref mut rng,
         ..
     } = *world;
 
-    goal.par_iter_mut().zip(rng.par_iter_mut()).enumerate().for_each(|(i, (g, my_rng))| {
-        // The dead make no decisions (keep a stable goal — needs/locomotion already guard `alive`).
-        if !alive[i] {
-            *g = Goal::Idle;
-            return;
-        }
-
-        let need = &needs[i];
-        let townsfolk = faction[i] == Faction::Townsfolk as u8;
-
-        // 1. SURVIVAL FIRST: the LARGEST deficit below its seek bar claims the body.
-        let hunger_def = if need.hunger < HUNGER_SEEK { HUNGER_SEEK - need.hunger } else { 0.0 };
-        let energy_def = if need.energy < ENERGY_SEEK { ENERGY_SEEK - need.energy } else { 0.0 };
-        let comfort_def = if need.comfort < COMFORT_SEEK { COMFORT_SEEK - need.comfort } else { 0.0 };
-        if hunger_def > 0.0 || energy_def > 0.0 || comfort_def > 0.0 {
-            if hunger_def >= energy_def && hunger_def >= comfort_def {
-                *g = Goal::Eat;
-            } else if energy_def >= comfort_def {
-                *g = Goal::Rest;
-            } else {
-                *g = Goal::Comfort { to: home[i] };
-            }
-            return;
-        }
-
-        // Build the believed-state view the GOAP planner reasons over (OWN state + static world).
-        let pv = Pv {
-            pos: pos[i],
-            gold: econ[i].gold,
-            inventory: econ[i].inventory,
-            price_belief: econ[i].price_belief,
-            profession: profession[i],
-            beliefs: &beliefs[i],
-            memory: &memory[i],
-            market,
-            work_sites,
-            base_price: &base_price,
-        };
-
-        // 2. AVENGE (GOAP): a live grudge I can still locate → hunt the culprit down. Townsfolk carry
-        //    grudges; monsters/raiders fight by reflex (combat's nearest-hostile) without a goal-plan.
-        if townsfolk {
-            if let Some(culprit) = pick_avenge(&memory[i], &beliefs[i], now) {
-                if let Some(planned) = plan(Atom::Dead(culprit), &pv) {
-                    *g = planned;
-                    return;
-                }
-            }
-        }
-
-        // 3. THREAT: flee the NEAREST believed-hostile near where I believe it is (no grudge to settle).
-        let bt = &beliefs[i];
-        let (mx, mz) = (pos[i][0], pos[i][1]);
-        let mut flee_from: Option<u32> = None;
-        let mut best_d2 = FLEE_RANGE2;
-        for b in 0..(bt.len as usize).min(BELIEF_CAP) {
-            let cell = &bt.bodies[b];
-            if cell.flags & 0x01 == 0 {
-                continue; // not believed hostile
-            }
-            let dx = mx - cell.last_x;
-            let dz = mz - cell.last_z;
-            let d2 = dx * dx + dz * dz;
-            if d2 < best_d2 || (d2 == best_d2 && flee_from.map_or(true, |s| cell.subject < s)) {
-                best_d2 = d2;
-                flee_from = Some(cell.subject);
-            }
-        }
-        if let Some(from) = flee_from {
-            *g = Goal::Flee { from };
-            return;
-        }
-
-        // 4. SEEK-FORTUNE (GOAP): a heard-of windfall while poor → raise gold by selling a surplus.
-        if townsfolk && has_live_windfall(&memory[i], now) && econ[i].gold < FORTUNE_TARGET {
-            if let Some(planned) = plan(Atom::GoldGe(FORTUNE_TARGET), &pv) {
-                *g = planned;
+    goal.par_iter_mut()
+        .zip(goals.par_iter_mut())
+        .zip(plan.par_iter_mut())
+        .zip(rng.par_iter_mut())
+        .enumerate()
+        .for_each(|(i, (((g, gstack), pl), my_rng))| {
+            // The dead make no decisions and carry no intentions.
+            if !alive[i] {
+                *g = Goal::Idle;
+                gstack.len = 0;
+                pl.clear();
                 return;
             }
-        }
 
-        // 5. LIVELIHOOD: a working townsperson works its craft, with an occasional market trip.
-        let prof = profession[i];
-        if prof != Profession::None as u8 && townsfolk {
-            if my_rng.next_f32() < MARKET_CHANCE {
-                *g = Goal::Market { site: market };
-            } else {
-                let site_idx = (prof as usize - 1).min(work_sites.len() - 1);
-                *g = Goal::Work { site: work_sites[site_idx] };
+            let need = &needs[i];
+            let townsfolk = faction[i] == Faction::Townsfolk as u8;
+
+            // 1. SURVIVAL FIRST: the LARGEST deficit below its seek bar claims the body (a reflex that
+            //    outranks the standing intentions — a starving avenger eats first).
+            let hunger_def = if need.hunger < HUNGER_SEEK { HUNGER_SEEK - need.hunger } else { 0.0 };
+            let energy_def = if need.energy < ENERGY_SEEK { ENERGY_SEEK - need.energy } else { 0.0 };
+            let comfort_def = if need.comfort < COMFORT_SEEK { COMFORT_SEEK - need.comfort } else { 0.0 };
+            if hunger_def > 0.0 || energy_def > 0.0 || comfort_def > 0.0 {
+                if hunger_def >= energy_def && hunger_def >= comfort_def {
+                    *g = Goal::Eat;
+                } else if energy_def >= comfort_def {
+                    *g = Goal::Rest;
+                } else {
+                    *g = Goal::Comfort { to: home[i] };
+                }
+                return;
             }
-            return;
-        }
 
-        // 6. WANDER: a random point near the town centre (own rng stream; uniform over the disc).
-        let r = TOWN_RADIUS * my_rng.next_f32().sqrt();
-        let a = my_rng.next_f32() * std::f32::consts::TAU;
-        let to = [town_center[0] + r * a.cos(), town_center[1] + r * a.sin()];
-        *g = Goal::Wander { to };
-    });
+            // The believed-state view the GOAP planner reasons over (OWN state + the static world).
+            let pv = Pv {
+                pos: pos[i],
+                gold: econ[i].gold,
+                inventory: econ[i].inventory,
+                price_belief: econ[i].price_belief,
+                profession: profession[i],
+                beliefs: &beliefs[i],
+                memory: &memory[i],
+                market,
+                work_sites,
+                base_price: &base_price,
+            };
+
+            // 2/3/4. THE GOAL STACK: derive standing intentions from memory, prune resolved/stale ones,
+            //        then serve the top via the cached plan. Townsfolk carry grudge-goals; monsters/
+            //        raiders fight by reflex (combat's nearest-hostile) without a goal-plan.
+            if townsfolk {
+                derive_goals(gstack, &memory[i], now);
+                prune_goals(gstack, &pv, now);
+
+                // 2. AVENGE: the top AGGRESSIVE intention (a locatable grudge) hunts — overriding flee.
+                if let Some(idx) = top_of_kind(gstack, IntentionKind::Avenge) {
+                    if let Some(goal_set) = serve(gstack, idx, pl, &pv) {
+                        *g = goal_set;
+                        return;
+                    }
+                }
+            }
+
+            // 3. THREAT: flee the NEAREST believed-hostile near where I believe it is (no grudge).
+            let bt = &beliefs[i];
+            let (mx, mz) = (pos[i][0], pos[i][1]);
+            let mut flee_from: Option<u32> = None;
+            let mut best_d2 = FLEE_RANGE2;
+            for b in 0..(bt.len as usize).min(BELIEF_CAP) {
+                let cell = &bt.bodies[b];
+                if cell.flags & 0x01 == 0 {
+                    continue; // not believed hostile
+                }
+                let dx = mx - cell.last_x;
+                let dz = mz - cell.last_z;
+                let d2 = dx * dx + dz * dz;
+                if d2 < best_d2 || (d2 == best_d2 && flee_from.map_or(true, |s| cell.subject < s)) {
+                    best_d2 = d2;
+                    flee_from = Some(cell.subject);
+                }
+            }
+            if let Some(from) = flee_from {
+                *g = Goal::Flee { from };
+                return;
+            }
+
+            // 4. OTHER INTENTIONS: the top remaining (non-aggressive) intention with an actionable plan.
+            if townsfolk {
+                if let Some(idx) = gstack.top_idx() {
+                    if let Some(goal_set) = serve(gstack, idx, pl, &pv) {
+                        *g = goal_set;
+                        return;
+                    }
+                }
+            }
+
+            // 5. LIVELIHOOD: a working townsperson works its craft, with an occasional market trip.
+            let prof = profession[i];
+            if prof != Profession::None as u8 && townsfolk {
+                if my_rng.next_f32() < MARKET_CHANCE {
+                    *g = Goal::Market { site: market };
+                } else {
+                    let site_idx = (prof as usize - 1).min(work_sites.len() - 1);
+                    *g = Goal::Work { site: work_sites[site_idx] };
+                }
+                return;
+            }
+
+            // 6. WANDER: a random point near the town centre (own rng stream; uniform over the disc).
+            let r = TOWN_RADIUS * my_rng.next_f32().sqrt();
+            let a = my_rng.next_f32() * std::f32::consts::TAU;
+            let to = [town_center[0] + r * a.cos(), town_center[1] + r * a.sin()];
+            *g = Goal::Wander { to };
+        });
 }
 
-/// Pick the culprit of a LIVE grudge: an `assaulted` episode whose foe I have NOT slain, that has not
-/// gone stale, and that I can still LOCATE (I hold a belief about it — else I can't hunt it). Among the
-/// candidates, the most VIVID wins (salience), then the most RECENT, then the lowest id (deterministic).
-/// Own-state only (my memory + my beliefs). Returns the culprit id, or None.
-fn pick_avenge(memory: &Memory, beliefs: &BeliefTable, now: u32) -> Option<u32> {
-    let mut best: Option<(u16, u32, u32)> = None; // (salience, t, neg-culprit-for-tiebreak)
-    for k in 0..memory.len as usize {
-        let ep = &memory.items[k];
-        if ep.kind != EpisodeKind::Assaulted as u8 {
-            continue;
-        }
-        let culprit = ep.with;
-        if now.saturating_sub(ep.t) > AVENGE_EXPIRY {
-            continue; // the grudge cooled
-        }
-        if memory.has(EpisodeKind::Slew, culprit) {
-            continue; // already settled — I struck it down
-        }
-        if beliefs.find(culprit).is_none() {
-            continue; // lost all track — can't hunt what I can't locate
-        }
-        // most salient, then most recent, then lowest culprit id.
-        let better = match best {
-            None => true,
-            Some((bs, bt_, bc)) => {
-                ep.salience > bs
-                    || (ep.salience == bs && ep.t > bt_)
-                    || (ep.salience == bs && ep.t == bt_ && culprit < bc)
+/// Serve the intention at `idx`: ensure the cached plan targets it (replan on change/exhaustion),
+/// advance its cursor past landed steps, and compile the current step to an executor goal. Returns
+/// `Some(goal)` when there is an actionable step; `None` for a plan-less disposition OR an infeasible
+/// plan (which it flags `F_UNREACHABLE` so `prune_goals` drops it next tick).
+fn serve(gstack: &mut GoalStack, idx: usize, pl: &mut Plan, pv: &Pv) -> Option<Goal> {
+    let top = gstack.items[idx]; // Copy
+    let atom = match intention_atom(&top) {
+        Some(a) => a,
+        None => return None, // plan-less disposition (grieve/wary/…): bias only, caller falls through.
+    };
+    // (re)build the cached plan if it no longer serves this exact goal.
+    if !pl.serves(top.kind, top.subject) {
+        match solve_plan(atom, pv) {
+            Some(steps) => {
+                let n = steps.len().min(crate::components::PLAN_CAP);
+                pl.len = n as u8;
+                pl.cur = 0;
+                pl.goal_kind = top.kind;
+                pl.goal_subject = top.subject;
+                for (k, s) in steps.into_iter().take(n).enumerate() {
+                    pl.steps[k] = s;
+                }
             }
-        };
-        if better {
-            best = Some((ep.salience, ep.t, culprit));
+            None => {
+                // already-holds is handled by prune; a None here means infeasible → unreachable.
+                pl.clear();
+                gstack.items[idx].flags |= Intention::F_UNREACHABLE;
+                return None;
+            }
         }
     }
-    best.map(|(_, _, culprit)| culprit)
+    // advance the cursor past any leading steps whose effect has landed.
+    while let Some(step) = pl.current() {
+        if step_effect_holds(&step, pv) {
+            pl.cur += 1;
+        } else {
+            break;
+        }
+    }
+    match pl.current() {
+        Some(step) => Some(compile_planstep(&step, pv)),
+        None => {
+            // plan consumed but the predicate hasn't fired (e.g. a quarry slipped away) → unreachable.
+            gstack.items[idx].flags |= Intention::F_UNREACHABLE;
+            None
+        }
+    }
 }
 
-/// Do I hold a still-actionable `windfall` memory? (own state only.)
-fn has_live_windfall(memory: &Memory, now: u32) -> bool {
-    memory.items[..memory.len as usize]
-        .iter()
-        .any(|ep| ep.kind == EpisodeKind::Windfall as u8 && now.saturating_sub(ep.t) <= FORTUNE_EXPIRY)
+/// `deriveGoals`: scan OWN salient memory and push standing intentions onto the persistent stack
+/// (idempotent — `push` dedups + refreshes). Wave-4 covers the avenge/seek-fortune/grieve derivations;
+/// repay/wary/glory/shun/delve land with the full-parity pass (task: full deriveGoals).
+fn derive_goals(gstack: &mut GoalStack, memory: &Memory, _now: u32) {
+    for k in 0..memory.len as usize {
+        let ep = memory.items[k];
+        match ep.kind {
+            x if x == EpisodeKind::Assaulted as u8 => {
+                // a wrong remembered → avenge the culprit (unless I've already slain it).
+                if ep.with != NONE_ID && !memory.has(EpisodeKind::Slew, ep.with) {
+                    gstack.push(Intention {
+                        kind: IntentionKind::Avenge as u8,
+                        flags: 0,
+                        priority: PRI_AVENGE,
+                        subject: ep.with,
+                        place: 0,
+                        _pad: [0; 3],
+                        amt: 0,
+                        born: ep.t,
+                        expire: ep.t + AVENGE_EXPIRY,
+                    });
+                }
+            }
+            x if x == EpisodeKind::Windfall as u8 => {
+                gstack.push(Intention {
+                    kind: IntentionKind::SeekFortune as u8,
+                    flags: 0,
+                    priority: PRI_SEEK_FORTUNE,
+                    subject: NONE_ID,
+                    place: ep.place,
+                    _pad: [0; 3],
+                    amt: FORTUNE_TARGET,
+                    born: ep.t,
+                    expire: ep.t + FORTUNE_EXPIRY,
+                });
+            }
+            x if x == EpisodeKind::WitnessedDeath as u8 => {
+                // a plan-less mourning disposition (biases, decays — no plan).
+                if ep.with != NONE_ID {
+                    gstack.push(Intention {
+                        kind: IntentionKind::Grieve as u8,
+                        flags: 0,
+                        priority: PRI_GRIEVE,
+                        subject: ep.with,
+                        place: 0,
+                        _pad: [0; 3],
+                        amt: 0,
+                        born: ep.t,
+                        expire: ep.t + 900,
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// `pruneGoals`: drop intentions whose predicate is satisfied, whose TTL expired, or which the planner
+/// flagged unreachable. Iterate high→low index so swap-removal never skips an entry.
+fn prune_goals(gstack: &mut GoalStack, pv: &Pv, now: u32) {
+    let mut k = gstack.len as usize;
+    while k > 0 {
+        k -= 1;
+        let it = gstack.items[k];
+        let expired = it.expire != 0 && now >= it.expire;
+        let unreachable = it.flags & Intention::F_UNREACHABLE != 0;
+        let satisfied = intention_satisfied(&it, pv);
+        if expired || unreachable || satisfied {
+            gstack.remove(k);
+        }
+    }
+}
+
+/// The believed-state atom a plannable intention chases (None ⇒ a plan-less disposition).
+#[inline]
+fn intention_atom(it: &Intention) -> Option<Atom> {
+    match it.kind {
+        x if x == IntentionKind::Avenge as u8 => Some(Atom::Dead(it.subject)),
+        x if x == IntentionKind::SeekFortune as u8 => Some(Atom::GoldGe(it.amt)),
+        _ => None,
+    }
+}
+
+/// Is an intention's predicate satisfied (so it should pop)? Belief/own-state only.
+fn intention_satisfied(it: &Intention, pv: &Pv) -> bool {
+    match it.kind {
+        // believed-dead: I struck it down (Slew memory) OR I hold no belief about it any more.
+        x if x == IntentionKind::Avenge as u8 => {
+            pv.memory.has(EpisodeKind::Slew, it.subject) || pv.beliefs.find(it.subject).is_none()
+        }
+        x if x == IntentionKind::SeekFortune as u8 => pv.gold >= it.amt,
+        // plan-less dispositions pop on expiry only (handled in prune_goals).
+        _ => false,
+    }
+}
+
+/// The highest-priority intention of a given kind (the avenge-first arbitration), or None.
+fn top_of_kind(gstack: &GoalStack, kind: IntentionKind) -> Option<usize> {
+    let mut best: Option<usize> = None;
+    for k in 0..gstack.len as usize {
+        if gstack.items[k].kind != kind as u8 {
+            continue;
+        }
+        best = Some(match best {
+            None => k,
+            Some(b) => {
+                if gstack.items[k].priority > gstack.items[b].priority
+                    || (gstack.items[k].priority == gstack.items[b].priority
+                        && gstack.items[k].subject < gstack.items[b].subject)
+                {
+                    k
+                } else {
+                    b
+                }
+            }
+        });
+    }
+    best
 }
 
 #[cfg(test)]
@@ -240,6 +395,7 @@ mod tests {
                 w.needs[i] = Needs::default();
                 w.beliefs[i].clear();
                 w.memory[i] = Memory::default();
+                w.goals[i] = GoalStack::default();
                 found = true;
             }
         }
@@ -261,6 +417,7 @@ mod tests {
         let mut w = World::spawn(0xBEEF, 64);
         w.needs[0] = Needs::default();
         w.memory[0] = Memory::default();
+        w.goals[0] = GoalStack::default();
         let px = w.pos[0][0];
         let pz = w.pos[0][1];
         let bt = &mut w.beliefs[0];
@@ -278,18 +435,16 @@ mod tests {
         }
     }
 
-    /// A grudge (assaulted memory) about a believed-locatable foe ⇒ the avenger HUNTS rather than
-    /// flees: it overrides the flee reflex with a moving Fight toward the culprit.
+    /// A grudge (assaulted memory) about a believed-locatable foe ⇒ a persistent Avenge intention on
+    /// the stack that HUNTS rather than flees.
     #[test]
-    fn grudge_overrides_flee_with_a_hunt() {
+    fn grudge_pushes_avenge_and_hunts() {
         let mut w = World::spawn(0xBEEF, 64);
-        // pick a townsperson so the grudge layer applies.
         let i = (0..w.n)
             .find(|&i| w.faction[i] == Faction::Townsfolk as u8)
             .expect("a townsperson exists");
         w.needs[i] = Needs::default();
         let (px, pz) = (w.pos[i][0], w.pos[i][1]);
-        // I believe foe 7 is hostile + nearby (would normally make me flee)…
         let bt = &mut w.beliefs[i];
         bt.clear();
         bt.subjects[0] = 7;
@@ -302,7 +457,6 @@ mod tests {
             ..Default::default()
         };
         bt.len = 1;
-        // …but it once struck me, so I hunt it instead.
         w.memory[i] = Memory::default();
         w.memory[i].record(Episode {
             kind: EpisodeKind::Assaulted as u8,
@@ -311,10 +465,54 @@ mod tests {
             salience: 50000,
             ..Default::default()
         });
+        w.goals[i] = GoalStack::default();
         decide(&mut w);
+        // the intention persisted on the stack…
+        assert!(
+            (0..w.goals[i].len as usize)
+                .any(|k| w.goals[i].items[k].kind == IntentionKind::Avenge as u8
+                    && w.goals[i].items[k].subject == 7),
+            "an Avenge intention should sit on the persistent stack"
+        );
+        // …and it produced a hunting Fight, overriding the flee reflex.
         match w.goal[i] {
             Goal::Fight { target, .. } => assert_eq!(target, 7, "should hunt the foe that struck me"),
-            other => panic!("a grudge should override flee with a Fight, got {other:?}"),
+            other => panic!("a grudge should hunt (Fight), got {other:?}"),
         }
+    }
+
+    /// The intention pops once the foe is believed slain (a Slew memory satisfies the predicate).
+    #[test]
+    fn avenge_pops_when_foe_slain() {
+        let mut w = World::spawn(0xBEEF, 8);
+        let i = (0..w.n)
+            .find(|&i| w.faction[i] == Faction::Townsfolk as u8)
+            .expect("a townsperson exists");
+        w.needs[i] = Needs::default();
+        w.beliefs[i].clear();
+        w.memory[i] = Memory::default();
+        w.memory[i].record(Episode {
+            kind: EpisodeKind::Assaulted as u8,
+            with: 7,
+            t: w.tick,
+            salience: 50000,
+            ..Default::default()
+        });
+        w.goals[i] = GoalStack::default();
+        decide(&mut w); // derives the avenge intention
+        // now record that I slew the foe → next decide must prune it.
+        w.memory[i].record(Episode {
+            kind: EpisodeKind::Slew as u8,
+            with: 7,
+            t: w.tick,
+            salience: 60000,
+            ..Default::default()
+        });
+        decide(&mut w);
+        assert!(
+            !(0..w.goals[i].len as usize)
+                .any(|k| w.goals[i].items[k].kind == IntentionKind::Avenge as u8),
+            "a settled grudge must be pruned from the stack"
+        );
     }
 }

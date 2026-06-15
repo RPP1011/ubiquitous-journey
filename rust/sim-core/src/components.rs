@@ -424,6 +424,217 @@ impl Memory {
     }
 }
 
+// ───────────────────────────── the goal stack + plan cache (the GOAP skeleton, §motivation.js) ─────────────────────────────
+//
+// The faithful Rust port of the persistent goal stack (`agent.goals` + `pushGoal`/`pruneGoals`) and the
+// cached plan (`_currentPlanStep`). Intentions PERSIST across ticks (a vendetta lasts), carry their own
+// priority/expiry/flags, and dedup by identity — so the stack-dependent features later (oaths, caution,
+// narrative-closure XP, arc resolution) have the persistent goal object they bolt onto. Inline/`Copy`.
+
+/// types/goals.ts GoalKind for the STACK layer (the intentions deriveGoals pushes). Distinct from the
+/// executor `GoalKind` (the active locomotion goal) — these are the agent's standing INTENTIONS.
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum IntentionKind {
+    Avenge = 0,      // hunt a culprit down (from an `assaulted` memory) — predicate: believed-dead
+    SeekFortune = 1, // raise gold to a target (from a `windfall` memory) — predicate: gold ≥ target
+    Repay = 2,       // discharge a debt to a benefactor (from `succoured`) — predicate: delivered
+    Grieve = 3,      // plan-less mourning (from `witnessed_death`) — pops on expiry only
+    Wary = 4,        // plan-less wariness disposition (from `survived`) — pops on expiry
+    Glory = 5,       // plan-less return-to-glory pull (from `triumph`) — pops on expiry
+    Shun = 6,        // plan-less shame-avoidance (from `forsworn`) — pops on expiry
+    Delve = 7,       // venture to a place (from `relic`) — pops on expiry/relic flag
+}
+
+pub const NONE_ID: u32 = u32::MAX;
+
+/// One standing intention on the goal stack (the persistent goal object). Mirrors the TS Goal's
+/// kind/subjectId/place/priority/expiresAt/bornAt/flags; `atoms`/`predicate` are dispatched by `kind`.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct Intention {
+    pub kind: u8,       // IntentionKind
+    pub flags: u8,      // bit0 unreachable, bit1 xp_awarded, bit2 hardened (lifelong vendetta)
+    pub priority: u16,  // quantized 0..1 ×1000 (arbitration order)
+    pub subject: u32,   // EntityId the intention is about (NONE_ID = none)
+    pub place: u8,      // POI/place id (0 = none)
+    pub _pad: [u8; 3],
+    pub amt: i64,       // gold target / level threshold
+    pub born: u32,      // tick the intention was first pushed (TTL + min-age gates measure from here)
+    pub expire: u32,    // tick it cools out (0 = never — a hardened vendetta)
+}
+impl Intention {
+    pub const F_UNREACHABLE: u8 = 0x01;
+    pub const F_XP_AWARDED: u8 = 0x02;
+    pub const F_HARDENED: u8 = 0x04;
+    /// Identity for dedup/refresh (kind + subject + place) — `pushGoal`'s dedup key.
+    #[inline]
+    pub fn ident(&self) -> (u8, u32, u8) {
+        (self.kind, self.subject, self.place)
+    }
+}
+
+/// Hard cap on stacked intentions (mirrors `PLAN.stackDepth`; LIFO, lowest-priority dropped when full).
+pub const GOAL_STACK_CAP: usize = 4;
+
+/// The per-agent persistent intention stack.
+#[derive(Clone, Copy, Debug)]
+pub struct GoalStack {
+    pub len: u8,
+    pub items: [Intention; GOAL_STACK_CAP],
+}
+impl Default for GoalStack {
+    fn default() -> Self {
+        GoalStack {
+            len: 0,
+            items: [Intention {
+                kind: 0,
+                flags: 0,
+                priority: 0,
+                subject: NONE_ID,
+                place: 0,
+                _pad: [0; 3],
+                amt: 0,
+                born: 0,
+                expire: 0,
+            }; GOAL_STACK_CAP],
+        }
+    }
+}
+impl GoalStack {
+    /// Push (or REFRESH) an intention. Dedup by `ident()`: a repeat refreshes the existing entry's
+    /// expiry/priority (idempotent re-derivation — the whole point of the persistent stack). When full,
+    /// evict the lowest-priority incumbent iff the newcomer outranks it. Returns true if it landed.
+    pub fn push(&mut self, it: Intention) -> bool {
+        for k in 0..self.len as usize {
+            if self.items[k].ident() == it.ident() {
+                // refresh: keep the EARLIER born (so min-age/closure gates see the true age), keep a
+                // hardened flag, take the longer expiry + higher priority.
+                let cur = &mut self.items[k];
+                cur.priority = cur.priority.max(it.priority);
+                cur.flags |= it.flags & Intention::F_HARDENED;
+                cur.expire = if cur.expire == 0 || it.expire == 0 { 0 } else { cur.expire.max(it.expire) };
+                cur.amt = it.amt;
+                return true;
+            }
+        }
+        if (self.len as usize) < GOAL_STACK_CAP {
+            self.items[self.len as usize] = it;
+            self.len += 1;
+            return true;
+        }
+        // full: replace the lowest-priority incumbent if we outrank it.
+        let mut lo = 0usize;
+        for k in 1..GOAL_STACK_CAP {
+            if self.items[k].priority < self.items[lo].priority {
+                lo = k;
+            }
+        }
+        if it.priority > self.items[lo].priority {
+            self.items[lo] = it;
+            return true;
+        }
+        false
+    }
+    /// The highest-priority intention (arbitration winner), with deterministic tie-break by
+    /// (kind, subject) so the choice is order-independent. Returns the index.
+    pub fn top_idx(&self) -> Option<usize> {
+        let mut best: Option<usize> = None;
+        for k in 0..self.len as usize {
+            best = Some(match best {
+                None => k,
+                Some(b) => {
+                    let (p, q) = (&self.items[k], &self.items[b]);
+                    if p.priority > q.priority
+                        || (p.priority == q.priority && (p.kind, p.subject) < (q.kind, q.subject))
+                    {
+                        k
+                    } else {
+                        b
+                    }
+                }
+            });
+        }
+        best
+    }
+    /// Remove the intention at `idx` (compacting swap-removal preserves determinism — order is
+    /// re-derived from `top_idx`, never positional).
+    pub fn remove(&mut self, idx: usize) {
+        let n = self.len as usize;
+        if idx >= n {
+            return;
+        }
+        for k in idx..n - 1 {
+            self.items[k] = self.items[k + 1];
+        }
+        self.len -= 1;
+    }
+}
+
+/// One compiled plan step (serializable — the persistent cached plan a feature's caution trail attaches
+/// to). `verb`/`place_kind` are interned; the executor systems read the compiled `Goal`, this is the
+/// planner's own bookkeeping for cursor-advance + replan detection.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PlanStep {
+    pub verb: u8,       // planner Verb (goto/gather/produce/buy/sell/approach/attack/…)
+    pub place_kind: u8, // 0 market, 1 node(good), 2 subject
+    pub good: u8,       // commodity for node/gather/produce/buy/sell
+    pub _pad: u8,
+    pub subject: u32, // subject for approach/attack/subject-place (NONE_ID = none)
+    pub n: u16,
+    pub _pad2: u16,
+}
+
+/// Hard cap on emitted plan length (mirrors `PLAN.maxPlan`).
+pub const PLAN_CAP: usize = 8;
+
+/// The per-agent cached plan toward the top intention. Re-used across ticks (cursor advances as each
+/// step's effect lands); rebuilt only when the served goal changes or the plan is exhausted/infeasible.
+#[derive(Clone, Copy, Debug)]
+pub struct Plan {
+    pub len: u8,
+    pub cur: u8,           // cursor — the step being executed now
+    pub goal_kind: u8,     // which IntentionKind this plan serves (replan trigger; 0xFF = no plan)
+    pub goal_subject: u32, // and its subject (replan trigger)
+    pub steps: [PlanStep; PLAN_CAP],
+}
+impl Default for Plan {
+    fn default() -> Self {
+        Plan {
+            len: 0,
+            cur: 0,
+            goal_kind: 0xFF,
+            goal_subject: NONE_ID,
+            steps: [PlanStep::default(); PLAN_CAP],
+        }
+    }
+}
+impl Plan {
+    /// Does this cached plan still serve intention `(kind, subject)` and have an un-executed step left?
+    #[inline]
+    pub fn serves(&self, kind: u8, subject: u32) -> bool {
+        self.goal_kind == kind && self.goal_subject == subject && (self.cur as usize) < self.len as usize
+    }
+    /// The current (cursor) step, if any.
+    #[inline]
+    pub fn current(&self) -> Option<PlanStep> {
+        if (self.cur as usize) < self.len as usize {
+            Some(self.steps[self.cur as usize])
+        } else {
+            None
+        }
+    }
+    /// Discard the cached plan (force a replan next visit).
+    #[inline]
+    pub fn clear(&mut self) {
+        self.len = 0;
+        self.cur = 0;
+        self.goal_kind = 0xFF;
+        self.goal_subject = NONE_ID;
+    }
+}
+
 // ───────────────────────────── director (the drama manager) ─────────────────────────────
 //
 // The persistent budget/pacing state of the points-budget trope engine (the Rust analogue of the

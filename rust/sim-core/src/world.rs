@@ -6,7 +6,8 @@
 
 use crate::components::{
     BeliefTable, Beat, CombatBody, Commodity, DirectorState, Economy, Episode, EpisodeKind, Faction,
-    Goal, Memory, Mood, Needs, Perceivable, Profession, Progression, Quest, NO_BAND, NO_GOD,
+    Goal, GoalStack, Memory, Mood, Needs, Perceivable, Plan, Profession, Progression, Quest, NO_BAND,
+    NO_GOD,
 };
 use crate::grid::Grid;
 use crate::intent::{Intent, IntentQueue};
@@ -49,8 +50,10 @@ pub struct World {
     pub town: Vec<u16>,
     pub rng: Vec<DeterministicRng>,
     pub progression: Vec<Progression>,
-    // ── Wave-4 GOAP column: episodic memory (the goal-derivation source; written in serial phases) ──
+    // ── Wave-4 GOAP columns: episodic memory + the persistent goal-stack + cached plan ──
     pub memory: Vec<Memory>,
+    pub goals: Vec<GoalStack>, // standing intentions (deriveGoals→pushGoal; persists across ticks)
+    pub plan: Vec<Plan>,       // cached plan toward the top intention (cursor-advanced; replan-on-change)
     // ── Wave-3 society columns ──
     pub faith: Vec<u8>,         // small-god id (0 = none, NO_GOD)
     pub band_leader: Vec<i32>,  // band/clan leader id (-1 = none, NO_BAND)
@@ -117,6 +120,8 @@ impl World {
             rng: Vec::with_capacity(n),
             progression: Vec::with_capacity(n),
             memory: Vec::with_capacity(n),
+            goals: Vec::with_capacity(n),
+            plan: Vec::with_capacity(n),
             faith: Vec::with_capacity(n),
             band_leader: Vec::with_capacity(n),
             house: Vec::with_capacity(n),
@@ -175,6 +180,8 @@ impl World {
             w.rng.push(DeterministicRng::seed(seed, i as u64));
             w.progression.push(Progression::default());
             w.memory.push(Memory::default());
+            w.goals.push(GoalStack::default());
+            w.plan.push(Plan::default());
             w.beliefs.push(BeliefTable::default());
             w.beliefs_prev.push(BeliefTable::default());
             w.faith.push(NO_GOD);
@@ -209,6 +216,8 @@ impl World {
         self.rng.push(DeterministicRng::seed(self.seed, i as u64));
         self.progression.push(Progression::default());
         self.memory.push(Memory::default());
+        self.goals.push(GoalStack::default());
+        self.plan.push(Plan::default());
         self.faith.push(NO_GOD);
         self.band_leader.push(NO_BAND);
         self.house.push(0);

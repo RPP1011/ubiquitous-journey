@@ -63,6 +63,20 @@ pub fn world_hash(w: &World) -> u64 {
             h = fold(h, &ep.t.to_le_bytes());
             h = fold(h, &ep.salience.to_le_bytes());
         }
+        // goal stack (persistent intentions) + cached plan — Wave-4 GOAP skeleton state. Persisted
+        // across ticks, so any non-determinism in derive/prune/plan-cache is caught here.
+        let gs = &w.goals[i];
+        h = fold(h, &[gs.len]);
+        for j in 0..gs.len as usize {
+            let it = &gs.items[j];
+            h = fold(h, &[it.kind, it.flags]);
+            h = fold(h, &it.subject.to_le_bytes());
+            h = fold(h, &it.priority.to_le_bytes());
+            h = fold(h, &it.expire.to_le_bytes());
+        }
+        let pl = &w.plan[i];
+        h = fold(h, &[pl.len, pl.cur, pl.goal_kind]);
+        h = fold(h, &pl.goal_subject.to_le_bytes());
         // belief table (the dominant state)
         let bt = &w.beliefs[i];
         h = fold(h, &[bt.len]);

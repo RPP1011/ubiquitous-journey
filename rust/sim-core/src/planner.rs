@@ -14,7 +14,9 @@
 //! search is tiny + only runs for agents that actually hold a grudge/windfall) sidesteps plan-cache
 //! staleness entirely — robustly deterministic, no persistent Plan column needed.
 
-use crate::components::{BeliefTable, EpisodeKind, Goal, Memory, N_COMMODITIES};
+use crate::components::{
+    BeliefTable, EpisodeKind, Goal, Memory, PlanStep, N_COMMODITIES, NONE_ID, PLAN_CAP,
+};
 use crate::world::N_WORK_SITES;
 
 /// Backward-chaining recursion depth cap (mirrors `PLAN.maxDepth`).
@@ -354,6 +356,112 @@ pub fn plan(goal_atom: Atom, pv: &Pv) -> Option<Goal> {
     let solved = solve(&goal_atom, pv, 0)?;
     let step = *solved.steps.first()?;
     Some(compile(step, pv))
+}
+
+// ── serializable cached-plan API (the persistent goal-stack's plan cache) ────────────────────────────
+// `plan()` above re-solves + takes the first step each call. The goal-stack instead caches the FULL
+// ordered plan and advances a cursor as each step's effect lands (so a feature's caution trail can
+// attach to a persistent step). These convert the internal `Step` to the inline `PlanStep` and back.
+
+const VERB_GOTO: u8 = 0;
+const VERB_GATHER: u8 = 1;
+const VERB_PRODUCE: u8 = 2;
+const VERB_BUY: u8 = 3;
+const VERB_SELL: u8 = 4;
+const VERB_APPROACH: u8 = 5;
+const VERB_ATTACK: u8 = 6;
+
+#[inline]
+fn verb_u8(v: Verb) -> u8 {
+    match v {
+        Verb::Goto => VERB_GOTO,
+        Verb::Gather => VERB_GATHER,
+        Verb::Produce => VERB_PRODUCE,
+        Verb::Buy => VERB_BUY,
+        Verb::Sell => VERB_SELL,
+        Verb::Approach => VERB_APPROACH,
+        Verb::Attack => VERB_ATTACK,
+    }
+}
+
+#[inline]
+fn step_to_planstep(s: Step) -> PlanStep {
+    match s.place {
+        Place::Market => {
+            PlanStep { verb: verb_u8(s.verb), place_kind: 0, good: s.good, _pad: 0, subject: NONE_ID, n: 1, _pad2: 0 }
+        }
+        Place::Node(g) => PlanStep {
+            verb: verb_u8(s.verb),
+            place_kind: 1,
+            good: if s.good != 0 { s.good } else { g },
+            _pad: 0,
+            subject: NONE_ID,
+            n: 1,
+            _pad2: 0,
+        },
+        Place::Subject(sub) => PlanStep {
+            verb: verb_u8(s.verb),
+            place_kind: 2,
+            good: 0,
+            _pad: 0,
+            subject: if s.subject != 0 { s.subject } else { sub },
+            n: 1,
+            _pad2: 0,
+        },
+    }
+}
+
+#[inline]
+fn planstep_place(ps: &PlanStep) -> Place {
+    match ps.place_kind {
+        0 => Place::Market,
+        1 => Place::Node(ps.good),
+        _ => Place::Subject(ps.subject),
+    }
+}
+
+/// Solve `goal_atom` to the FULL ordered serializable plan (preconds first), capped at `PLAN_CAP`.
+/// `None` when the goal already holds (empty plan) or is infeasible.
+pub fn solve_plan(goal_atom: Atom, pv: &Pv) -> Option<Vec<PlanStep>> {
+    let solved = solve(&goal_atom, pv, 0)?;
+    if solved.steps.is_empty() {
+        return None; // already holds — the caller's predicate prunes the goal
+    }
+    Some(solved.steps.into_iter().take(PLAN_CAP).map(step_to_planstep).collect())
+}
+
+/// Has a cached step's EFFECT landed (so the cursor can advance)? Per-verb, belief-grounded — the
+/// inline analogue of the registry's EFFECT_HOLDS. `Sell` is terminal (the goal's own gold predicate
+/// ends it), so it never self-advances.
+pub fn step_effect_holds(ps: &PlanStep, pv: &Pv) -> bool {
+    match ps.verb {
+        VERB_GOTO => atom_holds(&Atom::At(planstep_place(ps)), pv),
+        VERB_APPROACH => atom_holds(&Atom::InReach(ps.subject), pv),
+        VERB_ATTACK => atom_holds(&Atom::Dead(ps.subject), pv),
+        VERB_GATHER | VERB_PRODUCE | VERB_BUY => {
+            pv.inventory[ps.good as usize] >= ps.n.max(1) as i32
+        }
+        VERB_SELL => false,
+        _ => true,
+    }
+}
+
+/// Compile a cached step onto the executor goal that carries it out this tick (same mapping as the
+/// internal `compile`, but from the serializable `PlanStep`).
+pub fn compile_planstep(ps: &PlanStep, pv: &Pv) -> Goal {
+    match ps.verb {
+        VERB_GOTO => match planstep_place(ps) {
+            Place::Market => Goal::Market { site: pv.market },
+            Place::Node(g) => Goal::Work { site: pv.work_sites[good_site_index(g).unwrap_or(0)] },
+            Place::Subject(s) => fight_goal(pv, s),
+        },
+        VERB_GATHER | VERB_PRODUCE => {
+            Goal::Work { site: pv.work_sites[good_site_index(ps.good).unwrap_or(0)] }
+        }
+        VERB_BUY | VERB_SELL => Goal::Market { site: pv.market },
+        VERB_APPROACH | VERB_ATTACK => fight_goal(pv, ps.subject),
+        _ => Goal::Idle,
+    }
 }
 
 #[cfg(test)]
