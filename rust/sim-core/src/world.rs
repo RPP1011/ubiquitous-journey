@@ -7,7 +7,7 @@
 use crate::components::{
     BeliefTable, Beat, CombatBody, Commodity, DirectorState, Economy, Episode, EpisodeKind, Faction,
     Goal, GoalStack, Memory, Mood, Needs, Perceivable, Personality, Plan, Profession, Progression,
-    DefenseState, ExpeditionState, Quest, TropeState, WatchState, NO_BAND, NO_GOD,
+    DefenseState, ExpeditionState, Quest, Signals, TropeState, WatchState, NO_BAND, NO_GOD,
 };
 use crate::grid::Grid;
 use crate::intent::{Intent, IntentQueue};
@@ -54,6 +54,7 @@ pub struct World {
     pub rng: Vec<DeterministicRng>,
     pub progression: Vec<Progression>,
     pub ability_cd: Vec<f32>, // per-agent ability-cast cooldown (s); ticked + gated by abilities::cast
+    pub signals: Vec<Signals>, // per-agent narrative-signal record (signals.rs folds; observer telemetry)
     // ── Wave-4 GOAP columns: episodic memory + the persistent goal-stack + cached plan ──
     pub memory: Vec<Memory>,
     pub goals: Vec<GoalStack>, // standing intentions (deriveGoals→pushGoal; persists across ticks)
@@ -140,6 +141,7 @@ impl World {
             rng: Vec::with_capacity(n),
             progression: Vec::with_capacity(n),
             ability_cd: Vec::with_capacity(n),
+            signals: Vec::with_capacity(n),
             memory: Vec::with_capacity(n),
             goals: Vec::with_capacity(n),
             plan: Vec::with_capacity(n),
@@ -227,6 +229,7 @@ impl World {
             w.rng.push(DeterministicRng::seed(seed, i as u64));
             w.progression.push(Progression::default());
             w.ability_cd.push(0.0);
+            w.signals.push(Signals::default());
             w.memory.push(Memory::default());
             w.goals.push(GoalStack::default());
             w.plan.push(Plan::default());
@@ -273,6 +276,7 @@ impl World {
         self.rng.push(DeterministicRng::seed(self.seed, i as u64));
         self.progression.push(Progression::default());
         self.ability_cd.push(0.0);
+        self.signals.push(Signals::default());
         self.memory.push(Memory::default());
         self.goals.push(GoalStack::default());
         self.plan.push(Plan::default());
