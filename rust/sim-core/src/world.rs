@@ -437,6 +437,7 @@ impl World {
     fn society_phase(&mut self) {
         systems::chronicle::tick(self);
         systems::director::tick(self);
+        systems::patrician::tick(self);
         systems::lineage::tick(self);
         systems::faith::tick(self);
         systems::groups::tick(self);
