@@ -143,6 +143,11 @@ pub fn world_hash(w: &World) -> u64 {
     h = fold(h, &w.watch.calm.to_le_bytes());
     h = fold(h, &w.watch.captain.to_le_bytes());
     h = fold(h, &w.defenses.shots.to_le_bytes());
+    h = fold(h, &w.tropes.last_any_at.to_le_bytes());
+    h = fold(h, &w.tropes.fires.to_le_bytes());
+    for t in w.tropes.last_kind_at {
+        h = fold(h, &t.to_le_bytes());
+    }
     // Wilderness-expeditions: the afield-companies roster + throttle + tally (serial-phase state).
     let ex = &w.expeditions;
     h = fold(h, &ex.acc.to_le_bytes());

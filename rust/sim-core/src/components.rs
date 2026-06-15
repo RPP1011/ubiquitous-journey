@@ -495,6 +495,22 @@ pub const MAX_HORRORS: usize = 5;
 /// Max company size (captain + up to `partySize-1` followers).
 pub const MAX_COMPANY: usize = 6;
 
+/// Number of relationship-trope kinds the trope engine cooldowns (`systems::tropes`).
+pub const N_TROPES: usize = 9;
+
+/// The relationship-trope engine's serial-phase cooldown/telemetry state (`js/sim/director/tropes.ts`).
+#[derive(Clone, Copy, Debug)]
+pub struct TropeState {
+    pub last_any_at: u32,              // global one-trope-per-window clock (the TS `_lastTropeAt`)
+    pub last_kind_at: [u32; N_TROPES], // per-kind cooldown clocks (the TS `_kindAt[flag]`)
+    pub fires: u32,                    // telemetry: total relationship-tropes fired (read by tests)
+}
+impl Default for TropeState {
+    fn default() -> Self {
+        TropeState { last_any_at: u32::MAX, last_kind_at: [u32::MAX; N_TROPES], fires: 0 }
+    }
+}
+
 pub const NO_BAND: i32 = -1; // band_leader sentinel (not in a band).
 pub const NO_GOD: u8 = 0; // faith sentinel (no faith).
 
