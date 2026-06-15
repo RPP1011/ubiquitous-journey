@@ -30,3 +30,4 @@ pub mod houses;
 pub mod lineage;
 pub mod patrician;
 pub mod quests;
+pub mod watch;

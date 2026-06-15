@@ -387,6 +387,18 @@ pub struct Quest {
     pub done: bool,
 }
 
+/// The Night Watch institution's serial-phase state (hysteresis + captaincy). `js/sim/watch.ts`.
+#[derive(Clone, Copy, Debug)]
+pub struct WatchState {
+    pub calm: u32,    // sim-ticks since the core was last threatened (the stand-down hysteresis clock)
+    pub captain: i32, // current captain agent id (-1 = none / no watch). A change logs a beat.
+}
+impl Default for WatchState {
+    fn default() -> Self {
+        WatchState { calm: 0, captain: -1 }
+    }
+}
+
 pub const NO_BAND: i32 = -1; // band_leader sentinel (not in a band).
 pub const NO_GOD: u8 = 0; // faith sentinel (no faith).
 

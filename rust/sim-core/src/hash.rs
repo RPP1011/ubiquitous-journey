@@ -134,5 +134,7 @@ pub fn world_hash(w: &World) -> u64 {
     h = fold(h, &d.feuds.to_le_bytes());
     h = fold(h, &d.opportunities.to_le_bytes());
     h = fold(h, &d.crises.to_le_bytes());
+    h = fold(h, &w.watch.calm.to_le_bytes());
+    h = fold(h, &w.watch.captain.to_le_bytes());
     h
 }

@@ -7,7 +7,7 @@
 use crate::components::{
     BeliefTable, Beat, CombatBody, Commodity, DirectorState, Economy, Episode, EpisodeKind, Faction,
     Goal, GoalStack, Memory, Mood, Needs, Perceivable, Personality, Plan, Profession, Progression,
-    Quest, NO_BAND, NO_GOD,
+    Quest, WatchState, NO_BAND, NO_GOD,
 };
 use crate::grid::Grid;
 use crate::intent::{Intent, IntentQueue};
@@ -95,6 +95,7 @@ pub struct World {
     pub chron_prev_level: Vec<u16>,
     // ── Wave-H society/observer world state ──
     pub house_feuds: Vec<(u32, u32)>, // active house-vs-house feuds (canonical lo<hi pairs) — houses.rs
+    pub watch: WatchState,            // the Night Watch institution's hysteresis/captaincy state (serial)
 }
 
 /// A perceived faction sentinel: no disguise active.
@@ -158,6 +159,7 @@ impl World {
             chron_seen_dead: Vec::new(),
             chron_prev_level: Vec::new(),
             house_feuds: Vec::new(),
+            watch: WatchState::default(),
         };
         for i in 0..n {
             let r = TOWN_RADIUS * gen.next_f32().sqrt();
@@ -463,6 +465,7 @@ impl World {
         systems::chronicle::tick(self);
         systems::director::tick(self);
         systems::patrician::tick(self); // brokers truces between the most mutually-hostile townsfolk
+        systems::watch::tick(self); // musters/stands-down the Night Watch by threat (hysteresis)
         systems::lineage::tick(self);
         systems::faith::tick(self);
         systems::groups::tick(self);
