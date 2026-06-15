@@ -38,6 +38,16 @@ pub fn world_hash(w: &World) -> u64 {
         }
         h = fold(h, &w.combat[i].health.to_bits().to_le_bytes());
         h = fold(h, &[w.goal[i].kind() as u8]);
+        // progression (behaviour profile + emergent classes/levels) — the M-invariance gate must
+        // cover this column so any non-determinism the progression fold/match introduces is caught.
+        let pr = &w.progression[i];
+        for v in pr.behavior_profile {
+            h = fold(h, &v.to_bits().to_le_bytes());
+        }
+        h = fold(h, &pr.total_level.to_le_bytes());
+        h = fold(h, &pr.xp.to_le_bytes());
+        h = fold(h, &[pr.n_classes]);
+        h = fold(h, &pr.classes);
         // belief table (the dominant state)
         let bt = &w.beliefs[i];
         h = fold(h, &[bt.len]);
