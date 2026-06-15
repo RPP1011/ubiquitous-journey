@@ -339,6 +339,21 @@ impl World {
                         }
                     }
                 }
+                Intent::Hand { from, to, gold, good, qty } => {
+                    let (f, t, g) = (from as usize, to as usize, good as usize);
+                    if f >= self.n || t >= self.n || f == t {
+                        continue;
+                    }
+                    // CONSERVED: move only what `from` actually holds (gold loop closed; goods relocate).
+                    if gold > 0 && self.econ[f].gold >= gold {
+                        self.econ[f].gold -= gold;
+                        self.econ[t].gold += gold;
+                    }
+                    if qty > 0 && g < crate::components::N_COMMODITIES && self.econ[f].inventory[g] >= qty {
+                        self.econ[f].inventory[g] -= qty;
+                        self.econ[t].inventory[g] += qty;
+                    }
+                }
                 Intent::Deed { actor, verb, magnitude, target: _ } => {
                     let actor = actor as usize;
                     if actor >= self.n {
@@ -417,5 +432,46 @@ impl World {
     /// Total gold across the roster (purse + stash) — the conservation invariant for tests.
     pub fn total_gold(&self) -> i64 {
         self.econ.iter().map(|e| e.gold + e.stash).sum()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A `Hand` intent moves gold + goods one way and CONSERVES the totals (the resolver primitive
+    /// behind give/pay/rob/loot/teach).
+    #[test]
+    fn hand_moves_and_conserves() {
+        let mut w = World::spawn(0x4A11D, 4);
+        w.econ[0].gold = 5_000;
+        w.econ[0].inventory[Commodity::Food as usize] = 3;
+        w.econ[1].gold = 100;
+        w.econ[1].inventory[Commodity::Food as usize] = 0;
+        let gold_before = w.total_gold();
+        let food_before: i32 = w.econ.iter().map(|e| e.inventory[Commodity::Food as usize]).sum();
+
+        w.intents.push(Intent::Hand { from: 0, to: 1, gold: 1_200, good: Commodity::Food as u8, qty: 2 });
+        w.drain_intents();
+
+        assert_eq!(w.econ[0].gold, 3_800, "giver debited");
+        assert_eq!(w.econ[1].gold, 1_300, "receiver credited");
+        assert_eq!(w.econ[0].inventory[Commodity::Food as usize], 1, "giver lost 2 food");
+        assert_eq!(w.econ[1].inventory[Commodity::Food as usize], 2, "receiver gained 2 food");
+        assert_eq!(w.total_gold(), gold_before, "gold conserved");
+        let food_after: i32 = w.econ.iter().map(|e| e.inventory[Commodity::Food as usize]).sum();
+        assert_eq!(food_after, food_before, "goods conserved");
+    }
+
+    /// A handover only moves what the giver actually holds (no minting / no debt).
+    #[test]
+    fn hand_clamps_to_holdings() {
+        let mut w = World::spawn(0x4A11E, 4);
+        w.econ[0].gold = 500;
+        let total = w.total_gold();
+        w.intents.push(Intent::Hand { from: 0, to: 1, gold: 9_999, good: 0, qty: 0 });
+        w.drain_intents();
+        assert_eq!(w.econ[0].gold, 500, "can't give gold it doesn't have");
+        assert_eq!(w.total_gold(), total, "no minting");
     }
 }

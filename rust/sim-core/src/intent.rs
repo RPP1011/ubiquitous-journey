@@ -13,6 +13,10 @@ pub enum Intent {
     Strike { from: u32, to: u32, dmg: f32 },
     /// A witnessed/published deed (actor, verb tag, magnitude) — fed to progression/witness folds.
     Deed { actor: u32, verb: u8, magnitude: u16, target: u32 },
+    /// A one-way CONSERVED handover: move `gold` (minor units) and/or `qty` of commodity `good` from
+    /// `from` to `to` (only what `from` actually holds). The resolver's `deliverTo`/`take` as an
+    /// intent — the primitive behind give/pay (from=self) and rob/loot (from=victim) and teach (tuition).
+    Hand { from: u32, to: u32, gold: i64, good: u8, qty: i32 },
 }
 
 impl Intent {
@@ -24,6 +28,7 @@ impl Intent {
             Intent::Transfer { from, to, .. } => (to, from, 0),
             Intent::Strike { from, to, .. } => (to, from, 1),
             Intent::Deed { actor, target, .. } => (target, actor, 2),
+            Intent::Hand { from, to, .. } => (to, from, 3),
         }
     }
 }
