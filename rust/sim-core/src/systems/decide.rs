@@ -185,6 +185,16 @@ pub fn decide(world: &mut World) {
                         *g = goal_set;
                         return;
                     }
+                    // a plan-less GRIEVE disposition gives the mourner a visible beat: withdraw to the
+                    // nearest hearth to mourn (the disposition biases behaviour, doesn't plan).
+                    if gstack.items[idx].kind == IntentionKind::Grieve as u8 {
+                        let to = map
+                            .nearest(crate::mentalmap::AFF_COMFORT, pos[i], 220.0)
+                            .map(|p| [p.x, p.z])
+                            .unwrap_or(home[i]);
+                        *g = Goal::Comfort { to };
+                        return;
+                    }
                 }
             }
 
