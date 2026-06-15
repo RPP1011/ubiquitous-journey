@@ -47,6 +47,7 @@ pub enum Atom {
     GoldGe(i64),
     Dead(u32),    // a subject believed dead (no belief / a `_slain` Slew memory)
     InReach(u32), // at a subject's believed position (melee reach)
+    Took(u32),    // coin taken from a subject by force (satisfied by a `Robbed` memory marker)
 }
 
 /// The acquire/move verbs the primitives bind to (compiled onto executor goals by `compile`).
@@ -216,6 +217,9 @@ fn atom_holds(atom: &Atom, pv: &Pv) -> bool {
             }
             None => false,
         },
+        // coin taken: true once a `Robbed` marker for this mark is in memory (the act phase + merge
+        // stamp it — like `Slew` for avenge). A priori unmet, so a fresh steal plans goto→approach→rob.
+        Atom::Took(s) => pv.memory.has(EpisodeKind::Robbed, s),
     }
 }
 
@@ -282,6 +286,12 @@ fn primitives_for(atom: &Atom, pv: &Pv) -> Vec<Prim> {
             step: Step { verb: Verb::Approach, place: Place::Subject(s), subject: s, good: 0 },
             preconds: vec![Atom::At(Place::Subject(s))],
             cost: 0.0,
+        }],
+        // took(subj): rob it by force; precondition is being in reach (the heist's reach-and-take).
+        Atom::Took(s) => vec![Prim {
+            step: Step { verb: Verb::Rob, place: Place::Subject(s), subject: s, good: 0 },
+            preconds: vec![Atom::InReach(s)],
+            cost: ACT_BASE * 2.0,
         }],
     }
 }
@@ -458,8 +468,12 @@ pub fn step_effect_holds(ps: &PlanStep, pv: &Pv) -> bool {
         VERB_GATHER | VERB_PRODUCE | VERB_BUY => {
             pv.inventory[ps.good as usize] >= ps.n.max(1) as i32
         }
-        VERB_SELL => false,
-        _ => true,
+        // a forceful rob lands when its `Robbed` marker is in memory (like attack→Dead).
+        VERB_ROB => atom_holds(&Atom::Took(ps.subject), pv),
+        // SELL and the other terminal acts (give/pay/loot) do NOT self-advance — they are the last
+        // step and the goal's own predicate (gold target / received / robbed) ends the plan. A
+        // `_ => true` here would skip the terminal act before the `act` phase ever fired it.
+        _ => false,
     }
 }
 

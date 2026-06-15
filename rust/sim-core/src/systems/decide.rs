@@ -137,6 +137,7 @@ pub fn decide(world: &mut World) {
                     gold: econ[i].gold,
                     inventory: econ[i].inventory,
                     pos: pos[i],
+                    personality: personality[i],
                     beliefs: &beliefs[i],
                     memory: &memory[i],
                     now,
@@ -280,6 +281,7 @@ fn intention_atom(it: &Intention) -> Option<Atom> {
     match it.kind {
         x if x == IntentionKind::Avenge as u8 => Some(Atom::Dead(it.subject)),
         x if x == IntentionKind::SeekFortune as u8 => Some(Atom::GoldGe(it.amt)),
+        x if x == IntentionKind::Steal as u8 => Some(Atom::Took(it.subject)),
         _ => None,
     }
 }
@@ -292,6 +294,10 @@ fn intention_satisfied(it: &Intention, pv: &Pv) -> bool {
             pv.memory.has(EpisodeKind::Slew, it.subject) || pv.beliefs.find(it.subject).is_none()
         }
         x if x == IntentionKind::SeekFortune as u8 => pv.gold >= it.amt,
+        // robbed the mark (the marker) or already met the heist's gold target.
+        x if x == IntentionKind::Steal as u8 => {
+            pv.memory.has(EpisodeKind::Robbed, it.subject) || pv.gold >= it.amt
+        }
         // plan-less dispositions pop on expiry only (handled in prune_goals).
         _ => false,
     }
@@ -431,6 +437,49 @@ mod tests {
             Goal::Fight { target, .. } => assert_eq!(target, 7, "should hunt the foe that struck me"),
             other => panic!("a grudge should hunt (Fight), got {other:?}"),
         }
+    }
+
+    /// END-TO-END: a poor + bold + uncaring townsperson with a believed-rich neighbour in reach robs
+    /// it — derive(steal) → plan(Took) → Goal::Interact{Rob} → act → Hand → conserved gold moves.
+    #[test]
+    fn poor_bold_thief_robs_a_rich_mark() {
+        let mut w = World::spawn(0x5732A1, 8);
+        // a townsperson thief next to a rich townsperson mark.
+        let (thief, mark) = (0usize, 1usize);
+        w.faction[thief] = Faction::Townsfolk as u8;
+        w.faction[mark] = Faction::Townsfolk as u8;
+        w.needs[thief] = Needs::default();
+        w.econ[thief].gold = 0;
+        w.personality[thief].risk_tolerance = 0.95;
+        w.personality[thief].altruism = 0.05;
+        w.pos[thief] = [0.0, 0.0];
+        w.pos[mark] = [1.5, 0.0];
+        w.econ[mark].gold = 50_000;
+        w.wealth[mark] = 60_000; // the perceivable wealth cue (perceive copies this into the belief)
+        // the thief BELIEVES the mark is rich + right here.
+        w.beliefs[thief].clear();
+        w.beliefs[thief].subjects[0] = mark as u32;
+        w.beliefs[thief].bodies[0] = PersonBelief {
+            subject: mark as u32,
+            last_x: 1.5,
+            last_z: 0.0,
+            confidence: 60000,
+            wealth: 60000,
+            ..Default::default()
+        };
+        w.beliefs[thief].len = 1;
+        w.goals[thief] = GoalStack::default();
+        w.memory[thief] = Memory::default();
+
+        let total = w.total_gold();
+        let mark_before = w.econ[mark].gold;
+        // run a handful of ticks: derive → plan → walk(already close) → rob → settle.
+        for _ in 0..6 {
+            w.tick();
+        }
+        assert!(w.econ[mark].gold < mark_before, "the rich mark should have been robbed");
+        assert!(w.econ[thief].gold > 0, "the thief should have taken coin");
+        assert_eq!(w.total_gold(), total, "gold conserved (moved by force, not minted)");
     }
 
     /// The intention pops once the foe is believed slain (a Slew memory satisfies the predicate).

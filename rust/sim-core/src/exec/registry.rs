@@ -2,7 +2,7 @@
 //! beliefs/memory into standing intentions pushed onto its persistent goal stack. Adding a feature =
 //! appending a row to `DERIVERS` + its fn (additive, fan-out-friendly). Order is fixed ⇒ deterministic.
 
-use crate::components::{BeliefTable, GoalStack, Memory, N_COMMODITIES};
+use crate::components::{BeliefTable, GoalStack, Memory, Personality, N_COMMODITIES};
 
 /// The read-only OWN-state view a deriver reasons over (the epistemic split: own row + static world,
 /// never the live roster). Mirrors the believed slice the planner's `Pv` exposes, for derivation.
@@ -12,6 +12,7 @@ pub struct DeriveCtx<'a> {
     pub gold: i64,
     pub inventory: [i32; N_COMMODITIES],
     pub pos: [f32; 2],
+    pub personality: Personality,
     pub beliefs: &'a BeliefTable,
     pub memory: &'a Memory,
     pub now: u32,
@@ -27,6 +28,7 @@ pub static DERIVERS: &[Deriver] = &[
     super::derivers::avenge,
     super::derivers::seek_fortune,
     super::derivers::grieve,
+    super::derivers::steal,
 ];
 
 /// Run every registered deriver over the agent's goal stack (own-state only ⇒ deterministic).

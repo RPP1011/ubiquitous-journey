@@ -354,10 +354,25 @@ impl World {
                         self.econ[t].inventory[g] += qty;
                     }
                 }
-                Intent::Deed { actor, verb, magnitude, target: _ } => {
+                Intent::Deed { actor, verb, magnitude, target } => {
                     let actor = actor as usize;
                     if actor >= self.n {
                         continue;
+                    }
+                    // a successful ROB (deed verb 12, from `systems::act`) stamps the robber's `Robbed`
+                    // marker about the mark — the `_slain`-style signal that SETTLES the steal intention
+                    // (`Atom::Took`). Serial own-write ⇒ deterministic.
+                    if verb == 12 && (target as usize) < self.n && target as usize != actor {
+                        self.memory[actor].record(Episode {
+                            kind: EpisodeKind::Robbed as u8,
+                            place: 0,
+                            valence: 1,
+                            _pad: 0,
+                            with: target,
+                            t: self.tick,
+                            salience: 40000,
+                            _pad2: 0,
+                        });
                     }
                     // Fold the deed (magnitude-scaled, tag-indexed) into the ACTOR's OWN
                     // behaviour profile, HERE in the deterministic serial merge. This is the

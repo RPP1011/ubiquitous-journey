@@ -408,6 +408,7 @@ pub enum EpisodeKind {
     Slew = 1,           // I dealt `with` its death blow — the `_slain` marker that SETTLES an avenge
     Windfall = 2,       // a fortune to be had at `place` — derives a seek-fortune intention
     WitnessedDeath = 3, // saw `with` fall — a grief disposition (plan-less)
+    Robbed = 4,         // I robbed `with` — the marker that SETTLES a steal intention (like Slew)
 }
 
 /// One salient episode (the dense, inline memory cell).
@@ -489,6 +490,7 @@ pub enum IntentionKind {
     Glory = 5,       // plan-less return-to-glory pull (from `triumph`) — pops on expiry
     Shun = 6,        // plan-less shame-avoidance (from `forsworn`) — pops on expiry
     Delve = 7,       // venture to a place (from `relic`) — pops on expiry/relic flag
+    Steal = 8,       // rob a believed-rich mark (the urchin heist) — predicate: robbed/gold target
 }
 
 pub const NONE_ID: u32 = u32::MAX;
