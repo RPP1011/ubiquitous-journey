@@ -59,6 +59,7 @@ pub fn decide(world: &mut World) {
         ref beliefs,
         ref memory,
         ref econ,
+        ref personality,
         ref faction,
         ref profession,
         ref pos,
@@ -181,7 +182,10 @@ pub fn decide(world: &mut World) {
             // 5. LIVELIHOOD: a working townsperson works its craft, with an occasional market trip.
             let prof = profession[i];
             if prof != Profession::None as u8 && townsfolk {
-                if my_rng.next_f32() < MARKET_CHANCE {
+                // AMBITION bias (the first echo of `ambitionFavor`): an ambitious soul trades more
+                // often (chases wealth), a content one keeps to its craft. Own-state trait.
+                let market_chance = MARKET_CHANCE * (0.5 + personality[i].ambition);
+                if my_rng.next_f32() < market_chance {
                     *g = Goal::Market { site: market };
                 } else {
                     let site_idx = (prof as usize - 1).min(work_sites.len() - 1);

@@ -31,6 +31,10 @@ pub fn world_hash(w: &World) -> u64 {
         for v in [nd.hunger, nd.energy, nd.social, nd.comfort, nd.novelty, nd.starve] {
             h = fold(h, &v.to_bits().to_le_bytes());
         }
+        let pe = &w.personality[i];
+        for v in [pe.ambition, pe.curiosity, pe.risk_tolerance, pe.social_drive, pe.altruism, pe.aggression] {
+            h = fold(h, &v.to_bits().to_le_bytes());
+        }
         let e = &w.econ[i];
         h = fold(h, &e.gold.to_le_bytes());
         for q in e.inventory {

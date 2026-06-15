@@ -113,6 +113,32 @@ impl Default for Needs {
     }
 }
 
+/// types/agent.ts Personality — the five+ stable traits (0..1) that bias an agent's ARCHETYPAL
+/// behaviour: ambition assignment, the risk/altruism gates crime turns on (urchin/affect/sabotage),
+/// social drive for bonding/courtship, curiosity for wanderlust/scouting, aggression for stand-and-
+/// fight. Sampled once at spawn; read all over the cognition layer. Inline/`Copy` like every column.
+#[derive(Clone, Copy, Debug)]
+pub struct Personality {
+    pub ambition: f32,
+    pub curiosity: f32,
+    pub risk_tolerance: f32,
+    pub social_drive: f32,
+    pub altruism: f32,
+    pub aggression: f32,
+}
+impl Default for Personality {
+    fn default() -> Self {
+        Personality {
+            ambition: 0.5,
+            curiosity: 0.5,
+            risk_tolerance: 0.5,
+            social_drive: 0.5,
+            altruism: 0.5,
+            aggression: 0.5,
+        }
+    }
+}
+
 /// types/agent.ts Mood (decays; colours decisions).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Mood {

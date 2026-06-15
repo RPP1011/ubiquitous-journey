@@ -6,8 +6,8 @@
 
 use crate::components::{
     BeliefTable, Beat, CombatBody, Commodity, DirectorState, Economy, Episode, EpisodeKind, Faction,
-    Goal, GoalStack, Memory, Mood, Needs, Perceivable, Plan, Profession, Progression, Quest, NO_BAND,
-    NO_GOD,
+    Goal, GoalStack, Memory, Mood, Needs, Perceivable, Personality, Plan, Profession, Progression,
+    Quest, NO_BAND, NO_GOD,
 };
 use crate::grid::Grid;
 use crate::intent::{Intent, IntentQueue};
@@ -43,6 +43,7 @@ pub struct World {
     pub alive: Vec<bool>,
     pub needs: Vec<Needs>,
     pub mood: Vec<Mood>,
+    pub personality: Vec<Personality>,
     pub goal: Vec<Goal>,
     pub econ: Vec<Economy>,
     pub combat: Vec<CombatBody>,
@@ -112,6 +113,7 @@ impl World {
             alive: Vec::with_capacity(n),
             needs: Vec::with_capacity(n),
             mood: Vec::with_capacity(n),
+            personality: Vec::with_capacity(n),
             goal: Vec::with_capacity(n),
             econ: Vec::with_capacity(n),
             combat: Vec::with_capacity(n),
@@ -169,6 +171,15 @@ impl World {
             w.alive.push(true);
             w.needs.push(Needs::default());
             w.mood.push(Mood::default());
+            // sample the stable archetype traits (uniform 0..1; the worldgen rng keeps it deterministic).
+            w.personality.push(Personality {
+                ambition: gen.next_f32(),
+                curiosity: gen.next_f32(),
+                risk_tolerance: gen.next_f32(),
+                social_drive: gen.next_f32(),
+                altruism: gen.next_f32(),
+                aggression: gen.next_f32(),
+            });
             w.goal.push(Goal::Idle);
             let mut e = Economy::default();
             e.gold = (40.0 + gen.next_f32() * 80.0) as i64 * 100; // minor units
@@ -208,6 +219,7 @@ impl World {
         self.alive.push(true);
         self.needs.push(Needs::default());
         self.mood.push(Mood::default());
+        self.personality.push(Personality::default());
         self.goal.push(Goal::Idle);
         self.econ.push(Economy::default());
         self.combat.push(CombatBody::default());
