@@ -60,6 +60,10 @@ pub struct World {
     pub faith: Vec<u8>,         // small-god id (0 = none, NO_GOD)
     pub band_leader: Vec<i32>,  // band/clan leader id (-1 = none, NO_BAND)
     pub house: Vec<u32>,        // dynastic house id (0 = none)
+    // ── Wave-H society columns (the society-wave fan-out substrate) ──
+    pub epithet: Vec<u8>,       // emergent epithet: 0 none, 1 hero, 2 villain, 3 survivor (houses/combat)
+    pub disguise: Vec<u8>,      // apparent faction override (0xFF = none) — intrigue/percept (the spy mask)
+    pub role: Vec<u8>,          // institutional role: 0 none, 1 watch, 2 spy, 3 asset, 4 bodyguard, 5 duelist
 
     // ── belief layer (double-buffered: gossip reads `beliefs_prev`, writes `beliefs`, §4) ──
     pub beliefs: Vec<BeliefTable>,
@@ -89,7 +93,12 @@ pub struct World {
     // observer-only — never read to drive a decision. Lazily sized to `n` by the chronicle system.
     pub chron_seen_dead: Vec<bool>,
     pub chron_prev_level: Vec<u16>,
+    // ── Wave-H society/observer world state ──
+    pub house_feuds: Vec<(u32, u32)>, // active house-vs-house feuds (canonical lo<hi pairs) — houses.rs
 }
+
+/// A perceived faction sentinel: no disguise active.
+pub const NO_DISGUISE: u8 = 0xFF;
 
 impl World {
     /// Worldgen: `n` agents clustered in one dense town with professions, gold, and home anchors.
@@ -129,6 +138,9 @@ impl World {
             faith: Vec::with_capacity(n),
             band_leader: Vec::with_capacity(n),
             house: Vec::with_capacity(n),
+            epithet: Vec::with_capacity(n),
+            disguise: Vec::with_capacity(n),
+            role: Vec::with_capacity(n),
             beliefs: Vec::with_capacity(n),
             beliefs_prev: Vec::with_capacity(n),
             surface: Vec::with_capacity(n),
@@ -145,6 +157,7 @@ impl World {
             quests: Vec::new(),
             chron_seen_dead: Vec::new(),
             chron_prev_level: Vec::new(),
+            house_feuds: Vec::new(),
         };
         for i in 0..n {
             let r = TOWN_RADIUS * gen.next_f32().sqrt();
@@ -201,6 +214,9 @@ impl World {
             w.faith.push(NO_GOD);
             w.band_leader.push(NO_BAND);
             w.house.push(0);
+            w.epithet.push(0);
+            w.disguise.push(NO_DISGUISE);
+            w.role.push(0);
         }
         // build the static affordance map once from the finished geography.
         w.map = MentalMap::build(w.market, &w.work_sites, w.town_center, ARENA_CLAMP);
@@ -238,6 +254,9 @@ impl World {
         self.faith.push(NO_GOD);
         self.band_leader.push(NO_BAND);
         self.house.push(0);
+        self.epithet.push(0);
+        self.disguise.push(NO_DISGUISE);
+        self.role.push(0);
         self.beliefs.push(BeliefTable::default());
         self.beliefs_prev.push(BeliefTable::default());
         self.n += 1;
@@ -449,6 +468,75 @@ impl World {
     /// Total gold across the roster (purse + stash) — the conservation invariant for tests.
     pub fn total_gold(&self) -> i64 {
         self.econ.iter().map(|e| e.gold + e.stash).sum()
+    }
+
+    // ── shared belief-seed helpers (the society/observer wave's `_plant`/`_sour`/`_warm`) ──
+    // A society pass (director/patrician/intrigue/houses/seeding) narrates by SEEDING beliefs, never by
+    // driving an agent's own decision — the epistemic split holds (observer layer). These run SERIALLY
+    // in the society phase, so direct cross-row belief writes are deterministic.
+
+    /// Find or insert `observer`'s belief cell about `subject`, seeding a fresh one from the subject's
+    /// current cues. Returns the index, or `None` if the table is full (perception beliefs aren't evicted).
+    pub fn ensure_belief(&mut self, observer: usize, subject: u32) -> Option<usize> {
+        let s = subject as usize;
+        if observer >= self.n || s >= self.n || s == observer {
+            return None;
+        }
+        let (spos, sfac, slvl, now) = (self.pos[s], self.faction[s], self.level[s], self.tick);
+        let bt = &mut self.beliefs[observer];
+        if let Some(ix) = bt.find(subject) {
+            return Some(ix);
+        }
+        let len = bt.len as usize;
+        if len < crate::components::BELIEF_CAP {
+            bt.subjects[len] = subject;
+            bt.bodies[len] = crate::components::PersonBelief {
+                subject,
+                last_x: spos[0],
+                last_z: spos[1],
+                confidence: 40_000,
+                faction: sfac,
+                level: slvl,
+                notoriety: 0,
+                threat: 0,
+                wealth: 0,
+                last_tick: now,
+                standing: 0,
+                flags: 0,
+                _pad: 0,
+            };
+            bt.len += 1;
+            return Some(len);
+        }
+        None
+    }
+
+    /// Sour `observer`'s belief-standing toward `subject` (a grievance seed); optionally latch hostility.
+    pub fn sour_belief(&mut self, observer: usize, subject: u32, drop: i16, hostile: bool) {
+        if let Some(ix) = self.ensure_belief(observer, subject) {
+            let b = &mut self.beliefs[observer].bodies[ix];
+            b.standing = b.standing.saturating_sub(drop);
+            if hostile {
+                b.flags |= 0x01;
+            }
+            if b.confidence < 26_000 {
+                b.confidence = 26_000;
+            }
+        }
+    }
+
+    /// Warm `observer`'s belief-standing toward `subject` (a real warming un-latches hostility).
+    pub fn warm_belief(&mut self, observer: usize, subject: u32, amt: i16) {
+        if let Some(ix) = self.ensure_belief(observer, subject) {
+            let b = &mut self.beliefs[observer].bodies[ix];
+            b.standing = b.standing.saturating_add(amt);
+            if amt > 0 {
+                b.flags &= !0x01;
+            }
+            if b.confidence < 26_000 {
+                b.confidence = 26_000;
+            }
+        }
     }
 }
 

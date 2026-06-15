@@ -46,6 +46,8 @@ pub fn world_hash(w: &World) -> u64 {
         h = fold(h, &[w.faith[i]]);
         h = fold(h, &w.band_leader[i].to_le_bytes());
         h = fold(h, &w.house[i].to_le_bytes());
+        // Wave-H society columns
+        h = fold(h, &[w.epithet[i], w.disguise[i], w.role[i]]);
         // progression (behaviour profile + emergent classes/levels) — the M-invariance gate must
         // cover this column so any non-determinism the progression fold/match introduces is caught.
         let pr = &w.progression[i];
@@ -115,6 +117,11 @@ pub fn world_hash(w: &World) -> u64 {
     }
     // Wave-4 director (the drama budget/pacing) — serial-phase state, covered so any non-determinism
     // in trope selection / accrual is caught by the M-invariance gate.
+    h = fold(h, &(w.house_feuds.len() as u64).to_le_bytes());
+    for (a, b) in &w.house_feuds {
+        h = fold(h, &a.to_le_bytes());
+        h = fold(h, &b.to_le_bytes());
+    }
     let d = &w.director;
     h = fold(h, &d.points.to_le_bytes());
     h = fold(h, &d.tension.to_bits().to_le_bytes());
