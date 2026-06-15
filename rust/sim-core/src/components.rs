@@ -103,10 +103,13 @@ pub struct Needs {
     pub social: f32,
     pub comfort: f32,
     pub novelty: f32,
+    /// Starvation clock (ticks hunger has sat empty). Needs-owned — NOT `combat.stagger`, which the
+    /// combat swing machine owns (the two would fight over one f32). Integration fix.
+    pub starve: f32,
 }
 impl Default for Needs {
     fn default() -> Self {
-        Needs { hunger: 1.0, energy: 1.0, social: 1.0, comfort: 1.0, novelty: 1.0 }
+        Needs { hunger: 1.0, energy: 1.0, social: 1.0, comfort: 1.0, novelty: 1.0, starve: 0.0 }
     }
 }
 
@@ -213,6 +216,48 @@ impl Goal {
             Goal::Wander { to } | Goal::Comfort { to } | Goal::Home { to } => Some(*to),
             _ => None,
         }
+    }
+}
+
+// ───────────────────────────── progression (§ js/rpg/progression.js) ─────────────────────────────
+
+/// Max emergent classes held per agent (mirrors `RPG.maxClasses`, kept small + inline).
+pub const MAX_CLASSES: usize = 4;
+/// A sentinel "no class" key for empty held-class slots.
+pub const NO_CLASS: u8 = 0xFF;
+
+/// types/agent.ts Progression — the per-agent class/level brain (the Wave-1 core subset of
+/// `js/rpg/progression.js`). Deeds fold (magnitude-scaled, tag-indexed) into `behavior_profile`,
+/// which decays each tick and is periodically matched against class templates to grant classes +
+/// route XP into `total_level`. Inline/`Copy` (no heap) so it streams like every other column.
+#[derive(Clone, Copy, Debug)]
+pub struct Progression {
+    /// Weighted behaviour tallies, indexed by deed verb/tag (0..N_TAGS). Decays slowly.
+    pub behavior_profile: [f32; N_TAGS],
+    /// Cached sum of held-class levels (≤ TOTAL_LEVEL_CAP).
+    pub total_level: u16,
+    /// XP banked toward the next level (fixed-point ×1000, integer ⇒ deterministic).
+    pub xp: u32,
+    /// Held class template ids (NO_CLASS = empty slot). Small inline array.
+    pub classes: [u8; MAX_CLASSES],
+    pub n_classes: u8,
+}
+impl Default for Progression {
+    fn default() -> Self {
+        Progression {
+            behavior_profile: [0.0; N_TAGS],
+            total_level: 0,
+            xp: 0,
+            classes: [NO_CLASS; MAX_CLASSES],
+            n_classes: 0,
+        }
+    }
+}
+impl Progression {
+    /// Is `key` already held? (linear scan of the tiny held-class array.)
+    #[inline]
+    pub fn holds(&self, key: u8) -> bool {
+        self.classes[..self.n_classes as usize].iter().any(|&c| c == key)
     }
 }
 

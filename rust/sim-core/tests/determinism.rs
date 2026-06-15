@@ -31,22 +31,26 @@ fn m_invariant_across_core_counts() {
     assert_eq!(h1, h8, "M=1 vs M=8 diverged");
 }
 
-/// Grid superset correctness: every agent within VISION must end up with a belief (the spatial cull
-/// drops no in-range subject). N is small enough here that in-range counts stay under the cap, so
-/// the SUBSET relation must hold exactly.
+/// Grid superset correctness — the REAL invariant: the spatial grid's 3×3 query is a SUPERSET of
+/// every in-range neighbour (the cull never silently drops a candidate). Tested at the grid level,
+/// independent of belief-table eviction: once gossip adds hearsay, a confident hearsay belief may
+/// legitimately evict a low-confidence far-glimpse from the cap-25 table, so the post-eviction belief
+/// set is NOT a superset of in-range — but the grid candidate set always is, and that's what matters.
 #[test]
 fn grid_superset_no_dropped_neighbours() {
-    let w = run_sim(SEED, N, 20);
+    let mut w = World::spawn(SEED, N);
+    for _ in 0..20 {
+        w.tick();
+    }
+    w.build_surface(); // rebuild the grid to match the agents' current (moved) positions.
     for i in 0..w.n {
         let reference = in_range_reference(&w, i);
-        if reference.len() > sim_core::components::BELIEF_CAP {
-            continue; // over cap: only the nearest survive — not a superset case
-        }
-        let bt = &w.beliefs[i];
-        let held: std::collections::HashSet<u32> =
-            bt.subjects[..bt.len as usize].iter().copied().collect();
+        let mut got = std::collections::HashSet::new();
+        w.grid.for_near(w.pos[i][0], w.pos[i][1], |p| {
+            got.insert(p.id);
+        });
         for j in reference {
-            assert!(held.contains(&j), "agent {i}: in-range neighbour {j} has no belief");
+            assert!(got.contains(&j), "agent {i}: grid dropped in-range neighbour {j}");
         }
     }
 }

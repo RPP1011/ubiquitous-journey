@@ -5,7 +5,8 @@
 //! intents), so the whole tick stays deterministic (M=1 ≡ M=N).
 
 use crate::components::{
-    BeliefTable, CombatBody, Commodity, Economy, Faction, Goal, Mood, Needs, Perceivable, Profession,
+    BeliefTable, CombatBody, Commodity, Economy, Faction, Goal, Mood, Needs, Perceivable,
+    Profession, Progression,
 };
 use crate::grid::Grid;
 use crate::intent::{Intent, IntentQueue};
@@ -47,6 +48,7 @@ pub struct World {
     pub home: Vec<[f32; 2]>,
     pub town: Vec<u16>,
     pub rng: Vec<DeterministicRng>,
+    pub progression: Vec<Progression>,
 
     // ── belief layer (double-buffered: gossip reads `beliefs_prev`, writes `beliefs`, §4) ──
     pub beliefs: Vec<BeliefTable>,
@@ -96,6 +98,7 @@ impl World {
             home: Vec::with_capacity(n),
             town: Vec::with_capacity(n),
             rng: Vec::with_capacity(n),
+            progression: Vec::with_capacity(n),
             beliefs: Vec::with_capacity(n),
             beliefs_prev: Vec::with_capacity(n),
             surface: Vec::with_capacity(n),
@@ -143,6 +146,7 @@ impl World {
             w.home.push(p); // home = spawn point (Wave-1)
             w.town.push(0);
             w.rng.push(DeterministicRng::seed(seed, i as u64));
+            w.progression.push(Progression::default());
             w.beliefs.push(BeliefTable::default());
             w.beliefs_prev.push(BeliefTable::default());
         }
@@ -214,8 +218,23 @@ impl World {
                         self.alive[to] = false;
                     }
                 }
-                Intent::Deed { .. } => {
-                    // progression consumes deeds in its own phase (Wave-1: counted there).
+                Intent::Deed { actor, verb, magnitude, target: _ } => {
+                    let actor = actor as usize;
+                    if actor >= self.n {
+                        continue;
+                    }
+                    // Fold the deed (magnitude-scaled, tag-indexed) into the ACTOR's OWN
+                    // behaviour profile, HERE in the deterministic serial merge. This is the
+                    // coordination point: `drain_intents` clears the queue, so progression can't
+                    // read deeds afterward — instead we accumulate into the own-column right where
+                    // the deeds are already being visited in fixed sort order. A pure own-write
+                    // per actor (no cross-agent dependency) ⇒ order-independent ⇒ deterministic.
+                    // The periodic decay + class-match + XP routing then runs in `progression::tick`.
+                    crate::systems::progression::fold_deed(
+                        &mut self.progression[actor],
+                        verb,
+                        magnitude,
+                    );
                 }
             }
         }
