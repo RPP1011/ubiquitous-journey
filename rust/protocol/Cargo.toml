@@ -1,0 +1,9 @@
+[package]
+name = "protocol"
+version = "0.1.0"
+edition = "2021"
+
+# Dependency-free by design: the World→frontend wire format is hand-rolled little-endian framing so the
+# crate builds offline and the JS frontend can read the exact same layout via a DataView (no serde,
+# no codegen). See docs/architecture/22 §6 + doc 20.
+[dependencies]

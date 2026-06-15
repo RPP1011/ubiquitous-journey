@@ -1,0 +1,11 @@
+[package]
+name = "server"
+version = "0.1.0"
+edition = "2021"
+
+# Dep-free transport for now (std::net only) so it builds offline. The authoritative sim is sim-core;
+# the wire format is protocol. A real WebSocket/HTTP layer (axum/tokio) is a later, deps-required step —
+# the raw length-prefixed TCP framing here is the transport substrate a WS bridge wraps. See doc 22 §6.
+[dependencies]
+sim-core = { path = "../sim-core" }
+protocol = { path = "../protocol" }
