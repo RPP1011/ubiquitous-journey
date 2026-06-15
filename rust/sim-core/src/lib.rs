@@ -19,6 +19,7 @@ pub mod mentalmap;
 pub mod perceive;
 pub mod planner;
 pub mod rng;
+pub mod signals;
 pub mod systems;
 pub mod world;
 

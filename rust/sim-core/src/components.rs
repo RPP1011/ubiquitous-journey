@@ -736,3 +736,207 @@ impl Default for DirectorState {
         }
     }
 }
+
+// ───────────────────────────── narrative-signal catalog (§ js/sim/signals.ts, docs/architecture/13) ─────────────────────────────
+//
+// The dense, inline Rust analogue of the per-agent `_signals` record (`js/sim/signals.ts`). The TS
+// stores it as a lazily-created bag of JS Maps/arrays per agent; here it is ONE inline `Copy` struct
+// in a dense column (the determinism mandate — no HashMap in the read surface). It holds the bounded,
+// EVENT-FOLDED values the observer layer measures so probes (the status sensor, the Gazette, future
+// tropes) have something to read. This is a LIBRARY of fold/sample/read functions over this struct
+// (see `signals.rs`), CALLED by other systems — not itself a tick system.
+//
+// Determinism divergence vs TS (the allowed kind, per the port bar): the TS keeps `Record<reason,…>`
+// maps + a `loss[]` array of objects + a `dwell` Record; here those become fixed-size inline arrays
+// indexed by interned enums (LossReason, DeedTag, OathKind, StreakKey). EWMAs are f32 (the TS uses
+// JS doubles); the half-life math is the same `g + (prev−g)·0.5^(dt/H)` shape.
+
+/// Loss-reason taxonomy (the TS `reason` string, interned). Involuntary causes (robbed/fined) are
+/// the ones the RUIN detector requires; voluntary (spent/gifted) must NOT read as catastrophe.
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum LossReason {
+    Spent = 0,  // voluntary — a purchase / market clear
+    Gifted = 1, // voluntary — a give/pay
+    Robbed = 2, // INVOLUNTARY — taken by force
+    Fined = 3,  // INVOLUNTARY — a penalty
+}
+pub const N_LOSS_REASONS: usize = 4;
+
+/// Deed-tally tags (the TS `_deeds` Record key, interned). The TRUTH side of witnessDeed / the combat
+/// fold (Family E) — feeds epithets, obituaries, esteemTruthGap. Kept tiny + fixed.
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DeedTag {
+    Theft = 0,
+    Kill = 1,
+    Rescue = 2,
+    Gift = 3,
+    Free = 4,
+}
+pub const N_DEED_TAGS: usize = 5;
+
+/// Oath-kind taxonomy (the TS `_oaths` Record key — the narrative-weight goals, Family E). "a man of
+/// his word" measured: sworn vs kept vs abandoned per kind.
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum OathKind {
+    Avenge = 0,
+    Repay = 1,
+    Court = 2,
+    Rescue = 3,
+}
+pub const N_OATH_KINDS: usize = 4;
+
+/// Streak-strategy taxonomy (the TS `_streak` Record key — the watched strategies a PLAN_OUTCOME folds
+/// "third failed heist in a row" onto, Family A). Fixed small vocabulary.
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum StreakKey {
+    Heist = 0,
+    Hunt = 1,
+    Trade = 2,
+    Duel = 3,
+}
+pub const N_STREAK_KEYS: usize = 4;
+
+/// Outcome-status of a watched act (the TS `status` string a streak runs on).
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum OutcomeStatus {
+    None = 0,
+    Ok = 1,
+    Fail = 2,
+    Wasteful = 3,
+    Peril = 4,
+}
+
+/// Gold band for `timeInBand` (Family A — endurance stories need DURATION, not just crossings).
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Band {
+    Poor = 0,
+    Rich = 1,
+    Outlaw = 2,
+}
+pub const N_BANDS: usize = 3;
+
+/// Bound on the ringed tagged-loss steps (mirrors `SIGNALS.lossRing`).
+pub const LOSS_RING: usize = 8;
+
+/// One tagged downward-gold step (the TS `LossStep`, inline). `reason` is interned; `t` measures the
+/// window in `lossReasonShare`.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct LossStep {
+    pub reason: u8, // LossReason
+    pub _pad: u8,
+    pub _pad2: u16,
+    pub t: u32,
+    pub amt: i64, // gold (minor units) lost in this step
+}
+
+/// One deed tally (the TS `DeedTally` — count + first/last sim-time). `first` is the corruption-
+/// measured-from-firstTheft beat; `last` the recency.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DeedTally {
+    pub n: u32,
+    pub first: u32,
+    pub last: u32,
+    pub _pad: u32,
+}
+
+/// One oath tally (the TS `OathTally` — sworn vs kept vs abandoned).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct OathTally {
+    pub sworn: u16,
+    pub kept: u16,
+    pub abandoned: u16,
+    pub _pad: u16,
+}
+
+/// One streak run (the TS `StreakState` — current status + consecutive run length).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct StreakState {
+    pub status: u8, // OutcomeStatus
+    pub _pad: u8,
+    pub run: u16, // consecutive same-status outcomes
+}
+
+/// The per-agent narrative-signal record (the inline `Copy` analogue of the TS `_signals` bag + the
+/// `_deeds`/`_oaths`/`_streak`/`_perils` tallies that lived on the agent). One dense column row.
+#[derive(Clone, Copy, Debug)]
+pub struct Signals {
+    // ── Family A: gold two-timescale EWMA (sampleGold / goldTrend) ──
+    pub g_fast: f32,
+    pub g_slow: f32,
+    pub g_t: u32, // last gold-sample sim-tick
+    pub g_inited: bool,
+
+    // ── Family A: tagged downward-gold ring (foldLoss / lossReasonShare) ──
+    pub loss: [LossStep; LOSS_RING],
+    pub loss_len: u8,
+    pub loss_head: u8, // ring write cursor (oldest is evicted when full)
+
+    // ── Family A: standing EWMA + fortuneReversals (sampleStanding / standingTrend / fortuneReversals) ──
+    pub s_fast: f32,
+    pub s_slow: f32,
+    pub s_t: u32,
+    pub s_inited: bool,
+    pub rev_n: u32,    // fortune-reversal count (gold fast−slow sign flips past the gate)
+    pub rev_t: u32,    // last reversal sim-tick
+    pub last_sign: i8, // last (g_fast−g_slow) sign (0 = none yet)
+
+    // ── Family A: displacement EWMA (sampleDisplacement / displacement) ──
+    pub disp: f32,
+    pub disp_t: u32,
+    pub disp_inited: bool,
+
+    // ── Family A: timeInBand accumulators (accrueBand / timeInBand) ──
+    pub band: [f32; N_BANDS], // seconds in poor / rich / outlaw
+    pub band_t: u32,
+    pub band_inited: bool,
+
+    // ── Family E: deed tally (foldDeed / deedCount / firstDeedAt) ──
+    pub deeds: [DeedTally; N_DEED_TAGS],
+
+    // ── Family E: oath tally (foldOathSworn / foldOathPop / oaths) ──
+    pub oaths: [OathTally; N_OATH_KINDS],
+
+    // ── Family A: streak (foldStreak / streakOf) + peril count (foldPeril / perilsSurvived) ──
+    pub streak: [StreakState; N_STREAK_KEYS],
+    pub perils: u32,
+}
+impl Default for Signals {
+    fn default() -> Self {
+        Signals {
+            g_fast: 0.0,
+            g_slow: 0.0,
+            g_t: 0,
+            g_inited: false,
+            loss: [LossStep::default(); LOSS_RING],
+            loss_len: 0,
+            loss_head: 0,
+            s_fast: 0.0,
+            s_slow: 0.0,
+            s_t: 0,
+            s_inited: false,
+            rev_n: 0,
+            rev_t: 0,
+            last_sign: 0,
+            disp: 0.0,
+            disp_t: 0,
+            disp_inited: false,
+            band: [0.0; N_BANDS],
+            band_t: 0,
+            band_inited: false,
+            deeds: [DeedTally::default(); N_DEED_TAGS],
+            oaths: [OathTally::default(); N_OATH_KINDS],
+            streak: [StreakState::default(); N_STREAK_KEYS],
+            perils: 0,
+        }
+    }
+}

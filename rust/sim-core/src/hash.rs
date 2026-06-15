@@ -83,6 +83,39 @@ pub fn world_hash(w: &World) -> u64 {
         let pl = &w.plan[i];
         h = fold(h, &[pl.len, pl.cur, pl.goal_kind]);
         h = fold(h, &pl.goal_subject.to_le_bytes());
+        // narrative-signal catalog (observer telemetry; folded by the signals library other systems
+        // call). Covered so any non-determinism a future fold introduces is caught by M-invariance.
+        let sg = &w.signals[i];
+        h = fold(h, &sg.g_fast.to_bits().to_le_bytes());
+        h = fold(h, &sg.g_slow.to_bits().to_le_bytes());
+        h = fold(h, &sg.s_fast.to_bits().to_le_bytes());
+        h = fold(h, &sg.s_slow.to_bits().to_le_bytes());
+        h = fold(h, &sg.disp.to_bits().to_le_bytes());
+        h = fold(h, &sg.rev_n.to_le_bytes());
+        h = fold(h, &sg.perils.to_le_bytes());
+        h = fold(h, &[sg.loss_len, sg.loss_head, sg.last_sign as u8]);
+        for b in sg.band {
+            h = fold(h, &b.to_bits().to_le_bytes());
+        }
+        for d in sg.deeds {
+            h = fold(h, &d.n.to_le_bytes());
+            h = fold(h, &d.first.to_le_bytes());
+            h = fold(h, &d.last.to_le_bytes());
+        }
+        for o in sg.oaths {
+            h = fold(h, &o.sworn.to_le_bytes());
+            h = fold(h, &o.kept.to_le_bytes());
+            h = fold(h, &o.abandoned.to_le_bytes());
+        }
+        for st in sg.streak {
+            h = fold(h, &[st.status]);
+            h = fold(h, &st.run.to_le_bytes());
+        }
+        for l in sg.loss.iter().take(sg.loss_len as usize) {
+            h = fold(h, &[l.reason]);
+            h = fold(h, &l.t.to_le_bytes());
+            h = fold(h, &l.amt.to_le_bytes());
+        }
         // belief table (the dominant state)
         let bt = &w.beliefs[i];
         h = fold(h, &[bt.len]);

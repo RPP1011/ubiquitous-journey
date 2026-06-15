@@ -7,7 +7,7 @@
 use crate::components::{
     BeliefTable, Beat, CombatBody, Commodity, DirectorState, Economy, Episode, EpisodeKind, Faction,
     Goal, GoalStack, Memory, Mood, Needs, Perceivable, Personality, Plan, Profession, Progression,
-    Quest, WatchState, NO_BAND, NO_GOD,
+    Quest, Signals, WatchState, NO_BAND, NO_GOD,
 };
 use crate::grid::Grid;
 use crate::intent::{Intent, IntentQueue};
@@ -52,6 +52,10 @@ pub struct World {
     pub town: Vec<u16>,
     pub rng: Vec<DeterministicRng>,
     pub progression: Vec<Progression>,
+    // ── narrative-signal catalog column (§ signals.rs / docs/architecture/13): the per-agent inline
+    // `Signals` record — bounded event-folded values the observer layer measures (a library of folds,
+    // not driven by any tick system yet). ──
+    pub signals: Vec<Signals>,
     // ── Wave-4 GOAP columns: episodic memory + the persistent goal-stack + cached plan ──
     pub memory: Vec<Memory>,
     pub goals: Vec<GoalStack>, // standing intentions (deriveGoals→pushGoal; persists across ticks)
@@ -133,6 +137,7 @@ impl World {
             town: Vec::with_capacity(n),
             rng: Vec::with_capacity(n),
             progression: Vec::with_capacity(n),
+            signals: Vec::with_capacity(n),
             memory: Vec::with_capacity(n),
             goals: Vec::with_capacity(n),
             plan: Vec::with_capacity(n),
@@ -208,6 +213,7 @@ impl World {
             w.town.push(0);
             w.rng.push(DeterministicRng::seed(seed, i as u64));
             w.progression.push(Progression::default());
+            w.signals.push(Signals::default());
             w.memory.push(Memory::default());
             w.goals.push(GoalStack::default());
             w.plan.push(Plan::default());
@@ -250,6 +256,7 @@ impl World {
         self.town.push(0);
         self.rng.push(DeterministicRng::seed(self.seed, i as u64));
         self.progression.push(Progression::default());
+        self.signals.push(Signals::default());
         self.memory.push(Memory::default());
         self.goals.push(GoalStack::default());
         self.plan.push(Plan::default());
