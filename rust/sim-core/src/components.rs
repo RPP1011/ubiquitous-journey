@@ -721,3 +721,17 @@ impl Default for DirectorState {
         }
     }
 }
+
+/// The Night Watch institution's small per-world state (the serial society pass owns it). Just the
+/// hysteresis calm timer + the current captain id — the watchmen themselves live in `world.role`.
+/// `Copy` so the watch system can work on a snapshot then write back (like `DirectorState`).
+#[derive(Clone, Copy, Debug)]
+pub struct WatchState {
+    pub calm: u32,    // sim-ticks since the core was last threatened (the stand-down hysteresis clock)
+    pub captain: i32, // current captain agent id (-1 = none / no watch). A change logs a beat.
+}
+impl Default for WatchState {
+    fn default() -> Self {
+        WatchState { calm: 0, captain: -1 }
+    }
+}

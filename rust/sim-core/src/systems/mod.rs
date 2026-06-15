@@ -28,3 +28,4 @@ pub mod faith;
 pub mod groups;
 pub mod lineage;
 pub mod quests;
+pub mod watch;

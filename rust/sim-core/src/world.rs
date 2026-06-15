@@ -7,7 +7,7 @@
 use crate::components::{
     BeliefTable, Beat, CombatBody, Commodity, DirectorState, Economy, Episode, EpisodeKind, Faction,
     Goal, GoalStack, Memory, Mood, Needs, Perceivable, Personality, Plan, Profession, Progression,
-    Quest, NO_BAND, NO_GOD,
+    Quest, WatchState, NO_BAND, NO_GOD,
 };
 use crate::grid::Grid;
 use crate::intent::{Intent, IntentQueue};
@@ -86,6 +86,7 @@ pub struct World {
     // ── Wave-3 society/observer state (mutated in the SERIAL society phase) ──
     pub sim_rng: DeterministicRng, // world-level draws for director/lineage/etc. (serial ⇒ deterministic)
     pub director: DirectorState,   // the drama manager's budget/pacing state (serial society phase)
+    pub watch: WatchState,         // the Night Watch institution's hysteresis/captaincy state (serial)
     pub chronicle: Vec<Beat>,      // world-history feed (observer; append-only, bounded by the system)
     pub quests: Vec<Quest>,        // the quest board
     // chronicle detection-state (own to systems::chronicle): last-tick snapshots so the observer can
@@ -153,6 +154,7 @@ impl World {
             map: MentalMap::default(),
             sim_rng: DeterministicRng::seed(seed, 0x50C1E7),
             director: DirectorState::default(),
+            watch: WatchState::default(),
             chronicle: Vec::new(),
             quests: Vec::new(),
             chron_seen_dead: Vec::new(),
@@ -440,6 +442,7 @@ impl World {
         systems::lineage::tick(self);
         systems::faith::tick(self);
         systems::groups::tick(self);
+        systems::watch::tick(self);
         systems::quests::tick(self);
     }
 
