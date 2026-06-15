@@ -1,0 +1,12 @@
+[package]
+name = "sim-core"
+version = "0.1.0"
+edition = "2021"
+description = "Wave 0 spike for the Rust ECS sim core (docs/architecture/22): parallel perceive + within-Rust determinism."
+
+[dependencies]
+rayon = "1"
+
+[[bin]]
+name = "soak_bench"
+path = "src/bin/soak_bench.rs"

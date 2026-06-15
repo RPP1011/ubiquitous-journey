@@ -12,6 +12,14 @@
 > frontend a renderer by construction. Read [01 — sim spine](01-sim-spine.md), [02 — the epistemic
 > split](02-epistemic-split.md), and [21] first — this plan leans on all three.
 
+> **✅ Wave 0 spike — VALIDATED (2026-06-14).** The keystone (`rust/sim-core/`) is built and the core
+> thesis is proven: a `rayon`-parallel `perceive` over the SoA roster + spatially-sorted `Perceivable`
+> surface + counting-sort grid + per-entity RNG. The golden hash is **bit-identical across 1/2/4/8
+> threads (M-invariance gate green)**, and `perceive` scales **7.2–7.4× on 8 cores** (N=2k and N=8k);
+> `cargo test` green (M=1≡M=8 determinism + grid superset correctness). The deferred per-system wave
+> (the `/batch`) can now proceed on this foundation. Build: `cd rust && cargo test && cargo run
+> --release --bin soak_bench`.
+
 > **One-line summary:** entities are rows in flat (SoA) component columns held in **two buffers**;
 > every system **reads the frozen `prev` buffer and writes `next`**, so all reads are race-free and
 > the per-agent passes (`perceive`/`gossip`/`reason`/`decide`/locomotion) run fully parallel via

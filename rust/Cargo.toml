@@ -1,0 +1,9 @@
+[workspace]
+members = ["sim-core"]
+resolver = "2"
+
+# Release profile lives at the workspace root (per-package profiles are ignored).
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
