@@ -26,5 +26,7 @@ pub mod chronicle;
 pub mod director;
 pub mod faith;
 pub mod groups;
+// houses: HELPERS-ONLY (feud set + epithet brand) — no per-tick behaviour, so NO society_phase call.
+pub mod houses;
 pub mod lineage;
 pub mod quests;
