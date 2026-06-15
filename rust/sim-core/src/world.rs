@@ -5,8 +5,8 @@
 //! intents), so the whole tick stays deterministic (M=1 ≡ M=N).
 
 use crate::components::{
-    BeliefTable, CombatBody, Commodity, Economy, Faction, Goal, Mood, Needs, Perceivable,
-    Profession, Progression,
+    BeliefTable, Beat, CombatBody, Commodity, Economy, Faction, Goal, Mood, Needs, Perceivable,
+    Profession, Progression, Quest, NO_BAND, NO_GOD,
 };
 use crate::grid::Grid;
 use crate::intent::{Intent, IntentQueue};
@@ -49,6 +49,10 @@ pub struct World {
     pub town: Vec<u16>,
     pub rng: Vec<DeterministicRng>,
     pub progression: Vec<Progression>,
+    // ── Wave-3 society columns ──
+    pub faith: Vec<u8>,         // small-god id (0 = none, NO_GOD)
+    pub band_leader: Vec<i32>,  // band/clan leader id (-1 = none, NO_BAND)
+    pub house: Vec<u32>,        // dynastic house id (0 = none)
 
     // ── belief layer (double-buffered: gossip reads `beliefs_prev`, writes `beliefs`, §4) ──
     pub beliefs: Vec<BeliefTable>,
@@ -66,6 +70,11 @@ pub struct World {
     pub work_sites: [[f32; 2]; N_WORK_SITES],
     pub town_center: [f32; 2],
     pub base_price: [i64; crate::components::N_COMMODITIES],
+
+    // ── Wave-3 society/observer state (mutated in the SERIAL society phase) ──
+    pub sim_rng: DeterministicRng, // world-level draws for director/lineage/etc. (serial ⇒ deterministic)
+    pub chronicle: Vec<Beat>,      // world-history feed (observer; append-only, bounded by the system)
+    pub quests: Vec<Quest>,        // the quest board
 }
 
 impl World {
@@ -99,6 +108,9 @@ impl World {
             town: Vec::with_capacity(n),
             rng: Vec::with_capacity(n),
             progression: Vec::with_capacity(n),
+            faith: Vec::with_capacity(n),
+            band_leader: Vec::with_capacity(n),
+            house: Vec::with_capacity(n),
             beliefs: Vec::with_capacity(n),
             beliefs_prev: Vec::with_capacity(n),
             surface: Vec::with_capacity(n),
@@ -108,6 +120,9 @@ impl World {
             work_sites,
             town_center: [0.0, 0.0],
             base_price: [10, 8, 12, 30, 15, 40],
+            sim_rng: DeterministicRng::seed(seed, 0x50C1E7),
+            chronicle: Vec::new(),
+            quests: Vec::new(),
         };
         for i in 0..n {
             let r = TOWN_RADIUS * gen.next_f32().sqrt();
@@ -149,8 +164,44 @@ impl World {
             w.progression.push(Progression::default());
             w.beliefs.push(BeliefTable::default());
             w.beliefs_prev.push(BeliefTable::default());
+            w.faith.push(NO_GOD);
+            w.band_leader.push(NO_BAND);
+            w.house.push(0);
         }
         w
+    }
+
+    /// Dynamically spawn one agent mid-sim (lineage births, director raiders). Pushes a consistent row
+    /// to EVERY column with sane defaults; rng seeded by the new STABLE index (slots are never reused,
+    /// so the index is a stable id ⇒ deterministic stream). Returns the new id. The caller sets any
+    /// non-default fields afterward. IMPORTANT: spawned agents carry 0 gold — NEVER mint (the
+    /// gold_conserved gate); move gold via a Transfer/own-write if inheritance is wanted.
+    pub fn spawn_agent(&mut self, pos: [f32; 2], faction: Faction, profession: Profession) -> usize {
+        let i = self.n;
+        self.pos.push(pos);
+        self.faction.push(faction as u8);
+        self.profession.push(profession as u8);
+        self.level.push(1);
+        self.notoriety.push(0);
+        self.threat.push(0);
+        self.wealth.push(0);
+        self.alive.push(true);
+        self.needs.push(Needs::default());
+        self.mood.push(Mood::default());
+        self.goal.push(Goal::Idle);
+        self.econ.push(Economy::default());
+        self.combat.push(CombatBody::default());
+        self.home.push(pos);
+        self.town.push(0);
+        self.rng.push(DeterministicRng::seed(self.seed, i as u64));
+        self.progression.push(Progression::default());
+        self.faith.push(NO_GOD);
+        self.band_leader.push(NO_BAND);
+        self.house.push(0);
+        self.beliefs.push(BeliefTable::default());
+        self.beliefs_prev.push(BeliefTable::default());
+        self.n += 1;
+        i
     }
 
     /// Project the WARM columns into the hot `Perceivable` surface (id order) and counting-sort it
@@ -256,7 +307,20 @@ impl World {
         systems::market::clear(self); // parallel decide → Transfer intents
         self.drain_intents(); // serial deterministic merge
         systems::progression::tick(self); // parallel: own progression from deeds
+        self.society_phase(); // serial: director/lineage/faith/groups/quests/chronicle
         self.tick += 1;
+    }
+
+    /// SERIAL society/observer phase (Wave 3): throttled passes that mutate the shared world
+    /// (spawn raiders/births, form bands, convert faith, post/complete quests, log history).
+    /// Serial ⇒ trivially M-invariant; spawns go through `spawn_agent`; gold is never minted.
+    fn society_phase(&mut self) {
+        systems::chronicle::tick(self);
+        systems::director::tick(self);
+        systems::lineage::tick(self);
+        systems::faith::tick(self);
+        systems::groups::tick(self);
+        systems::quests::tick(self);
     }
 
     /// Like `tick`, but returns the wall-seconds spent in `perceive` (the spike's measured cost,
@@ -275,6 +339,7 @@ impl World {
         systems::market::clear(self);
         self.drain_intents();
         systems::progression::tick(self);
+        self.society_phase();
         self.tick += 1;
         dt
     }

@@ -19,3 +19,11 @@ pub mod locomotion;
 pub mod market;
 pub mod needs;
 pub mod progression;
+// Wave-3 society / observer systems (the SERIAL society phase). Each runs throttled, mutates the
+// shared world directly (spawns go via `World::spawn_agent`), and is deterministic by being serial.
+pub mod chronicle;
+pub mod director;
+pub mod faith;
+pub mod groups;
+pub mod lineage;
+pub mod quests;

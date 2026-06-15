@@ -38,6 +38,10 @@ pub fn world_hash(w: &World) -> u64 {
         }
         h = fold(h, &w.combat[i].health.to_bits().to_le_bytes());
         h = fold(h, &[w.goal[i].kind() as u8]);
+        // Wave-3 society columns
+        h = fold(h, &[w.faith[i]]);
+        h = fold(h, &w.band_leader[i].to_le_bytes());
+        h = fold(h, &w.house[i].to_le_bytes());
         // progression (behaviour profile + emergent classes/levels) — the M-invariance gate must
         // cover this column so any non-determinism the progression fold/match introduces is caught.
         let pr = &w.progression[i];
@@ -63,6 +67,21 @@ pub fn world_hash(w: &World) -> u64 {
             h = fold(h, &[b.faction, b.level, b.flags]);
             h = fold(h, &b.last_tick.to_le_bytes());
         }
+    }
+    // Wave-3 world-level observer state: the chronicle feed + the quest board.
+    h = fold(h, &(w.chronicle.len() as u64).to_le_bytes());
+    for bt in &w.chronicle {
+        h = fold(h, &bt.t.to_le_bytes());
+        h = fold(h, &[bt.kind]);
+        h = fold(h, &bt.subject.to_le_bytes());
+        h = fold(h, &bt.magnitude.to_le_bytes());
+    }
+    h = fold(h, &(w.quests.len() as u64).to_le_bytes());
+    for q in &w.quests {
+        h = fold(h, &[q.kind, q.done as u8]);
+        h = fold(h, &q.target.to_le_bytes());
+        h = fold(h, &q.count.to_le_bytes());
+        h = fold(h, &q.got.to_le_bytes());
     }
     h
 }

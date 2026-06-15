@@ -308,3 +308,33 @@ impl BeliefTable {
         self.subjects[..self.len as usize].iter().position(|&s| s == subject)
     }
 }
+
+// ───────────────────────────── Wave-3 society / observer value types ─────────────────────────────
+
+/// One world-history beat (the chronicle observer — `types/news.ts` Beat, numeric Wave-3 form; the
+/// render-only text is generated later from these). Numeric so the determinism hash covers it.
+#[derive(Clone, Copy, Debug)]
+pub struct Beat {
+    pub t: u32,
+    pub kind: u8, // BeatKind: death|kill|raid|birth|faith|union|… (interned)
+    pub subject: u32,
+    pub magnitude: i32,
+}
+
+/// A quest-board entry (`types/news.ts`/`quest.ts`, Wave-3 numeric form). Completion detected from
+/// ground truth each tick.
+#[derive(Clone, Copy, Debug)]
+pub struct Quest {
+    pub kind: u8, // hunt|deliver|delve|bounty…
+    pub target: u32,
+    pub good: u8,
+    pub count: u16,
+    pub got: u16,
+    pub reward: i64,
+    pub giver: u32,
+    pub expire: u32,
+    pub done: bool,
+}
+
+pub const NO_BAND: i32 = -1; // band_leader sentinel (not in a band).
+pub const NO_GOD: u8 = 0; // faith sentinel (no faith).
