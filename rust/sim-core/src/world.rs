@@ -449,6 +449,7 @@ impl World {
     /// cross-agent merge is serial + deterministic. Systems are filled by the fan-out.
     pub fn tick(&mut self) {
         systems::needs::drain(self); // parallel: own needs decay + in-place verbs
+        crate::reason::reason(self); // parallel: reactive flee/hide overlay (pre-empts the goal)
         systems::decide::decide(self); // parallel: own goal from needs/beliefs
         systems::locomotion::step(self); // parallel: own pos toward goal
         self.build_surface(); // serial: project + grid
@@ -483,6 +484,7 @@ impl World {
     /// for `soak_bench`). Mirrors `tick`'s phase order exactly.
     pub fn step_timing(&mut self) -> f64 {
         systems::needs::drain(self);
+        crate::reason::reason(self);
         systems::decide::decide(self);
         systems::locomotion::step(self);
         self.build_surface();

@@ -18,6 +18,7 @@ pub mod intent;
 pub mod mentalmap;
 pub mod perceive;
 pub mod planner;
+pub mod reason;
 pub mod rng;
 pub mod systems;
 pub mod world;
