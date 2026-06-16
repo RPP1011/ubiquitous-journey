@@ -514,10 +514,13 @@ M-invariant 1→32 (**209 sim-core** + 4 determinism + 1 survival + 3 protocol +
 **Two of the three foundation items the user asked for are now BUILT (walls + multi-town); the residue
 needs either a player agent or is a refactor/render concern:**
 
-1. **Player-only systems with no player in the headless core** — `party` (player companions) and
-   `reputation` as the *player* standing ledger (the NPC analogs — per-person `standing` → favored price,
-   and warband-following — ARE built). No-op without an interactive fighter, which lives in the render
-   frontend (doc-20). Closing these means *adding a player agent* to the headless core.
+1. **Player agent + party + reputation — ✅ BUILT.** A `player` is designated (the first living
+   townsperson; it runs the same AI headless but anchors the player systems). **Party**: companions band
+   to it at spawn (`band_leader = player`) so the warband-rally makes them follow/defend it; `prune_party`
+   drops the fallen (and a fallen player disbands the band). **Reputation** (`reputation.js`, player-only):
+   a `player_rep[Faction]` ledger moved by the player's witnessed KILLS (slay a predator → town regard
+   rises; murder a townsperson → it sinks, asymmetrically), which then SKEWS the player's market buy
+   prices (a hero's discount / a pariah's markup) — the deed's standing comes back at the stalls. Tested.
 
 2. **Walls / collision geometry — ✅ BUILT (user-requested).** `TownWall` collision ring per town with
    gate gaps; locomotion's `wall.resolve` blocks the radial crossing (tangential slide preserved). The

@@ -105,6 +105,8 @@ fn want_qty(e: &Economy, g: usize) -> i32 {
 const FAVOR: f32 = 0.20;
 /// The price edge an active `trade_edge` (haggle) ability buff grants the SELLER (haggles its sale up).
 const TRADE_EDGE: f32 = 0.15;
+/// Max fraction the PLAYER's faction reputation skews its buy price (a hero's discount / a pariah's markup).
+const PLAYER_REP_FAVOR: f32 = 0.25;
 
 /// The seller's price skew toward `buyer`, from its OWN belief-standing about them: ≈0.8 for a dear
 /// friend (a deal), ≈1.2 for a despised buyer (gouged), 1.0 for a stranger. Clamped so trade never
@@ -249,8 +251,17 @@ fn run_auction(world: &mut World, participants: &[usize], base: &[i64; N_COMMODI
             let mid = (ask + bid) / 2; // major units (the neutral midpoint)
             // TRADE_EDGE (the haggle ability buff): a seller with an active buff haggles its sale UP.
             let edge = if world.trade_buff[s] > world.tick { 1.0 + TRADE_EDGE } else { 1.0 };
+            // PLAYER REPUTATION (reputation.js): when the PLAYER is the buyer, its standing with the town
+            // skews the price — a celebrated hero is given a discount, a feared pariah is gouged. The
+            // diegetic payoff of the reputation ledger (a deed's standing comes back at the stalls).
+            let rep_skew = if b as i32 == world.player {
+                let r = (world.player_rep[Faction::Townsfolk as usize] as f32 / 5000.0).clamp(-1.0, 1.0);
+                (1.0 - r * PLAYER_REP_FAVOR).clamp(1.0 - PLAYER_REP_FAVOR, 1.0 + PLAYER_REP_FAVOR)
+            } else {
+                1.0
+            };
             let clear =
-                ((mid as f32) * standing_skew(&world.beliefs[s], b as u32) * edge).round() as i64;
+                ((mid as f32) * standing_skew(&world.beliefs[s], b as u32) * edge * rep_skew).round() as i64;
             let clear = clear.max(1);
             let price_minor = clear * 100; // gold is fixed-point ×100
 

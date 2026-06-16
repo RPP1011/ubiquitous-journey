@@ -214,6 +214,10 @@ pub fn world_hash(w: &World) -> u64 {
     h = fold(h, &w.bounty_target.to_le_bytes());
     h = fold(h, &w.bounty_fund.to_le_bytes());
     h = fold(h, &w.caravan_treasury.to_le_bytes());
+    h = fold(h, &w.player.to_le_bytes());
+    for r in &w.player_rep {
+        h = fold(h, &r.to_le_bytes());
+    }
     for s in &w.granary_stock {
         h = fold(h, &s.to_le_bytes());
     }

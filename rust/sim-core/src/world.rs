@@ -138,6 +138,14 @@ pub struct World {
     /// Communal GRANARY food store (a `construction.js` building benefit): surplus-bearing farmers near
     /// the granary DEPOSIT spare Food; the hungry+foodless near it WITHDRAW a meal. A conserved buffer
     /// (food only moves between inventories and this stock — no minting) that smooths the marginal larder.
+    /// The agent designated the PLAYER (`js/player.js` — the one fighter a human drives in the rendered
+    /// game; in the headless core it runs the same AI but anchors the party + reputation systems). −1 =
+    /// none. Its companions band to it; its witnessed deeds move `player_rep`.
+    pub player: i32,
+    /// The player's STANDING with each faction (`reputation.js`, player-only ledger): index by `Faction`
+    /// (Townsfolk/Monster/Raider…). A slain monster raises town regard; a slain townsperson sinks it.
+    /// Skews the player's market clearing (a hero gets better prices) — the diegetic consequence of deeds.
+    pub player_rep: [i32; 5],
     pub granary_stock: Vec<i32>,    // per-town communal Food store
     pub granary_pos: Vec<[f32; 2]>, // per-town granary position (town core); 0,0 until built
     /// The town's defensive WALL (`walls.js`): a collision ring around the core with GATE gaps. Movement
@@ -179,6 +187,10 @@ pub const NO_DISGUISE: u8 = 0xFF;
 pub const PERCEPT_ID_BASE: u32 = 1_000_000;
 /// Damage amplification on an EXPOSED target (the `expose` ability op — expose_weakness's combo setup).
 const EXPOSE_MULT: f32 = 1.5;
+/// Player reputation deltas (`reputation.js`): the standing gained for slaying a predator, lost for
+/// murdering a townsperson. Asymmetric — a murder costs far more regard than a heroic kill earns.
+const PLAYER_REP_HERO: i32 = 200;
+const PLAYER_REP_MURDER: i32 = 1000;
 
 /// Number of GATES in the town wall (evenly spaced openings the only way through the ring).
 pub const N_GATES: usize = 4;
@@ -384,6 +396,8 @@ impl World {
             bounty_target: -1,
             bounty_fund: 0,
             caravan_treasury: 200_000, // the external market's gold (counted in total_gold ⇒ conserved)
+            player: -1,
+            player_rep: [0; 5],
             granary_stock: vec![0; N_TOWNS],
             granary_pos: vec![[0.0, 0.0]; N_TOWNS],
             walls: Vec::new(),
@@ -493,7 +507,63 @@ impl World {
             .collect();
         // seed the initial relationship constellations (rival apprentices, etc.) for the director.
         systems::seeding::seed_narratives(&mut w);
+        // designate the PLAYER (the first living townsperson) and muster its starting PARTY: a couple of
+        // nearby townsfolk band to it (band_leader = player ⇒ the warband-rally makes them follow/defend).
+        w.designate_player();
         w
+    }
+
+    /// Pick the PLAYER (the first living townsperson) and recruit a small starting PARTY around it.
+    /// Companions band to the player; the existing warband-rally then makes them defend it in combat.
+    fn designate_player(&mut self) {
+        const PARTY_SIZE: usize = 2;
+        const RECRUIT_RANGE2: f32 = 120.0 * 120.0;
+        let player = match (0..self.n).find(|&i| self.alive[i] && self.faction[i] == Faction::Townsfolk as u8) {
+            Some(p) => p,
+            None => return,
+        };
+        self.player = player as i32;
+        // the nearest few townsfolk of the SAME town join the party (band to the player).
+        let mut recruited = 0usize;
+        for i in 0..self.n {
+            if recruited >= PARTY_SIZE {
+                break;
+            }
+            if i != player
+                && self.alive[i]
+                && self.faction[i] == Faction::Townsfolk as u8
+                && self.town[i] == self.town[player]
+                && self.band_leader[i] == NO_BAND
+            {
+                let dx = self.pos[i][0] - self.pos[player][0];
+                let dz = self.pos[i][1] - self.pos[player][1];
+                if dx * dx + dz * dz <= RECRUIT_RANGE2 {
+                    self.band_leader[i] = player as i32; // a companion in the player's band (the party)
+                    recruited += 1;
+                }
+            }
+        }
+    }
+
+    /// PARTY upkeep (`party.js` prune): a fallen companion leaves the player's band. Called each tick.
+    fn prune_party(&mut self) {
+        if self.player < 0 {
+            return;
+        }
+        let p = self.player as usize;
+        for i in 0..self.n {
+            if self.band_leader[i] == p as i32 && !self.alive[i] {
+                self.band_leader[i] = NO_BAND; // the dead drop from the party
+            }
+        }
+        // if the player itself falls, the party disbands (its companions are freed).
+        if !self.alive[p] {
+            for i in 0..self.n {
+                if self.band_leader[i] == p as i32 {
+                    self.band_leader[i] = NO_BAND;
+                }
+            }
+        }
     }
 
     /// Dynamically spawn one agent mid-sim (lineage births, director raiders). Pushes a consistent row
@@ -767,6 +837,19 @@ impl World {
                             // about the killer (the combatEvents master fold — a killer's reputation
                             // now spreads via these witnesses, then gossip carries it further).
                             self.fold_kill_witnesses(from, to);
+                            // PLAYER REPUTATION (reputation.js): if the PLAYER struck the killing blow, the
+                            // deed moves its faction standing — slaying a predator (monster/raider) earns
+                            // the town's regard; cutting down a townsperson sinks it. (Symmetric for the
+                            // victim factions.) The diegetic consequence that later skews its market prices.
+                            if from as i32 == self.player {
+                                let vfac = self.faction[to] as usize;
+                                let tf = Faction::Townsfolk as usize;
+                                if vfac == Faction::Monster as usize || vfac == Faction::Raider as usize {
+                                    self.player_rep[tf] += PLAYER_REP_HERO; // a defender of the town
+                                } else if vfac == tf {
+                                    self.player_rep[tf] -= PLAYER_REP_MURDER; // a killer among them
+                                }
+                            }
                             // OBSERVER: a slaying RESOLVES the vendetta between the two (either way it
                             // was burning) — the saga closes.
                             self.sagas.close(crate::sagas::SagaKind::Vendetta, from as u32, to as u32, self.tick);
@@ -1066,6 +1149,7 @@ impl World {
         if self.tick % GRANARY_EVERY == 0 {
             self.tend_granary(); // farmers deposit surplus; the hungry draw a meal (conserved buffer)
         }
+        self.prune_party(); // the fallen drop from the player's party (and a fallen player disbands it)
         if self.tick % CONSTRUCT_EVERY == 0 {
             self.migrate_homeless(); // an endangered edge-dweller resettles toward the safe core (capped)
         }
@@ -1972,6 +2056,35 @@ mod tests {
         let b = w.beliefs[near].find(hero as u32).expect("the witness forms a belief about the hero");
         assert!(w.beliefs[near].bodies[b].standing > 0, "the monster-slayer is admired");
         assert!(w.beliefs[near].bodies[b].flags & 0x01 == 0, "a hero is not believed hostile");
+    }
+
+    /// PLAYER + PARTY + REPUTATION: a player is designated with a starting party (companions banded to
+    /// it), a fallen companion is pruned, and the player's KILLS move its faction standing (hero vs murder).
+    #[test]
+    fn the_player_has_a_party_and_a_reputation() {
+        let mut w = World::spawn(0x9111, 30);
+        assert!(w.player >= 0, "a player is designated");
+        let p = w.player as usize;
+        let party: Vec<usize> = (0..w.n).filter(|&i| w.band_leader[i] == p as i32).collect();
+        assert!(!party.is_empty(), "the player starts with a party (companions banded to it)");
+
+        // REPUTATION: the player slays a monster → the town's regard rises.
+        let monster = (0..w.n).find(|&i| w.faction[i] == Faction::Monster as u8 && w.alive[i]).unwrap_or(5);
+        w.faction[monster] = Faction::Monster as u8;
+        w.alive[monster] = true;
+        w.combat[monster].health = 1.0;
+        let tf = Faction::Townsfolk as usize;
+        let rep0 = w.player_rep[tf];
+        w.intents.push(Intent::Strike { from: p as u32, to: monster as u32, dmg: 10.0 });
+        w.drain_intents();
+        assert!(!w.alive[monster], "the monster fell to the player");
+        assert!(w.player_rep[tf] > rep0, "slaying a predator raised the player's town reputation");
+
+        // PARTY PRUNE: a companion that falls leaves the band.
+        let comp = party[0];
+        w.alive[comp] = false;
+        w.prune_party();
+        assert_ne!(w.band_leader[comp], p as i32, "a fallen companion is pruned from the party");
     }
 
     /// MULTI-TOWN WORLDGEN: the world holds `N_TOWNS` distinct towns — each with its own centre, market,
