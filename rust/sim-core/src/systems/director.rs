@@ -72,12 +72,45 @@ const BEAT_FEUD: u8 = 10;
 const BEAT_OPPORTUNITY: u8 = 11;
 const BEAT_CRISIS: u8 = 12;
 
+/// A vendetta that has traded this many blows is a real, hardened feud — ripe to ESCALATE.
+const ESCALATE_BEATS: u16 = 3;
+
+/// ARC STEPPER (`director._advanceArcs` / `_stepReckoning`): advance open sagas toward their next beat.
+/// The flagship reckoning: a long-burning personal VENDETTA between two souls of different houses
+/// SPILLS into a dynastic HOUSE FEUD — the strife outgrows the two and their kin inherit it (lineage
+/// then carries the grudge). Reads the SagaStore (observer) + sets a house feud (idempotent). Serial
+/// id-order over the bounded registry ⇒ deterministic. The director's structured-narrative half, now
+/// that the SagaStore exists for it to advance.
+pub fn step_sagas(world: &mut World) {
+    // Collect the escalations first (can't borrow `sagas` while mutating `house_feuds`).
+    let mut feuds: Vec<(u32, u32)> = Vec::new();
+    for s in &world.sagas.sagas {
+        if s.status != 0 || s.kind != crate::sagas::SagaKind::Vendetta as u8 || s.beats < ESCALATE_BEATS {
+            continue;
+        }
+        let (a, b) = (s.a as usize, s.b as usize);
+        if a < world.n && b < world.n {
+            let (ha, hb) = (world.house[a], world.house[b]);
+            if ha != 0 && hb != 0 && ha != hb {
+                feuds.push((ha, hb));
+            }
+        }
+    }
+    for (ha, hb) in feuds {
+        crate::systems::houses::set_house_feud(world, ha, hb); // idempotent: a no-op if already feuding
+    }
+}
+
 pub fn tick(world: &mut World) {
     // Throttle: only consider drama on the evaluation boundary.
     if world.tick == 0 || world.tick % EVAL_EVERY != 0 {
         return;
     }
     let now = world.tick;
+
+    // ARC STEPPER: advance open sagas (a hardened vendetta spills into a house feud) before the
+    // trope/raid logic, so a freshly-escalated feud is live material this same evaluation.
+    step_sagas(world);
 
     // ── pacing + budget bookkeeping (work on a Copy of the director state, write back at the end) ──
     let mut dir = world.director;
@@ -338,6 +371,35 @@ mod tests {
     use super::*;
     use crate::components::GoalKind;
     use crate::world::World;
+
+    /// ARC STEPPER: a long-burning vendetta between two souls of different houses ESCALATES into a
+    /// dynastic house feud (the strife outgrows the two). A short-lived vendetta does NOT.
+    #[test]
+    fn a_hardened_vendetta_escalates_into_a_house_feud() {
+        use crate::sagas::SagaKind;
+        let mut w = World::spawn(0xD7A3, 8);
+        let (rival_a, rival_b) = (1usize, 2usize);
+        w.house[rival_a] = 5;
+        w.house[rival_b] = 9;
+        // a hardened vendetta (4 blows traded) between them.
+        for _ in 0..4 {
+            w.sagas.open_or_touch(SagaKind::Vendetta, rival_a as u32, rival_b as u32, w.tick);
+        }
+        assert!(!crate::systems::houses::are_houses_feuding(&w, 5, 9), "no feud before escalation");
+        step_sagas(&mut w);
+        assert!(
+            crate::systems::houses::are_houses_feuding(&w, 5, 9),
+            "a hardened vendetta spills into a house feud"
+        );
+
+        // a fresh (single-blow) vendetta between two OTHER houses does NOT escalate.
+        let mut w2 = World::spawn(0xD7A4, 8);
+        w2.house[3] = 6;
+        w2.house[4] = 7;
+        w2.sagas.open_or_touch(SagaKind::Vendetta, 3, 4, w2.tick); // 1 beat only
+        step_sagas(&mut w2);
+        assert!(!crate::systems::houses::are_houses_feuding(&w2, 6, 7), "a fresh quarrel stays personal");
+    }
 
     fn run_until_beat(w: &mut World, kind: u8, max_ticks: u32) -> bool {
         for _ in 0..max_ticks {

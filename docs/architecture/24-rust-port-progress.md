@@ -117,8 +117,11 @@ Missing:
   an assault, escalates a beat on each repeat, and closes on the slaying (either direction); a rescue
   is a one-beat closed arc. Folded in the serial merge (deterministic, hashed), swept of stale closed
   arcs each tick, bounded (256, oldest-evicted). open_or_touch/close/record/sweep/open_count.
-⬜ 11 missing tropes · 5 arc STEPPERS (the director advancing open arcs) · role machinery
-(bodyguard/duel/protégé/guardian/legend/avenger) · caravans.
+- 🟡 **arc steppers** — the first director arc stepper landed (`director::step_sagas`): a long-burning
+  VENDETTA saga (≥3 blows) between two souls of different houses ESCALATES into a dynastic HOUSE FEUD
+  (the strife outgrows the two; their kin inherit it via lineage). The reckoning/`_advanceArcs` flagship.
+  ⬜ still: the other 4 arc steppers (tyrant-fall/spy-web/romance/accused).
+⬜ 11 missing tropes · role machinery (bodyguard/duel/protégé/guardian/legend/avenger) · caravans.
 
 ### G7 — World subsystems absent
 ⬜ construction (places-as-percepts + granary) · party (player companions) · biography ·
@@ -149,6 +152,11 @@ occupation choice (dynamic vs fixed-at-spawn) · decide utility-oracle (scoreAnd
 ## Progress log (newest first)
 
 _(append a dated entry per landed commit: what closed, gate status, hash)_
+
+- **G6 director arc stepper (reckoning)** — the first arc stepper: `director::step_sagas` advances open
+  SagaStore arcs — a hardened vendetta (≥3 traded blows) between two souls of different houses ESCALATES
+  into a dynastic house feud (idempotent; their kin then inherit the grudge via lineage). Closes the
+  loop SagaStore→director: the registry built last turn now drives emergent escalation. 1 new test.
 
 - **G5 obituary** — a notable death (a named/epithet soul, or one of rank ≥5) now logs a `KIND_OBITUARY`
   chronicle beat carrying the deceased's title+rank for the render-layer eulogy; ordinary deaths keep
