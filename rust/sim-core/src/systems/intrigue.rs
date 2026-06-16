@@ -65,6 +65,12 @@ const PRICE_TIP_MULT_NUM: u32 = 16;
 const PRICE_TIP_MULT_DEN: u32 = 10;
 /// Per-plant chance the spy is CAUGHT in the act (cover blown → unmask).
 const UNMASK_CHANCE: f32 = 0.12;
+/// Wariness an observer gains when whispered to by a plant (a seed of doubt).
+const SUSPICION_GAIN: u8 = 60;
+/// Extra unmask chance at MAXIMUM nearby suspicion (a fully-watchful neighbourhood catches the spy).
+const UNMASK_SUSPICION_BONUS: f32 = 0.5;
+/// Per-tick wariness decay (suspicion fades as the unsettling moment passes).
+const SUSPICION_DECAY: u8 = 1;
 /// Standing drop every nearby townsperson levels at an unmasked traitor (a latched hostile belief).
 const UNMASK_DROP: i16 = 30_000;
 /// Vision range for who SEES an unmasking (the reveal radius).
@@ -79,9 +85,30 @@ pub fn tick(world: &mut World) {
     if world.tick % TICK_EVERY != 0 {
         return;
     }
+    // wariness FADES: the unsettling moment passes (suspicion decays toward calm each intrigue tick).
+    for s in world.suspicion.iter_mut() {
+        *s = s.saturating_sub(SUSPICION_DECAY);
+    }
     // ASSIGN once the world has a camp population: idempotent (skips already-assigned spies).
     assign_spies(world);
     run_spies(world);
+}
+
+/// The highest WARINESS among living townsfolk near the spy — the neighbourhood's vigilance, which
+/// scales the unmask chance. Reads the suspicion column over the grid neighbours (own to the system).
+fn nearby_suspicion(world: &World, spy: usize) -> u8 {
+    let [x, z] = world.pos[spy];
+    let mut best = 0u8;
+    world.grid.for_near(x, z, |p| {
+        let j = p.id as usize;
+        if j == spy || j >= world.n || p.flags & 1 == 0 || world.faction[j] != Faction::Townsfolk as u8 {
+            return;
+        }
+        if world.suspicion[j] > best {
+            best = world.suspicion[j];
+        }
+    });
+    best
 }
 
 /// Mark a fraction of the living Monster/Raider roster as spies wearing a Townsfolk cover. Idempotent:
@@ -178,13 +205,19 @@ fn run_spies(world: &mut World) {
         // untouched, so reality still resolves correctly if it ever comes to blades.
         world.sour_belief(obs, vic as u32, PLANT_DROP, true);
 
+        // SEED OF DOUBT: being whispered to raises the observer's WARINESS — it half-senses the plot
+        // without placing it. A watchful neighbourhood will catch the spy faster (below).
+        world.suspicion[obs] = world.suspicion[obs].saturating_add(SUSPICION_GAIN);
+
         // FALSE PRICE INTEL: maybe salt a bystander's believed price for one good (mints nothing).
         if world.sim_rng.next_f32() < PRICE_TIP_CHANCE {
             plant_price_tip(world, i);
         }
 
-        // CAUGHT IN THE ACT: a plant may be witnessed — the cover is blown.
-        if world.sim_rng.next_f32() < UNMASK_CHANCE {
+        // CAUGHT IN THE ACT: a plant may be witnessed — the cover is blown. The chance RISES with how
+        // wary the most suspicious townsperson near the spy is (suspicion → vigilance → exposure).
+        let watch = nearby_suspicion(world, i) as f32 / 255.0;
+        if world.sim_rng.next_f32() < UNMASK_CHANCE + watch * UNMASK_SUSPICION_BONUS {
             unmask(world, i);
         }
     }
@@ -268,6 +301,31 @@ mod tests {
     use super::*;
     use crate::hash::world_hash;
     use crate::world::{World, NO_DISGUISE};
+
+    /// SUSPICION: a wary neighbourhood is more likely to catch the spy. `nearby_suspicion` reports the
+    /// most watchful townsperson near the spy, and that scales the unmask chance; suspicion decays.
+    #[test]
+    fn a_watchful_neighbourhood_raises_exposure() {
+        let mut w = World::spawn(0x5505, 6);
+        let (spy, neighbour) = (0usize, 1usize);
+        w.alive[spy] = true;
+        w.alive[neighbour] = true;
+        w.faction[neighbour] = Faction::Townsfolk as u8;
+        w.pos[spy] = [0.0, 0.0];
+        w.pos[neighbour] = [3.0, 0.0];
+        w.build_surface();
+
+        assert_eq!(nearby_suspicion(&w, spy), 0, "a calm neighbourhood reports no wariness");
+        w.suspicion[neighbour] = 200;
+        w.build_surface();
+        assert_eq!(nearby_suspicion(&w, spy), 200, "a wary neighbour's suspicion is sensed near the spy");
+
+        // decay: wariness fades over intrigue ticks (toward calm).
+        let before = w.suspicion[neighbour];
+        w.tick = TICK_EVERY; // land on an intrigue tick
+        tick(&mut w);
+        assert!(w.suspicion[neighbour] < before, "wariness decays as the moment passes");
+    }
 
     /// Spawn a world with a guaranteed camp member at id 0 (forced to Monster faction).
     fn world_with_camp(seed: u64, n: usize) -> World {

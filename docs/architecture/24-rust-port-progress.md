@@ -260,8 +260,13 @@ concern). · granary (a shared-larder building benefit) is the remaining constru
   salient memory's kind, plus its short-term-memory count (recency texture). Hashed; tested.
 - ✅ **duel election** — `director::enlist_duellists` elects two MUTUALLY sworn-hostile townsfolk into a
   formal duel (`ROLE_DUELIST`), composing with the feud/vendetta substrate (part of the 6-role machinery).
-⬜ remaining belief micro-fields (suspicion/animacy/assoc) · decide utility-oracle (scoreAndSelect — a
-refactor of a working priority ladder). (See Closing status.)
+- ✅ **suspicion** — a per-agent `suspicion`/wariness level (the intrigue/ToM counter to deception): a
+  townsperson whispered to by a disguised spy gains wariness it can't quite place, which DECAYS over
+  time; a watchful neighbourhood (high nearby suspicion) UNMASKS a plotting spy faster (the unmask chance
+  scales with `nearby_suspicion`). Closes the deception loop's other half. Hashed; tested.
+⬜ remaining belief micro-fields (animacy/assoc — TS gossip-fidelity metadata with no live consumer in
+the core) · decide utility-oracle (scoreAndSelect — a refactor of a working priority ladder). (See
+Closing status.)
 
 ---
 

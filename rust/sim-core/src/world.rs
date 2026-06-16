@@ -50,6 +50,10 @@ pub struct World {
     pub econ: Vec<Economy>,
     pub combat: Vec<CombatBody>,
     pub home: Vec<[f32; 2]>,
+    /// How WARY this agent currently is (0..255) — the `intrigue`/ToM suspicion level. Rises when it is
+    /// whispered to by a disguised spy (a seed of doubt it can't quite place); decays over time. A
+    /// watchful neighbourhood (high suspicion) UNMASKS a plotting spy faster — the deception's counter.
+    pub suspicion: Vec<u8>,
     /// The belief-subject id of the building this agent has DISCOVERED as home (`PERCEPT_ID_BASE + k`),
     /// or `u32::MAX` for none yet. Set by SIGHT (construction's homeBeliefId), cleared when the belief
     /// fades/destroyed — the EPISTEMIC homecoming: the agent routes to where it BELIEVES home is, and
@@ -225,6 +229,7 @@ impl World {
             econ: Vec::with_capacity(n),
             combat: Vec::with_capacity(n),
             home: Vec::with_capacity(n),
+            suspicion: Vec::with_capacity(n),
             home_belief_id: Vec::with_capacity(n),
             town: Vec::with_capacity(n),
             rng: Vec::with_capacity(n),
@@ -332,6 +337,7 @@ impl World {
             w.econ.push(e);
             w.combat.push(CombatBody::default());
             w.home.push(p); // home = spawn point (Wave-1)
+            w.suspicion.push(0);
             w.home_belief_id.push(u32::MAX); // no home-building discovered yet
             w.town.push(0);
             w.rng.push(DeterministicRng::seed(seed, i as u64));
@@ -384,6 +390,7 @@ impl World {
         self.econ.push(Economy::default());
         self.combat.push(CombatBody::default());
         self.home.push(pos);
+        self.suspicion.push(0);
         self.home_belief_id.push(u32::MAX);
         self.town.push(0);
         self.rng.push(DeterministicRng::seed(self.seed, i as u64));
