@@ -551,7 +551,25 @@ impl Default for TropeState {
 }
 
 pub const NO_BAND: i32 = -1; // band_leader sentinel (not in a band).
-pub const NO_GOD: u8 = 0; // faith sentinel (no faith).
+pub const NO_GOD: u8 = 0; // faith sentinel (no faith). `faith[i]` is a 1-based index into `world.gods`.
+
+// ───────────────────────────── small gods (Pratchett × Pale Lights synthesis) ─────────────────────────────
+/// A small god is a being CONSTITUTED by belief (Discworld *Small Gods*): its power IS the fervour of its
+/// believers, so belief feeds back on itself. Two ORIGINS contend for the same souls (the Glare/Gloam axis,
+/// Pale Lights): WARM town-gods seated at a town's hearth, and ELDRITCH gloam-gods seated out in the deep
+/// wild that CLAIM souls who venture into the dark. The registry is `world.gods`; `faith[i]` (1-based) is
+/// which god agent `i` believes in (0 = NO_GOD). `power` is recomputed each faith pass and HASHED.
+pub const GOD_WARM: u8 = 0; // a hearth/town god — spreads among the settled, seated at a town shrine
+pub const GOD_ELDRITCH: u8 = 1; // an old hungry thing of the Gloam — seated at a wilderness lair
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct God {
+    pub origin: u8,    // GOD_WARM | GOD_ELDRITCH
+    pub domain: u8,    // flavour: 0 hearth/plenty · 1 hunt/war · 2 trade/luck · 3 dread/dark · 4 death
+    pub home: [f32; 2], // its SEAT (a town shrine, or a gloam lair) — the geography it radiates from
+    pub home_town: i16, // the town it is seated in (warm), or -1 (a gloam-god of no town)
+    pub power: u32,    // believers (recomputed each faith pass; the substance of the god) — hashed
+}
 
 // ───────────────────────────── episodic memory (the goal-derivation source, §ToM) ─────────────────────────────
 //

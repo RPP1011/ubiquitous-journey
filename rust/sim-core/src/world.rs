@@ -131,8 +131,17 @@ pub struct World {
     pub base_price: [i64; crate::components::N_COMMODITIES],
     pub map: MentalMap, // affordance-queried static places (read-only after worldgen)
 
+    /// The SMALL-GODS pantheon (`systems/faith.rs`): a registry of belief-constituted gods — WARM town-gods
+    /// seated at shrines + ELDRITCH gloam-gods seated at wilderness lairs — that contend for souls. `faith[i]`
+    /// is a 1-based index into this Vec (0 = NO_GOD). Seeded at worldgen; `power` recomputed each faith pass.
+    pub gods: Vec<crate::components::God>,
+
     // ── Wave-3 society/observer state (mutated in the SERIAL society phase) ──
     pub sim_rng: DeterministicRng, // world-level draws for director/lineage/etc. (serial ⇒ deterministic)
+    /// A SEPARATE rng stream for the faith system, so tuning the small-gods passes can never perturb the
+    /// shared `sim_rng` trajectory the director/economy ride on (the marginal food economy is knife-edge
+    /// sensitive to rng phase — faith must stay decoupled from it). Serial ⇒ deterministic.
+    pub faith_rng: DeterministicRng,
     pub director: DirectorState,   // the drama manager's budget/pacing state (serial society phase)
     pub chronicle: Vec<Beat>,      // world-history feed (observer; append-only, bounded by the system)
     pub quests: Vec<Quest>,        // the quest board
@@ -480,6 +489,40 @@ impl World {
             lair_pos.push(p);
         }
 
+        // ── THE PANTHEON (Glare/Gloam): WARM hearth-gods seated at the first towns' shrines, and ELDRITCH
+        // gloam-gods seated at wilderness lairs — settled faith vs the hungry dark, contending for souls.
+        let mut gods: Vec<crate::components::God> = Vec::new();
+        for t in 0..n_towns.min(3) {
+            gods.push(crate::components::God {
+                origin: crate::components::GOD_WARM,
+                domain: (t % 3) as u8, // hearth/plenty · hunt/war · trade/luck
+                home: town_centers[t],
+                home_town: t as i16,
+                power: 0,
+            });
+        }
+        // seat eldritch gods at the lairs NEAREST the towns — the most-trafficked dens, where foragers,
+        // expeditions, and refugees pass close enough for the dark to reach them.
+        let lair_near = |k: usize| {
+            town_centers
+                .iter()
+                .map(|c| (c[0] - lair_pos[k][0]).powi(2) + (c[1] - lair_pos[k][1]).powi(2))
+                .fold(f32::MAX, f32::min)
+        };
+        let mut lair_order: Vec<usize> = (0..lair_pos.len()).collect();
+        lair_order.sort_by(|&a, &b| {
+            lair_near(a).partial_cmp(&lair_near(b)).unwrap_or(std::cmp::Ordering::Equal).then(a.cmp(&b))
+        });
+        for (k, &li) in lair_order.iter().take(2).enumerate() {
+            gods.push(crate::components::God {
+                origin: crate::components::GOD_ELDRITCH,
+                domain: 3 + (k % 2) as u8, // dread/dark · death
+                home: lair_pos[li],
+                home_town: -1,
+                power: 0,
+            });
+        }
+
         // expand the per-town target counts into a flat town-id list for the townsfolk (id order).
         let mut town_of: Vec<u16> = Vec::with_capacity(townsfolk);
         for t in 0..n_towns {
@@ -539,7 +582,9 @@ impl World {
             town_centers,
             base_price: [10, 8, 12, 30, 15, 40],
             map: MentalMap::default(),
+            gods,
             sim_rng: DeterministicRng::seed(seed, 0x50C1E7),
+            faith_rng: DeterministicRng::seed(seed, 0xFA17_60D5),
             director: DirectorState::default(),
             chronicle: Vec::new(),
             quests: Vec::new(),
