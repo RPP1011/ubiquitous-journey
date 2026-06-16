@@ -153,6 +153,7 @@ pub fn world_hash(w: &World) -> u64 {
             h = fold(h, &b.threat.to_le_bytes());
             h = fold(h, &b.wealth.to_le_bytes());
             h = fold(h, &[b.faction, b.level, b.flags, b.hops]);
+            h = fold(h, &b.assoc.to_le_bytes());
             h = fold(h, &b.last_tick.to_le_bytes());
         }
     }

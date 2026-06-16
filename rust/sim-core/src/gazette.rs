@@ -55,6 +55,32 @@ impl Gazette {
     pub fn briefs(&self) -> &[Beat] {
         &self.briefs[..self.n_briefs as usize]
     }
+
+    /// PROSE rendering (the template-article path, ported as a deterministic in-core generator — the LLM
+    /// enrichment stays browser-only). Turn one numeric `Beat` into a readable headline using procedural
+    /// NAMES for the subject. Pure + deterministic (a string from hashed state; not itself hashed). The
+    /// render layer prints these; nothing in the sim reads them, so they never affect a decision.
+    pub fn headline(&self, b: &Beat) -> String {
+        let who = crate::names::full_name(b.subject, 0);
+        match b.kind {
+            1 => format!("Death in the town: {who} has fallen."),
+            2 => format!("A new calling: {who} rises to a higher station."),
+            4 => format!("Obituary: the town remembers {who}, a notable soul."),
+            5 => format!("Market wire: trade volume stands at {} this cycle.", b.magnitude),
+            30 => format!("Unmasked! {who} is revealed a spy in our midst."),
+            _ => format!("Word from the square concerning {who}."),
+        }
+    }
+
+    /// The full edition as prose: a dateline + a headline per brief. The town newspaper, rendered.
+    pub fn article(&self) -> String {
+        let mut out = format!("THE TOWN GAZETTE — Edition {}\n", self.edition);
+        for b in self.briefs() {
+            out.push_str(&self.headline(b));
+            out.push('\n');
+        }
+        out
+    }
 }
 
 /// The MEDIAN of a small price slice (the gazette's price board — robust to a few outliers, unlike a
@@ -70,6 +96,24 @@ pub fn median_u16(vals: &mut [u16]) -> u16 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prose_renders_briefs_with_names() {
+        let mut g = Gazette::default();
+        let beats = [
+            Beat { t: 1, kind: 1, subject: 7, magnitude: 0 },    // a death
+            Beat { t: 2, kind: 4, subject: 12, magnitude: 305 }, // an obituary
+        ];
+        g.publish(&beats, [10; N_COMMODITIES]);
+        let article = g.article();
+        assert!(article.contains("THE TOWN GAZETTE"), "the edition has a masthead");
+        assert!(article.contains("has fallen"), "a death beat renders to a death headline");
+        assert!(article.contains("Obituary"), "an obituary beat renders to an obituary headline");
+        // deterministic: the same edition renders the same prose every time.
+        assert_eq!(g.article(), g.article());
+        // a named subject appears (procedural naming feeds the prose).
+        assert!(article.contains(&crate::names::full_name(7, 0)), "the fallen soul is named");
+    }
 
     #[test]
     fn publish_snapshots_recent_briefs_and_prices() {

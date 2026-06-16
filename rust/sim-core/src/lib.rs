@@ -21,6 +21,7 @@ pub mod grid;
 pub mod hash;
 pub mod intent;
 pub mod mentalmap;
+pub mod names;
 pub mod perceive;
 pub mod reason;
 pub mod signals;

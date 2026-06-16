@@ -69,7 +69,7 @@ impl Grid {
         self.items.clear();
         self.items.resize(src.len(), src.get(0).copied().unwrap_or(Perceivable {
             id: 0, x: 0.0, z: 0.0, faction: 0, flags: 0, level: 0, _pad: 0,
-            notoriety: 0, threat: 0, wealth_cue: 0, _pad2: 0,
+            notoriety: 0, threat: 0, wealth_cue: 0, house: 0,
         }));
         let mut cursor = self.starts.clone();
         for p in src {

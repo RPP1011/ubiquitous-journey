@@ -409,22 +409,29 @@ pub fn decide(world: &mut World) {
                         return;
                     }
                 }
-                let social_def = if need.social < SOCIAL_SEEK { SOCIAL_SEEK - need.social } else { 0.0 };
-                let novelty_def = if need.novelty < NOVELTY_SEEK { NOVELTY_SEEK - need.novelty } else { 0.0 };
-                if social_def > 0.0 && social_def >= novelty_def {
-                    let to = map
-                        .nearest(crate::mentalmap::AFF_CROWD, pos[i], 300.0)
-                        .map(|p| [p.x, p.z])
-                        .unwrap_or(town_center);
-                    *g = Goal::Socialize { to };
-                    return;
-                } else if novelty_def > 0.0 {
-                    let to = map
-                        .nearest(crate::mentalmap::AFF_RESOURCE, pos[i], 300.0)
-                        .map(|p| [p.x, p.z])
-                        .unwrap_or(town_center);
-                    *g = Goal::Sightsee { to };
-                    return;
+                // scoreAndSelect (the utility oracle, `arbitrate.ts`): score each idle candidate by its
+                // need-DEFICIT weighted by the matching PERSONALITY drive (a sociable soul values company
+                // more; a curious one values novelty more), and serve the highest-utility one. Idle-tier
+                // only ⇒ never robs livelihood time. Replaces the flat deficit compare with a principled,
+                // trait-weighted arbitration — the same shape the TS motivation oracle uses.
+                match score_idle_activity(need, &personality[i]) {
+                    IdleActivity::Socialize => {
+                        let to = map
+                            .nearest(crate::mentalmap::AFF_CROWD, pos[i], 300.0)
+                            .map(|p| [p.x, p.z])
+                            .unwrap_or(town_center);
+                        *g = Goal::Socialize { to };
+                        return;
+                    }
+                    IdleActivity::Sightsee => {
+                        let to = map
+                            .nearest(crate::mentalmap::AFF_RESOURCE, pos[i], 300.0)
+                            .map(|p| [p.x, p.z])
+                            .unwrap_or(town_center);
+                        *g = Goal::Sightsee { to };
+                        return;
+                    }
+                    IdleActivity::None => {}
                 }
             }
 
@@ -613,6 +620,31 @@ fn top_aggressive(gstack: &GoalStack) -> Option<usize> {
     best
 }
 
+/// The idle activities the utility oracle arbitrates between (the lowest-priority "what to do when there's
+/// nothing pressing" choice). `None` ⇒ no need is run-down enough to bother; the caller ambles instead.
+#[derive(PartialEq, Eq, Debug)]
+enum IdleActivity {
+    None,
+    Socialize,
+    Sightsee,
+}
+
+/// `scoreAndSelect` (the utility oracle, `arbitrate.ts`): score each idle candidate by its need DEFICIT
+/// weighted by the matching PERSONALITY drive, and return the highest-utility one. Pure (own-state only).
+/// A sociable soul weights company more; a curious soul weights novelty more — so two equally-bored
+/// townsfolk make DIFFERENT idle choices by temperament (the point of the oracle over a flat compare).
+fn score_idle_activity(need: &crate::components::Needs, pers: &crate::components::Personality) -> IdleActivity {
+    let social = (SOCIAL_SEEK - need.social).max(0.0) * (0.5 + pers.social_drive);
+    let novelty = (NOVELTY_SEEK - need.novelty).max(0.0) * (0.5 + pers.curiosity);
+    if social <= 0.0 && novelty <= 0.0 {
+        IdleActivity::None
+    } else if social >= novelty {
+        IdleActivity::Socialize
+    } else {
+        IdleActivity::Sightsee
+    }
+}
+
 /// `inferDestination` (the ToM pursuit, `beliefs.ts`): the believed pursuit waypoint for a foe. While the
 /// foe is freshly seen, that's simply where I believe it is. But once it has slipped out of sight (its
 /// belief gone STALE), a hunter REASONS about where a fleeing quarry is MAKING FOR — the nearest way out
@@ -622,6 +654,10 @@ fn top_aggressive(gstack: &GoalStack) -> Option<usize> {
 fn infer_pursuit(b: &PersonBelief, map: &crate::mentalmap::MentalMap, now: u32) -> [f32; 2] {
     const STALE_TICKS: u32 = 30; // unseen this long ⇒ reason about its FLIGHT, not its last sighting
     let last = [b.last_x, b.last_z];
+    // ANIMACY: a mind-less prop (belief flag bit2) doesn't FLEE — it stays where it was last seen.
+    if b.flags & 0x04 != 0 {
+        return last;
+    }
     if now.saturating_sub(b.last_tick) > STALE_TICKS {
         if let Some(p) = map.nearest(
             crate::mentalmap::AFF_EXIT | crate::mentalmap::AFF_CONCEAL,

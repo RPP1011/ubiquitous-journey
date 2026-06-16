@@ -60,6 +60,10 @@ fn upsert(bt: &mut BeliefTable, p: &Perceivable, conf: u16, tick: u32) {
     // this never spuriously hostiles a real neighbour.
     let menacing = p.flags & 0x08 != 0;
     let building = p.flags & 0x04 != 0; // a perceived structure (a place, not a person)
+    // ANIMACY: a subject in the percept id-space is a mind-less PROP (inanimate) — belief flag bit2. An
+    // observer can still believe it a person and strike it, but the cognition layer (gossip, ToM pursuit)
+    // treats it as an object, not a mind.
+    let inanimate = p.id >= crate::world::PERCEPT_ID_BASE;
     if let Some(idx) = bt.find(p.id) {
         let b = &mut bt.bodies[idx];
         b.last_x = p.x;
@@ -70,6 +74,7 @@ fn upsert(bt: &mut BeliefTable, p: &Perceivable, conf: u16, tick: u32) {
         b.notoriety = p.notoriety;
         b.threat = p.threat;
         b.wealth = p.wealth_cue;
+        b.assoc = p.house; // its believed ASSOCIATION (house/group)
         b.last_tick = tick;
         b.hops = 0; // I see it FIRST-HAND now — provenance resets (trumps any stale rumour)
         if menacing {
@@ -77,6 +82,9 @@ fn upsert(bt: &mut BeliefTable, p: &Perceivable, conf: u16, tick: u32) {
         }
         if building {
             b.flags |= 0x02; // bit1: a believed building/place (construction's homeBeliefId source)
+        }
+        if inanimate {
+            b.flags |= 0x04; // bit2: a believed inanimate prop (animacy)
         }
         return;
     }
@@ -92,8 +100,11 @@ fn upsert(bt: &mut BeliefTable, p: &Perceivable, conf: u16, tick: u32) {
         wealth: p.wealth_cue,
         last_tick: tick,
         standing: 0,
-        flags: (if menacing { 0x01 } else { 0 }) | (if building { 0x02 } else { 0 }),
+        flags: (if menacing { 0x01 } else { 0 })
+            | (if building { 0x02 } else { 0 })
+            | (if inanimate { 0x04 } else { 0 }),
         hops: 0, // first-hand
+        assoc: p.house,
     };
     let len = bt.len as usize;
     if len < BELIEF_CAP {

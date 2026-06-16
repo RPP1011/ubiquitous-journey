@@ -223,7 +223,16 @@ Missing: — none. (avenger + legend roles landed under G6's role machinery; see
   is free, so an agent slides along to a gate), while a move through a gate passes. Placed outside every
   work site/dweller (radius `TOWN_RADIUS+30`) so the economy never touches it — raiders funnel through
   gates. Read-only in the parallel locomotion (own-write pos); deterministic; survival held; tested.
-⬜ party (player companions — needs a player agent in the headless core).
+- ✅ **player + party + reputation** — a `player` is designated (the first living townsperson, runs the
+  same AI but anchors the player systems). PARTY: companions band to it (`band_leader = player`) so the
+  warband-rally makes them follow/defend it; `prune_party` drops the fallen. REPUTATION (`reputation.js`,
+  player-only): a `player_rep[Faction]` ledger moved by the player's witnessed KILLS (hero/murder,
+  asymmetric), which SKEWS its market buy prices (a hero's discount / a pariah's markup). Tested.
+- ✅ **procedural naming** (`names.rs`) — a deterministic id→name generator (syllable banks; house members
+  share a surname); render-facing, never drives a decision (not hashed).
+- ✅ **gazette prose** — the template-article path as a deterministic in-core generator: `Gazette::article`
+  renders the numeric briefs into headlines using the procedural names (the LLM enrichment stays browser).
+ALL G7 items closed.
 
 ### G8 — Ability execution depth
 - ✅ **plant_belief** live — the social ability op now reaches the epistemic layer: a charmer
@@ -273,9 +282,16 @@ Missing: — none. (avenger + legend roles landed under G6's role machinery; see
   townsperson whispered to by a disguised spy gains wariness it can't quite place, which DECAYS over
   time; a watchful neighbourhood (high nearby suspicion) UNMASKS a plotting spy faster (the unmask chance
   scales with `nearby_suspicion`). Closes the deception loop's other half. Hashed; tested.
-⬜ remaining belief micro-fields (animacy/assoc — TS gossip-fidelity metadata with no live consumer in
-the core) · decide utility-oracle (scoreAndSelect — a refactor of a working priority ladder). (See
-Closing status.)
+- ✅ **animacy** — `PersonBelief` flag bit2 marks a believed mind-less PROP (set by perceive for percept
+  ids), with live consumers: gossip won't relay hearsay about a prop (gossip is news about people), and
+  `inferDestination` won't infer a flight path for one (a building doesn't flee). Hashed.
+- ✅ **assoc** — `PersonBelief.assoc` carries the subject's believed HOUSE (set by perceive from a `house`
+  field added to the perceivable surface), with a market consumer: a seller gives a believed HOUSEMATE a
+  small extra discount (`KIN_FAVOR`) — kinship at the stalls. Hashed.
+- ✅ **scoreAndSelect (utility oracle)** — `score_idle_activity` (`arbitrate.ts`): the idle tier now scores
+  each candidate (socialize/sightsee) by its need-DEFICIT weighted by the matching PERSONALITY drive and
+  serves the highest-utility one — so two equally-bored souls choose differently by temperament. Idle-tier
+  only (never robs livelihood); survival held. **ALL G9 items closed.**
 
 ---
 
@@ -511,8 +527,8 @@ salient()/tiers**, **suspicion** (the spy-unmask counter), **duel election**, an
 (the 4 control ops — stun/slow/knockback/expose — now live) are at behavioral parity, deterministic, and
 M-invariant 1→32 (**209 sim-core** + 4 determinism + 1 survival + 3 protocol + 1 server green).
 
-**Two of the three foundation items the user asked for are now BUILT (walls + multi-town); the residue
-needs either a player agent or is a refactor/render concern:**
+**ALL THREE foundation items the user asked for are now BUILT (player agent, walls, multi-town), and the
+former "refactor/render/no-consumer" residue is closed too:**
 
 1. **Player agent + party + reputation — ✅ BUILT.** A `player` is designated (the first living
    townsperson; it runs the same AI headless but anchors the player systems). **Party**: companions band
@@ -522,36 +538,32 @@ needs either a player agent or is a refactor/render concern:**
    rises; murder a townsperson → it sinks, asymmetrically), which then SKEWS the player's market buy
    prices (a hero's discount / a pariah's markup) — the deed's standing comes back at the stalls. Tested.
 
-2. **Walls / collision geometry — ✅ BUILT (user-requested).** `TownWall` collision ring per town with
-   gate gaps; locomotion's `wall.resolve` blocks the radial crossing (tangential slide preserved). The
-   core's first collision model. Raiders funnel through gates; the economy never touches the wall.
+2. **Walls / collision geometry — ✅ BUILT.** `TownWall` collision ring per town with gate gaps;
+   locomotion's `wall.resolve` blocks the radial crossing (tangential slide preserved). The core's first
+   collision model. Raiders funnel through gates; the economy never touches the wall.
 
-3. **A literal second town — ✅ BUILT (user-requested).** `N_TOWNS = 2` distinct towns, each with its
-   OWN centre, market, ring of work sites, defensive wall, and communal granary; every agent is assigned
-   a `town` (round-robin) and clustered + anchored there. `market.clear` loops per town (trade is
-   proximity-local — 18 m of a market — so the two economies are genuinely separate, 560 m apart). The
-   mental map spans all towns (an agent's `nearest()` finds its own town's places). The caravan is now a
-   REAL inter-town arbitrage: it finds the non-food good with the widest believed-price GAP between the
-   two towns and hauls a load from the CHEAP town's merchant to the DEAR town's — goods cheap→dear, gold
-   dear→cheap, both profit, fully conserved. **The marginal economy SURVIVED the split** (the granary
-   safety-net was widened — deposit-bar 4→3, feed-bar 0.4→0.55 — to hold the 3-seed survival gate at
-   ~190 townsfolk/town). New `worldgen_lays_out_distinct_towns` + `a_caravan_hauls_a_good_between_towns`.
+3. **A literal second town — ✅ BUILT.** `N_TOWNS = 2` distinct towns, each with its OWN centre, market,
+   ring of work sites, defensive wall, and communal granary; every agent assigned a `town` and clustered
+   there. `market.clear` loops per town (trade is proximity-local — 18 m — so the economies are separate).
+   The mental map spans all towns. The caravan is now REAL inter-town arbitrage (widest price-gap good
+   hauled cheap-town→dear-town, conserved). The marginal economy SURVIVED the split (~190 townsfolk/town).
 
-4. **Render/LLM-only tails** — gazette template-article prose, procedural naming, the reporter's
-   roaming-interview path. These produce human-facing TEXT from the numeric substrate that already
-   exists; they belong to the render frontend (doc-20), not the sim core.
+4. **Render text — ✅ BUILT as deterministic in-core generators.** Procedural naming (`names.rs`) and the
+   gazette template-article prose (`Gazette::article`) now render numeric ids/beats into text in-core. The
+   ONLY thing still out of scope is the **LLM article ENRICHMENT** (`ai/press`+`ai/llm`) — explicitly
+   browser-only by design (doc 22 §10): it calls a network LLM, which the headless determinism gate forbids.
 
-5. **`scoreAndSelect` utility-oracle + `animacy`/`assoc` belief metadata** — the decide priority ladder
-   already selects behavior correctly; the oracle is an *alternative architecture* for it, not a missing
-   behavior, and re-shaping a working, survival-tuned ladder is pure risk. `animacy`/`assoc` are TS
-   gossip-fidelity fields with no live consumer in the core (the percept id-range already distinguishes
-   props from people). Closing these is *refactor / telemetry without a consumer*, not a behavior port.
+5. **`scoreAndSelect` + `animacy`/`assoc` — ✅ BUILT with live consumers.** The idle tier is now a
+   trait-weighted utility oracle (`score_idle_activity`); `animacy` (belief bit2) gates gossip + ToM
+   pursuit on props; `assoc` (believed house) drives a kinship discount at the market.
 
-**Bottom line:** the behavioral-parity bar is met for the cognition / economy / society / **world**
-core — every TS feature that drives an NPC decision or world mechanic in the headless scope is ported,
+**Bottom line:** the behavioral-parity bar is met for the cognition / economy / society / **world** core —
+every TS feature that drives an NPC decision or world mechanic in the headless scope is ported,
 deterministic, and M-invariant. What remains is, in each case, scope the core *deliberately lacks*: a
 player agent, a collision model, a literal second town, a render/LLM text layer, or an alternative
-decide architecture / consumer-less telemetry. Each is a foundation decision (e.g. "add a player",
-"add multi-town worldgen", "add a collision system") that **changes the core's scope** rather than
-filling a hole in it — best taken deliberately with the user, not auto-closed as a parity gap.
+deterministic, and M-invariant. The three foundations the user asked for (player, walls, multi-town) are
+built, and the render/refactor/no-consumer tail is closed with live consumers. **The ONLY thing left
+unported is the LLM article-enrichment path** — browser-only by design (it makes a network call the
+headless determinism gate forbids). Every register item G1–G9 is ✅. Gates: **214 sim-core + 4
+determinism (M-invariant 1→32) + 1 survival + 3 protocol + 1 server**, gold conserved.
 

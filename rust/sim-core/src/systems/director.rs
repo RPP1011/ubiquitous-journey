@@ -594,6 +594,7 @@ fn seed_grudge(world: &mut World, observer: u32, subject: u32, now: u32) {
             standing: -16_000,
             flags: 0x01,
             hops: 0,
+            assoc: 0,
         };
         bt.len += 1;
     }

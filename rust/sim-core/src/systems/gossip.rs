@@ -78,6 +78,11 @@ pub fn gossip(world: &mut World) {
             if subj == my_id || subj == partner {
                 continue;
             }
+            // ANIMACY: you don't pass on hearsay about a mind-less PROP (belief flag bit2) — gossip is
+            // social news about PEOPLE. (Each agent still perceives props first-hand.)
+            if sb.flags & 0x04 != 0 {
+                continue;
+            }
             merge_belief(bt, sb);
         }
 

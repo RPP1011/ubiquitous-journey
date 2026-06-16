@@ -95,7 +95,7 @@ pub struct Perceivable {
     pub notoriety: u16,
     pub threat: u16,
     pub wealth_cue: u16,
-    pub _pad2: u16,
+    pub house: u16, // the subject's HOUSE id (0 = none) — feeds a believed `assoc` (group membership)
 }
 
 // ───────────────────────────── WARM — dense per-agent components ─────────────────────────────
@@ -404,8 +404,9 @@ pub struct PersonBelief {
     pub wealth: u16, // believed wealth cue (perceived prosperity — the heist/esteem signal)
     pub last_tick: u32,
     pub standing: i16, // −32768..32767 quantization of −1..1 (relationship)
-    pub flags: u8,     // bit0 hostile · bit1 believed building/place
+    pub flags: u8,     // bit0 hostile · bit1 believed building/place · bit2 inanimate (animacy)
     pub hops: u8,      // gossip provenance: 0 = first-hand (perceived), +1 each retelling (a rumor fades)
+    pub assoc: u16,    // believed ASSOCIATION: the subject's house/group id (0 = none) — kinship in trade
 }
 
 /// Inline belief table — dense `subjects` match-array beside `bodies`, kept sorted by (dist², id).

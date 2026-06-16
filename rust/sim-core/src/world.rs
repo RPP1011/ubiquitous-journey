@@ -638,7 +638,7 @@ impl World {
                 notoriety: self.notoriety[i],
                 threat: self.threat[i],
                 wealth_cue: self.wealth[i],
-                _pad2: 0,
+                house: self.house[i] as u16, // the believed ASSOCIATION cue (kinship)
             });
         }
         // PERCEPTS join the perceivable surface (their own id-space): every agent's `perceive` forms a
@@ -660,7 +660,7 @@ impl World {
                 notoriety: 0,
                 threat: 0,
                 wealth_cue: 0,
-                _pad2: 0,
+                house: 0, // a prop has no house
             });
         }
         let surface = std::mem::take(&mut self.surface);
@@ -1803,6 +1803,7 @@ impl World {
                 standing: 0,
                 flags: 0,
                 hops: 0,
+                assoc: 0,
             };
             bt.len += 1;
             return Some(len);

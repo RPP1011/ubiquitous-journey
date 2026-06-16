@@ -107,16 +107,25 @@ const FAVOR: f32 = 0.20;
 const TRADE_EDGE: f32 = 0.15;
 /// Max fraction the PLAYER's faction reputation skews its buy price (a hero's discount / a pariah's markup).
 const PLAYER_REP_FAVOR: f32 = 0.25;
+/// The extra discount a seller gives a believed HOUSEMATE buyer (the `assoc` kinship bonus).
+const KIN_FAVOR: f32 = 0.1;
 
 /// The seller's price skew toward `buyer`, from its OWN belief-standing about them: ≈0.8 for a dear
 /// friend (a deal), ≈1.2 for a despised buyer (gouged), 1.0 for a stranger. Clamped so trade never
 /// becomes impossible. The relationship-aware clearing that makes reputation MATTER in the market.
 #[inline]
-fn standing_skew(bt: &BeliefTable, buyer: u32) -> f32 {
+fn standing_skew(bt: &BeliefTable, buyer: u32, seller_house: u16) -> f32 {
     match bt.find(buyer) {
         Some(ix) => {
-            let st = (bt.bodies[ix].standing as f32 / 32767.0).clamp(-1.0, 1.0); // −1..1
-            (1.0 - st * FAVOR).clamp(1.0 - FAVOR, 1.0 + FAVOR)
+            let b = &bt.bodies[ix];
+            let st = (b.standing as f32 / 32767.0).clamp(-1.0, 1.0); // −1..1
+            let mut skew = (1.0 - st * FAVOR).clamp(1.0 - FAVOR, 1.0 + FAVOR);
+            // ASSOCIATION (kinship): a seller gives a believed HOUSEMATE (assoc == own house) a small
+            // extra discount — kin look after their own at the stalls.
+            if seller_house != 0 && b.assoc == seller_house {
+                skew *= 1.0 - KIN_FAVOR;
+            }
+            skew
         }
         None => 1.0, // no opinion ⇒ the neutral midpoint
     }
@@ -261,7 +270,7 @@ fn run_auction(world: &mut World, participants: &[usize], base: &[i64; N_COMMODI
                 1.0
             };
             let clear =
-                ((mid as f32) * standing_skew(&world.beliefs[s], b as u32) * edge * rep_skew).round() as i64;
+                ((mid as f32) * standing_skew(&world.beliefs[s], b as u32, world.house[s] as u16) * edge * rep_skew).round() as i64;
             let clear = clear.max(1);
             let price_minor = clear * 100; // gold is fixed-point ×100
 
@@ -321,9 +330,9 @@ mod tests {
         hostile.len = 1;
         let empty = BeliefTable::default();
 
-        let deal = standing_skew(&friendly, 9);
-        let gouge = standing_skew(&hostile, 9);
-        let neutral = standing_skew(&empty, 9);
+        let deal = standing_skew(&friendly, 9, 0);
+        let gouge = standing_skew(&hostile, 9, 0);
+        let neutral = standing_skew(&empty, 9, 0);
         assert!(deal < 1.0, "a friend gets a discount, got {deal}");
         assert!(gouge > 1.0, "a despised buyer is gouged, got {gouge}");
         assert!((neutral - 1.0).abs() < 1e-6, "a stranger pays the neutral midpoint");
