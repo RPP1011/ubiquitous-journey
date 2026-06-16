@@ -128,6 +128,8 @@ const CAPTURE_CHANCE: f32 = 0.30;
 const ESCHEAT_EVERY: u32 = 240;
 /// Re-assess earned epithets on this cadence (deeds accrue slowly; no need to scan every tick).
 const EPITHET_EVERY: u32 = 120;
+/// Run the taught-recipe (study) pass on this cadence (lessons are occasional, not every tick).
+const STUDY_EVERY: u32 = 90;
 
 impl World {
     /// Worldgen: `n` agents clustered in one dense town with professions, gold, and home anchors.
@@ -697,6 +699,9 @@ impl World {
             systems::houses::earn_epithets(self); // brand hero/villain/survivor from accumulated deeds
         }
         self.forget_recipes(); // use-it-or-lose-it: an unpractised craft skill fades (only the bonus)
+        if self.tick % STUDY_EVERY == 0 {
+            self.study_recipes(); // the taught route: a rusty crafter learns from a co-located master
+        }
     }
 
     /// FORGET PASS (recipeKnow.ts `forgetTick`): a recipe skill not refreshed by practice fades slowly
@@ -707,6 +712,44 @@ impl World {
         const RECIPE_FORGET: f32 = 0.0008;
         for r in self.recipe.iter_mut() {
             *r = (*r - RECIPE_FORGET).max(0.0);
+        }
+    }
+
+    /// STUDY CHANNEL (the knowledge model's `study`, `features/learning.ts`): a rusty crafter who is
+    /// co-located with a MASTER of the SAME craft learns from them — its recipe skill firms up, and it
+    /// pays CONSERVED tuition to the teacher (no minting; the teacher is rewarded for the lesson). The
+    /// taught route to mastery (faster than learn-by-doing alone). Serial id-order ⇒ deterministic.
+    fn study_recipes(&mut self) {
+        const STUDY_GAIN: f32 = 0.12;
+        const TUITION: i64 = 500; // minor units, conserved teacher↔student
+        const STUDY_RANGE2: f32 = 8.0 * 8.0;
+        const MASTER_BAR: f32 = 0.8;
+        for student in 0..self.n {
+            let prof = self.profession[student];
+            if prof == 0 || !self.alive[student] || self.recipe[student] >= MASTER_BAR {
+                continue; // only a still-learning crafter studies
+            }
+            let spos = self.pos[student];
+            for teacher in 0..self.n {
+                if teacher == student
+                    || self.profession[teacher] != prof
+                    || !self.alive[teacher]
+                    || self.recipe[teacher] < MASTER_BAR
+                {
+                    continue; // need a co-located MASTER of the same craft
+                }
+                let dx = self.pos[teacher][0] - spos[0];
+                let dz = self.pos[teacher][1] - spos[1];
+                if dx * dx + dz * dz > STUDY_RANGE2 {
+                    continue;
+                }
+                self.recipe[student] = (self.recipe[student] + STUDY_GAIN).min(1.0);
+                if self.econ[student].gold >= TUITION {
+                    self.econ[student].gold -= TUITION; // conserved tuition to the teacher
+                    self.econ[teacher].gold += TUITION;
+                }
+                break; // one lesson per student per pass
+            }
         }
     }
 
@@ -1054,6 +1097,29 @@ mod tests {
         let b = w.beliefs[near].find(hero as u32).expect("the witness forms a belief about the hero");
         assert!(w.beliefs[near].bodies[b].standing > 0, "the monster-slayer is admired");
         assert!(w.beliefs[near].bodies[b].flags & 0x01 == 0, "a hero is not believed hostile");
+    }
+
+    /// STUDY CHANNEL: a rusty crafter co-located with a master of the same craft firms up its recipe and
+    /// pays conserved tuition to the teacher (gold moved, not minted).
+    #[test]
+    fn a_rusty_crafter_studies_under_a_master() {
+        let mut w = World::spawn(0x57D1, 6);
+        let (student, master) = (0usize, 1usize);
+        w.profession[student] = 4; // both blacksmiths
+        w.profession[master] = 4;
+        w.alive[student] = true;
+        w.alive[master] = true;
+        w.recipe[student] = 0.4; // rusty
+        w.recipe[master] = 1.0; // a master
+        w.pos[student] = [0.0, 0.0];
+        w.pos[master] = [2.0, 0.0]; // co-located
+        w.econ[student].gold = 5_000;
+        let total = w.total_gold();
+        let teacher_gold = w.econ[master].gold;
+        w.study_recipes();
+        assert!(w.recipe[student] > 0.4, "the student's recipe firmed up under the master");
+        assert!(w.econ[master].gold > teacher_gold, "the teacher was paid tuition");
+        assert_eq!(w.total_gold(), total, "tuition is conserved (moved, not minted)");
     }
 
     /// AVENGER ROLE: a townsperson murdered by another townsperson enlists a living KINSMAN as an

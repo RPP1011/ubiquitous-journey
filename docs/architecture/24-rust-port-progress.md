@@ -42,8 +42,10 @@ Current: 7 derivers (avenge, seek_fortune, grieve, defend, donate, repay, steal)
   (the bonus only ADDS — a rusty recipe never produces less than baseline). **Also fixed a real
   production-site off-by-one** (decide sent workers to `work_sites[prof-1]` but production checked
   `work_sites[prof]`, so craft production NEVER fired live — the town subsisted only on foraging; town
-  survival jumped to 80–98% once the craft economy worked). ⬜ still: `ask`/`study`-from-teacher
-  channels + the `Know(topic)` goal-stack abstraction + cross-craft learning (needs dynamic occupation).
+  survival jumped to 80–98% once the craft economy worked); (3) the **study channel** (`learning.ts`):
+  a rusty crafter co-located with a same-craft MASTER firms its recipe and pays CONSERVED tuition to the
+  teacher (the taught route to mastery). ⬜ still: the `ask` channel + the `Know(topic)` goal-stack
+  abstraction + cross-craft learning (needs dynamic occupation, also absent).
 - 🟡 **recruiter / warband** — **warband combat rally LANDED**: a band follower converges on its
   leader's foe *if it also perceives it* (shared-threat ToM; overrides personal flee; combat-only, so
   no peacetime economic cost). Built via a serial leader-foe snapshot read in the parallel decide.
@@ -169,6 +171,10 @@ occupation choice (dynamic vs fixed-at-spawn) · decide utility-oracle (scoreAnd
 ## Progress log (newest first)
 
 _(append a dated entry per landed commit: what closed, gate status, hash)_
+
+- **G1 knowledge model — study channel** — a rusty crafter co-located with a same-craft master firms up
+  its recipe and pays CONSERVED tuition to the teacher (the taught route to mastery; recipeKnow's
+  study-from-teacher with conserved tuition). Throttled society pass. 1 new test; gold conserved.
 
 - **G1 graded recipes + a real production bug fix** — added the recipeKnow core: a `recipe` skill column
   (learn-by-doing on produce, fade via a forget pass), a master's extra-output bonus (economy-safe — the
