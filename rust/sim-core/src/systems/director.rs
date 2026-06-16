@@ -277,6 +277,72 @@ pub fn step_sagas(world: &mut World) {
     }
 }
 
+/// A mutual belief-standing at/above this is true affection (the romance arc's bond).
+const ROMANCE_BAR: i16 = 12_000;
+/// A soul of at least this wealth is a candidate "tyrant of means" (the tyrant-fall arc).
+const TYRANT_RICH_GOLD: i64 = 30_000;
+/// …resented by at least this many souls (hostile/soured beliefs) to be a TYRANT worth the arc.
+const TYRANT_RESENTERS: usize = 3;
+
+/// OPEN EMERGENT SAGAS (the romance / tyrant-fall arc steppers): scan the believed-relationship fabric
+/// for the constellations these arcs track and OPEN a saga in the registry (observer telemetry — the
+/// director's structured-narrative layer; no agent reads it). A ROMANCE opens for a strong MUTUAL-warm
+/// pair (it endures); a TYRANT-FALL opens for a wealthy soul resented by many (it closes when they
+/// fall). Bounded, serial id-order ⇒ deterministic. Both build on the trope substrate (star-crossed /
+/// tyrant-market plant the beliefs these read).
+pub fn open_emergent_sagas(world: &mut World) {
+    use crate::sagas::SagaKind;
+    let now = world.tick;
+    // ROMANCE — the first strong MUTUAL-warm townsfolk pair (canonical a<b) opens a lasting bond.
+    'romance: for a in 0..world.n {
+        if !world.alive[a] || world.faction[a] != Faction::Townsfolk as u8 {
+            continue;
+        }
+        let bt = &world.beliefs[a];
+        for k in 0..bt.len as usize {
+            let body = &bt.bodies[k];
+            let b = body.subject as usize;
+            if b <= a || b >= world.n || body.standing < ROMANCE_BAR {
+                continue; // canonical a<b; only a dear regard qualifies
+            }
+            // …and B holds A just as dear (a MUTUAL bond).
+            if world.beliefs[b].find(a as u32).map_or(false, |ix| {
+                world.beliefs[b].bodies[ix].standing >= ROMANCE_BAR
+            }) {
+                world.sagas.open_or_touch(SagaKind::Romance, a as u32, b as u32, now);
+                break 'romance; // one fresh romance per pass
+            }
+        }
+    }
+    // TYRANT-FALL — a wealthy soul resented by enough others opens the arc toward their reckoning.
+    for t in 0..world.n {
+        if !world.alive[t]
+            || world.faction[t] != Faction::Townsfolk as u8
+            || world.econ[t].gold < TYRANT_RICH_GOLD
+        {
+            continue;
+        }
+        let mut resenters = 0usize;
+        for r in 0..world.n {
+            if r != t
+                && world.beliefs[r].find(t as u32).map_or(false, |ix| {
+                    let body = &world.beliefs[r].bodies[ix];
+                    body.standing < 0 || body.flags & 0x01 != 0
+                })
+            {
+                resenters += 1;
+                if resenters >= TYRANT_RESENTERS {
+                    break;
+                }
+            }
+        }
+        if resenters >= TYRANT_RESENTERS {
+            world.sagas.open_or_touch(SagaKind::TyrantFall, t as u32, t as u32, now);
+            break; // one tyrant arc per pass
+        }
+    }
+}
+
 pub fn tick(world: &mut World) {
     // Throttle: only consider drama on the evaluation boundary.
     if world.tick == 0 || world.tick % EVAL_EVERY != 0 {
@@ -287,6 +353,7 @@ pub fn tick(world: &mut World) {
     // ARC STEPPER: advance open sagas (a hardened vendetta spills into a house feud) before the
     // trope/raid logic, so a freshly-escalated feud is live material this same evaluation.
     step_sagas(world);
+    open_emergent_sagas(world); // detect + open romance / tyrant-fall arcs from the relationship fabric
     // ROLE MACHINERY: a notable gains a bodyguard (combat-only follow ⇒ economy-safe); a renowned hero
     // becomes a legend; two sworn foes formalize a duel.
     enlist_bodyguards(world);
@@ -554,6 +621,51 @@ mod tests {
     use super::*;
     use crate::components::GoalKind;
     use crate::world::World;
+
+    /// ROMANCE ARC: a strong MUTUAL-warm pair opens a (lasting) Romance saga; a one-sided crush does not.
+    #[test]
+    fn a_mutual_bond_opens_a_romance_arc() {
+        use crate::sagas::SagaKind;
+        let mut w = World::spawn(0x5A6E, 6);
+        for i in 0..w.n {
+            w.faction[i] = Faction::Townsfolk as u8;
+            w.alive[i] = true;
+            w.beliefs[i].clear();
+        }
+        // a MUTUAL deep regard between 1 and 2.
+        w.warm_belief(1, 2, 16_000);
+        w.warm_belief(2, 1, 16_000);
+        // a ONE-SIDED crush: 3 adores 4, unrequited.
+        w.warm_belief(3, 4, 16_000);
+        open_emergent_sagas(&mut w);
+        assert_eq!(w.sagas.open_count(SagaKind::Romance), 1, "the mutual bond opens one romance");
+        assert!(
+            w.sagas.sagas.iter().any(|s| s.kind == SagaKind::Romance as u8 && s.a == 1 && s.b == 2),
+            "the romance is the mutual pair (canonical a<b)"
+        );
+    }
+
+    /// TYRANT-FALL ARC: a wealthy soul resented by enough others opens the arc; their death closes it.
+    #[test]
+    fn a_resented_tyrant_opens_then_closes_on_death() {
+        use crate::sagas::SagaKind;
+        let mut w = World::spawn(0x7A6E, 8);
+        let tyrant = 0usize;
+        for i in 0..w.n {
+            w.faction[i] = Faction::Townsfolk as u8;
+            w.alive[i] = true;
+            w.beliefs[i].clear();
+        }
+        w.econ[tyrant].gold = 100_000; // a tyrant of means
+        for r in 1..5 {
+            w.sour_belief(r, tyrant as u32, 9_000, false); // resented by four souls
+        }
+        open_emergent_sagas(&mut w);
+        assert_eq!(w.sagas.open_count(SagaKind::TyrantFall), 1, "the resented tyrant opens the arc");
+        // the tyrant falls (dies) — the arc closes.
+        w.sagas.close_subject(tyrant as u32, w.tick);
+        assert_eq!(w.sagas.open_count(SagaKind::TyrantFall), 0, "the tyrant's fall closes the arc");
+    }
 
     /// PROTÉGÉ: an apprentice who looks up to a high-level same-craft master is marked their protégé.
     #[test]

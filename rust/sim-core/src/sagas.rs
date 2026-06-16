@@ -11,8 +11,10 @@
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SagaKind {
-    Vendetta = 0, // `a` wronged `b`; escalates with each blow; closes when one slays the other
-    Rescue = 1,   // `a` freed captive `b`
+    Vendetta = 0,   // `a` wronged `b`; escalates with each blow; closes when one slays the other
+    Rescue = 1,     // `a` freed captive `b`
+    Romance = 2,    // `a` and `b` hold each other dear — a lasting bond (endures; canonical a<b)
+    TyrantFall = 3, // `a` is a resented tyrant of means — the arc toward their fall
 }
 
 /// One emergent saga (a multi-beat story between two souls).
@@ -70,6 +72,17 @@ impl SagaStore {
         if let Some(ix) = self.find_open(kind, a, b) {
             self.sagas[ix].status = 1;
             self.sagas[ix].last = now;
+        }
+    }
+
+    /// CLOSE every open arc that `subject` is a party to (on their death): a tyrant's FALL resolves the
+    /// tyrant-fall arc, a lover's death ends the romance, etc. No-op for arcs they aren't in.
+    pub fn close_subject(&mut self, subject: u32, now: u32) {
+        for s in self.sagas.iter_mut() {
+            if s.status == 0 && (s.a == subject || s.b == subject) {
+                s.status = 1;
+                s.last = now;
+            }
         }
     }
 

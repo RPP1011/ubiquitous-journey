@@ -451,6 +451,9 @@ impl World {
                         self.combat[to].health = 0.0;
                         self.combat[to].state = crate::components::FighterState::Dead as u8;
                         self.alive[to] = false;
+                        // a death RESOLVES every open arc the deceased was a party to (a tyrant's fall,
+                        // a lover's end) — observer bookkeeping.
+                        self.sagas.close_subject(to as u32, self.tick);
                         // The killer's `_slain` marker: an avenge intention against `to` is now
                         // SETTLED (it pops on this Slew episode rather than hunting a corpse).
                         if from != to && from < self.n {

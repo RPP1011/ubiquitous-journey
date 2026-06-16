@@ -139,7 +139,10 @@ Missing:
 - ✅ **role machinery — all 6 roles live**: avenger (hunts a kinsman's killer), bodyguard (warband-rally
   defends a notable), legend (a renowned hero), duellist (mutual sworn foes), protégé (an apprentice who
   reveres a same-craft master — composes with mentor-pride), guardian (a capable soul in the town core).
-⬜ caravans (needs multi-town travel) · the other 4 arc steppers (spy-web/romance/accused/tyrant-fall).
+- 🟡 **arc steppers 1 → 3**: + **romance** (a strong MUTUAL-warm pair opens a lasting Romance saga;
+  builds on star-crossed/mutual-warm) + **tyrant-fall** (a wealthy soul resented by ≥3 opens the arc,
+  closed on their death via `close_subject`). The reckoning/romance/tyrant-fall steppers now live.
+⬜ caravans (needs multi-town travel) · the last 2 arc steppers (spy-web/accused).
 
 ### G7 — World subsystems absent
 ⬜ construction (places-as-percepts + granary) · party (player companions) · biography ·
@@ -190,6 +193,12 @@ _(append a dated entry per landed commit: what closed, gate status, hash)_
   (set in the social cast branch), and the market clears that seller's sales +15% while active. Conserved
   (a price shift). Only the 4 control ops remain — all on Rust-unreachable (NO_CLASS) catalog specs.
   1 new test; hashed; survival unaffected.
+
+- **G6 romance + tyrant-fall arc steppers** — two more emergent-saga arcs: **romance** (a strong
+  mutual-warm pair opens a lasting Romance saga) + **tyrant-fall** (a wealthy soul resented by ≥3 opens
+  the arc; a `close_subject` death-hook resolves it on their fall). New `SagaKind::Romance/TyrantFall`;
+  `open_emergent_sagas` detector reads the trope-planted relationship fabric. 3 of 5 arc steppers now
+  live (reckoning/romance/tyrant-fall). 2 new tests; M-invariant.
 
 - **G6 protégé + guardian roles — ALL 6 director roles now live** — protégé (an apprentice who reveres a
   high-level same-craft master — composes with mentor-pride) + guardian (a capable soul standing in the
