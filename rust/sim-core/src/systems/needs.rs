@@ -71,6 +71,7 @@ pub fn drain(world: &mut World) {
         ref mut combat,
         ref goal,
         ref pos,
+        ref captive_of,
         ..
     } = *world;
 
@@ -87,6 +88,13 @@ pub fn drain(world: &mut World) {
         .for_each(|(i, ((((n, e), m), live), body))| {
             // dead agents neither drain nor satisfy.
             if !*live {
+                return;
+            }
+            // a CAPTIVE is frozen — held and fed by its captor, it neither drains nor starves (so an
+            // inert prisoner doesn't waste away before it can be freed). Mood still cools, below.
+            if captive_of[i] != crate::world::CAPTIVE_NONE {
+                m.fear = (m.fear - FEAR_DECAY).max(0.0);
+                m.anger = (m.anger - ANGER_DECAY).max(0.0);
                 return;
             }
 

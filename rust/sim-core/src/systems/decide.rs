@@ -83,6 +83,7 @@ pub fn decide(world: &mut World) {
         ref map,
         ref alive,
         ref band_leader,
+        ref captive_of,
         ref mut goal,
         ref mut goals,
         ref mut plan,
@@ -114,6 +115,13 @@ pub fn decide(world: &mut World) {
             if !alive[i] {
                 *g = Goal::Idle;
                 gstack.len = 0;
+                pl.clear();
+                return;
+            }
+            // A CAPTIVE is held — it makes no decisions until freed (its captor falls, then decide
+            // resumes normally). Inert, not dead (still alive, still perceivable).
+            if captive_of[i] != crate::world::CAPTIVE_NONE {
+                *g = Goal::Idle;
                 pl.clear();
                 return;
             }

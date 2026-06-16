@@ -60,6 +60,7 @@ pub struct World {
     pub goals: Vec<GoalStack>, // standing intentions (deriveGoals→pushGoal; persists across ticks)
     pub plan: Vec<Plan>,       // cached plan toward the top intention (cursor-advanced; replan-on-change)
     pub experience: Vec<Experience>, // outcome-conditioned caution: per-strategy surcharge (doc 11, experience.rs)
+    pub captive_of: Vec<i32>,        // captor id while held prisoner (CAPTIVE_NONE = free) — capture-on-defeat
     // ── Wave-3 society columns ──
     pub faith: Vec<u8>,         // small-god id (0 = none, NO_GOD)
     pub band_leader: Vec<i32>,  // band/clan leader id (-1 = none, NO_BAND)
@@ -107,6 +108,11 @@ pub struct World {
 
 /// A perceived faction sentinel: no disguise active.
 pub const NO_DISGUISE: u8 = 0xFF;
+/// `captive_of` sentinel: a free agent (not held prisoner).
+pub const CAPTIVE_NONE: i32 = -1;
+/// Chance a RAIDER's lethal blow on a townsperson TAKES them captive instead of killing (a prisoner of
+/// the raid, freed when the captor falls). Drawn from `sim_rng` in the serial merge ⇒ deterministic.
+const CAPTURE_CHANCE: f32 = 0.30;
 
 impl World {
     /// Worldgen: `n` agents clustered in one dense town with professions, gold, and home anchors.
@@ -147,6 +153,7 @@ impl World {
             goals: Vec::with_capacity(n),
             plan: Vec::with_capacity(n),
             experience: Vec::with_capacity(n),
+            captive_of: Vec::with_capacity(n),
             faith: Vec::with_capacity(n),
             band_leader: Vec::with_capacity(n),
             house: Vec::with_capacity(n),
@@ -236,6 +243,7 @@ impl World {
             w.goals.push(GoalStack::default());
             w.plan.push(Plan::default());
             w.experience.push(Experience::default());
+            w.captive_of.push(CAPTIVE_NONE);
             w.beliefs.push(BeliefTable::default());
             w.beliefs_prev.push(BeliefTable::default());
             w.faith.push(NO_GOD);
@@ -284,6 +292,7 @@ impl World {
         self.goals.push(GoalStack::default());
         self.plan.push(Plan::default());
         self.experience.push(Experience::default());
+        self.captive_of.push(CAPTIVE_NONE);
         self.faith.push(NO_GOD);
         self.band_leader.push(NO_BAND);
         self.house.push(0);
@@ -387,6 +396,23 @@ impl World {
                         // being struck stokes ANGER (decays in needs.rs) — the transient "fight back
                         // when provoked" that complements the persistent avenge grudge. Own-write.
                         self.mood[to].anger = (self.mood[to].anger + 0.35).min(1.0);
+                    }
+                    // CAPTURE-ON-DEFEAT: a RAIDER's lethal blow on a TOWNSPERSON may take them captive
+                    // instead of killing (a prisoner of the raid — freed when the captor falls). Spares
+                    // the death + its witness fold; the captive is inert (decide) and held (no starve).
+                    if self.combat[to].health <= 0.0
+                        && from != to
+                        && from < self.n
+                        && self.alive[from]
+                        && self.faction[from] == Faction::Raider as u8
+                        && self.faction[to] == Faction::Townsfolk as u8
+                        && self.captive_of[to] == CAPTIVE_NONE
+                        && self.sim_rng.next_f32() < CAPTURE_CHANCE
+                    {
+                        self.captive_of[to] = from as i32;
+                        self.combat[to].health = 1.0; // subdued, not slain
+                        self.combat[to].state = crate::components::FighterState::Idle as u8;
+                        continue; // captured — skip the death + slew/witness fold below
                     }
                     if self.combat[to].health <= 0.0 {
                         self.combat[to].health = 0.0;
@@ -559,9 +585,26 @@ impl World {
         systems::market::clear(self); // parallel decide → Transfer intents
         systems::act::act(self); // parallel on-arrival interaction verbs → Hand/Deed intents
         self.drain_intents(); // serial deterministic merge
+        self.release_freed_captives(); // serial: a prisoner whose captor fell is freed
         systems::progression::tick(self); // parallel: own progression from deeds
         self.society_phase(); // serial: director/lineage/faith/groups/quests/chronicle
         self.tick += 1;
+    }
+
+    /// Free any captive whose captor is no longer a living threat (dead / out of bounds) — the prison
+    /// falls when the raider holding it does. Serial O(n) sweep ⇒ trivially M-invariant. A freed captive
+    /// resumes normal life (decide stops short-circuiting it to Idle once `captive_of == CAPTIVE_NONE`).
+    fn release_freed_captives(&mut self) {
+        for i in 0..self.n {
+            let cap = self.captive_of[i];
+            if cap == CAPTIVE_NONE {
+                continue;
+            }
+            let c = cap as usize;
+            if c >= self.n || !self.alive[c] {
+                self.captive_of[i] = CAPTIVE_NONE; // captor gone ⇒ released
+            }
+        }
     }
 
     /// SERIAL society/observer phase (Wave 3): throttled passes that mutate the shared world
@@ -600,6 +643,7 @@ impl World {
         systems::market::clear(self);
         systems::act::act(self);
         self.drain_intents();
+        self.release_freed_captives();
         systems::progression::tick(self);
         self.society_phase();
         self.tick += 1;
@@ -800,6 +844,53 @@ mod tests {
         let b = w.beliefs[near].find(hero as u32).expect("the witness forms a belief about the hero");
         assert!(w.beliefs[near].bodies[b].standing > 0, "the monster-slayer is admired");
         assert!(w.beliefs[near].bodies[b].flags & 0x01 == 0, "a hero is not believed hostile");
+    }
+
+    /// CAPTURE-ON-DEFEAT: a raider's lethal blows on townsfolk take SOME prisoner (captive, alive) and
+    /// kill the rest — the mechanic fires (rng-gated) and never both kills and captures the same victim.
+    #[test]
+    fn raider_lethal_blows_capture_some_and_kill_others() {
+        let mut w = World::spawn(0xCAFE, 24);
+        let raider = 0usize;
+        w.faction[raider] = Faction::Raider as u8;
+        w.alive[raider] = true;
+        let victims: Vec<usize> = (1..24).collect();
+        for &v in &victims {
+            w.faction[v] = Faction::Townsfolk as u8;
+            w.alive[v] = true;
+            w.combat[v].health = 1.0; // a single blow is lethal
+            w.captive_of[v] = CAPTIVE_NONE;
+            w.intents.push(Intent::Strike { from: raider as u32, to: v as u32, dmg: 10.0 });
+        }
+        w.drain_intents();
+        let captured = victims.iter().filter(|&&v| w.captive_of[v] != CAPTIVE_NONE).count();
+        let killed = victims.iter().filter(|&&v| !w.alive[v]).count();
+        assert!(captured > 0, "the raid should take at least one prisoner over many lethal blows");
+        assert!(killed > 0, "and kill at least one");
+        for &v in &victims {
+            // never both: a captive is alive + held by the raider; a corpse is not held.
+            if w.captive_of[v] != CAPTIVE_NONE {
+                assert!(w.alive[v], "a captive is alive");
+                assert_eq!(w.captive_of[v], raider as i32, "held by the raider");
+            } else {
+                assert!(!w.alive[v], "an un-captured victim of a lethal blow is dead");
+            }
+        }
+    }
+
+    /// A captive is RELEASED the moment its captor falls (the prison falls when the raider does).
+    #[test]
+    fn captive_freed_when_captor_dies() {
+        let mut w = World::spawn(0xCAB1, 4);
+        let (captor, prisoner) = (0usize, 1usize);
+        w.alive[captor] = true;
+        w.alive[prisoner] = true;
+        w.captive_of[prisoner] = captor as i32;
+        w.release_freed_captives();
+        assert_eq!(w.captive_of[prisoner], captor as i32, "still held while the captor lives");
+        w.alive[captor] = false; // the captor falls
+        w.release_freed_captives();
+        assert_eq!(w.captive_of[prisoner], CAPTIVE_NONE, "the prisoner is freed when the captor dies");
     }
 
     /// A SHIELD buffer soaks Strike damage before health: a blow smaller than the shield leaves health

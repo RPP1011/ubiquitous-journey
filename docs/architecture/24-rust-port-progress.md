@@ -83,9 +83,13 @@ Current: strike→assaulted, kill→slew stamp.
   corpse (`Slew` memory + wealth cue ⇒ Loot intention ⇒ `Atom::Looted` ⇒ reach-and-take ⇒ conserved
   `Hand` of the whole purse ⇒ `Looted` marker). Closes the economy-on-death loop (a fallen agent's
   gold returns to circulation instead of stranding on the corpse).
+- 🟡 **capture-on-defeat → captivity** — a raider's lethal blow on a townsperson may take them
+  PRISONER instead of killing (`captive_of` column; rng-gated in the serial merge). A captive is inert
+  (decide → Idle) and frozen (needs: no drain/starve — held + fed), and is RELEASED the moment its
+  captor falls (`release_freed_captives`). Hashed. ⬜ still: the belief-gated **rescue** (the dormant
+  `Free` verb — a friend who believes you captive comes to cut your bonds).
 Missing:
-⬜ capture-on-defeat → captive → rescue · escheat (heirless estates) · epithet grant · obituary ·
-vendetta-arc open · avenger/legend roles.
+⬜ escheat (heirless estates) · epithet grant · obituary · vendetta-arc open · avenger/legend roles.
 
 ### G6 — arcs + director breadth
 ⬜ arcs SagaStore (open/append/close/sweep) · 11 missing tropes · 5 arc steppers · role machinery
@@ -120,6 +124,12 @@ occupation choice (dynamic vs fixed-at-spawn) · decide utility-oracle (scoreAnd
 ## Progress log (newest first)
 
 _(append a dated entry per landed commit: what closed, gate status, hash)_
+
+- **G5 capture-on-defeat / captivity** — raiders now take PRISONERS: a raider's lethal blow on a
+  townsperson may capture instead of kill (rng-gated in the serial merge; new `captive_of` column).
+  A captive is inert (decide → Idle) + frozen (no needs drain/starve — held & fed) + released the
+  instant its captor falls. Hashed for M-invariance. Lays the substrate for the belief-gated rescue
+  (the still-dormant `Free` verb). 2 new tests; 155 sim-core + gates green; survival unaffected.
 
 - **G8 scry ability op** — read_mind made live: the autocaster firms its vaguest believed-agent-in-range
   from the truth (reveal pos/faction, raise confidence) as an own-write in the (now belief-mutable) cast
