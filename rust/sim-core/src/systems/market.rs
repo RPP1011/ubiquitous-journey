@@ -143,10 +143,10 @@ pub fn clear(world: &mut World) {
                 // top of the baseline, so a rusty/half-learned recipe never produces LESS than before
                 // (economy-safe by construction: the marginal food supply is never reduced). And working
                 // the craft sharpens the recipe (learn-by-doing); it fades unpractised (the forget pass).
-                if world.recipe[i] >= MASTER_BAR && world.econ[i].inventory[g] < PRODUCE_CAP {
+                if world.recipe[i][g] >= MASTER_BAR && world.econ[i].inventory[g] < PRODUCE_CAP {
                     world.econ[i].inventory[g] += 1;
                 }
-                world.recipe[i] = (world.recipe[i] + RECIPE_LEARN).min(1.0);
+                world.recipe[i][g] = (world.recipe[i][g] + RECIPE_LEARN).min(1.0);
                 deeds.push(Intent::Deed { actor: i as u32, verb: 0, magnitude: 1, target: i as u32 });
             }
         }
@@ -324,18 +324,18 @@ mod tests {
             w.pos[i] = farm;
             w.econ[i].inventory = [0; N_COMMODITIES];
         }
-        w.recipe[master] = 1.0; // a master of the craft
-        w.recipe[rusty] = 0.5; // half-learned (below MASTER_BAR)
+        w.recipe[master][0] = 1.0; // a master of the Food craft (good 0)
+        w.recipe[rusty][0] = 0.5; // half-learned (below MASTER_BAR)
         // everyone else idle/away so only these two produce.
         for i in 2..w.n {
             w.profession[i] = 0;
         }
-        let master_skill = w.recipe[master];
+        let master_skill = w.recipe[master][0];
         clear(&mut w);
         assert_eq!(w.econ[master].inventory[0], 2, "a master yields baseline + mastery bonus");
         assert_eq!(w.econ[rusty].inventory[0], 1, "a half-learned recipe yields only the baseline");
-        assert!(w.recipe[rusty] > 0.5, "practising sharpened the rusty recipe (learn-by-doing)");
-        assert!((w.recipe[master] - master_skill).abs() < 0.06, "a master's recipe stays at the cap");
+        assert!(w.recipe[rusty][0] > 0.5, "practising sharpened the rusty recipe (learn-by-doing)");
+        assert!((w.recipe[master][0] - master_skill).abs() < 0.06, "a master's recipe stays at the cap");
     }
 
     /// A seller with surplus + a buyer who wants it, both at the market → a transfer that conserves

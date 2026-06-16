@@ -47,7 +47,11 @@ Current: 7 derivers (avenge, seek_fortune, grieve, defend, donate, repay, steal)
   teacher (the taught route to mastery); (4) the **ask channel**: with no master nearby, a rusty crafter
   ASKS a more-skilled co-located peer for a smaller, tuition-free recipe nudge. **All 3 knowledge channels
   (observe/ask/study) now live.** ⬜ still: the `Know(topic)` goal-stack abstraction (refactoring these
-  into explicit Know-goals) + cross-craft learning (multi-recipe slots).
+  into explicit Know-goals).
+- ✅ **cross-craft learning** — the `recipe` skill is now PER GOOD (`[f32; N_COMMODITIES]`): an agent
+  retains its mastery of a craft it has practised even after retraining into another (a switcher who
+  once mastered a trade is still skilled at it; an unpractised craft fades). Production / learn-by-doing /
+  forget / study / ask all index per good; the dynamic-occupation switch keeps the recipes (no reset).
 
 ### Dynamic occupation (the `chooseOccupation` gap)
 - ✅ **dynamic occupation** (saturation half) — the workforce SELF-BALANCES: an agent in an OVER-supplied
@@ -223,6 +227,12 @@ _(append a dated entry per landed commit: what closed, gate status, hash)_
   (set in the social cast branch), and the market clears that seller's sales +15% while active. Conserved
   (a price shift). Only the 4 control ops remain — all on Rust-unreachable (NO_CLASS) catalog specs.
   1 new test; hashed; survival unaffected.
+
+- **cross-craft learning (knowledge model complete)** — refactored the `recipe` skill to PER GOOD
+  (`[f32; N_COMMODITIES]`): an agent retains mastery of a craft it has practised even after retraining
+  into another (the cross-craft retention), while unpractised crafts fade. Production/learn/forget/
+  study/ask all index per good; the occupation switch no longer resets the recipes. The knowledge model
+  is now complete (observe/ask/study + graded per-craft recipes + cross-craft). 1 new test; M-invariant.
 
 - **dynamic occupation (`chooseOccupation`)** — the workforce self-balances: an over-supplied trade
   retrains a worker into the most under-supplied one (resetting its recipe), with a **food-protection

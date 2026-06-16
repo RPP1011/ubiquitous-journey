@@ -62,7 +62,7 @@ pub struct World {
     pub experience: Vec<Experience>, // outcome-conditioned caution: per-strategy surcharge (doc 11, experience.rs)
     pub captive_of: Vec<i32>,        // captor id while held prisoner (CAPTIVE_NONE = free) — capture-on-defeat
     pub trade_buff: Vec<u32>,        // tick-deadline of an active trade_edge (haggle) market price buff (0 = none)
-    pub recipe: Vec<f32>,            // graded recipe skill for the agent's OWN craft (0..1; learn-by-doing, fades unpractised)
+    pub recipe: Vec<[f32; crate::components::N_COMMODITIES]>, // graded recipe skill PER GOOD (cross-craft: learn-by-doing, fades unpractised)
     // ── Wave-3 society columns ──
     pub faith: Vec<u8>,         // small-god id (0 = none, NO_GOD)
     pub band_leader: Vec<i32>,  // band/clan leader id (-1 = none, NO_BAND)
@@ -113,6 +113,20 @@ pub struct World {
     pub bounty_target: i32, // the agent id a town bounty is posted on (-1 = none) — bounties.ts
     pub bounty_fund: i64,   // gold (minor units) pledged to whoever claims the bounty (a real, held pool)
     pub caravan_treasury: i64, // gold held by the EXTERNAL market the caravans trade with (arbitrage.ts)
+}
+
+/// The commodity a profession OUTPUTS (the canonical good→site/recipe mapping), if any.
+#[inline]
+pub fn prof_good(prof: u8) -> Option<usize> {
+    match prof {
+        1 => Some(0), // Farmer → Food
+        2 => Some(2), // Miner → Ore
+        3 => Some(1), // Woodcutter → Wood
+        4 => Some(3), // Blacksmith → Tool
+        5 => Some(4), // Hunter → Herb
+        6 => Some(5), // Trader → Potion
+        _ => None,
+    }
 }
 
 /// A perceived faction sentinel: no disguise active.
@@ -285,7 +299,7 @@ impl World {
             w.experience.push(Experience::default());
             w.captive_of.push(CAPTIVE_NONE);
             w.trade_buff.push(0);
-            w.recipe.push(1.0); // trained at spawn — a master of their craft (fades if unpractised)
+            w.recipe.push([1.0; crate::components::N_COMMODITIES]); // trained across the crafts; the unpractised fade (specialisation emerges)
             w.beliefs.push(BeliefTable::default());
             w.beliefs_prev.push(BeliefTable::default());
             w.faith.push(NO_GOD);
@@ -336,7 +350,7 @@ impl World {
         self.experience.push(Experience::default());
         self.captive_of.push(CAPTIVE_NONE);
         self.trade_buff.push(0);
-        self.recipe.push(1.0);
+        self.recipe.push([1.0; crate::components::N_COMMODITIES]);
         self.faith.push(NO_GOD);
         self.band_leader.push(NO_BAND);
         self.house.push(0);
@@ -806,7 +820,8 @@ impl World {
                 continue; // FOOD PROTECTION: never thin the farmers below the floor
             }
             self.profession[i] = under as u8; // retrain into the under-supplied trade
-            self.recipe[i] = 0.3; // new to the craft — learn-by-doing will rebuild mastery
+            // CROSS-CRAFT: keep the per-good recipe skills — a switcher who once practised the new craft
+            // is still skilled at it; one long-unpractised is rusty (its recipe has faded). No reset.
             return; // one retraining per pass (gradual)
         }
     }
@@ -862,8 +877,10 @@ impl World {
     /// Serial own-write ⇒ deterministic.
     fn forget_recipes(&mut self) {
         const RECIPE_FORGET: f32 = 0.0008;
-        for r in self.recipe.iter_mut() {
-            *r = (*r - RECIPE_FORGET).max(0.0);
+        for arr in self.recipe.iter_mut() {
+            for r in arr.iter_mut() {
+                *r = (*r - RECIPE_FORGET).max(0.0); // every craft's skill fades unless practised
+            }
         }
     }
 
@@ -880,7 +897,12 @@ impl World {
         const MASTER_BAR: f32 = 0.8;
         for student in 0..self.n {
             let prof = self.profession[student];
-            if prof == 0 || !self.alive[student] || self.recipe[student] >= MASTER_BAR {
+            // the craft's good (the recipe slot the lesson firms — cross-craft: indexed PER GOOD).
+            let g = match crate::world::prof_good(prof) {
+                Some(g) => g,
+                None => continue,
+            };
+            if !self.alive[student] || self.recipe[student][g] >= MASTER_BAR {
                 continue; // only a still-learning crafter learns
             }
             let spos = self.pos[student];
@@ -895,21 +917,21 @@ impl World {
                 if dx * dx + dz * dz > RANGE2 {
                     continue;
                 }
-                if self.recipe[other] >= MASTER_BAR {
+                if self.recipe[other][g] >= MASTER_BAR {
                     master = Some(other);
                     break; // a master is the best teacher — take them
-                } else if self.recipe[other] > self.recipe[student] && peer.is_none() {
+                } else if self.recipe[other][g] > self.recipe[student][g] && peer.is_none() {
                     peer = Some(other); // remember the first more-skilled peer (the ask fallback)
                 }
             }
             if let Some(teacher) = master {
-                self.recipe[student] = (self.recipe[student] + STUDY_GAIN).min(1.0); // taught
+                self.recipe[student][g] = (self.recipe[student][g] + STUDY_GAIN).min(1.0); // taught
                 if self.econ[student].gold >= TUITION {
                     self.econ[student].gold -= TUITION; // conserved tuition to the teacher
                     self.econ[teacher].gold += TUITION;
                 }
             } else if peer.is_some() {
-                self.recipe[student] = (self.recipe[student] + ASK_GAIN).min(1.0); // asked (no tuition)
+                self.recipe[student][g] = (self.recipe[student][g] + ASK_GAIN).min(1.0); // asked
             }
         }
     }
@@ -1378,15 +1400,15 @@ mod tests {
         w.profession[master] = 4;
         w.alive[student] = true;
         w.alive[master] = true;
-        w.recipe[student] = 0.4; // rusty
-        w.recipe[master] = 1.0; // a master
+        w.recipe[student][3] = 0.4; // rusty at the Tool craft (blacksmith → good 3)
+        w.recipe[master][3] = 1.0; // a master
         w.pos[student] = [0.0, 0.0];
         w.pos[master] = [2.0, 0.0]; // co-located
         w.econ[student].gold = 5_000;
         let total = w.total_gold();
         let teacher_gold = w.econ[master].gold;
         w.study_recipes();
-        assert!(w.recipe[student] > 0.4, "the student's recipe firmed up under the master");
+        assert!(w.recipe[student][3] > 0.4, "the student's recipe firmed up under the master");
         assert!(w.econ[master].gold > teacher_gold, "the teacher was paid tuition");
         assert_eq!(w.total_gold(), total, "tuition is conserved (moved, not minted)");
     }
@@ -1401,15 +1423,15 @@ mod tests {
         w.profession[peer] = 4;
         w.alive[student] = true;
         w.alive[peer] = true;
-        w.recipe[student] = 0.3;
-        w.recipe[peer] = 0.6; // more skilled, but NOT a master
+        w.recipe[student][3] = 0.3; // blacksmith → Tool good 3
+        w.recipe[peer][3] = 0.6; // more skilled, but NOT a master
         w.pos[student] = [0.0, 0.0];
         w.pos[peer] = [2.0, 0.0];
         w.econ[student].gold = 5_000;
         let total = w.total_gold();
         w.study_recipes();
-        assert!(w.recipe[student] > 0.3, "asking a peer nudged the recipe up");
-        assert!(w.recipe[student] < 0.42, "the ask bump is smaller than a taught lesson");
+        assert!(w.recipe[student][3] > 0.3, "asking a peer nudged the recipe up");
+        assert!(w.recipe[student][3] < 0.42, "the ask bump is smaller than a taught lesson");
         assert_eq!(w.total_gold(), total, "asking pays no tuition (gold untouched + conserved)");
     }
 
@@ -1551,6 +1573,26 @@ mod tests {
         w.drain_intents();
         assert!((w.combat[def].shield).abs() < 1e-3, "the shield is spent");
         assert!((w.combat[def].health - 75.0).abs() < 1e-3, "the overflow carried through to health");
+    }
+
+    /// CROSS-CRAFT: recipe skill is PER GOOD, so an agent retains its knowledge of a craft it has
+    /// practised even after retraining — a switcher who once mastered a trade is still skilled at it.
+    #[test]
+    fn recipe_skill_is_per_craft_and_retained_across_a_switch() {
+        let mut w = World::spawn(0xC2A5, 4);
+        let a = 0usize;
+        // a blacksmith who is a master of Tools (good 3) but rusty at Wood (good 1).
+        w.profession[a] = 4;
+        w.recipe[a][3] = 1.0; // mastered Tools
+        w.recipe[a][1] = 0.2; // barely knows Wood
+        // it retrains into woodcutting (profession 3 → Wood).
+        w.profession[a] = 3;
+        // its Tool mastery is RETAINED (cross-craft) — not wiped by the switch…
+        assert!((w.recipe[a][3] - 1.0).abs() < 1e-6, "the old craft's mastery is retained");
+        // …and it starts the new craft rusty (its Wood recipe is what it had learned: low).
+        assert!(w.recipe[a][1] < 0.8, "the new craft starts below mastery (must be re-learned)");
+        // distinct per-good slots, not one shared skill.
+        assert_ne!(w.recipe[a][3], w.recipe[a][1], "recipe skill is per craft, not a single value");
     }
 
     /// DYNAMIC OCCUPATION: an over-supplied trade sheds a worker into the most under-supplied one, but
