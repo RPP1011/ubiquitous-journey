@@ -166,6 +166,14 @@ pub fn world_hash(w: &World) -> u64 {
         h = fold(h, &[b.peak_level, b.epithet, b.role, b.drive, b.dominant_deed]);
         h = fold(h, &b.deed_total.to_le_bytes());
     }
+    // percepts (mind-less props: scarecrows/buildings) — own id-space, hittable + perceivable.
+    h = fold(h, &(w.percept_n as u64).to_le_bytes());
+    for k in 0..w.percept_n {
+        h = fold(h, &w.percept_pos[k][0].to_bits().to_le_bytes());
+        h = fold(h, &w.percept_pos[k][1].to_bits().to_le_bytes());
+        h = fold(h, &[w.percept_kind[k], w.percept_faction[k], w.percept_flags[k]]);
+        h = fold(h, &w.percept_health[k].to_bits().to_le_bytes());
+    }
     h = fold(h, &(w.quests.len() as u64).to_le_bytes());
     for q in &w.quests {
         h = fold(h, &[q.kind, q.done as u8]);

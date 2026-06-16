@@ -116,6 +116,17 @@ pub struct World {
     pub bounty_target: i32, // the agent id a town bounty is posted on (-1 = none) — bounties.ts
     pub bounty_fund: i64,   // gold (minor units) pledged to whoever claims the bounty (a real, held pool)
     pub caravan_treasury: i64, // gold held by the EXTERNAL market the caravans trade with (arbitrage.ts)
+    // ── PERCEPTS (js/sim/percept.js): hittable, perceivable PROPS with no mind. A Scarecrow dressed as
+    // a person; a finished Building. Kept in their OWN id-space (`PERCEPT_ID_BASE + k`, disjoint from
+    // agent ids) so every `!agent` guard in the cognition feedback path skips them: an agent can BELIEVE
+    // a percept is a person and strike it, while no mind-feedback (grief/grudge/progression-about-it)
+    // ever fires. Parallel SoA, like the agent columns. ──
+    pub percept_n: usize,
+    pub percept_pos: Vec<[f32; 2]>,
+    pub percept_kind: Vec<u8>,    // 1 = scarecrow/prop, 2 = building (construction)
+    pub percept_faction: Vec<u8>, // the APPARENT faction observers perceive (the disguise — a person/monster)
+    pub percept_health: Vec<f32>, // hittable; a strike depletes it, ≤0 ⇒ destroyed (the `wreck`/`smash` target)
+    pub percept_flags: Vec<u8>,   // bit0 alive · bit2 building · bit3 menacing (perceived a THREAT ⇒ engaged)
 }
 
 /// The commodity a profession OUTPUTS (the canonical good→site/recipe mapping), if any.
@@ -134,6 +145,9 @@ pub fn prof_good(prof: u8) -> Option<usize> {
 
 /// A perceived faction sentinel: no disguise active.
 pub const NO_DISGUISE: u8 = 0xFF;
+/// PERCEPT id-space base — percept k carries belief-subject id `PERCEPT_ID_BASE + k`, disjoint from any
+/// agent id (`< n`). Every `to >= PERCEPT_ID_BASE` is a mind-less prop, the `!agent` guard of the port.
+pub const PERCEPT_ID_BASE: u32 = 1_000_000;
 /// `captive_of` sentinel: a free agent (not held prisoner).
 pub const CAPTIVE_NONE: i32 = -1;
 /// The `role` code for an AVENGER — a kinsman/friend who has taken up the slain's cause (the director
@@ -245,6 +259,12 @@ impl World {
             bounty_target: -1,
             bounty_fund: 0,
             caravan_treasury: 200_000, // the external market's gold (counted in total_gold ⇒ conserved)
+            percept_n: 0,
+            percept_pos: Vec::new(),
+            percept_kind: Vec::new(),
+            percept_faction: Vec::new(),
+            percept_health: Vec::new(),
+            percept_flags: Vec::new(),
         };
         for i in 0..n {
             let r = TOWN_RADIUS * gen.next_f32().sqrt();
@@ -399,9 +419,52 @@ impl World {
                 _pad2: 0,
             });
         }
+        // PERCEPTS join the perceivable surface (their own id-space): every agent's `perceive` forms a
+        // belief about a prop exactly as it would about a person — the deception is that it can't tell
+        // the difference. A MENACING prop carries bit1 so the perceiver latches it hostile (a scarecrow
+        // dressed as a raider ⇒ engaged). Only ALIVE percepts are perceivable.
+        for k in 0..self.percept_n {
+            if self.percept_flags[k] & 0x01 == 0 {
+                continue; // destroyed/removed — no longer perceivable
+            }
+            self.surface.push(Perceivable {
+                id: PERCEPT_ID_BASE + k as u32,
+                x: self.percept_pos[k][0],
+                z: self.percept_pos[k][1],
+                faction: self.percept_faction[k], // the APPARENT faction (person / monster)
+                flags: self.percept_flags[k],     // carries bit1 menacing + bit2 building to perceive
+                level: 0,
+                _pad: 0,
+                notoriety: 0,
+                threat: 0,
+                wealth_cue: 0,
+                _pad2: 0,
+            });
+        }
         let surface = std::mem::take(&mut self.surface);
         self.grid.rebuild(&surface);
         self.surface = surface;
+    }
+
+    /// Spawn a PERCEPT — a hittable, perceivable prop with no mind (`js/sim/percept.js`). Returns its
+    /// belief-subject id (`PERCEPT_ID_BASE + k`). `menacing` latches the perceiver hostile so the combat
+    /// reflex engages it (a scarecrow dressed as a threat); a plain prop is merely believed a person.
+    pub fn spawn_percept(&mut self, pos: [f32; 2], kind: u8, apparent_faction: u8, health: f32, menacing: bool) -> u32 {
+        let k = self.percept_n;
+        let mut flags = 0x01u8; // alive
+        if menacing {
+            flags |= 0x08; // bit3 menacing (disjoint from the surface's bit1 held / bit2 building)
+        }
+        if kind == 2 {
+            flags |= 0x04; // building
+        }
+        self.percept_pos.push(pos);
+        self.percept_kind.push(kind);
+        self.percept_faction.push(apparent_faction);
+        self.percept_health.push(health);
+        self.percept_flags.push(flags);
+        self.percept_n += 1;
+        PERCEPT_ID_BASE + k as u32
     }
 
     /// Snapshot the belief column so gossip can cross-READ neighbours' beliefs (`beliefs_prev`)
@@ -439,6 +502,19 @@ impl World {
                     }
                 }
                 Intent::Strike { from, to, dmg } => {
+                    // A PERCEPT target (mind-less prop): resolve damage on its health, destroy at ≤0, and
+                    // emit NO mind-feedback (no grudge, no witness grief, no progression about it) — the
+                    // `!agent` guard. The striker swung at what it BELIEVED was a person; reality is a prop.
+                    if to >= PERCEPT_ID_BASE {
+                        let k = (to - PERCEPT_ID_BASE) as usize;
+                        if k < self.percept_n && self.percept_flags[k] & 0x01 != 0 {
+                            self.percept_health[k] -= dmg;
+                            if self.percept_health[k] <= 0.0 {
+                                self.percept_flags[k] &= !0x01; // destroyed — drops off the surface
+                            }
+                        }
+                        continue;
+                    }
                     let (from, to) = (from as usize, to as usize);
                     if to >= self.n || !self.alive[to] {
                         continue;
@@ -1482,6 +1558,49 @@ mod tests {
         let b = w.beliefs[near].find(hero as u32).expect("the witness forms a belief about the hero");
         assert!(w.beliefs[near].bodies[b].standing > 0, "the monster-slayer is admired");
         assert!(w.beliefs[near].bodies[b].flags & 0x01 == 0, "a hero is not believed hostile");
+    }
+
+    /// PERCEPT / SCARECROW: a mind-less prop dressed as a menacing person. A nearby agent PERCEIVES it
+    /// (forms a belief), believes it a threat (the menacing latch), strikes it, and can DESTROY it — and
+    /// no mind-feedback ever fires (the prop has no memory/grief/progression; it is not in `agents`).
+    #[test]
+    fn a_scarecrow_is_perceived_struck_and_smashed() {
+        let mut w = World::spawn(0x5CA2, 4);
+        let guard = 0usize;
+        w.alive[guard] = true;
+        w.faction[guard] = Faction::Townsfolk as u8;
+        w.pos[guard] = [0.0, 0.0];
+        w.combat[guard].health = 1.0;
+        // a scarecrow dressed as a raider, right next to the guard, with little structural health.
+        let scare = w.spawn_percept([1.0, 0.0], 1, Faction::Raider as u8, 12.0, true);
+        assert!(scare >= PERCEPT_ID_BASE, "a percept lives in its own id-space");
+
+        // build the surface + perceive: the guard should now hold a (hostile) belief about the prop.
+        w.build_surface();
+        crate::perceive::perceive(&mut w);
+        let b = w.beliefs[guard]
+            .find(scare)
+            .expect("the guard perceives the scarecrow as if it were a person");
+        assert!(
+            w.beliefs[guard].bodies[b].flags & 0x01 != 0,
+            "a menacing prop is believed hostile (the guard will engage it)"
+        );
+
+        // drive ticks: the guard closes, swings, and the believed hits land on the prop's health.
+        let start_hp = w.percept_health[0];
+        for _ in 0..400 {
+            w.tick();
+            if w.percept_flags[0] & 0x01 == 0 {
+                break; // smashed
+            }
+        }
+        assert!(w.percept_health[0] < start_hp, "the guard's strikes damaged the prop");
+        assert!(w.alive[guard], "the guard is unharmed — a scarecrow cannot strike back");
+        // the deception left NO mind-feedback: no grudge episode about the prop on the guard.
+        assert!(
+            !w.memory[guard].has(EpisodeKind::Assaulted, scare),
+            "a prop leaves no grudge (it never struck back) — the !agent guard held"
+        );
     }
 
     /// BIOGRAPHY: the observer rollup captures who a soul was — its defining deed (the tag it did most),

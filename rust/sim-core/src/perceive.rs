@@ -55,6 +55,10 @@ pub fn perceive(world: &mut World) {
 /// set by gossip/social) are PRESERVED. When full, a streaming replace-the-weakest by (conf, id).
 #[inline]
 fn upsert(bt: &mut BeliefTable, p: &Perceivable, conf: u16, tick: u32) {
+    // a MENACING percept (bit3) is perceived as a THREAT — latch the belief hostile so the combat/flee
+    // reflex engages it (a prop dressed as a raider). Only percepts ever set bit3 (agents never do), so
+    // this never spuriously hostiles a real neighbour.
+    let menacing = p.flags & 0x08 != 0;
     if let Some(idx) = bt.find(p.id) {
         let b = &mut bt.bodies[idx];
         b.last_x = p.x;
@@ -66,6 +70,9 @@ fn upsert(bt: &mut BeliefTable, p: &Perceivable, conf: u16, tick: u32) {
         b.threat = p.threat;
         b.wealth = p.wealth_cue;
         b.last_tick = tick;
+        if menacing {
+            b.flags |= 0x01;
+        }
         return;
     }
     let fresh = PersonBelief {
@@ -80,7 +87,7 @@ fn upsert(bt: &mut BeliefTable, p: &Perceivable, conf: u16, tick: u32) {
         wealth: p.wealth_cue,
         last_tick: tick,
         standing: 0,
-        flags: 0,
+        flags: if menacing { 0x01 } else { 0 },
         _pad: 0,
     };
     let len = bt.len as usize;

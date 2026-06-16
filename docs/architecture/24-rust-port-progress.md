@@ -192,8 +192,16 @@ Missing: — none. (avenger + legend roles landed under G6's role machinery; see
   (peak level — monotone, earned epithet, arc role, archetypal drive, and the deed-tag it has committed
   MOST — its defining act — plus a cumulative notable-deed total) into a compact numeric `Biography` row
   the chronicle UI reads. Observer-only (reads truth, writes only `biographies`); hashed; deterministic.
+- ✅ **percept / scarecrow** (the substrate keystone) — `js/sim/percept.js`: hittable, perceivable PROPS
+  with no mind, kept in their OWN id-space (`PERCEPT_ID_BASE + k`, disjoint from agent ids) so every
+  `!agent` guard skips them. An agent PERCEIVES a prop exactly as it would a person (build_surface injects
+  percepts into the perceivable surface), can BELIEVE a menacing one a threat (the bit3 latch) and STRIKE
+  it (the combat reflex targets it by belief), and the strike resolves on the prop's `health` with **no
+  mind-feedback** (no grudge/grief/progression about it — the deception). New `spawn_percept` + percept
+  SoA + perceive latch + the Strike percept-branch; hashed; M-invariant; end-to-end tested (a guard
+  perceives, strikes, and smashes a scarecrow dressed as a raider, taking no harm and bearing no grudge).
 ⬜ construction (places-as-percepts + granary) · party (player companions) ·
-walls (collision geometry) · percept/scarecrow (disguise props). — the percept/structure substrate.
+walls (collision geometry). — construction now builds on the percept substrate above.
 
 ### G8 — Ability execution depth
 - ✅ **plant_belief** live — the social ability op now reaches the epistemic layer: a charmer
