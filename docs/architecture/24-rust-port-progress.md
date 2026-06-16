@@ -188,8 +188,12 @@ Missing: — none. (avenger + legend roles landed under G6's role machinery; see
 (caravans landed under G4 as the single-town external-market form.)
 
 ### G7 — World subsystems absent
-⬜ construction (places-as-percepts + granary) · party (player companions) · biography ·
-walls (collision geometry) · percept/scarecrow (disguise props).
+- ✅ **biography** — the `biography.js` observer: a throttled pass rolls each living agent's own state
+  (peak level — monotone, earned epithet, arc role, archetypal drive, and the deed-tag it has committed
+  MOST — its defining act — plus a cumulative notable-deed total) into a compact numeric `Biography` row
+  the chronicle UI reads. Observer-only (reads truth, writes only `biographies`); hashed; deterministic.
+⬜ construction (places-as-percepts + granary) · party (player companions) ·
+walls (collision geometry) · percept/scarecrow (disguise props). — the percept/structure substrate.
 
 ### G8 — Ability execution depth
 - ✅ **plant_belief** live — the social ability op now reaches the epistemic layer: a charmer

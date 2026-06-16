@@ -1131,3 +1131,19 @@ impl Default for Signals {
         }
     }
 }
+
+/// Per-agent biographical summary (the `js/sim/biography.js` observer — a who-they-were/what-drove-them
+/// rollup the chronicle UI surfaces). Pure OBSERVER telemetry: a throttled pass folds the agent's own
+/// already-tracked state (peak level, earned epithet, arc role, dominant deed, drive) into one compact
+/// numeric row — the render layer turns it into prose later. Monotone where it should be (peak level
+/// only rises; the deed total only accrues) so a life reads as a cumulative arc, not a snapshot.
+#[repr(C)]
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
+pub struct Biography {
+    pub peak_level: u8,    // the highest level the agent ever reached
+    pub epithet: u8,       // the earned title (0 none / 1 hero / 2 villain / 3 survivor)
+    pub role: u8,          // the institutional/arc role at last assessment
+    pub drive: u8,         // the archetypal ambition code (AMB_*)
+    pub dominant_deed: u8, // the DeedTag the agent has done MOST (0xFF = no notable deed yet)
+    pub deed_total: u16,   // cumulative count of notable deeds (peak over the life)
+}

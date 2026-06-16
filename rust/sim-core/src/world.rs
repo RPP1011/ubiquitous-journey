@@ -100,6 +100,9 @@ pub struct World {
     // observer-only — never read to drive a decision. Lazily sized to `n` by the chronicle system.
     pub chron_seen_dead: Vec<bool>,
     pub chron_prev_level: Vec<u16>,
+    /// Per-agent biographical summary (observer; `biography.js`). A throttled pass rolls each living
+    /// agent's own state into a compact numeric who-they-were row the chronicle UI reads. Sized to `n`.
+    pub biographies: Vec<crate::components::Biography>,
     // ── Wave-H society/observer world state ──
     pub house_feuds: Vec<(u32, u32)>, // active house-vs-house feuds (canonical lo<hi pairs) — houses.rs
     pub watch: WatchState,            // the Night Watch institution's hysteresis/captaincy state (serial)
@@ -162,6 +165,8 @@ const BOUNTY_EVERY: u32 = 80;
 const CARAVAN_EVERY: u32 = 100;
 /// Re-evaluate the workforce balance on this cadence (retraining is slow + occasional).
 const OCCUPATION_EVERY: u32 = 150;
+/// Refresh the biographical rollups on this cadence (a life-summary moves slowly; observer-only).
+const BIOGRAPHY_EVERY: u32 = 200;
 
 impl World {
     /// Worldgen: `n` agents clustered in one dense town with professions, gold, and home anchors.
@@ -227,6 +232,7 @@ impl World {
             quests: Vec::new(),
             chron_seen_dead: Vec::new(),
             chron_prev_level: Vec::new(),
+            biographies: Vec::new(),
             house_feuds: Vec::new(),
             watch: WatchState::default(),
             defenses: DefenseState::default(),
@@ -785,6 +791,53 @@ impl World {
         }
         if self.tick % OCCUPATION_EVERY == 0 {
             self.choose_occupations(); // self-balancing trade reallocation (food-protected)
+        }
+        if self.tick % BIOGRAPHY_EVERY == 0 {
+            self.update_biographies(); // roll each life's deeds/drive/rank into its biographical summary
+        }
+    }
+
+    /// BIOGRAPHY rollup (`js/sim/biography.js`, the observer): fold each LIVING agent's own state into a
+    /// compact who-they-were row — peak level (monotone), earned epithet, arc role, archetypal drive, and
+    /// the deed-tag it has committed MOST (its defining act), with a cumulative notable-deed total. Pure
+    /// observer telemetry (reads truth, writes only `biographies`); serial id-order ⇒ deterministic.
+    fn update_biographies(&mut self) {
+        if self.biographies.len() != self.n {
+            self.biographies
+                .resize(self.n, crate::components::Biography::default());
+        }
+        for i in 0..self.n {
+            if !self.alive[i] {
+                continue; // a death freezes the biography at its final state (the eulogy reads it)
+            }
+            let bio = &mut self.biographies[i];
+            // peak level only ever rises (a life's high-water mark, not a current snapshot).
+            let lvl = self.progression[i].total_level.min(u8::MAX as u16) as u8;
+            if lvl > bio.peak_level {
+                bio.peak_level = lvl;
+            }
+            bio.epithet = self.epithet[i];
+            bio.role = self.role[i];
+            bio.drive = self.ambition[i];
+            // the DEFINING deed: the tag this soul has done most (ties broken by lowest tag index).
+            let sig = &self.signals[i];
+            let mut best_tag = 0xFFu8;
+            let mut best_n = 0u32;
+            let mut total = 0u32;
+            for t in 0..crate::components::N_DEED_TAGS {
+                let n = sig.deeds[t].n;
+                total += n;
+                if n > best_n {
+                    best_n = n;
+                    best_tag = t as u8;
+                }
+            }
+            bio.dominant_deed = best_tag;
+            // the notable-deed total is monotone (it only accrues over a life).
+            let total = total.min(u16::MAX as u32) as u16;
+            if total > bio.deed_total {
+                bio.deed_total = total;
+            }
         }
     }
 
@@ -1429,6 +1482,42 @@ mod tests {
         let b = w.beliefs[near].find(hero as u32).expect("the witness forms a belief about the hero");
         assert!(w.beliefs[near].bodies[b].standing > 0, "the monster-slayer is admired");
         assert!(w.beliefs[near].bodies[b].flags & 0x01 == 0, "a hero is not believed hostile");
+    }
+
+    /// BIOGRAPHY: the observer rollup captures who a soul was — its defining deed (the tag it did most),
+    /// peak level (monotone), earned epithet, and a cumulative notable-deed total.
+    #[test]
+    fn a_biography_captures_a_defining_life() {
+        let mut w = World::spawn(0xB10, 4);
+        let hero = 0usize;
+        w.alive[hero] = true;
+        w.faction[hero] = Faction::Townsfolk as u8;
+        w.epithet[hero] = 1; // branded a hero
+        w.ambition[hero] = 3; // some archetypal drive
+        // a life of rescues (the defining deed) plus one theft.
+        crate::signals::fold_deed(&mut w.signals[hero], crate::components::DeedTag::Rescue, 10);
+        crate::signals::fold_deed(&mut w.signals[hero], crate::components::DeedTag::Rescue, 20);
+        crate::signals::fold_deed(&mut w.signals[hero], crate::components::DeedTag::Rescue, 30);
+        crate::signals::fold_deed(&mut w.signals[hero], crate::components::DeedTag::Theft, 40);
+
+        w.update_biographies();
+        let bio = w.biographies[hero];
+        assert_eq!(bio.epithet, 1, "the earned epithet is captured");
+        assert_eq!(bio.drive, 3, "the archetypal drive is captured");
+        assert_eq!(
+            bio.dominant_deed,
+            crate::components::DeedTag::Rescue as u8,
+            "the defining deed is the one done most (rescue)"
+        );
+        assert_eq!(bio.deed_total, 4, "all four notable deeds are tallied");
+
+        // peak level is monotone: a later drop does not lower it.
+        w.progression[hero].total_level = 7;
+        w.update_biographies();
+        assert_eq!(w.biographies[hero].peak_level, 7, "peak level rose");
+        w.progression[hero].total_level = 2;
+        w.update_biographies();
+        assert_eq!(w.biographies[hero].peak_level, 7, "peak level never falls back");
     }
 
     /// RECIPROCITY: a gift (act verb 10) WARMS the beneficiary's believed standing toward the giver,

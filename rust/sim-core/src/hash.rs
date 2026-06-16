@@ -160,6 +160,12 @@ pub fn world_hash(w: &World) -> u64 {
         h = fold(h, &bt.subject.to_le_bytes());
         h = fold(h, &bt.magnitude.to_le_bytes());
     }
+    // per-agent biographical rollups (observer; lazily sized, so fold its length too).
+    h = fold(h, &(w.biographies.len() as u64).to_le_bytes());
+    for b in &w.biographies {
+        h = fold(h, &[b.peak_level, b.epithet, b.role, b.drive, b.dominant_deed]);
+        h = fold(h, &b.deed_total.to_le_bytes());
+    }
     h = fold(h, &(w.quests.len() as u64).to_le_bytes());
     for q in &w.quests {
         h = fold(h, &[q.kind, q.done as u8]);
