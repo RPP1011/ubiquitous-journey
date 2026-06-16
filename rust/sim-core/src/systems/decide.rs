@@ -82,6 +82,7 @@ pub fn decide(world: &mut World) {
         ref work_sites,
         ref map,
         ref alive,
+        ref band_leader,
         ref mut goal,
         ref mut goals,
         ref mut plan,
@@ -89,6 +90,18 @@ pub fn decide(world: &mut World) {
         ref mut rng,
         ..
     } = *world;
+
+    // WARBAND RALLY snapshot (read-only): each agent's CURRENT foe if it holds a Fight goal — built
+    // serially from last tick's goals (a 1-tick lag) so the parallel loop below can read a band leader's
+    // foe without borrowing the live `goal` column it is mutating. A follower rallies to its leader's
+    // foe (if it perceives it too). Cheap (one i32/agent); shared read across threads ⇒ deterministic.
+    let leader_foe: Vec<Option<u32>> = goal
+        .iter()
+        .map(|g| match g {
+            Goal::Fight { target, .. } => Some(*target),
+            _ => None,
+        })
+        .collect();
 
     goal.par_iter_mut()
         .zip(goals.par_iter_mut())
@@ -186,6 +199,26 @@ pub fn decide(world: &mut World) {
                     if let Some(goal_set) = serve(gstack, idx, pl, &pv) {
                         *g = goal_set;
                         return;
+                    }
+                }
+            }
+
+            // 2c. WARBAND RALLY: a band follower converges on its LEADER's foe — but only one it ALSO
+            //     perceives (a shared, commonly-seen threat). The band stands together, overriding the
+            //     personal flee reflex; belief-gated, so a follower won't blindly charge a foe it can't
+            //     see. Active only while the leader is fighting ⇒ no peacetime economic cost. This is
+            //     the warband muster: a mustered leader marches on the believed foe, the band converges.
+            if townsfolk {
+                let lid = band_leader[i];
+                if lid != crate::components::NO_BAND {
+                    if let Some(Some(foe)) = leader_foe.get(lid as usize).copied() {
+                        if foe != i as u32 {
+                            if let Some(bi) = beliefs[i].find(foe) {
+                                let b = &beliefs[i].bodies[bi];
+                                *g = Goal::Fight { target: foe, to: [b.last_x, b.last_z] };
+                                return;
+                            }
+                        }
                     }
                 }
             }
@@ -499,6 +532,54 @@ mod tests {
         w.beliefs[0].clear();
         decide(&mut w);
         assert_eq!(w.goal[0].kind(), GoalKind::Eat, "a hungry agent with food must choose Eat");
+    }
+
+    /// WARBAND RALLY: a band follower whose leader is fighting a foe the follower ALSO perceives
+    /// converges on that foe (the band stands together, overriding personal flee).
+    #[test]
+    fn band_follower_rallies_to_its_leaders_foe() {
+        let mut w = World::spawn(0xBA9D, 16);
+        let (leader, follower, foe) = (0usize, 1usize, 7u32);
+        w.faction[follower] = Faction::Townsfolk as u8;
+        w.needs[follower] = Needs::default();
+        w.memory[follower] = crate::components::Memory::default();
+        w.goals[follower] = GoalStack::default();
+        w.econ[follower].inventory[Commodity::Food as usize] = 3;
+        w.band_leader[follower] = leader as i32; // follows the leader
+        // the leader is currently fighting the foe (the snapshot reads this last-tick goal).
+        w.goal[leader] = Goal::Fight { target: foe, to: [40.0, 0.0] };
+        // the follower ALSO perceives the foe (a shared, commonly-seen threat).
+        let bt = &mut w.beliefs[follower];
+        bt.clear();
+        bt.subjects[0] = foe;
+        bt.bodies[0] = PersonBelief { subject: foe, last_x: 38.0, last_z: 1.0, confidence: 60000, flags: 0x01, ..Default::default() };
+        bt.len = 1;
+        decide(&mut w);
+        match w.goal[follower] {
+            Goal::Fight { target, .. } => assert_eq!(target, foe, "the follower rallies to the leader's foe"),
+            other => panic!("a band follower should rally to its leader's foe (Fight), got {other:?}"),
+        }
+    }
+
+    /// A follower does NOT rally to a foe it cannot perceive (belief-gated — no blind cross-map charge).
+    #[test]
+    fn band_follower_ignores_an_unseen_foe() {
+        let mut w = World::spawn(0xBA9E, 16);
+        let (leader, follower) = (0usize, 1usize);
+        w.faction[follower] = Faction::Townsfolk as u8;
+        w.needs[follower] = Needs::default();
+        w.memory[follower] = crate::components::Memory::default();
+        w.goals[follower] = GoalStack::default();
+        w.econ[follower].inventory[Commodity::Food as usize] = 3;
+        w.band_leader[follower] = leader as i32;
+        w.goal[leader] = Goal::Fight { target: 7, to: [40.0, 0.0] };
+        w.beliefs[follower].clear(); // the follower perceives NOTHING — no shared threat
+        decide(&mut w);
+        assert_ne!(
+            w.goal[follower].kind(),
+            GoalKind::Fight,
+            "a follower must not charge a foe it cannot see"
+        );
     }
 
     /// SOFT NEEDS: an IDLE townsperson (no craft to ply, nothing pressing) whose social need has run

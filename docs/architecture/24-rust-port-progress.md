@@ -36,7 +36,11 @@ Current: 7 derivers (avenge, seek_fortune, grieve, defend, donate, repay, steal)
   felt-surcharge/classify-yield), planner cost read, windfall-on-rob-success + burn-on-lost-venture
   writes, and a behavioral steal-gate (a burned thief retires). Hashed for the M-invariance canary.
 - ⬜ **knowledge model** — observe / ask / study (`Know(topic)` + graded recipes)
-- ⬜ **recruiter / warband** — recruit-as-Inform + muster + march-on-foe
+- 🟡 **recruiter / warband** — **warband combat rally LANDED**: a band follower converges on its
+  leader's foe *if it also perceives it* (shared-threat ToM; overrides personal flee; combat-only, so
+  no peacetime economic cost). Built via a serial leader-foe snapshot read in the parallel decide.
+  ⬜ still: recruit-as-an-explicit-Inform offer + the muster derivation (bands currently form by
+  mutual standing in groups.rs, not a deliberate recruit goal).
 - ⬜ **affect** — free (rescue captive) / wreck (sabotage)
 - ✅ **subsistence** — hunger → Sate intention → forage/buy a meal (commit below). **Fixed the
   documented starvation collapse** (town went 380→2 alive by t1500; now 380→372 at t3000).
@@ -111,6 +115,11 @@ occupation choice (dynamic vs fixed-at-spawn) · decide utility-oracle (scoreAnd
 ## Progress log (newest first)
 
 _(append a dated entry per landed commit: what closed, gate status, hash)_
+
+- **G1 warband combat rally** — bands (which `groups.rs` forms by mutual standing) now *act*: a follower
+  converges on its leader's foe when it also perceives that foe (shared-threat ToM; overrides personal
+  flee). Built via a serial leader-foe snapshot (read-only, 1-tick lag) consumed in the parallel decide,
+  so no live-`goal`-column borrow conflict. Combat-only ⇒ survival regression unaffected. 2 new tests.
 
 - **G8 plant_belief ability op** — the ability DSL's reach into the epistemic core, made live. A
   speaker's silver-tongue / merchant's haggle (negative `plant_belief`) WARMS how a nearby agent
