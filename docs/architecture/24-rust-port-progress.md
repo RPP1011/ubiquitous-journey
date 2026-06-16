@@ -77,7 +77,16 @@ follow · migrate (most are downstream of absent subsystems: caravans/gazette/pa
 ⬜ witnessed-deed → faction standing; standing-skewed market clearing; decay. (Player-only in TS;
 in headless Rust applies as NPC-faction standing.)
 
-### G4 — News / economy depth (needs multi-town + gazette substrate)
+### G4 — News / economy depth
+- ✅ **gazette + newsread** (single-town) — a `gazette.rs` town newspaper: a periodic edition snapshots
+  the recent chronicle into briefs + a median price board (per good, across living townsfolk). The
+  **newsread** consumer folds the published prices into agents' OWN price beliefs (a gentle EMA) — a
+  market signal ripples out through the NEWS, not just direct perception (doc-05). **Food is exempt** (the
+  survival regression caught that converging food beliefs destabilises the marginal economy — a 49% dip);
+  the news moves only the secondary goods. Conserved (beliefs only); hashed; M-invariant.
+Still ⬜ (truly multi-town): arbitrage + caravans (exploit price GAPS between towns). reporter/bounties/
+econstats are single-town-viable (not yet built). The OLD "needs multi-town substrate" framing was too
+broad — only arbitrage/caravans actually need it.
 - ✅ **favored-price / standing-skew** (`npcFavoredPrice`) — the double-auction now clears at the belief
   midpoint SKEWED by how the seller regards the buyer (±FAVOR): a friend gets a discount, a despised
   buyer a markup, a stranger the neutral price. Conserved. Makes reputation/relationships matter in trade.
@@ -195,6 +204,13 @@ _(append a dated entry per landed commit: what closed, gate status, hash)_
   (set in the social cast branch), and the market clears that seller's sales +15% while active. Conserved
   (a price shift). Only the 4 control ops remain — all on Rust-unreachable (NO_CLASS) catalog specs.
   1 new test; hashed; survival unaffected.
+
+- **G4 gazette + newsread** — the news layer's centerpiece, single-town: `gazette.rs` publishes a
+  periodic edition (recent chronicle briefs + a median price board), and the **newsread** consumer folds
+  the published prices into agents' price beliefs (a market signal spreads via the news). Found that only
+  **arbitrage/caravans** truly need multi-town — gazette/reporter/bounties/econstats are single-town-viable.
+  The survival regression again caught a destabilization (converging FOOD beliefs → 49%); fixed by
+  exempting food. 2 new tests; survival restored to 80–99%; M-invariant; hashed.
 
 - **G1 knowledge model — ask channel (observe/ask/study all live)** — extended the study pass: with no
   master nearby, a rusty crafter ASKS a more-skilled co-located peer for a smaller, tuition-free recipe

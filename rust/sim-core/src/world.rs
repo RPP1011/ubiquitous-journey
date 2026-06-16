@@ -107,6 +107,7 @@ pub struct World {
     pub expeditions: ExpeditionState, // wilderness adventuring companies afield (serial society phase)
     pub tropes: TropeState,           // the relationship-trope engine's cooldown/telemetry state (serial)
     pub sagas: crate::sagas::SagaStore, // emergent-saga registry (observer: vendettas/rescues; doc 12/19)
+    pub gazette: crate::gazette::Gazette, // the town newspaper (observer; published in the society phase)
 }
 
 /// A perceived faction sentinel: no disguise active.
@@ -130,6 +131,8 @@ const ESCHEAT_EVERY: u32 = 240;
 const EPITHET_EVERY: u32 = 120;
 /// Run the taught-recipe (study) pass on this cadence (lessons are occasional, not every tick).
 const STUDY_EVERY: u32 = 90;
+/// Put the gazette to press on this cadence (an edition every so often; newsread reads it each tick).
+const GAZETTE_EVERY: u32 = 60;
 
 impl World {
     /// Worldgen: `n` agents clustered in one dense town with professions, gold, and home anchors.
@@ -201,6 +204,7 @@ impl World {
             expeditions: ExpeditionState::default(),
             tropes: TropeState::default(),
             sagas: crate::sagas::SagaStore::default(),
+            gazette: crate::gazette::Gazette::default(),
         };
         for i in 0..n {
             let r = TOWN_RADIUS * gen.next_f32().sqrt();
@@ -653,6 +657,7 @@ impl World {
         systems::gossip::gossip(self); // parallel: read prev beliefs, write own
         systems::combat::resolve(self); // parallel decide → Strike intents
         crate::abilities::cast(self); // parallel NPC autocast → extra Strike intents / self-buff own-writes
+        self.newsread(); // parallel: fold the gazette's published prices into own price beliefs
         systems::market::clear(self); // parallel decide → Transfer intents
         systems::act::act(self); // parallel on-arrival interaction verbs → Hand/Deed intents
         self.drain_intents(); // serial deterministic merge
@@ -705,6 +710,54 @@ impl World {
         if self.tick % STUDY_EVERY == 0 {
             self.study_recipes(); // the taught route: a rusty crafter learns from a co-located master
         }
+        if self.tick % GAZETTE_EVERY == 0 {
+            self.publish_gazette(); // the town newspaper goes to press (an edition of briefs + prices)
+        }
+    }
+
+    /// Publish a fresh GAZETTE edition (the brief/edition core of `gazette.ts`): snapshot the recent
+    /// chronicle into briefs + a price board = the MEDIAN believed price of each good across living
+    /// townsfolk (robust + integer ⇒ deterministic). Serial society-phase pass; observer-only.
+    fn publish_gazette(&mut self) {
+        let mut prices = [0u16; crate::components::N_COMMODITIES];
+        for g in 0..crate::components::N_COMMODITIES {
+            let mut vals: Vec<u16> = (0..self.n)
+                .filter(|&i| self.alive[i] && self.faction[i] == Faction::Townsfolk as u8)
+                .map(|i| {
+                    let pb = self.econ[i].price_belief[g];
+                    if pb > 0 { pb } else { self.base_price[g].clamp(1, u16::MAX as i64) as u16 }
+                })
+                .collect();
+            prices[g] = crate::gazette::median_u16(&mut vals);
+        }
+        self.gazette.publish(&self.chronicle, prices);
+    }
+
+    /// NEWSREAD (`features/newsread.ts`): a living townsperson folds the GAZETTE's published price board
+    /// into its OWN price beliefs — a market shock ripples out through the NEWS, not just direct
+    /// perception (doc-05 "information as a resource"). A gentle EMA pull; own-write per agent reading a
+    /// FROZEN gazette snapshot ⇒ M-invariant. Conserved (beliefs only — no gold moves).
+    fn newsread(&mut self) {
+        use rayon::prelude::*;
+        const NEWS_PULL: f32 = 0.10;
+        let gprices = self.gazette.prices; // a Copy snapshot — frozen, read-only across the parallel pass
+        let faction = &self.faction;
+        let alive = &self.alive;
+        self.econ.par_iter_mut().enumerate().for_each(|(i, e)| {
+            if !alive[i] || faction[i] != Faction::Townsfolk as u8 {
+                return;
+            }
+            // Skip FOOD (commodity 0): the survival-critical food trade is left to direct price
+            // discovery — converging its belief via the news destabilised the marginal economy (the
+            // survival-regression lesson). The news moves the SECONDARY goods' beliefs only.
+            for g in 1..crate::components::N_COMMODITIES {
+                if gprices[g] > 0 {
+                    let cur = e.price_belief[g] as f32;
+                    let next = cur + (gprices[g] as f32 - cur) * NEWS_PULL;
+                    e.price_belief[g] = next.clamp(1.0, u16::MAX as f32) as u16;
+                }
+            }
+        });
     }
 
     /// FORGET PASS (recipeKnow.ts `forgetTick`): a recipe skill not refreshed by practice fades slowly
@@ -827,6 +880,7 @@ impl World {
         systems::gossip::gossip(self);
         systems::combat::resolve(self);
         crate::abilities::cast(self);
+        self.newsread();
         systems::market::clear(self);
         systems::act::act(self);
         self.drain_intents();

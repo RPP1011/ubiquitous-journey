@@ -431,7 +431,7 @@ impl BeliefTable {
 
 /// One world-history beat (the chronicle observer — `types/news.ts` Beat, numeric Wave-3 form; the
 /// render-only text is generated later from these). Numeric so the determinism hash covers it.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Beat {
     pub t: u32,
     pub kind: u8, // BeatKind: death|kill|raid|birth|faith|union|… (interned)

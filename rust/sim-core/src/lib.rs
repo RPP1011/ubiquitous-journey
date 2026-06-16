@@ -14,6 +14,7 @@ pub mod abilities;
 pub mod components;
 pub mod exec;
 pub mod experience;
+pub mod gazette;
 pub mod rpgxp;
 pub mod tags;
 pub mod grid;

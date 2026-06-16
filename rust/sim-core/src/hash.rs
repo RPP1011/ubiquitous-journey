@@ -176,6 +176,12 @@ pub fn world_hash(w: &World) -> u64 {
         h = fold(h, &s.opened.to_le_bytes());
         h = fold(h, &s.last.to_le_bytes());
     }
+    // the town gazette (observer publication) — edition + the published price board.
+    h = fold(h, &w.gazette.edition.to_le_bytes());
+    h = fold(h, &[w.gazette.n_briefs]);
+    for p in w.gazette.prices {
+        h = fold(h, &p.to_le_bytes());
+    }
     // Wave-4 director (the drama budget/pacing) — serial-phase state, covered so any non-determinism
     // in trope selection / accrual is caught by the M-invariance gate.
     h = fold(h, &(w.house_feuds.len() as u64).to_le_bytes());
