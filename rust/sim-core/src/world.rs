@@ -1076,6 +1076,15 @@ impl World {
             if total > bio.deed_total {
                 bio.deed_total = total;
             }
+            // the DEFINING MOMENT: the kind of the agent's single most salient memory (memory.js
+            // salient()), plus how much of its memory is still short-term (the recency tier count).
+            let mem = &self.memory[i];
+            bio.defining_moment = mem.salient().map(|e| e.kind).unwrap_or(0xFF);
+            bio.stm = mem.items[..mem.len as usize]
+                .iter()
+                .filter(|e| crate::components::Memory::tier(self.tick, e.t) == 0)
+                .count()
+                .min(u8::MAX as usize) as u8;
         }
     }
 
@@ -1892,8 +1901,18 @@ mod tests {
         crate::signals::fold_deed(&mut w.signals[hero], crate::components::DeedTag::Rescue, 30);
         crate::signals::fold_deed(&mut w.signals[hero], crate::components::DeedTag::Theft, 40);
 
+        // a vivid memory: the most salient episode becomes the biography's defining moment.
+        w.memory[hero].record(crate::components::Episode {
+            kind: crate::components::EpisodeKind::Slew as u8,
+            place: 0, valence: 1, _pad: 0, with: 5, t: 50, salience: 60_000, _pad2: 0,
+        });
         w.update_biographies();
         let bio = w.biographies[hero];
+        assert_eq!(
+            bio.defining_moment,
+            crate::components::EpisodeKind::Slew as u8,
+            "the most salient memory is the defining moment"
+        );
         assert_eq!(bio.epithet, 1, "the earned epithet is captured");
         assert_eq!(bio.drive, 3, "the archetypal drive is captured");
         assert_eq!(

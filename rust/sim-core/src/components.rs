@@ -627,6 +627,29 @@ impl Memory {
     pub fn has(&self, kind: EpisodeKind, with: u32) -> bool {
         self.items[..self.len as usize].iter().any(|e| e.kind == kind as u8 && e.with == with)
     }
+    /// The most SALIENT episode held — the agent's most vivid memory (`memory.js` salient()). Recency
+    /// breaks ties (a fresh shock outweighs an old one of equal vividness) ⇒ order-independent.
+    #[inline]
+    pub fn salient(&self) -> Option<&Episode> {
+        self.items[..self.len as usize]
+            .iter()
+            .max_by_key(|e| (e.salience, e.t))
+    }
+    /// STM/MTM/LTM tier of an episode by AGE (`memory.js` consolidation tiers): a fresh memory is
+    /// short-term (0), an older one medium-term (1), the oldest long-term/consolidated (2).
+    #[inline]
+    pub fn tier(now: u32, ep_t: u32) -> u8 {
+        const STM_AGE: u32 = 300; // recent ⇒ short-term
+        const MTM_AGE: u32 = 1500; // then medium-term; beyond ⇒ long-term
+        let age = now.saturating_sub(ep_t);
+        if age <= STM_AGE {
+            0
+        } else if age <= MTM_AGE {
+            1
+        } else {
+            2
+        }
+    }
 }
 
 // ───────────────────────────── the goal stack + plan cache (the GOAP skeleton, §motivation.js) ─────────────────────────────
@@ -1146,4 +1169,6 @@ pub struct Biography {
     pub drive: u8,         // the archetypal ambition code (AMB_*)
     pub dominant_deed: u8, // the DeedTag the agent has done MOST (0xFF = no notable deed yet)
     pub deed_total: u16,   // cumulative count of notable deeds (peak over the life)
+    pub defining_moment: u8, // the EpisodeKind of the agent's most SALIENT memory (its defining event)
+    pub stm: u8,           // how many memories sit in the short-term tier right now (recency texture)
 }

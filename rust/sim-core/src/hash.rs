@@ -166,6 +166,7 @@ pub fn world_hash(w: &World) -> u64 {
     for b in &w.biographies {
         h = fold(h, &[b.peak_level, b.epithet, b.role, b.drive, b.dominant_deed]);
         h = fold(h, &b.deed_total.to_le_bytes());
+        h = fold(h, &[b.defining_moment, b.stm]);
     }
     // percepts (mind-less props: scarecrows/buildings) — own id-space, hittable + perceivable.
     h = fold(h, &(w.percept_n as u64).to_le_bytes());

@@ -250,8 +250,12 @@ concern). · granary (a shared-larder building benefit) is the remaining constru
   distance from its source: 0 = first-hand (perception resets it), +1 each gossip retelling, with a
   confidence FADE (×0.85) per relay. So a third-hand rumour is shakier than a sighting, and first-hand
   knowledge always trumps an incoming rumour (the merge weighs the faded confidence). Hashed; tested.
-⬜ remaining belief fields (suspicion/animacy/assoc) · memory STM/MTM/LTM tiers + salient() · decide
-utility-oracle (scoreAndSelect) · duel election. (See Closing status.)
+- ✅ **memory STM/MTM/LTM tiers + salient()** — `Memory::salient()` returns the most vivid episode
+  (recency breaks ties), and `Memory::tier(now, t)` classifies an episode by age (short/medium/long-term
+  consolidation). Wired into the biography as a real consumer: a life's **defining moment** = its most
+  salient memory's kind, plus its short-term-memory count (recency texture). Hashed; tested.
+⬜ remaining belief fields (suspicion/animacy/assoc) · decide utility-oracle (scoreAndSelect) · duel
+election. (See Closing status.)
 
 ---
 
