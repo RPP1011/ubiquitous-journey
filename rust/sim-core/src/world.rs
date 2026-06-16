@@ -16,14 +16,36 @@ use crate::perceive::perceive;
 use crate::rng::DeterministicRng;
 use crate::systems;
 
-const TOWN_RADIUS: f32 = 180.0;
-/// How many distinct towns the world holds (multi-town worldgen). Kept at 2 so each town stays large
-/// enough to be economically viable — the marginal larder starves if a town's farmer pool is too thin.
-pub const N_TOWNS: usize = 2;
-/// Radius of the ring the town centres are placed on (well inside ARENA_CLAMP, far enough apart that the
-/// two towns' work/market ranges never overlap — so each economy is genuinely local).
-const TOWN_SPREAD: f32 = 280.0;
-const ARENA_CLAMP: f32 = 590.0;
+// ── REGION SIZING (the "move away from the megatown" worldgen) ──────────────────────────────────
+// The world is no longer two 2500-soul blobs but a SCATTER of varied settlements across a wide region,
+// with wilderness (and its monsters/bushes) between them. The town COUNT scales with population; sizes
+// VARY (a few cities, many modest towns); each is sized at/above the food-economy viability floor.
+//
+/// A settlement of `POP_REF` souls is `R_REF` metres in radius; every town's radius scales as
+/// `sqrt(pop/POP_REF)` so they all keep the SAME crowd density (the old megatown's) regardless of size —
+/// perceive neighbour-counts (hence the local economy/combat feel) stay calibrated at every scale.
+const POP_REF: f32 = 300.0;
+const R_REF: f32 = 70.0;
+const TOWN_R_MIN: f32 = 46.0;
+const TOWN_R_MAX: f32 = 125.0;
+/// The minimum townsfolk a settlement needs to run a self-feeding local economy (below it the marginal
+/// larder starves — the documented survival floor). Towns are floored here; the surplus makes cities.
+const TOWN_FLOOR: usize = 200;
+/// ~one settlement per this many townsfolk (the region's town COUNT scales with population).
+const TOWN_PER: f32 = 290.0;
+/// The whole region is a disc of radius `REGION_R`; town centres scatter within `TOWN_BAND`, leaving a
+/// wilderness rim. Grown far past the old single-cluster 590 so ~16 towns fit with wilderness between.
+pub const REGION_R: f32 = 1300.0;
+const TOWN_BAND: f32 = 1040.0;
+/// The spatial grid must span the whole region (+ a margin for any transient pre-clamp overshoot).
+pub const GRID_SPAN: f32 = REGION_R * 2.0 + 200.0;
+/// A town's wall sits this far outside its dweller radius; two towns keep at least `WILDERNESS_GAP`
+/// of open wilderness between their walls (so raiders/foragers/caravans have ground to cross).
+const WALL_MARGIN: f32 = 24.0;
+const WILDERNESS_GAP: f32 = 90.0;
+/// Fraction of the roster that spawns as wilderness MONSTERS — scattered BETWEEN settlements (in the
+/// wild they roam and menace), not clustered inside the towns as the old worldgen did.
+const MONSTER_FRACTION: f32 = 0.06;
 pub const N_WORK_SITES: usize = 7; // one per Profession variant (index by `Profession as usize`).
 
 /// A static resource site (built once at worldgen; read-only — not an entity). Minimal Wave-1 set.
@@ -153,6 +175,14 @@ pub struct World {
     /// gates instead of swarming straight in, while townsfolk (whose whole world is inside it) never touch
     /// it. Static after build (not hashed; its EFFECT on `pos` is). `radius == 0` ⇒ no wall yet.
     pub walls: Vec<TownWall>, // one defensive ring per town (indexed by `town[i]`)
+    /// Per-town dweller radius (metres) — scaled by population so each settlement keeps the reference
+    /// crowd density. Read by decide (wander radius), the director (raid fringe), and worldgen. Static.
+    pub town_radius: Vec<f32>,
+    /// BERRY BUSHES — forageable Food nodes (`js/sim/world.ts` resource sites, generalised). A scatter
+    /// both inside the towns AND across the wilderness, so a meal is AVAILABLE almost anywhere: food is
+    /// bound by availability + the starvation clock, not a farmer quota (any hungry soul forages the
+    /// nearest bush). Static after worldgen; the gather executor mints one Food per arrival (capped).
+    pub forage_pos: Vec<[f32; 2]>,
     // ── PERCEPTS (js/sim/percept.js): hittable, perceivable PROPS with no mind. A Scarecrow dressed as
     // a person; a finished Building. Kept in their OWN id-space (`PERCEPT_ID_BASE + k`, disjoint from
     // agent ids) so every `!agent` guard in the cognition feedback path skips them: an agent can BELIEVE
@@ -178,6 +208,28 @@ pub fn prof_good(prof: u8) -> Option<usize> {
         6 => Some(5), // Trader → Potion
         _ => None,
     }
+}
+
+/// Draw a deterministic WILDERNESS point — somewhere in the region disc clear of EVERY town's wall (so a
+/// spawned monster starts out in the wild between settlements, not inside a town). Falls back to the rim
+/// if it can't find clear ground in a bounded number of darts (a densely-packed region).
+fn wilderness_point(gen: &mut DeterministicRng, centers: &[[f32; 2]], radii: &[f32]) -> [f32; 2] {
+    for _ in 0..64 {
+        let rr = REGION_R * gen.next_f32().sqrt();
+        let aa = gen.next_f32() * std::f32::consts::TAU;
+        let p = [rr * aa.cos(), rr * aa.sin()];
+        let clear = centers.iter().zip(radii).all(|(c, &rad)| {
+            let dx = p[0] - c[0];
+            let dz = p[1] - c[1];
+            let keep = rad + WALL_MARGIN + 12.0;
+            dx * dx + dz * dz > keep * keep
+        });
+        if clear {
+            return p;
+        }
+    }
+    let aa = gen.next_f32() * std::f32::consts::TAU;
+    [REGION_R * 0.98 * aa.cos(), REGION_R * 0.98 * aa.sin()]
 }
 
 /// A perceived faction sentinel: no disguise active.
@@ -299,33 +351,119 @@ const GRANARY_EVERY: u32 = 30;
 const HOME_TEND_EVERY: u32 = 50;
 
 impl World {
-    /// Worldgen: `n` agents clustered in one dense town with professions, gold, and home anchors.
+    /// Worldgen: scatter `n` agents across a REGION of varied-size settlements (not one megatown) —
+    /// townsfolk cluster in their town; monsters roam the wilderness between them.
     pub fn spawn(seed: u64, n: usize) -> World {
         let mut gen = DeterministicRng::seed(seed, 0xA11CE);
-        // MULTI-TOWN geography: lay out `N_TOWNS` town centres spread across the arena, each with its own
-        // ring of work sites + a market at its centre. (Single-town worlds are just N_TOWNS == 1.)
-        let town_centers: Vec<[f32; 2]> = (0..N_TOWNS)
-            .map(|t| {
-                if N_TOWNS == 1 {
-                    [0.0, 0.0]
-                } else {
-                    // evenly spaced on a ring well inside the arena clamp.
-                    let a = t as f32 / N_TOWNS as f32 * std::f32::consts::TAU;
-                    [TOWN_SPREAD * a.cos(), TOWN_SPREAD * a.sin()]
-                }
+
+        // ── REGION COMPOSITION: how many townsfolk vs wilderness monsters, and how many settlements ──
+        let monster_count = ((n as f32) * MONSTER_FRACTION) as usize;
+        let townsfolk = n.saturating_sub(monster_count);
+        // town count scales with population; clamped so every town clears the viability floor.
+        let n_towns = ((townsfolk as f32 / TOWN_PER).round() as usize)
+            .max(1)
+            .min((townsfolk / TOWN_FLOOR).max(1));
+
+        // per-town target populations: FLOOR each, then split the surplus by a SKEWED prominence weight
+        // so a few settlements swell into cities while most stay modest towns (the size VARIETY).
+        let weights: Vec<f32> = (0..n_towns)
+            .map(|_| {
+                let r = gen.next_f32();
+                0.2 + r * r * r * 3.0 // cubic skew → most small, a rare few large
             })
             .collect();
-        let mut work_sites: Vec<[[f32; 2]; N_WORK_SITES]> = Vec::with_capacity(N_TOWNS);
-        for tc in &town_centers {
+        let wsum: f32 = weights.iter().sum::<f32>().max(1e-6);
+        let surplus = townsfolk.saturating_sub(n_towns * TOWN_FLOOR);
+        let mut pops: Vec<usize> = weights
+            .iter()
+            .map(|w| TOWN_FLOOR + (surplus as f32 * w / wsum) as usize)
+            .collect();
+        // force the per-town pops to sum to EXACTLY `townsfolk` (settle the rounding on the largest).
+        let mut largest = 0usize;
+        for t in 1..n_towns {
+            if pops[t] > pops[largest] {
+                largest = t;
+            }
+        }
+        let cur: i64 = pops.iter().map(|&p| p as i64).sum();
+        pops[largest] = (pops[largest] as i64 + (townsfolk as i64 - cur)).max(1) as usize;
+
+        // per-town radius from population (constant crowd density).
+        let radii: Vec<f32> = pops
+            .iter()
+            .map(|&p| (R_REF * (p as f32 / POP_REF).sqrt()).clamp(TOWN_R_MIN, TOWN_R_MAX))
+            .collect();
+
+        // ── PLACE the town centres: deterministic dart-throwing, BIGGEST town first (cities claim room),
+        // each kept a wilderness gap from every town already placed (the gap relaxes as attempts grow so
+        // a crowded region always seats every settlement). ──
+        let mut order: Vec<usize> = (0..n_towns).collect();
+        order.sort_by(|&a, &b| pops[b].cmp(&pops[a]).then(a.cmp(&b)));
+        let mut town_centers = vec![[0.0f32; 2]; n_towns];
+        let mut placed: Vec<usize> = Vec::with_capacity(n_towns);
+        for &t in &order {
+            let mut chosen = [0.0f32, 0.0];
+            for attempt in 0..4000u32 {
+                let relax = (1.0 - attempt as f32 / 4000.0 * 0.6).max(0.4);
+                let rr = TOWN_BAND * gen.next_f32().sqrt();
+                let aa = gen.next_f32() * std::f32::consts::TAU;
+                let cand = [rr * aa.cos(), rr * aa.sin()];
+                chosen = cand;
+                let ok = placed.iter().all(|&o| {
+                    let need = (radii[t] + radii[o] + 2.0 * WALL_MARGIN + WILDERNESS_GAP) * relax;
+                    let dx = cand[0] - town_centers[o][0];
+                    let dz = cand[1] - town_centers[o][1];
+                    dx * dx + dz * dz >= need * need
+                });
+                if ok {
+                    break;
+                }
+            }
+            town_centers[t] = chosen;
+            placed.push(t);
+        }
+
+        // work sites per town (scattered within the town's OWN radius — well inside its wall).
+        let mut work_sites: Vec<[[f32; 2]; N_WORK_SITES]> = Vec::with_capacity(n_towns);
+        for t in 0..n_towns {
+            let tc = town_centers[t];
             let mut sites = [[0.0f32; 2]; N_WORK_SITES];
             for s in sites.iter_mut() {
-                let r = TOWN_RADIUS * (0.4 + 0.6 * gen.next_f32());
+                let r = radii[t] * (0.35 + 0.55 * gen.next_f32());
                 let a = gen.next_f32() * std::f32::consts::TAU;
                 *s = [tc[0] + r * a.cos(), tc[1] + r * a.sin()];
             }
             work_sites.push(sites);
         }
         let markets: Vec<[f32; 2]> = town_centers.clone();
+
+        // ── BERRY BUSHES: forageable Food nodes. A handful INSIDE each town (within its wall, so a town
+        // forager never has to leave) scaled to population, plus a scatter through the WILDERNESS (giving
+        // roamers and the destitute a reason to range out). Static positions; gather mints Food on arrival.
+        let mut forage_pos: Vec<[f32; 2]> = Vec::new();
+        for t in 0..n_towns {
+            let tc = town_centers[t];
+            let bushes = 3 + pops[t] / 120;
+            for _ in 0..bushes {
+                let r = radii[t] * (0.4 + 0.5 * gen.next_f32()); // ≤0.9·radius ⇒ inside the wall
+                let a = gen.next_f32() * std::f32::consts::TAU;
+                forage_pos.push([tc[0] + r * a.cos(), tc[1] + r * a.sin()]);
+            }
+        }
+        for _ in 0..(n_towns * 6) {
+            let rr = REGION_R * gen.next_f32().sqrt();
+            let aa = gen.next_f32() * std::f32::consts::TAU;
+            forage_pos.push([rr * aa.cos(), rr * aa.sin()]);
+        }
+
+        // expand the per-town target counts into a flat town-id list for the townsfolk (id order).
+        let mut town_of: Vec<u16> = Vec::with_capacity(townsfolk);
+        for t in 0..n_towns {
+            for _ in 0..pops[t] {
+                town_of.push(t as u16);
+            }
+        }
+
         let mut w = World {
             n,
             seed,
@@ -398,9 +536,11 @@ impl World {
             caravan_treasury: 200_000, // the external market's gold (counted in total_gold ⇒ conserved)
             player: -1,
             player_rep: [0; 5],
-            granary_stock: vec![0; N_TOWNS],
-            granary_pos: vec![[0.0, 0.0]; N_TOWNS],
+            granary_stock: vec![0; n_towns],
+            granary_pos: vec![[0.0, 0.0]; n_towns],
             walls: Vec::new(),
+            town_radius: radii.clone(),
+            forage_pos,
             percept_n: 0,
             percept_pos: Vec::new(),
             percept_kind: Vec::new(),
@@ -409,14 +549,20 @@ impl World {
             percept_flags: Vec::new(),
         };
         for i in 0..n {
-            // assign this agent to a town (round-robin keeps the towns balanced) and cluster it there.
-            let town = (i % N_TOWNS) as u8;
-            let tc = w.town_centers[town as usize];
-            let r = TOWN_RADIUS * gen.next_f32().sqrt();
-            let a = gen.next_f32() * std::f32::consts::TAU;
-            let p = [tc[0] + r * a.cos(), tc[1] + r * a.sin()];
+            // TOWNSFOLK (ids 0..townsfolk) cluster in their assigned town; MONSTERS (the tail) roam the
+            // wilderness BETWEEN the settlements (scattered clear of every town's wall).
+            let is_monster = i >= townsfolk;
+            let town = if is_monster { 0u16 } else { town_of[i] };
+            let p = if is_monster {
+                wilderness_point(&mut gen, &w.town_centers, &w.town_radius)
+            } else {
+                let tc = w.town_centers[town as usize];
+                let r = w.town_radius[town as usize] * gen.next_f32().sqrt();
+                let a = gen.next_f32() * std::f32::consts::TAU;
+                [tc[0] + r * a.cos(), tc[1] + r * a.sin()]
+            };
             w.pos.push(p);
-            let f = if gen.next_f32() < 0.06 { Faction::Monster } else { Faction::Townsfolk };
+            let f = if is_monster { Faction::Monster } else { Faction::Townsfolk };
             w.faction.push(f as u8);
             let prof = if f == Faction::Monster {
                 Profession::None
@@ -465,7 +611,7 @@ impl World {
             w.home.push(p); // home = spawn point (Wave-1)
             w.suspicion.push(0);
             w.home_belief_id.push(u32::MAX); // no home-building discovered yet
-            w.town.push(town as u16);
+            w.town.push(town);
             w.rng.push(DeterministicRng::seed(seed, i as u64));
             w.progression.push(Progression::default());
             w.ability_cd.push(0.0);
@@ -487,22 +633,23 @@ impl World {
             w.role.push(0);
         }
         // build the static affordance map once from the finished geography.
-        w.map = MentalMap::build_multi(&w.markets, &w.work_sites, &w.town_centers, ARENA_CLAMP);
-        // raise a defensive WALL ring around EACH town: outside every work site/dweller (so the economy
+        w.map = MentalMap::build_multi(&w.markets, &w.work_sites, &w.town_centers, REGION_R);
+        // raise a defensive WALL ring around EACH town: just outside its dweller radius (so the economy
         // never touches it), with evenly-spaced gates the only way through (raiders must funnel in).
         w.walls = w
             .town_centers
             .iter()
-            .map(|&c| TownWall {
+            .enumerate()
+            .map(|(t, &c)| TownWall {
                 center: c,
-                radius: TOWN_RADIUS + 30.0,
+                radius: w.town_radius[t] + WALL_MARGIN,
                 gate_a: [
                     0.0,
                     std::f32::consts::FRAC_PI_2,
                     std::f32::consts::PI,
                     std::f32::consts::PI * 1.5,
                 ],
-                gate_half: 0.28, // ~16° openings
+                gate_half: 0.30, // ~17° openings
             })
             .collect();
         // seed the initial relationship constellations (rival apprentices, etc.) for the director.
@@ -1241,7 +1388,6 @@ impl World {
         const EDGE2: f32 = 110.0 * 110.0; // only an EXPOSED edge-dweller emigrates; the core stays put
         const CAP: usize = 2; // at most a couple resettle per pass (a trickle, not an exodus) — keeps
                               // the rest/work routing stable (the marginal-economy lesson, learned here)
-        let core = self.town_center;
         let mut moved = 0usize;
         for i in 0..self.n {
             if moved >= CAP {
@@ -1253,6 +1399,8 @@ impl World {
             {
                 continue; // only the homeless consider resettling
             }
+            // resettle toward the agent's OWN town's safe core (multi-town: not always town 0).
+            let core = self.town_centers[(self.town[i] as usize).min(self.town_centers.len() - 1)];
             // exposed edge only — a soul already near the safe core has nowhere safer to go.
             let edx = self.home[i][0] - core[0];
             let edz = self.home[i][1] - core[1];
@@ -2088,34 +2236,47 @@ mod tests {
         assert_ne!(w.band_leader[comp], p as i32, "a fallen companion is pruned from the party");
     }
 
-    /// MULTI-TOWN WORLDGEN: the world holds `N_TOWNS` distinct towns — each with its own centre, market,
-    /// work sites, wall, and granary — and every agent is assigned (and clustered near) one of them.
+    /// REGION WORLDGEN: a population of 5000 lays out as a SCATTER of many varied-size settlements (the
+    /// "move away from the megatown"), each with its own centre/market/work-sites/wall/radius/granary;
+    /// townsfolk cluster in their town within its radius, monsters spawn out in the wilderness.
     #[test]
-    fn worldgen_lays_out_distinct_towns() {
-        let w = World::spawn(0x70D, 200);
-        assert_eq!(w.town_centers.len(), N_TOWNS, "N_TOWNS centres");
-        assert_eq!(w.work_sites.len(), N_TOWNS, "per-town work sites");
-        assert_eq!(w.markets.len(), N_TOWNS, "per-town markets");
-        assert_eq!(w.walls.len(), N_TOWNS, "a wall per town");
-        // the two town centres are genuinely apart (their economies don't overlap).
-        if N_TOWNS >= 2 {
-            let d = ((w.town_centers[0][0] - w.town_centers[1][0]).powi(2)
-                + (w.town_centers[0][1] - w.town_centers[1][1]).powi(2))
-            .sqrt();
-            assert!(d > TOWN_RADIUS * 2.0, "towns are far enough apart to be distinct (d={d})");
+    fn worldgen_lays_out_a_region_of_towns() {
+        let w = World::spawn(0x70D, 5000);
+        let nt = w.town_centers.len();
+        assert!(nt >= 10 && nt <= 30, "a region of many settlements, got {nt}");
+        assert_eq!(w.work_sites.len(), nt, "per-town work sites");
+        assert_eq!(w.markets.len(), nt, "per-town markets");
+        assert_eq!(w.walls.len(), nt, "a wall per town");
+        assert_eq!(w.town_radius.len(), nt, "a radius per town");
+        assert_eq!(w.granary_pos.len(), nt, "a granary slot per town");
+        // every pair of town centres is genuinely apart — their walls don't overlap (distinct economies).
+        for a in 0..nt {
+            for b in (a + 1)..nt {
+                let d = ((w.town_centers[a][0] - w.town_centers[b][0]).powi(2)
+                    + (w.town_centers[a][1] - w.town_centers[b][1]).powi(2))
+                .sqrt();
+                let min_sep = w.town_radius[a] + w.town_radius[b] + 2.0 * WALL_MARGIN;
+                assert!(d > min_sep * 0.4, "towns {a},{b} overlap (d={d}, walls≈{min_sep})");
+            }
         }
-        // every town is populated, and each agent lives near ITS town centre.
-        let mut pop = vec![0usize; N_TOWNS];
+        // every town is populated, townsfolk cluster within their OWN town's radius, and sizes VARY.
+        let mut pop = vec![0usize; nt];
         for i in 0..w.n {
+            if w.faction[i] != Faction::Townsfolk as u8 {
+                continue;
+            }
             let t = w.town[i] as usize;
             pop[t] += 1;
             let tc = w.town_centers[t];
             let d = ((w.pos[i][0] - tc[0]).powi(2) + (w.pos[i][1] - tc[1]).powi(2)).sqrt();
-            assert!(d <= TOWN_RADIUS + 1.0, "agent {i} is clustered in its own town");
+            assert!(d <= w.town_radius[t] + 1.0, "agent {i} clusters in its own town");
         }
-        for (t, &p) in pop.iter().enumerate() {
-            assert!(p > 0, "town {t} is populated");
-        }
+        let (mn, mx) = (pop.iter().min().copied().unwrap(), pop.iter().max().copied().unwrap());
+        assert!(mn >= 1, "every town is populated (min {mn})");
+        assert!(mx > mn, "settlement sizes vary (min {mn}, max {mx})");
+        // monsters live in the WILDERNESS — outside every town wall.
+        let monsters = (0..w.n).filter(|&i| w.faction[i] == Faction::Monster as u8).count();
+        assert!(monsters > 0, "the wilderness holds monsters");
     }
 
     /// WALL COLLISION: a move that would cross the ring at a SOLID span is blocked back to its own side;
@@ -2234,7 +2395,9 @@ mod tests {
     fn an_endangered_homeless_soul_resettles_toward_the_core() {
         let mut w = World::spawn(0x319, 6);
         w.town_center = [0.0, 0.0];
+        w.town_centers[0] = [0.0, 0.0]; // migrate now routes to each agent's OWN town centre
         let refugee = 0usize;
+        w.town[refugee] = 0;
         w.alive[refugee] = true;
         w.faction[refugee] = Faction::Townsfolk as u8;
         w.pos[refugee] = [150.0, 0.0];
@@ -2355,12 +2518,17 @@ mod tests {
     fn a_scarecrow_is_perceived_struck_and_smashed() {
         let mut w = World::spawn(0x5CA2, 4);
         let guard = 0usize;
+        // stage the guard at its OWN town centre (where its livelihood/wander keeps it in the fray) with a
+        // scarecrow a metre away — worldgen-agnostic (town centres are otherwise dart-placed region-wide).
+        let gt = w.town[guard] as usize;
+        let c = w.town_centers[gt];
         w.alive[guard] = true;
         w.faction[guard] = Faction::Townsfolk as u8;
-        w.pos[guard] = [0.0, 0.0];
+        w.pos[guard] = c;
+        w.home[guard] = c;
         w.combat[guard].health = 1.0;
         // a scarecrow dressed as a raider, right next to the guard, with little structural health.
-        let scare = w.spawn_percept([1.0, 0.0], 1, Faction::Raider as u8, 12.0, true);
+        let scare = w.spawn_percept([c[0] + 1.0, c[1]], 1, Faction::Raider as u8, 12.0, true);
         assert!(scare >= PERCEPT_ID_BASE, "a percept lives in its own id-space");
 
         // build the surface + perceive: the guard should now hold a (hostile) belief about the prop.
@@ -2722,24 +2890,25 @@ mod tests {
     #[test]
     fn a_caravan_hauls_a_good_between_towns_conserving_gold() {
         use crate::components::N_COMMODITIES;
-        let mut w = World::spawn(0xCA64, 8);
+        // a population large enough to seat at least two towns under the region worldgen.
+        let mut w = World::spawn(0xCA64, 500);
         assert!(w.town_centers.len() >= 2, "this test needs a multi-town world");
-        // a seller in town 0 (where Tools are cheap) and a buyer in town 1 (where Tools are dear).
-        let (seller, buyer) = (0usize, 1usize);
+        // clean baseline: every townsperson cheap on Tools in town 0, dear on Tools in town 1 (the spread
+        // is a per-TOWN price belief, so it survives the town averaging regardless of town size).
         for i in 0..w.n {
             w.faction[i] = Faction::Townsfolk as u8;
             w.alive[i] = true;
             w.econ[i].gold = 100;
             w.econ[i].inventory = [0; N_COMMODITIES];
             w.econ[i].price_belief = [0; N_COMMODITIES];
+            w.econ[i].price_belief[3] = if w.town[i] == 0 { 50 } else { 200 };
         }
-        w.town[seller] = 0;
+        // a rich seller holding Tools in cheap town 0, and a rich buyer in dear town 1.
+        let seller = (0..w.n).find(|&i| w.town[i] == 0).expect("a town-0 dweller");
+        let buyer = (0..w.n).find(|&i| w.town[i] == 1).expect("a town-1 dweller");
         w.econ[seller].gold = 9_000; // the richest in town 0
         w.econ[seller].inventory[3] = 10; // holds Tools (the haul good)
-        w.econ[seller].price_belief[3] = 50; // Tools believed CHEAP here
-        w.town[buyer] = 1;
         w.econ[buyer].gold = 9_000; // the richest in town 1
-        w.econ[buyer].price_belief[3] = 200; // Tools believed DEAR there (the spread)
 
         let total = w.total_gold();
         let s_tools0 = w.econ[seller].inventory[3];

@@ -453,11 +453,17 @@ pub fn tick(world: &mut World) {
 fn do_raid(world: &mut World, dir: &mut crate::components::DirectorState, now: u32) {
     let victim = wealthiest_townsperson(world);
     let victim_pos = victim.map(|v| world.pos[v as usize]).unwrap_or(world.town_center);
-    let center = world.town_center;
+    // raiders mass on the fringe of the VICTIM's OWN town (multi-town: not always town 0), so the wave
+    // converges on a real settlement wherever it sits in the region.
+    let vt = victim
+        .map(|v| (world.town[v as usize] as usize).min(world.town_centers.len() - 1))
+        .unwrap_or(0);
+    let center = world.town_centers[vt];
+    let town_r = world.town_radius[vt];
     let mut spawned = 0usize;
     for _ in 0..WAVE_SIZE {
         let a = world.sim_rng.next_f32() * std::f32::consts::TAU;
-        let r = TOWN_RADIUS + FRINGE_MARGIN + world.sim_rng.next_f32() * FRINGE_MARGIN;
+        let r = town_r + FRINGE_MARGIN + world.sim_rng.next_f32() * FRINGE_MARGIN;
         let pos = [center[0] + r * a.cos(), center[1] + r * a.sin()];
         let id = world.spawn_agent(pos, Faction::Raider, Profession::None);
         world.threat[id] = RAID_THREAT;

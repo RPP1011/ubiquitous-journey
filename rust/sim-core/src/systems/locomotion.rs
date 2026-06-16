@@ -35,8 +35,8 @@ const ARRIVE: f32 = 1.0;
 /// Synthetic away-point distance for a pure-repulsor flee (TS `STEER.fleeAway`): a flee never
 /// "arrives", it just keeps stepping outward.
 const FLEE_AWAY: f32 = 6.0;
-/// Hard arena clamp (matches `ARENA_CLAMP` in worldgen).
-const ARENA: f32 = 590.0;
+/// Hard arena clamp — the whole region disc (the worldgen's source of truth for the map extent).
+const ARENA: f32 = crate::world::REGION_R;
 /// Town-band radius a wanderer regenerates its roam point within (around its home).
 const WANDER_RADIUS: f32 = 60.0;
 

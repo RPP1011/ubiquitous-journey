@@ -8,7 +8,9 @@
 
 use crate::components::{Perceivable, MAX_VISION};
 
-const ARENA: f32 = 1200.0; // x,z span the grid covers (±600); out-of-range positions clamp in.
+// x,z span the grid covers; must span the whole REGION (the worldgen's source of truth) so no
+// settlement's agents fall outside it. Out-of-range positions clamp into the edge cells.
+const ARENA: f32 = crate::world::GRID_SPAN;
 
 pub struct Grid {
     inv: f32,

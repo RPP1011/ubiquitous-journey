@@ -105,6 +105,9 @@ pub struct Pv<'a> {
     pub memory: &'a Memory,
     pub market: [f32; 2],
     pub work_sites: &'a [[f32; 2]; N_WORK_SITES],
+    /// Nearest BERRY BUSH to the agent — where a Food forage routes (food is available everywhere via the
+    /// distributed bushes, not just the town's single farm site). Precomputed when the view is built.
+    pub forage: [f32; 2],
     pub base_price: &'a [i64; N_COMMODITIES],
     /// Outcome-conditioned caution (doc 11): the agent's own per-strategy surcharge store (Copy, by
     /// value) + its risk tolerance + now — read by `primitives_for` to price each strategy's `cost`.
@@ -406,7 +409,14 @@ fn compile(step: Step, pv: &Pv) -> Goal {
         // GATHER is capital-free foraging open to any agent (→ Goal::Gather carries the good); PRODUCE
         // is the agent's own-profession output (→ Goal::Work, minted by the production pass).
         Verb::Gather => {
-            Goal::Gather { site: pv.work_sites[good_site_index(step.good).unwrap_or(0)], good: step.good }
+            // Food forages at the nearest BERRY BUSH (distributed availability); other raw goods at the
+            // town's resource node for that good.
+            let site = if step.good == 0 {
+                pv.forage
+            } else {
+                pv.work_sites[good_site_index(step.good).unwrap_or(0)]
+            };
+            Goal::Gather { site, good: step.good }
         }
         Verb::Produce => {
             Goal::Work { site: pv.work_sites[good_site_index(step.good).unwrap_or(0)] }
@@ -545,7 +555,12 @@ pub fn compile_planstep(ps: &PlanStep, pv: &Pv) -> Goal {
             Place::Subject(s) => fight_goal(pv, s),
         },
         VERB_GATHER => {
-            Goal::Gather { site: pv.work_sites[good_site_index(ps.good).unwrap_or(0)], good: ps.good }
+            let site = if ps.good == 0 {
+                pv.forage // Food → nearest berry bush
+            } else {
+                pv.work_sites[good_site_index(ps.good).unwrap_or(0)]
+            };
+            Goal::Gather { site, good: ps.good }
         }
         VERB_PRODUCE => Goal::Work { site: pv.work_sites[good_site_index(ps.good).unwrap_or(0)] },
         VERB_BUY | VERB_SELL => Goal::Market { site: pv.market },
@@ -610,6 +625,7 @@ mod tests {
             memory,
             market: w.markets[0],
             work_sites,
+            forage: w.forage_pos.first().copied().unwrap_or(w.pos[i]),
             base_price,
             experience: w.experience[i],
             risk_tolerance: w.personality[i].risk_tolerance,

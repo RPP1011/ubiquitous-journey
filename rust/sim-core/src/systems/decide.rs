@@ -59,8 +59,24 @@ const MARKET_CHANCE: f32 = 0.08;
 const FLEE_RANGE: f32 = 40.0;
 const FLEE_RANGE2: f32 = FLEE_RANGE * FLEE_RANGE;
 
-/// Town radius wander points are drawn within (matches worldgen's cluster radius).
-const TOWN_RADIUS: f32 = 180.0;
+/// The nearest BERRY BUSH to `from` (where a Food forage routes). Linear scan over the (static, modest)
+/// node list — distributed food availability. Returns `from` if there are no bushes (degenerate worlds).
+#[inline]
+fn nearest_forage(nodes: &[[f32; 2]], from: [f32; 2]) -> [f32; 2] {
+    let mut best = from;
+    let mut bd = f32::MAX;
+    for &p in nodes {
+        let dx = p[0] - from[0];
+        let dz = p[1] - from[1];
+        let d = dx * dx + dz * dz;
+        if d < bd {
+            bd = d;
+            best = p;
+        }
+    }
+    best
+}
+
 /// Per-tick chance a WANDERLUST townsperson roams instead of working (the see-the-world drive).
 const WANDERLUST_PULL: f32 = 0.18;
 /// How near a believed monster/raider a RENOWN-seeker will charge it for glory (instead of fleeing).
@@ -77,6 +93,7 @@ pub fn decide(world: &mut World) {
 
     let World {
         ref town,
+        ref town_radius,
         ref needs,
         ref mood,
         ref beliefs,
@@ -91,6 +108,7 @@ pub fn decide(world: &mut World) {
         ref home,
         ref home_belief_id,
         ref work_sites,
+        ref forage_pos,
         ref map,
         ref alive,
         ref band_leader,
@@ -135,6 +153,7 @@ pub fn decide(world: &mut World) {
             let ti = (town[i] as usize).min(town_centers.len() - 1);
             let market = markets[ti];
             let town_center = town_centers[ti];
+            let town_rad = town_radius[ti.min(town_radius.len() - 1)];
             let work_sites = &work_sites[ti];
             // A CAPTIVE is held — it makes no decisions until freed (its captor falls, then decide
             // resumes normally). Inert, not dead (still alive, still perceivable).
@@ -199,6 +218,7 @@ pub fn decide(world: &mut World) {
                 memory: &memory[i],
                 market,
                 work_sites,
+                forage: nearest_forage(forage_pos, pos[i]),
                 base_price: &base_price,
                 experience: *my_exp,
                 risk_tolerance: personality[i].risk_tolerance,
@@ -356,7 +376,7 @@ pub fn decide(world: &mut World) {
             if prof != Profession::None as u8 && townsfolk {
                 let amb = ambition[i];
                 if amb == crate::components::AMB_WANDERLUST && my_rng.next_f32() < WANDERLUST_PULL {
-                    let r = TOWN_RADIUS * my_rng.next_f32().sqrt();
+                    let r = town_rad * my_rng.next_f32().sqrt();
                     let a = my_rng.next_f32() * std::f32::consts::TAU;
                     *g = Goal::Wander { to: [town_center[0] + r * a.cos(), town_center[1] + r * a.sin()] };
                     return;
@@ -436,7 +456,7 @@ pub fn decide(world: &mut World) {
             }
 
             // …otherwise amble: a random point near the town centre (own rng stream; uniform over disc).
-            let r = TOWN_RADIUS * my_rng.next_f32().sqrt();
+            let r = town_rad * my_rng.next_f32().sqrt();
             let a = my_rng.next_f32() * std::f32::consts::TAU;
             let to = [town_center[0] + r * a.cos(), town_center[1] + r * a.sin()];
             *g = Goal::Wander { to };

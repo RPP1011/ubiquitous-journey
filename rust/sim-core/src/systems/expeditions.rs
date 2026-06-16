@@ -49,7 +49,7 @@ const PARTY_SIZE: usize = 3;
 // ── the march + the hunt ──
 /// The wilderness ring (fraction of the arena clamp) the company marches to (`targetRing`).
 const TARGET_RING: f32 = 0.78;
-const ARENA_CLAMP: f32 = 590.0;
+const ARENA_CLAMP: f32 = crate::world::REGION_R;
 /// Arrival tolerance: within this distance of the ring point counts as "there" (TS `< 14`).
 const ARRIVE_DIST: f32 = 16.0;
 /// Home-arrival tolerance on the return leg (TS `< 20`).
