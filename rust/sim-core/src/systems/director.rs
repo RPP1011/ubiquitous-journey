@@ -631,14 +631,31 @@ fn town_pop(world: &World) -> usize {
     (0..world.n).filter(|&i| world.alive[i] && world.faction[i] == Faction::Townsfolk as u8).count()
 }
 
-/// Living attacker count (Raiders + Monsters) — the tension gauge / quiet probe.
+/// Living attacker count (Raiders + Monsters) MENACING a settlement — the tension gauge / quiet probe.
+/// Counts only attackers within reach of some town core; a predator roaming its wilderness lair is
+/// ambient wildlife, not a siege, so it doesn't make the world "un-quiet" (else the standing wilderness
+/// population would suppress the difficulty-curve raid forever).
 fn attacker_count(world: &World) -> usize {
-    world
-        .alive
-        .iter()
-        .zip(world.faction.iter())
-        .filter(|(&a, &f)| a && (f == Faction::Raider as u8 || f == Faction::Monster as u8))
-        .count()
+    const MENACE2: f32 = 260.0 * 260.0; // within this of a town centre counts as a threat to it
+    let mut n = 0usize;
+    for i in 0..world.n {
+        if !world.alive[i] {
+            continue;
+        }
+        let f = world.faction[i];
+        if f != Faction::Raider as u8 && f != Faction::Monster as u8 {
+            continue;
+        }
+        let p = world.pos[i];
+        let menacing = world
+            .town_centers
+            .iter()
+            .any(|c| (c[0] - p[0]).powi(2) + (c[1] - p[1]).powi(2) <= MENACE2);
+        if menacing {
+            n += 1;
+        }
+    }
+    n
 }
 
 /// The wealthiest living townsperson's id (deterministic: highest wealth, lowest id breaks ties).

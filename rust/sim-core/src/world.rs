@@ -183,6 +183,10 @@ pub struct World {
     /// bound by availability + the starvation clock, not a farmer quota (any hungry soul forages the
     /// nearest bush). Static after worldgen; the gather executor mints one Food per arrival (capped).
     pub forage_pos: Vec<[f32; 2]>,
+    /// MONSTER LAIRS — wilderness dens (`systems/wilderness.rs`) that periodically re-spawn predators to
+    /// keep a garrison nearby, so the frontier never fully tames: the wild stays a living threat that
+    /// feeds raids, bounties, and the expeditions sent out to clear it. Static positions, set at worldgen.
+    pub lair_pos: Vec<[f32; 2]>,
     // ── PERCEPTS (js/sim/percept.js): hittable, perceivable PROPS with no mind. A Scarecrow dressed as
     // a person; a finished Building. Kept in their OWN id-space (`PERCEPT_ID_BASE + k`, disjoint from
     // agent ids) so every `!agent` guard in the cognition feedback path skips them: an agent can BELIEVE
@@ -456,6 +460,26 @@ impl World {
             forage_pos.push([rr * aa.cos(), rr * aa.sin()]);
         }
 
+        // ── MONSTER LAIRS: a scatter of DEEP-wilderness dens (one per ~two towns), kept well away from
+        // every settlement (≥ LAIR_CLEAR) so their territorial predators menace travellers crossing the
+        // wild — not the towns themselves (the director's raids do town assaults).
+        const LAIR_CLEAR2: f32 = 300.0 * 300.0;
+        let n_lairs = (n_towns / 2).max(2);
+        let mut lair_pos: Vec<[f32; 2]> = Vec::with_capacity(n_lairs);
+        for _ in 0..n_lairs {
+            let mut p = wilderness_point(&mut gen, &town_centers, &radii);
+            for _ in 0..32 {
+                let far = town_centers
+                    .iter()
+                    .all(|c| (p[0] - c[0]).powi(2) + (p[1] - c[1]).powi(2) > LAIR_CLEAR2);
+                if far {
+                    break;
+                }
+                p = wilderness_point(&mut gen, &town_centers, &radii);
+            }
+            lair_pos.push(p);
+        }
+
         // expand the per-town target counts into a flat town-id list for the townsfolk (id order).
         let mut town_of: Vec<u16> = Vec::with_capacity(townsfolk);
         for t in 0..n_towns {
@@ -541,6 +565,7 @@ impl World {
             walls: Vec::new(),
             town_radius: radii.clone(),
             forage_pos,
+            lair_pos,
             percept_n: 0,
             percept_pos: Vec::new(),
             percept_kind: Vec::new(),
@@ -1253,6 +1278,7 @@ impl World {
         systems::intrigue::tick(self); // spies: disguise masks, false-belief/price plants, unmask
         systems::defenses::tick(self); // watchtower ring fires on apparent town-hostiles near the core
         systems::expeditions::tick(self); // musters/marches/resolves wilderness adventuring companies
+        systems::wilderness::tick(self); // monster lairs re-garrison the wild (the standing frontier threat)
         systems::lineage::tick(self);
         systems::faith::tick(self);
         systems::groups::tick(self);

@@ -36,3 +36,4 @@ pub mod quests;
 pub mod seeding;
 pub mod tropes;
 pub mod watch;
+pub mod wilderness;
