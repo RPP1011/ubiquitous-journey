@@ -128,6 +128,19 @@ const BEAT_JEALOUSY: u8 = 59;
 const BEAT_RIVALRY: u8 = 60;
 const BEAT_MENTOR: u8 = 61;
 const BEAT_STARCROSS: u8 = 62;
+const BEAT_BOAST: u8 = 63;
+const BEAT_SPY_UNMASK: u8 = 64;
+
+/// BOAST BACKFIRES: a swaggering high-level soul whose self-regard grates on a neighbour (a mild chill).
+const BOAST_MIN_LEVEL: u8 = 6;
+const BOAST_SOUR: i16 = 5_000;
+/// SPY UNMASKED: an exposed spy is FEARED — nearby townsfolk sour + latch hostile; within this range,
+/// up to this many witnesses turn on them.
+const SPY_UNMASK_RANGE2: f32 = 45.0 * 45.0;
+const SPY_SOUR: i16 = 9_000;
+const SPY_MAX_WITNESS: usize = 4;
+/// The `role` code for a spy (mirrors `world.role`: 0 none, 1 watch, 2 spy, …).
+const ROLE_SPY: u8 = 2;
 
 /// MENTOR PRIDE: only a MASTER (this level or above) takes a protégé; the warmth that binds them.
 const MENTOR_MIN_LEVEL: u8 = 7;
@@ -161,9 +174,11 @@ enum TropeKind {
     RivalApprentices = 10,
     MentorPride = 11,
     StarCrossed = 12,
+    BoastBackfires = 13,
+    SpyUnmasked = 14,
 }
 // (N_TROPES in components.rs must equal the count above.)
-const _: () = assert!(N_TROPES == 13);
+const _: () = assert!(N_TROPES == 15);
 
 pub fn tick(world: &mut World) {
     // Throttle: only consider drama on the evaluation boundary (never at tick 0).
@@ -190,8 +205,9 @@ pub fn tick(world: &mut World) {
     // major beats and must not be crowded out by the reliable warm filler), the warm filler LAST.
     // (kind, instigator) — fired left-to-right; the first whose constellation EXISTS wins this roll.
     type Row = (TropeKind, fn(&mut World, &[u32], usize, u32) -> bool);
-    let rows: [Row; 13] = [
+    let rows: [Row; 15] = [
         (TropeKind::Betrayal, do_betrayal),
+        (TropeKind::SpyUnmasked, do_spy_unmasked),
         (TropeKind::StarCrossed, do_star_crossed),
         (TropeKind::Vendetta, do_vendetta),
         (TropeKind::HouseFeud, do_house_feud),
@@ -199,6 +215,7 @@ pub fn tick(world: &mut World) {
         (TropeKind::UnlikelyFriendship, do_unlikely_friendship),
         (TropeKind::RivalApprentices, do_rival_apprentices),
         (TropeKind::MentorPride, do_mentor_pride),
+        (TropeKind::BoastBackfires, do_boast_backfires),
         (TropeKind::Feud, do_feud),
         (TropeKind::Reunion, do_reunion),
         (TropeKind::MiserReformed, do_miser_reformed),
@@ -664,6 +681,66 @@ fn do_star_crossed(world: &mut World, folk: &[u32], off: usize, _now: u32) -> bo
     false
 }
 
+/// BOAST BACKFIRES — a swaggering high-level soul's self-regard grates: a nearby townsperson is left
+/// UNIMPRESSED (a mild one-sided chill toward the boaster — envy, not enmity; not latched). The comic
+/// deflation of the proud. Only a genuinely high-level "somebody" can boast.
+fn do_boast_backfires(world: &mut World, folk: &[u32], off: usize, _now: u32) -> bool {
+    let len = folk.len();
+    for i in 0..len {
+        let a = folk[(off + i) % len];
+        if world.level[a as usize] < BOAST_MIN_LEVEL {
+            continue; // a nobody has nothing to boast about
+        }
+        // the first OTHER townsperson who doesn't already hold a belief about the boaster is unimpressed.
+        for j in 0..len {
+            let b = folk[(off + j) % len];
+            if b == a || world.beliefs[b as usize].find(a).is_some() {
+                continue;
+            }
+            world.sour_belief(b as usize, a, BOAST_SOUR, false); // unimpressed, not hostile
+            push_beat(world, BEAT_BOAST, a, b as i32);
+            return true;
+        }
+    }
+    false
+}
+
+/// SPY UNMASKED — a planted spy (`role == ROLE_SPY`, the intrigue layer's agent) is EXPOSED: the nearby
+/// townsfolk who realize it turn on them — soured + latched HOSTILE (a revealed spy is feared, hunted).
+/// Builds on the intrigue substrate (only fires when a spy exists). The deception layer's reckoning.
+fn do_spy_unmasked(world: &mut World, folk: &[u32], off: usize, _now: u32) -> bool {
+    let len = folk.len();
+    for i in 0..len {
+        let spy = folk[(off + i) % len];
+        if world.role[spy as usize] != ROLE_SPY {
+            continue;
+        }
+        let spos = world.pos[spy as usize];
+        let mut turned = 0usize;
+        for j in 0..len {
+            if turned >= SPY_MAX_WITNESS {
+                break;
+            }
+            let w = folk[(off + j) % len];
+            if w == spy {
+                continue;
+            }
+            let dx = world.pos[w as usize][0] - spos[0];
+            let dz = world.pos[w as usize][1] - spos[1];
+            if dx * dx + dz * dz > SPY_UNMASK_RANGE2 {
+                continue;
+            }
+            world.sour_belief(w as usize, spy, SPY_SOUR, true); // a revealed spy is feared + latched
+            turned += 1;
+        }
+        if turned > 0 {
+            push_beat(world, BEAT_SPY_UNMASK, spy, turned as i32);
+            return true;
+        }
+    }
+    false
+}
+
 // ── helpers ─────────────────────────────────────────────────────────────────────────────────────
 
 /// Living-townsfolk ids in id order (the constellation pool every trope scans). Deterministic.
@@ -847,6 +924,48 @@ mod tests {
         w2.house[1] = 9;
         let folk2 = living_townsfolk(&w2);
         assert!(!do_star_crossed(&mut w2, &folk2, 0, 100), "no feud ⇒ no star-crossed love");
+    }
+
+    /// BOAST BACKFIRES: a high-level swaggerer leaves a neighbour unimpressed (a one-sided mild chill).
+    #[test]
+    fn a_boast_leaves_a_neighbour_unimpressed() {
+        let mut w = World::spawn(0x9EC1, 6);
+        all_townsfolk(&mut w);
+        w.level[0] = 8; // a "somebody" worth boasting
+        let folk = living_townsfolk(&w);
+        assert!(do_boast_backfires(&mut w, &folk, 0, 100), "a high-level boaster grates on someone");
+        // some neighbour now holds a soured (but not hostile) belief about the boaster.
+        let soured = (1..w.n).any(|b| {
+            w.beliefs[b]
+                .find(0)
+                .map(|ix| w.beliefs[b].bodies[ix].standing < 0 && w.beliefs[b].bodies[ix].flags & HOSTILE_BIT == 0)
+                .unwrap_or(false)
+        });
+        assert!(soured, "a neighbour is unimpressed by the boast (soured, not hostile)");
+        assert!(w.chronicle.iter().any(|b| b.kind == BEAT_BOAST), "a boast beat is logged");
+    }
+
+    /// SPY UNMASKED: an exposed spy is feared — nearby townsfolk turn on them (soured + latched hostile).
+    #[test]
+    fn an_unmasked_spy_is_feared() {
+        let mut w = World::spawn(0x9EC2, 6);
+        all_townsfolk(&mut w);
+        let spy = 0usize;
+        w.role[spy] = 2; // ROLE_SPY
+        w.pos[spy] = [0.0, 0.0];
+        for i in 1..w.n {
+            w.pos[i] = [5.0, 0.0]; // all nearby — they realize the spy
+        }
+        let folk = living_townsfolk(&w);
+        assert!(do_spy_unmasked(&mut w, &folk, 0, 100), "a nearby spy is unmasked");
+        let turned = (1..w.n).filter(|&b| {
+            w.beliefs[b]
+                .find(spy as u32)
+                .map(|ix| w.beliefs[b].bodies[ix].flags & HOSTILE_BIT != 0)
+                .unwrap_or(false)
+        }).count();
+        assert!(turned > 0, "nearby townsfolk turn on the exposed spy (latched hostile)");
+        assert!(w.chronicle.iter().any(|b| b.kind == BEAT_SPY_UNMASK), "a spy-unmasked beat is logged");
     }
 
     /// A HOUSE FEUD is recorded between two sizeable houses (and the canonical pair is queryable).
