@@ -283,6 +283,10 @@ const ROMANCE_BAR: i16 = 12_000;
 const TYRANT_RICH_GOLD: i64 = 30_000;
 /// …resented by at least this many souls (hostile/soured beliefs) to be a TYRANT worth the arc.
 const TYRANT_RESENTERS: usize = 3;
+/// The `role` code for a spy (mirrors `world.role`) — opens the spy-web arc.
+const ROLE_SPY: u8 = 2;
+/// A soul whom at least this many others believe a HOSTILE foe is a pariah (the accused arc).
+const ACCUSED_HATERS: usize = 4;
 
 /// OPEN EMERGENT SAGAS (the romance / tyrant-fall arc steppers): scan the believed-relationship fabric
 /// for the constellations these arcs track and OPEN a saga in the registry (observer telemetry — the
@@ -339,6 +343,36 @@ pub fn open_emergent_sagas(world: &mut World) {
         if resenters >= TYRANT_RESENTERS {
             world.sagas.open_or_touch(SagaKind::TyrantFall, t as u32, t as u32, now);
             break; // one tyrant arc per pass
+        }
+    }
+    // SPY-WEB — a planted spy at work opens the arc (closed by an unmask or death). Builds on intrigue.
+    for s in 0..world.n {
+        if world.alive[s] && world.role[s] == ROLE_SPY {
+            world.sagas.open_or_touch(SagaKind::SpyWeb, s as u32, s as u32, now);
+            break;
+        }
+    }
+    // ACCUSED — a pariah whom MANY believe a hostile foe opens the wrongly/rightly-accused arc.
+    for v in 0..world.n {
+        if !world.alive[v] || world.faction[v] != Faction::Townsfolk as u8 {
+            continue;
+        }
+        let mut haters = 0usize;
+        for h in 0..world.n {
+            if h != v
+                && world.beliefs[h].find(v as u32).map_or(false, |ix| {
+                    world.beliefs[h].bodies[ix].flags & 0x01 != 0
+                })
+            {
+                haters += 1;
+                if haters >= ACCUSED_HATERS {
+                    break;
+                }
+            }
+        }
+        if haters >= ACCUSED_HATERS {
+            world.sagas.open_or_touch(SagaKind::Accused, v as u32, v as u32, now);
+            break;
         }
     }
 }
@@ -665,6 +699,34 @@ mod tests {
         // the tyrant falls (dies) — the arc closes.
         w.sagas.close_subject(tyrant as u32, w.tick);
         assert_eq!(w.sagas.open_count(SagaKind::TyrantFall), 0, "the tyrant's fall closes the arc");
+    }
+
+    /// SPY-WEB ARC: an active planted spy opens the arc. ACCUSED ARC: a pariah whom many believe a foe.
+    #[test]
+    fn spy_and_pariah_open_their_arcs() {
+        use crate::sagas::SagaKind;
+        let mut w = World::spawn(0x5797, 8);
+        for i in 0..w.n {
+            w.faction[i] = Faction::Townsfolk as u8;
+            w.alive[i] = true;
+            w.beliefs[i].clear();
+        }
+        w.role[1] = 2; // a planted spy (ROLE_SPY)
+        // a pariah: agents 3,4,5,6 all believe agent 2 a hostile foe.
+        for h in 3..7 {
+            w.sour_belief(h, 2, 12_000, true);
+        }
+        open_emergent_sagas(&mut w);
+        assert_eq!(w.sagas.open_count(SagaKind::SpyWeb), 1, "the spy opens a spy-web arc");
+        assert!(
+            w.sagas.sagas.iter().any(|s| s.kind == SagaKind::SpyWeb as u8 && s.a == 1),
+            "the spy-web arc is about the spy"
+        );
+        assert_eq!(w.sagas.open_count(SagaKind::Accused), 1, "the pariah opens an accused arc");
+        assert!(
+            w.sagas.sagas.iter().any(|s| s.kind == SagaKind::Accused as u8 && s.a == 2),
+            "the accused arc is about the pariah"
+        );
     }
 
     /// PROTÉGÉ: an apprentice who looks up to a high-level same-craft master is marked their protégé.

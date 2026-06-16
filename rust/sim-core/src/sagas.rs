@@ -15,6 +15,8 @@ pub enum SagaKind {
     Rescue = 1,     // `a` freed captive `b`
     Romance = 2,    // `a` and `b` hold each other dear — a lasting bond (endures; canonical a<b)
     TyrantFall = 3, // `a` is a resented tyrant of means — the arc toward their fall
+    SpyWeb = 4,     // `a` is a planted spy at work — the arc until they are unmasked
+    Accused = 5,    // `a` is a pariah whom many believe a foe — the wrongly/rightly-accused arc
 }
 
 /// One emergent saga (a multi-beat story between two souls).

@@ -139,10 +139,10 @@ Missing:
 - ✅ **role machinery — all 6 roles live**: avenger (hunts a kinsman's killer), bodyguard (warband-rally
   defends a notable), legend (a renowned hero), duellist (mutual sworn foes), protégé (an apprentice who
   reveres a same-craft master — composes with mentor-pride), guardian (a capable soul in the town core).
-- 🟡 **arc steppers 1 → 3**: + **romance** (a strong MUTUAL-warm pair opens a lasting Romance saga;
-  builds on star-crossed/mutual-warm) + **tyrant-fall** (a wealthy soul resented by ≥3 opens the arc,
-  closed on their death via `close_subject`). The reckoning/romance/tyrant-fall steppers now live.
-⬜ caravans (needs multi-town travel) · the last 2 arc steppers (spy-web/accused).
+- ✅ **arc steppers — all 5 live**: reckoning (vendetta→house-feud), romance (mutual-warm bond),
+  tyrant-fall (a resented rich soul), spy-web (an active intrigue spy), accused (a pariah whom many
+  believe a foe). Open from the trope-planted relationship fabric; resolved via `close_subject` on death.
+⬜ caravans (needs multi-town travel).
 
 ### G7 — World subsystems absent
 ⬜ construction (places-as-percepts + granary) · party (player companions) · biography ·
@@ -193,6 +193,10 @@ _(append a dated entry per landed commit: what closed, gate status, hash)_
   (set in the social cast branch), and the market clears that seller's sales +15% while active. Conserved
   (a price shift). Only the 4 control ops remain — all on Rust-unreachable (NO_CLASS) catalog specs.
   1 new test; hashed; survival unaffected.
+
+- **G6 spy-web + accused arc steppers — ALL 5 arc steppers now live** — spy-web (an active intrigue
+  `role==spy` opens the arc) + accused (a pariah whom ≥4 believe a hostile foe). With reckoning/romance/
+  tyrant-fall, the emergent-saga arc layer is complete; all resolve via `close_subject` on death. 1 test.
 
 - **G6 romance + tyrant-fall arc steppers** — two more emergent-saga arcs: **romance** (a strong
   mutual-warm pair opens a lasting Romance saga) + **tyrant-fall** (a wealthy soul resented by ≥3 opens
