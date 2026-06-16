@@ -1279,6 +1279,7 @@ impl World {
         systems::defenses::tick(self); // watchtower ring fires on apparent town-hostiles near the core
         systems::expeditions::tick(self); // musters/marches/resolves wilderness adventuring companies
         systems::wilderness::tick(self); // monster lairs re-garrison the wild (the standing frontier threat)
+        systems::refugees::tick(self); // survivors of gutted towns flee to safe havens (regional flows)
         systems::lineage::tick(self);
         systems::faith::tick(self);
         systems::groups::tick(self);

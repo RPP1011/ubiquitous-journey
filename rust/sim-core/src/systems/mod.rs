@@ -33,6 +33,7 @@ pub mod intrigue;
 pub mod lineage;
 pub mod patrician;
 pub mod quests;
+pub mod refugees;
 pub mod seeding;
 pub mod tropes;
 pub mod watch;
