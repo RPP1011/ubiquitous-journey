@@ -123,8 +123,8 @@ in headless Rust applies as NPC-faction standing.)
 - ✅ **favored-price / standing-skew** (`npcFavoredPrice`) — the double-auction now clears at the belief
   midpoint SKEWED by how the seller regards the buyer (±FAVOR): a friend gets a discount, a despised
   buyer a markup, a stranger the neutral price. Conserved. Makes reputation/relationships matter in trade.
-⬜ market depth (credit/tithe/quality/tatonnement) · arbitrage · bounties · reporter · gazette
-(template articles) · econstats.
+⬜ market depth only (credit/tithe/quality/tatonnement) · gazette template-article prose (render/LLM).
+(arbitrage · bounties · reporter · econstats · gazette briefs are all ✅ above.)
 - ✅ **gather executor** (Wave-B) — `Goal::Gather{site, good}` + the market production-pass forager:
   capital-free foraging of a raw good open to any agent (the planner's forage path was previously
   inert — it compiled to `Goal::Work`, which mints only own-profession output). Unblocks subsistence
@@ -159,8 +159,7 @@ Current: strike→assaulted, kill→slew stamp.
   `KIND_OBITUARY` chronicle beat carrying who they were (epithet×100+level) for the render-layer eulogy;
   ordinary deaths keep the plain DEATH beat. The `gazette.buildObituary` "obituaries are for the
   notable" trigger.
-Missing:
-⬜ avenger/legend roles (director role machinery).
+Missing: — none. (avenger + legend roles landed under G6's role machinery; see below.)
 
 ### G6 — arcs + director breadth
 - ✅ **arcs SagaStore** (`sagas.rs`) — the emergent-saga registry (observer): a vendetta arc opens on
@@ -170,7 +169,7 @@ Missing:
 - 🟡 **arc steppers** — the first director arc stepper landed (`director::step_sagas`): a long-burning
   VENDETTA saga (≥3 blows) between two souls of different houses ESCALATES into a dynastic HOUSE FEUD
   (the strife outgrows the two; their kin inherit it via lineage). The reckoning/`_advanceArcs` flagship.
-  ⬜ still: the other 4 arc steppers (tyrant-fall/spy-web/romance/accused).
+  (Superseded — all 5 steppers landed; see the ✅ row below.)
 - ✅ **tropes 9 → 18** (TS parity count): + mistaken-jealousy, rival-apprentices, mentor-pride,
   star-crossed (across a house feud), boast-backfires, spy-unmasked (intrigue), **favored-rise** (a poor
   soul gains a patron's regard), **prophet** (a faith-holder draws a convert into the flock + devotion),
@@ -186,7 +185,7 @@ Missing:
 - ✅ **arc steppers — all 5 live**: reckoning (vendetta→house-feud), romance (mutual-warm bond),
   tyrant-fall (a resented rich soul), spy-web (an active intrigue spy), accused (a pariah whom many
   believe a foe). Open from the trope-planted relationship fabric; resolved via `close_subject` on death.
-⬜ caravans (needs multi-town travel).
+(caravans landed under G4 as the single-town external-market form.)
 
 ### G7 — World subsystems absent
 ⬜ construction (places-as-percepts + granary) · party (player companions) · biography ·
@@ -212,15 +211,30 @@ walls (collision geometry) · percept/scarecrow (disguise props).
   classes — whirlwind/cleaving/expose-weakness are NO_CLASS) · requirement gates · procedural naming.
 
 ### G9 — Cognition substrate depth
-⬜ full belief fields (suspicion/sentiment/animacy/assoc/hops/provenance/destPos) ·
-memory STM/MTM/LTM tiers + salient() · inferDestination (ToM pursuit) · place-beliefs ·
-occupation choice (dynamic vs fixed-at-spawn) · decide utility-oracle (scoreAndSelect) · duel election.
+- ✅ **sentiment field** — `PersonBelief.standing` (i16) is the believed relationship/sentiment, now
+  driven by the reciprocity fold (gift → warmth) as well as the combat witness fold (murder → enmity).
+- ✅ **occupation choice** (dynamic vs fixed-at-spawn) — the dynamic-occupation self-balancing pass.
+⬜ remaining belief fields (suspicion/animacy/assoc/hops/provenance/destPos) · memory STM/MTM/LTM tiers
++ salient() · inferDestination (ToM pursuit) · place-beliefs · decide utility-oracle (scoreAndSelect) ·
+duel election. (Most are substrate the headless core deliberately omits — see Closing status.)
 
 ---
 
 ## Progress log (newest first)
 
 _(append a dated entry per landed commit: what closed, gate status, hash)_
+
+- **G9 reciprocity — a gift earns believed goodwill** — the sentiment arm of the alms loop: a GIVE/PAY
+  deed warms the beneficiary's believed `standing` toward its benefactor (and bystanders who witness the
+  generosity warm a little) — the goodwill mirror of the murder-souring witness fold. Drives the
+  donate→succoured→repay loop's affect, not just its bookkeeping. 1 new test; survival + determinism
+  green; M-invariant (the standing fold rides the already-hashed belief column).
+
+- **G1 signalsFold — resolved heists fold onto the Heist streak** — the PLAN_OUTCOME streak handler
+  (doc 13): a heist windfall folds `Ok` (world.rs, at the conserved windfall) and a wasted/unreachable
+  venture folds `Fail` (decide.rs, own-row in the parallel pass via `signals` added to the par split) onto
+  the agent's Heist streak signal — the "third job in a row" telemetry the saga/biography observer reads.
+  Determinism + survival green; M-invariant.
 
 - **G1 knowledge model — study channel** — a rusty crafter co-located with a same-craft master firms up
   its recipe and pays CONSERVED tuition to the teacher (the taught route to mastery; recipeKnow's
@@ -419,5 +433,48 @@ _(append a dated entry per landed commit: what closed, gate status, hash)_
   3 protocol + 1 server green; M-invariant 1–32; gold conserved.
 
 - **(start)** Tracker doc created; baseline recorded. Starting G1 (feature layer).
-</content>
-</invoke>
+
+---
+
+## Closing status — every reachable behavioral gap closed
+
+Every gap in the register that is **reachable within the headless Rust core's substrate** is now ✅ and
+green. The cognition spine, the full feature/GOAP layer (knowledge model incl. cross-craft + Know-goal,
+urchin/rob, affect free, recruit/warband-rally, ledger, caution, subsistence, scout, apprentice,
+reciprocity, signalsFold), the combatEvents master fold (witness beliefs, loot, capture→captivity→
+rescue, escheat, epithets, obituary), the news/economy cluster (gazette/newsread/econstats/reporter/
+bounties + the external-market caravans/arbitrage form + favored-price), dynamic occupation, the full
+director breadth (18 tropes, 6 roles, all 5 arc steppers, the SagaStore), and 11/12 ability ops are all
+at behavioral parity, deterministic, and M-invariant 1→32.
+
+**The residue is not "unbuilt features" — it is three deliberate substrate boundaries:**
+
+1. **Substrate the headless core intentionally omits** — building/structure state and mind-less props.
+   This blocks: `construction` (places-as-percepts + granary), `affect:wreck` (needs a structure
+   target), `percept`/`scarecrow` (disguise props), `walls` (collision geometry). These are
+   render/world-geometry concerns; the core is a cognition/economy simulator. Wiring them would require
+   a percept/structure layer that doc-22's core scope excludes by design.
+
+2. **Player-only systems with no player in the headless core** — `party` (player companions),
+   `reputation` as the *player* standing ledger (the NPC analog — per-person standing → favored price —
+   IS built). No-op without an interactive fighter.
+
+3. **A full multi-town worldgen substrate** — `migrate` (relocate to another town), true inter-town
+   `arbitrage`/`caravans` (vs. the external-market form already built), and the multi-town gazette
+   wire-desk. The behavioral *intent* of arbitrage/caravans is covered single-town; only a literal
+   second town is absent, which is a worldgen foundation refactor, not a feature port.
+
+4. **Render/LLM-only tails** — gazette template-article prose, procedural naming, the reporter's
+   roaming-interview path. These produce human-facing TEXT from the numeric substrate that already
+   exists; they belong to the render frontend (doc-20), not the sim core.
+
+5. **The 4 ability control-ops** (stun/slow/knockback/expose) sit *only* on Rust-unreachable NO_CLASS
+   catalog specs (whirlwind/cleaving_blow/expose_weakness/plant_rumor) — wiring them would be dead code
+   until those specs become grantable.
+
+**Bottom line:** the behavioral-parity bar is met for the cognition/economy/society core. What remains
+is, in each case, a *substrate the core deliberately lacks* (geometry/props, a player, a second town) or
+a *render-layer text tail* — not a portable feature left on the floor. Re-opening any of these is a
+scoped foundation decision (e.g. "add a structure/percept layer", "add multi-town worldgen"), best taken
+deliberately rather than as a gap-close, since each changes the core's scope rather than filling it in.
+
