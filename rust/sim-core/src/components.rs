@@ -226,6 +226,12 @@ pub struct CombatBody {
     /// A temporary damage BUFFER (the ability `shield` op, e.g. second_wind): incoming Strike damage is
     /// absorbed here before health. 0 = no shield. Set by a self-cast; depleted by blows (no regen).
     pub shield: f32,
+    /// Control-effect timers (seconds), the ability DSL's debuff ops. While >0 each one bites, then it
+    /// ticks down (DT/combat tick) to 0. `stun` = frozen (can't act); `slow` = locomotion at half pace;
+    /// `expose` = takes amplified Strike damage (the combo-setter). Set by an `Intent::Afflict`.
+    pub stun: f32,
+    pub slow: f32,
+    pub expose: f32,
 }
 impl Default for CombatBody {
     fn default() -> Self {
@@ -240,6 +246,9 @@ impl Default for CombatBody {
             stagger: 0.0,
             attack_cd: 0.0,
             shield: 0.0,
+            stun: 0.0,
+            slow: 0.0,
+            expose: 0.0,
         }
     }
 }

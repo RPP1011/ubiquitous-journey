@@ -69,6 +69,20 @@ pub fn resolve(world: &mut World) {
             }
 
             // ── advance the OWN swing state machine (own-write) ──
+            // control-effect timers tick down (the ability debuff ops). A STUNNED body is frozen — it
+            // can neither swing nor be re-targeted this tick (returns below).
+            if cb.stun > 0.0 {
+                cb.stun = (cb.stun - DT).max(0.0);
+            }
+            if cb.slow > 0.0 {
+                cb.slow = (cb.slow - DT).max(0.0);
+            }
+            if cb.expose > 0.0 {
+                cb.expose = (cb.expose - DT).max(0.0);
+            }
+            if cb.stun > 0.0 {
+                return None; // frozen by a stun — no action this tick
+            }
             if cb.attack_cd > 0.0 {
                 cb.attack_cd = (cb.attack_cd - DT).max(0.0);
             }

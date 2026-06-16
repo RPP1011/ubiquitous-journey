@@ -210,6 +210,20 @@ impl AbilitySpec {
         self.header.target == TargetKind::Enemy && self.damage_of() > 0.0
     }
 
+    /// Is this a pure DEBUFF — an enemy-target ability with NO damage but a control op (stun/slow/expose/
+    /// knockback)? The autocaster casts it to soften a believed hostile (expose_weakness's combo setup).
+    #[inline]
+    pub fn is_debuff(&self) -> bool {
+        self.header.target == TargetKind::Enemy
+            && self.damage_of() == 0.0
+            && self.effects().iter().any(|e| {
+                matches!(
+                    e.op,
+                    EffectOp::Stun | EffectOp::Slow | EffectOp::Knockback | EffectOp::Expose
+                )
+            })
+    }
+
     /// Is this a SOCIAL ability the autocaster should cast at a nearby agent — a non-damaging spec
     /// carrying a `plant_belief` effect (silver_tongue charm / plant_rumor deceit / haggle)? The op that
     /// reaches into the epistemic layer: it shifts how the target REGARDS the caster.
@@ -643,6 +657,34 @@ pub fn cast(world: &mut World) {
                         magnitude: dmg.max(0.0) as u16,
                         target: to,
                     });
+                    // CONTROL OPS: any stun/slow/knockback/expose effect the offensive ability carries is
+                    // applied to the same target (the ability DSL's debuff ops — e.g. frost_bolt's slow).
+                    for e in off.effects() {
+                        if let Some(a) = afflict_intent(e, i as u32, to) {
+                            emit.push(a);
+                        }
+                    }
+                }
+            }
+
+            // ── 2b) debuff: a non-damaging ENEMY-target ability carrying a control op (expose_weakness)
+            //        — cast at a believed hostile in range to SET UP the kill (expose ⇒ amplified blows).
+            if emit.n == 0 {
+                if let Some(db) = first_known(known, |s| s.is_debuff()) {
+                    if let Some((to, _)) = nearest_hostile_in_range(bel, pos[i], db.header.range) {
+                        *cd = db.header.cooldown;
+                        for e in db.effects() {
+                            if let Some(a) = afflict_intent(e, i as u32, to) {
+                                emit.push(a);
+                            }
+                        }
+                        emit.push(Intent::Deed {
+                            actor: i as u32,
+                            verb: db.grants_tag as u8,
+                            magnitude: 0,
+                            target: to,
+                        });
+                    }
                 }
             }
 
@@ -729,19 +771,20 @@ pub fn cast(world: &mut World) {
     world.intents.items.extend(out);
 }
 
-/// Up to two intents emitted by one agent's cast (offensive: strike+deed; self-support: one deed).
+/// Up to four intents from one agent's cast (offensive: strike + deed + control-op afflicts; debuff:
+/// afflict(s) + deed; self-support: one deed).
 struct Emit {
-    items: [Option<Intent>; 2],
+    items: [Option<Intent>; 4],
     n: usize,
 }
 impl Emit {
     #[inline]
     fn none() -> Emit {
-        Emit { items: [None, None], n: 0 }
+        Emit { items: [None, None, None, None], n: 0 }
     }
     #[inline]
     fn push(&mut self, it: Intent) {
-        if self.n < 2 {
+        if self.n < self.items.len() {
             self.items[self.n] = Some(it);
             self.n += 1;
         }
@@ -749,6 +792,22 @@ impl Emit {
     #[inline]
     fn into_iter(self) -> impl Iterator<Item = Intent> {
         self.items.into_iter().flatten()
+    }
+}
+
+/// Build an `Intent::Afflict` for a control-op effect (stun/slow/knockback/expose) aimed at `to`, or
+/// `None` for a non-control effect (damage/heal/…). The deterministic merge applies it to the target.
+#[inline]
+fn afflict_intent(e: &Effect, from: u32, to: u32) -> Option<Intent> {
+    match e.op {
+        EffectOp::Stun | EffectOp::Slow | EffectOp::Knockback | EffectOp::Expose => Some(Intent::Afflict {
+            from,
+            to,
+            op: e.op as u8,
+            amount: e.amount,
+            dur: e.dur,
+        }),
+        _ => None,
     }
 }
 

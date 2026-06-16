@@ -43,6 +43,9 @@ pub fn world_hash(w: &World) -> u64 {
         }
         h = fold(h, &w.combat[i].health.to_bits().to_le_bytes());
         h = fold(h, &w.combat[i].shield.to_bits().to_le_bytes());
+        h = fold(h, &w.combat[i].stun.to_bits().to_le_bytes());
+        h = fold(h, &w.combat[i].slow.to_bits().to_le_bytes());
+        h = fold(h, &w.combat[i].expose.to_bits().to_le_bytes());
         h = fold(h, &[w.goal[i].kind() as u8]);
         h = fold(h, &w.captive_of[i].to_le_bytes());
         h = fold(h, &w.trade_buff[i].to_le_bytes());

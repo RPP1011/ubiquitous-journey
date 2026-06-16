@@ -232,8 +232,12 @@ concern). · granary (a shared-larder building benefit) is the remaining constru
   trade-good (own-write to inventory, capped; the 5th autocaster branch). Economy-positive.
 - ✅ **trade_edge** (haggle) live — a `trade_buff` window column: a merchant's haggle arms it, and the
   market clears that seller's sales UP (+15%) while active. **11/12 ability ops now live.**
-⬜ the control ops stun/slow/knockback/expose (need combat-state columns; all on Rust-unreachable
-  classes — whirlwind/cleaving/expose-weakness are NO_CLASS) · requirement gates · procedural naming.
+- ✅ **the 4 control ops — 12/12 ability ops now LIVE** — `Intent::Afflict` + CombatBody timers
+  (`stun`/`slow`/`expose`) carry the debuff ops to a live target via the conserved merge: **Slow**
+  (frost_bolt, Hunter@1 — REACHABLE, halves locomotion pace), **Expose** (expose_weakness, Hunter@5 —
+  made reachable by a new debuff-cast autocaster branch; amplifies the next blow ×1.5), **Stun** (freezes
+  the target — combat returns no action), **Knockback** (shoves position from the caster). Hashed; tested.
+⬜ requirement gates · procedural naming (render/LLM tail).
 
 ### G9 — Cognition substrate depth
 - ✅ **sentiment field** — `PersonBelief.standing` (i16) is the believed relationship/sentiment, now
@@ -254,8 +258,10 @@ concern). · granary (a shared-larder building benefit) is the remaining constru
   (recency breaks ties), and `Memory::tier(now, t)` classifies an episode by age (short/medium/long-term
   consolidation). Wired into the biography as a real consumer: a life's **defining moment** = its most
   salient memory's kind, plus its short-term-memory count (recency texture). Hashed; tested.
-⬜ remaining belief fields (suspicion/animacy/assoc) · decide utility-oracle (scoreAndSelect) · duel
-election. (See Closing status.)
+- ✅ **duel election** — `director::enlist_duellists` elects two MUTUALLY sworn-hostile townsfolk into a
+  formal duel (`ROLE_DUELIST`), composing with the feud/vendetta substrate (part of the 6-role machinery).
+⬜ remaining belief micro-fields (suspicion/animacy/assoc) · decide utility-oracle (scoreAndSelect — a
+refactor of a working priority ladder). (See Closing status.)
 
 ---
 

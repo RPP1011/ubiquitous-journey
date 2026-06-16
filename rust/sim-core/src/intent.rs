@@ -21,6 +21,10 @@ pub enum Intent {
     /// ability op — a speaker's charm warms it, a trickster's rumor sours it). Not conserved (belief is
     /// not a quantity); applied serially via warm/sour_belief so it's the deterministic epistemic write.
     Influence { from: u32, to: u32, warm: i16 },
+    /// A control AFFLICTION: the ability DSL's debuff ops applied to `to` by `from`. `op` is the
+    /// `EffectOp` code (Stun=2/Slow=3/Knockback=4/Expose=7), `amount` the magnitude (knockback distance),
+    /// `dur` the timer seconds. Sets a CombatBody timer (stun/slow/expose) or shoves position (knockback).
+    Afflict { from: u32, to: u32, op: u8, amount: f32, dur: f32 },
 }
 
 impl Intent {
@@ -34,6 +38,7 @@ impl Intent {
             Intent::Deed { actor, target, .. } => (target, actor, 2),
             Intent::Hand { from, to, .. } => (to, from, 3),
             Intent::Influence { from, to, .. } => (to, from, 4),
+            Intent::Afflict { from, to, .. } => (to, from, 5),
         }
     }
 }

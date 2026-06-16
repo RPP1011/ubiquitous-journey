@@ -153,6 +153,8 @@ pub const NO_DISGUISE: u8 = 0xFF;
 /// PERCEPT id-space base — percept k carries belief-subject id `PERCEPT_ID_BASE + k`, disjoint from any
 /// agent id (`< n`). Every `to >= PERCEPT_ID_BASE` is a mind-less prop, the `!agent` guard of the port.
 pub const PERCEPT_ID_BASE: u32 = 1_000_000;
+/// Damage amplification on an EXPOSED target (the `expose` ability op — expose_weakness's combo setup).
+const EXPOSE_MULT: f32 = 1.5;
 /// `captive_of` sentinel: a free agent (not held prisoner).
 pub const CAPTIVE_NONE: i32 = -1;
 /// The `role` code for an AVENGER — a kinsman/friend who has taken up the slain's cause (the director
@@ -533,9 +535,14 @@ impl World {
                     if to >= self.n || !self.alive[to] {
                         continue;
                     }
+                    let mut dmg = dmg;
+                    // EXPOSE (the combo-setter ability op): an exposed target takes AMPLIFIED damage —
+                    // expose_weakness sets up the bigger follow-up hit. Applied before shield/health.
+                    if self.combat[to].expose > 0.0 {
+                        dmg *= EXPOSE_MULT;
+                    }
                     // a SHIELD buffer (the ability shield op) soaks the blow before health (depletes;
                     // no regen). Overflow carries through to health.
-                    let mut dmg = dmg;
                     if self.combat[to].shield > 0.0 {
                         let absorbed = self.combat[to].shield.min(dmg);
                         self.combat[to].shield -= absorbed;
@@ -664,6 +671,31 @@ impl World {
                         self.warm_belief(t, from, warm);
                     } else {
                         self.sour_belief(t, from, -warm, false);
+                    }
+                }
+                Intent::Afflict { from, to, op, amount, dur } => {
+                    // the ability DSL's control ops, applied to a live target (the strongest timer wins —
+                    // refreshes, never stacks unboundedly). Knockback shoves position away from the caster.
+                    let t = to as usize;
+                    if t >= self.n || !self.alive[t] {
+                        continue;
+                    }
+                    match op {
+                        2 => self.combat[t].stun = self.combat[t].stun.max(dur), // Stun
+                        3 => self.combat[t].slow = self.combat[t].slow.max(dur), // Slow
+                        7 => self.combat[t].expose = self.combat[t].expose.max(dur), // Expose
+                        4 => {
+                            // Knockback: shove `to` away from the caster by `amount` metres.
+                            let f = from as usize;
+                            if f < self.n {
+                                let dx = self.pos[t][0] - self.pos[f][0];
+                                let dz = self.pos[t][1] - self.pos[f][1];
+                                let len = (dx * dx + dz * dz).sqrt().max(0.0001);
+                                self.pos[t][0] += dx / len * amount;
+                                self.pos[t][1] += dz / len * amount;
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 Intent::Deed { actor, verb, magnitude, target } => {
@@ -1729,6 +1761,52 @@ mod tests {
         let b = w.beliefs[near].find(hero as u32).expect("the witness forms a belief about the hero");
         assert!(w.beliefs[near].bodies[b].standing > 0, "the monster-slayer is admired");
         assert!(w.beliefs[near].bodies[b].flags & 0x01 == 0, "a hero is not believed hostile");
+    }
+
+    /// ABILITY CONTROL OPS: an Afflict applies the debuff ops — Expose AMPLIFIES the next blow, Stun
+    /// FREEZES the target (no action), Slow halves its pace, Knockback SHOVES it from the caster. All four
+    /// reach a live target via the conserved merge; the timers tick down in combat.
+    #[test]
+    fn control_ops_afflict_a_target() {
+        let mut w = World::spawn(0x0C12, 4);
+        let (caster, victim) = (0usize, 1usize);
+        for &i in &[caster, victim] {
+            w.alive[i] = true;
+            w.combat[i].health = 100.0;
+        }
+        w.pos[caster] = [0.0, 0.0];
+        w.pos[victim] = [3.0, 0.0];
+
+        // EXPOSE then a strike: the blow is amplified by EXPOSE_MULT.
+        w.intents.push(Intent::Afflict { from: caster as u32, to: victim as u32, op: 7, amount: 1.5, dur: 4.0 });
+        w.drain_intents();
+        assert!(w.combat[victim].expose > 0.0, "the victim is exposed");
+        let before = w.combat[victim].health;
+        w.intents.push(Intent::Strike { from: caster as u32, to: victim as u32, dmg: 10.0 });
+        w.drain_intents();
+        let dealt = before - w.combat[victim].health;
+        assert!((dealt - 15.0).abs() < 0.01, "an exposed target takes 1.5x damage (got {dealt})");
+
+        // STUN: the victim is frozen — combat returns no action while stunned.
+        w.combat[victim].stun = 5.0;
+        let foe = 2usize; // give the victim a believed hostile so it WOULD swing if not stunned
+        w.alive[foe] = true;
+        w.pos[foe] = [3.5, 0.0];
+        w.beliefs[victim].subjects[0] = foe as u32;
+        w.beliefs[victim].bodies[0] = crate::components::PersonBelief {
+            subject: foe as u32, last_x: 3.5, last_z: 0.0, confidence: 60_000, flags: 0x01, ..Default::default()
+        };
+        w.beliefs[victim].len = 1;
+        let foe_hp = w.combat[foe].health;
+        crate::systems::combat::resolve(&mut w);
+        w.drain_intents();
+        assert_eq!(w.combat[foe].health, foe_hp, "a stunned agent cannot strike");
+
+        // KNOCKBACK: the victim is shoved away from the caster (its x grows).
+        let vx = w.pos[victim][0];
+        w.intents.push(Intent::Afflict { from: caster as u32, to: victim as u32, op: 4, amount: 5.0, dur: 0.0 });
+        w.drain_intents();
+        assert!(w.pos[victim][0] > vx, "knockback shoves the victim away from the caster");
     }
 
     /// MIGRATE: a HOMELESS townsperson who believes several hostiles are upon it (its home razed in a

@@ -28,6 +28,8 @@ use crate::world::World;
 /// Distance walked per cognition tick (the locomotion step). The Rust port reasons one step per
 /// fixed tick (no sub-frame dt), so this is the whole per-tick displacement.
 const STEP: f32 = 2.5;
+/// Movement multiplier while SLOWED (the `slow` ability op) — half pace.
+const SLOW_MUL: f32 = 0.5;
 /// Within this of the target ⇒ "arrived": snap to the target (attractor) / regenerate (wander).
 const ARRIVE: f32 = 1.0;
 /// Synthetic away-point distance for a pure-repulsor flee (TS `STEER.fleeAway`): a flee never
@@ -45,16 +47,19 @@ pub fn step(world: &mut World) {
         ref goal,
         ref beliefs,
         ref home,
+        ref combat,
         ..
     } = *world;
 
-    // par_iter over the two own-write columns (pos + rng) zipped; goal/beliefs/home are read-only.
+    // par_iter over the two own-write columns (pos + rng) zipped; goal/beliefs/home/combat are read-only.
     // IndexedParallelIterator preserves index `i`, so every read below is own-row.
     pos.par_iter_mut()
         .zip(rng.par_iter_mut())
         .enumerate()
         .for_each(|(i, (p, r))| {
-            step_one(p, r, &goal[i], &beliefs[i], home[i]);
+            // a SLOWED body (the ability `slow` op, e.g. frost_bolt) moves at half pace while it lasts.
+            let mul = if combat[i].slow > 0.0 { SLOW_MUL } else { 1.0 };
+            step_one(p, r, &goal[i], &beliefs[i], home[i], STEP * mul);
         });
 }
 
@@ -67,6 +72,7 @@ fn step_one(
     goal: &Goal,
     beliefs: &BeliefTable,
     home: [f32; 2],
+    step: f32,
 ) {
     match goal {
         // FLEE — a pure repulsor away from where I BELIEVE the threat is. Project a synthetic
@@ -94,7 +100,7 @@ fn step_one(
             ax /= l;
             az /= l;
             let target = [p[0] + ax * FLEE_AWAY, p[1] + az * FLEE_AWAY];
-            step_toward(p, target);
+            step_toward(p, target, step);
         }
 
         // WANDER — amble toward the random roam point; regenerate a fresh one (own rng) once within
@@ -107,14 +113,14 @@ fn step_one(
                 // agent heads for a fresh point and `decide` restamps `to` on its next pass.
                 target = fresh_roam(r, home);
             }
-            step_toward(p, target);
+            step_toward(p, target, step);
         }
 
         // ATTRACTOR goals (Work/Market/Comfort/Home) — walk straight at the static/belief target,
         // clamp on arrival.
         _ => {
             if let Some(target) = goal.move_target() {
-                step_toward(p, target);
+                step_toward(p, target, step);
             }
             // None (Idle/Eat/Rest/Fight) ⇒ stand still (the in-place verb runs in its own system).
         }
@@ -124,7 +130,7 @@ fn step_one(
 
 /// Step `p` toward `target` by at most STEP; snap exactly on arrival (clamp). Never overshoots.
 #[inline]
-fn step_toward(p: &mut [f32; 2], target: [f32; 2]) {
+fn step_toward(p: &mut [f32; 2], target: [f32; 2], step: f32) {
     let dx = target[0] - p[0];
     let dz = target[1] - p[1];
     let d = (dx * dx + dz * dz).sqrt();
@@ -134,7 +140,7 @@ fn step_toward(p: &mut [f32; 2], target: [f32; 2]) {
         p[1] = target[1];
         return;
     }
-    let s = (STEP / d).min(1.0); // clamp: never step past the target
+    let s = (step / d).min(1.0); // clamp: never step past the target
     p[0] += dx * s;
     p[1] += dz * s;
 }
