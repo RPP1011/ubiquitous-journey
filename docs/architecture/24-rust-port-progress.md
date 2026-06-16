@@ -150,9 +150,10 @@ walls (collision geometry) · percept/scarecrow (disguise props).
   through). Hashed for M-invariance.
 - ✅ **craft_boost** (master_craft) live — a master crafter self-casts for an immediate BURST of its
   trade-good (own-write to inventory, capped; the 5th autocaster branch). Economy-positive.
-⬜ trade_edge (a market price-edge buff — needs a buff-window column) · stun/slow/knockback/expose
-  execution (need combat-state columns; mostly Rust-unreachable classes) · requirement gates
-  (while_faithful/vs_sworn_foe/...) · procedural naming/generation.
+- ✅ **trade_edge** (haggle) live — a `trade_buff` window column: a merchant's haggle arms it, and the
+  market clears that seller's sales UP (+15%) while active. **11/12 ability ops now live.**
+⬜ the control ops stun/slow/knockback/expose (need combat-state columns; all on Rust-unreachable
+  classes — whirlwind/cleaving/expose-weakness are NO_CLASS) · requirement gates · procedural naming.
 
 ### G9 — Cognition substrate depth
 ⬜ full belief fields (suspicion/sentiment/animacy/assoc/hops/provenance/destPos) ·
@@ -164,6 +165,11 @@ occupation choice (dynamic vs fixed-at-spawn) · decide utility-oracle (scoreAnd
 ## Progress log (newest first)
 
 _(append a dated entry per landed commit: what closed, gate status, hash)_
+
+- **G8 trade_edge ability op (11/12 live)** — a `trade_buff` window column: a merchant's haggle arms it
+  (set in the social cast branch), and the market clears that seller's sales +15% while active. Conserved
+  (a price shift). Only the 4 control ops remain — all on Rust-unreachable (NO_CLASS) catalog specs.
+  1 new test; hashed; survival unaffected.
 
 - **G6 avenger role machinery** — the first director role: a townsperson's MURDER (folk slays folk) now
   enlists a living kinsman (else a dear friend) as an avenger — they inherit the grudge (Assaulted memory

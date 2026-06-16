@@ -99,6 +99,8 @@ fn want_qty(e: &Economy, g: usize) -> i32 {
 /// Max fraction a seller skews its price by how it REGARDS the buyer (the `npcFavoredPrice` / motive-
 /// trust gap): a friend gets a discount, a disliked buyer a markup.
 const FAVOR: f32 = 0.20;
+/// The price edge an active `trade_edge` (haggle) ability buff grants the SELLER (haggles its sale up).
+const TRADE_EDGE: f32 = 0.15;
 
 /// The seller's price skew toward `buyer`, from its OWN belief-standing about them: ≈0.8 for a dear
 /// friend (a deal), ≈1.2 for a despised buyer (gouged), 1.0 for a stranger. Clamped so trade never
@@ -217,7 +219,10 @@ pub fn clear(world: &mut World) {
             let ask = believed_price(&world.econ[s], &base, g);
             let bid = believed_price(&world.econ[b], &base, g);
             let mid = (ask + bid) / 2; // major units (the neutral midpoint)
-            let clear = ((mid as f32) * standing_skew(&world.beliefs[s], b as u32)).round() as i64;
+            // TRADE_EDGE (the haggle ability buff): a seller with an active buff haggles its sale UP.
+            let edge = if world.trade_buff[s] > world.tick { 1.0 + TRADE_EDGE } else { 1.0 };
+            let clear =
+                ((mid as f32) * standing_skew(&world.beliefs[s], b as u32) * edge).round() as i64;
             let clear = clear.max(1);
             let price_minor = clear * 100; // gold is fixed-point ×100
 

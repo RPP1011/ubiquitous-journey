@@ -540,6 +540,14 @@ const PLANT_SCALE: f32 = 3_000.0;
 /// Units of trade-good a master-craft flourish yields per cast, capped so it can't hoard unboundedly.
 const CRAFT_BOOST_UNITS: i32 = 3;
 const CRAFT_BOOST_CAP: i32 = 64;
+/// How long (ticks) a haggle's trade_edge price-buff lasts after the cast (mirrors the spec's `dur`).
+const TRADE_BUFF_TICKS: u32 = 120;
+
+/// Does this spec carry a `trade_edge` effect (the haggler's market price buff)?
+#[inline]
+fn has_trade_edge(spec: &AbilitySpec) -> bool {
+    spec.effects().iter().any(|e| e.op == EffectOp::TradeEdge)
+}
 
 /// The commodity a profession OUTPUTS (mirrors the planner/market produced-good table), if any.
 #[inline]
@@ -565,6 +573,7 @@ fn produced_good(prof: u8) -> Option<usize> {
 /// Cross-agent damage rides the intent merge; self-effects are own-writes. Determinism: own-read +
 /// own-write + id-order intent collect.
 pub fn cast(world: &mut World) {
+    let now = world.tick;
     let World {
         ref pos,
         ref faction,
@@ -576,6 +585,7 @@ pub fn cast(world: &mut World) {
         ref mut combat,
         ref mut ability_cd,
         ref mut econ,
+        ref mut trade_buff,
         ..
     } = *world;
 
@@ -586,8 +596,9 @@ pub fn cast(world: &mut World) {
         .zip(ability_cd.par_iter_mut())
         .zip(beliefs.par_iter_mut())
         .zip(econ.par_iter_mut())
+        .zip(trade_buff.par_iter_mut())
         .enumerate()
-        .map(|(i, (((cb, cd), bel), ec))| {
+        .map(|(i, ((((cb, cd), bel), ec), tbuff))| {
             let mut emit = Emit::none();
             if !alive[i] || cb.state == FighterState::Dead as u8 {
                 return emit;
@@ -646,6 +657,10 @@ pub fn cast(world: &mut World) {
                         // the i16 standing units the belief table uses.
                         let warm = (-soc.plant_of() * PLANT_SCALE).clamp(-30_000.0, 30_000.0) as i16;
                         *cd = soc.header.cooldown;
+                        // a haggle also arms the TRADE_EDGE: a market price-buff window on the caster.
+                        if has_trade_edge(&soc) {
+                            *tbuff = now + TRADE_BUFF_TICKS;
+                        }
                         emit.push(Intent::Influence { from: i as u32, to, warm });
                         emit.push(Intent::Deed {
                             actor: i as u32,
@@ -1050,6 +1065,27 @@ mod tests {
         assert!(w.ability_cd[seer] > 0.0, "the scry went on cooldown");
         // scry is a self-learn — no cross-agent strike/influence emitted.
         assert!(!w.intents.items.iter().any(|i| matches!(i, Intent::Strike { .. } | Intent::Influence { .. })));
+    }
+
+    /// A merchant's haggle arms the TRADE_EDGE: a market price-buff window on the caster (so its next
+    /// sales clear higher — the trade_edge ability op made live).
+    #[test]
+    fn autocast_haggle_arms_the_trade_edge() {
+        let mut w = World::spawn(0xAB1D, 4);
+        let merchant = 0usize;
+        add_ability(&mut w.progression[merchant], ID_HAGGLE);
+        w.ability_cd[merchant] = 0.0;
+        w.combat[merchant].state = FighterState::Idle as u8; // full health (no self-heal)
+        w.pos[merchant] = [0.0, 0.0];
+        // a believed agent in haggle range (the charm's target).
+        let bt = &mut w.beliefs[merchant];
+        bt.len = 1;
+        bt.subjects[0] = 1;
+        bt.bodies[0].subject = 1;
+        bt.bodies[0].last_x = 2.0;
+        assert_eq!(w.trade_buff[merchant], 0, "no buff before the haggle");
+        cast(&mut w);
+        assert!(w.trade_buff[merchant] > w.tick, "haggle arms a trade_edge price-buff window");
     }
 
     /// A master crafter (master_craft) self-casts → an immediate burst of its trade-good (the

@@ -61,6 +61,7 @@ pub struct World {
     pub plan: Vec<Plan>,       // cached plan toward the top intention (cursor-advanced; replan-on-change)
     pub experience: Vec<Experience>, // outcome-conditioned caution: per-strategy surcharge (doc 11, experience.rs)
     pub captive_of: Vec<i32>,        // captor id while held prisoner (CAPTIVE_NONE = free) — capture-on-defeat
+    pub trade_buff: Vec<u32>,        // tick-deadline of an active trade_edge (haggle) market price buff (0 = none)
     // ── Wave-3 society columns ──
     pub faith: Vec<u8>,         // small-god id (0 = none, NO_GOD)
     pub band_leader: Vec<i32>,  // band/clan leader id (-1 = none, NO_BAND)
@@ -167,6 +168,7 @@ impl World {
             plan: Vec::with_capacity(n),
             experience: Vec::with_capacity(n),
             captive_of: Vec::with_capacity(n),
+            trade_buff: Vec::with_capacity(n),
             faith: Vec::with_capacity(n),
             band_leader: Vec::with_capacity(n),
             house: Vec::with_capacity(n),
@@ -258,6 +260,7 @@ impl World {
             w.plan.push(Plan::default());
             w.experience.push(Experience::default());
             w.captive_of.push(CAPTIVE_NONE);
+            w.trade_buff.push(0);
             w.beliefs.push(BeliefTable::default());
             w.beliefs_prev.push(BeliefTable::default());
             w.faith.push(NO_GOD);
@@ -307,6 +310,7 @@ impl World {
         self.plan.push(Plan::default());
         self.experience.push(Experience::default());
         self.captive_of.push(CAPTIVE_NONE);
+        self.trade_buff.push(0);
         self.faith.push(NO_GOD);
         self.band_leader.push(NO_BAND);
         self.house.push(0);
