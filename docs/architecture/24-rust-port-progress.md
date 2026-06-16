@@ -500,42 +500,43 @@ subsistence, scout, apprentice, **migrate**, reciprocity, signalsFold), the comb
 (witness beliefs, loot, capture→captivity→rescue, escheat, epithets, obituary), the news/economy cluster
 (gazette/newsread/econstats/reporter/bounties + external-market caravans/arbitrage + favored-price),
 dynamic occupation, the full director breadth (18 tropes, 6 roles, all 5 arc steppers, the SagaStore),
-**biography**, the **percept/scarecrow** substrate, **construction + the epistemic homecoming**, the
-**inferDestination** ToM pursuit, **belief provenance/hops**, and 11/12 ability ops are all at behavioral
-parity, deterministic, and M-invariant 1→32 (206 sim-core + 4 determinism + 1 survival + 3 protocol +
-1 server green).
+**biography**, the **percept/scarecrow** substrate, **construction + the epistemic homecoming** + the
+**granary**, **affect:wreck**, the **inferDestination** ToM pursuit, **belief provenance/hops**, **memory
+salient()/tiers**, **suspicion** (the spy-unmask counter), **duel election**, and **all 12 ability ops**
+(the 4 control ops — stun/slow/knockback/expose — now live) are at behavioral parity, deterministic, and
+M-invariant 1→32 (**209 sim-core** + 4 determinism + 1 survival + 3 protocol + 1 server green).
 
-**The residue is now small, and each item is a deliberate boundary, not a portable feature left undone:**
+**The residue is now ONLY scope the core deliberately lacks — each needs a foundation decision, not a
+feature port:**
 
 1. **Player-only systems with no player in the headless core** — `party` (player companions) and
-   `reputation` as the *player* standing ledger (the NPC analog — per-person `standing` → favored price
-   — IS built). No-op without an interactive fighter, which lives in the render frontend (doc-20).
+   `reputation` as the *player* standing ledger (the NPC analogs — per-person `standing` → favored price,
+   and warband-following — ARE built). No-op without an interactive fighter, which lives in the render
+   frontend (doc-20). Closing these means *adding a player agent* to the headless core.
 
 2. **Walls / collision geometry** — a render/world-geometry concern (like the TS dungeon/town walls,
-   which are collision-only meshes). The cognition core has no collision model by design.
+   which are collision-only meshes). The cognition core has no collision/movement-blocking model by
+   design. Closing this means *adding a collision system*.
 
 3. **A literal second town** — true inter-town `arbitrage`/`caravans` and a multi-town gazette wire-desk.
    The behavioral *intent* is already covered single-town (the external-market form; `migrate` resettles
-   toward the safe core). Only a second worldgen town is absent — a foundation refactor, not a port.
+   toward the safe core). Closing this means *adding multi-town worldgen* — a foundation refactor.
 
 4. **Render/LLM-only tails** — gazette template-article prose, procedural naming, the reporter's
    roaming-interview path. These produce human-facing TEXT from the numeric substrate that already
    exists; they belong to the render frontend (doc-20), not the sim core.
 
-5. **The 4 ability control-ops** (stun/slow/knockback/expose) sit *only* on Rust-unreachable NO_CLASS
-   catalog specs (whirlwind/cleaving_blow/expose_weakness/plant_rumor) — wiring them would be dead code
-   until those specs become grantable.
-
-6. **Fine-grained cognition micro-fields** — a few belief metadata (suspicion/animacy/assoc), memory
-   STM/MTM/LTM tiering + `salient()`, the decide utility-oracle (`scoreAndSelect` — an architecture
-   refactor of the priority ladder), and a shared-larder `granary` benefit. Nuance/architecture, not
-   missing behavior; several are bounded by the marginal economy (a `granary` that adds agent-time risks
-   the survival floor) or would re-shape a working decide ladder for fidelity that isn't yet load-bearing.
+5. **`scoreAndSelect` utility-oracle + `animacy`/`assoc` belief metadata** — the decide priority ladder
+   already selects behavior correctly; the oracle is an *alternative architecture* for it, not a missing
+   behavior, and re-shaping a working, survival-tuned ladder is pure risk. `animacy`/`assoc` are TS
+   gossip-fidelity fields with no live consumer in the core (the percept id-range already distinguishes
+   props from people). Closing these is *refactor / telemetry without a consumer*, not a behavior port.
 
 **Bottom line:** the behavioral-parity bar is met for the cognition / economy / society / **world**
-core. What remains is, in each case, a *render-layer concern* (a player, collision geometry, prose), a
-*literal second town*, *dead-code-if-wired* ability ops, or *fidelity micro-nuance* — not a portable
-feature left on the floor. Re-opening any of these is a scoped foundation decision (e.g. "add multi-town
-worldgen", "re-architect decide around a utility oracle"), best taken
-deliberately rather than as a gap-close, since each changes the core's scope rather than filling it in.
+core — every TS feature that drives an NPC decision or world mechanic in the headless scope is ported,
+deterministic, and M-invariant. What remains is, in each case, scope the core *deliberately lacks*: a
+player agent, a collision model, a literal second town, a render/LLM text layer, or an alternative
+decide architecture / consumer-less telemetry. Each is a foundation decision (e.g. "add a player",
+"add multi-town worldgen", "add a collision system") that **changes the core's scope** rather than
+filling a hole in it — best taken deliberately with the user, not auto-closed as a parity gap.
 
