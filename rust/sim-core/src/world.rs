@@ -111,6 +111,13 @@ pub struct World {
 pub const NO_DISGUISE: u8 = 0xFF;
 /// `captive_of` sentinel: a free agent (not held prisoner).
 pub const CAPTIVE_NONE: i32 = -1;
+/// The `role` code for an AVENGER — a kinsman/friend who has taken up the slain's cause (the director
+/// role machinery; mirrors `world.role`: 0 none, 1 watch, 2 spy, 3 asset, 4 bodyguard, 5 duelist).
+pub const ROLE_AVENGER: u8 = 6;
+/// A belief reads as a dear FRIEND (worth avenging) above this standing (i16 quantization).
+const AVENGER_FRIEND_BAR: i16 = 4_000;
+/// How hard a fresh avenger's regard for the killer sours (latched hostile — the avenge seed).
+const AVENGER_SOUR: i16 = 20_000;
 /// Chance a RAIDER's lethal blow on a townsperson TAKES them captive instead of killing (a prisoner of
 /// the raid, freed when the captor falls). Drawn from `sim_rng` in the serial merge ⇒ deterministic.
 const CAPTURE_CHANCE: f32 = 0.30;
@@ -461,6 +468,12 @@ impl World {
                             // was burning) — the saga closes.
                             self.sagas.close(crate::sagas::SagaKind::Vendetta, from as u32, to as u32, self.tick);
                             self.sagas.close(crate::sagas::SagaKind::Vendetta, to as u32, from as u32, self.tick);
+                            // a MURDER (folk slays folk) enlists an AVENGER who takes up the slain's cause.
+                            if self.faction[from] == Faction::Townsfolk as u8
+                                && self.faction[to] == Faction::Townsfolk as u8
+                            {
+                                self.enlist_avenger(from, to);
+                            }
                         }
                     }
                 }
@@ -892,6 +905,55 @@ impl World {
         }
     }
 
+    /// ENLIST AN AVENGER (the director's avenger role machinery): when a townsperson is MURDERED by
+    /// another townsperson, a living kinsman (same house) — or, failing that, a dear believed-friend —
+    /// takes up the slain's cause. They gain an `Assaulted` memory about the killer (the avenge deriver's
+    /// seed, so they HUNT the murderer through the existing GOAP loop) + a latched-hostile belief, and
+    /// wear the `ROLE_AVENGER` mark. Serial id-order in `drain_intents` ⇒ deterministic. At most one
+    /// avenger per murder (the nearest in id order). Composes the murder → avenger → vendetta arc.
+    fn enlist_avenger(&mut self, killer: usize, victim: usize) {
+        let tf = Faction::Townsfolk as u8;
+        let mut avenger: Option<usize> = None;
+        // 1. a living KINSMAN of the slain (same house).
+        let vhouse = self.house[victim];
+        if vhouse != 0 {
+            for h in 0..self.n {
+                if h != killer && h != victim && self.alive[h] && self.faction[h] == tf && self.house[h] == vhouse {
+                    avenger = Some(h);
+                    break;
+                }
+            }
+        }
+        // 2. else a dear believed-FRIEND of the slain (someone who held them in high regard).
+        if avenger.is_none() {
+            for h in 0..self.n {
+                if h == killer || h == victim || !self.alive[h] || self.faction[h] != tf {
+                    continue;
+                }
+                if self.beliefs[h].find(victim as u32).map_or(false, |ix| {
+                    self.beliefs[h].bodies[ix].standing > AVENGER_FRIEND_BAR
+                }) {
+                    avenger = Some(h);
+                    break;
+                }
+            }
+        }
+        if let Some(av) = avenger {
+            self.memory[av].record(Episode {
+                kind: EpisodeKind::Assaulted as u8, // the avenge-deriver seed (they hunt the killer)
+                place: 0,
+                valence: -1,
+                _pad: 0,
+                with: killer as u32,
+                t: self.tick,
+                salience: 55000,
+                _pad2: 0,
+            });
+            self.sour_belief(av, killer as u32, AVENGER_SOUR, true); // believe the killer a hostile foe
+            self.role[av] = ROLE_AVENGER;
+        }
+    }
+
     /// Warm `observer`'s belief-standing toward `subject` (a real warming un-latches hostility).
     pub fn warm_belief(&mut self, observer: usize, subject: u32, amt: i16) {
         if let Some(ix) = self.ensure_belief(observer, subject) {
@@ -972,6 +1034,35 @@ mod tests {
         let b = w.beliefs[near].find(hero as u32).expect("the witness forms a belief about the hero");
         assert!(w.beliefs[near].bodies[b].standing > 0, "the monster-slayer is admired");
         assert!(w.beliefs[near].bodies[b].flags & 0x01 == 0, "a hero is not believed hostile");
+    }
+
+    /// AVENGER ROLE: a townsperson murdered by another townsperson enlists a living KINSMAN as an
+    /// avenger — who gains the grudge (an Assaulted memory + a latched-hostile belief about the killer,
+    /// so the avenge loop hunts them) and wears the ROLE_AVENGER mark.
+    #[test]
+    fn a_murder_enlists_a_kinsman_avenger() {
+        let mut w = World::spawn(0x4A6E, 6);
+        let (killer, victim, kinsman) = (0usize, 1usize, 2usize);
+        for &i in &[killer, victim, kinsman] {
+            w.faction[i] = Faction::Townsfolk as u8;
+            w.alive[i] = true;
+            w.memory[i] = crate::components::Memory::default();
+            w.role[i] = 0;
+        }
+        w.house[victim] = 5;
+        w.house[kinsman] = 5; // same house ⇒ the kinsman avenges
+        w.combat[victim].health = 1.0; // a single blow is lethal
+        w.intents.push(Intent::Strike { from: killer as u32, to: victim as u32, dmg: 10.0 });
+        w.drain_intents();
+
+        assert!(!w.alive[victim], "the victim was murdered");
+        assert_eq!(w.role[kinsman], ROLE_AVENGER, "the kinsman is enlisted as an avenger");
+        assert!(
+            w.memory[kinsman].has(EpisodeKind::Assaulted, killer as u32),
+            "the avenger holds the grudge (the avenge-loop seed)"
+        );
+        let ix = w.beliefs[kinsman].find(killer as u32).expect("the avenger now tracks the killer");
+        assert!(w.beliefs[kinsman].bodies[ix].flags & 0x01 != 0, "the avenger believes the killer hostile");
     }
 
     /// ESCHEAT: a dead agent's stranded purse passes to a living KINSMAN (same house) — conserved, so

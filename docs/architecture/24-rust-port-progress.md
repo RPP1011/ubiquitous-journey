@@ -126,7 +126,11 @@ Missing:
   soul gains a patron's regard), **prophet** (a faith-holder draws a convert into the flock + devotion),
   **tyrant-market** (great wealth breeds a poor neighbour's resentment). All compose from existing
   belief/level/role/gold/faith/house substrate + the trope dispatcher.
-⬜ role machinery (bodyguard/duel/protégé/guardian/legend/avenger) · caravans · the other 4 arc steppers.
+- 🟡 **role machinery — avenger** landed: a townsperson MURDERED by another townsperson enlists a living
+  KINSMAN (else a dear friend) as an **avenger** — they gain the grudge (Assaulted memory + latched-hostile
+  belief, so the avenge GOAP loop hunts the killer) + wear `ROLE_AVENGER`. Composes the murder→avenger→
+  vendetta arc from existing substrate.
+⬜ other roles (bodyguard/duel/protégé/guardian/legend) · caravans · the other 4 arc steppers.
 
 ### G7 — World subsystems absent
 ⬜ construction (places-as-percepts + granary) · party (player companions) · biography ·
@@ -160,6 +164,11 @@ occupation choice (dynamic vs fixed-at-spawn) · decide utility-oracle (scoreAnd
 ## Progress log (newest first)
 
 _(append a dated entry per landed commit: what closed, gate status, hash)_
+
+- **G6 avenger role machinery** — the first director role: a townsperson's MURDER (folk slays folk) now
+  enlists a living kinsman (else a dear friend) as an avenger — they inherit the grudge (Assaulted memory
+  + latched-hostile belief) and the avenge GOAP loop makes them HUNT the killer; they wear `ROLE_AVENGER`.
+  Composes the murder→avenger→vendetta arc from the combatEvents + avenge-loop + house substrate. 1 test.
 
 - **G6 tropes (9 → 18, TS parity count)** — across four commits, added 9 tropes that compose from
   existing substrate: mistaken-jealousy, rival-apprentices, mentor-pride, star-crossed (across a house
