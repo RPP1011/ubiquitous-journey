@@ -139,8 +139,11 @@ walls (collision geometry) · percept/scarecrow (disguise props).
 - ✅ **shield** op live — `CombatBody.shield` damage-buffer column: a self-cast (second_wind) raises it
   (capped); the Strike merge soaks damage into it before health (depletes, no regen, overflow carries
   through). Hashed for M-invariance.
-⬜ trade_edge / craft_boost (timed economic buffs — need a buff-window column) · stun/slow/knockback/
-  expose execution · requirement gates (while_faithful/vs_sworn_foe/...) · procedural naming/generation.
+- ✅ **craft_boost** (master_craft) live — a master crafter self-casts for an immediate BURST of its
+  trade-good (own-write to inventory, capped; the 5th autocaster branch). Economy-positive.
+⬜ trade_edge (a market price-edge buff — needs a buff-window column) · stun/slow/knockback/expose
+  execution (need combat-state columns; mostly Rust-unreachable classes) · requirement gates
+  (while_faithful/vs_sworn_foe/...) · procedural naming/generation.
 
 ### G9 — Cognition substrate depth
 ⬜ full belief fields (suspicion/sentiment/animacy/assoc/hops/provenance/destPos) ·
@@ -152,6 +155,11 @@ occupation choice (dynamic vs fixed-at-spawn) · decide utility-oracle (scoreAnd
 ## Progress log (newest first)
 
 _(append a dated entry per landed commit: what closed, gate status, hash)_
+
+- **G8 craft_boost ability op** — master_craft made live: a master crafter self-casts (the 5th
+  autocaster branch) for an immediate burst of its profession's trade-good (own-write to inventory,
+  capped). Economy-positive. 1 new test; survival unaffected. (Of the 12 effect ops, only trade_edge +
+  the control ops stun/slow/knockback/expose remain — each needs a new column or is on a Rust-unreachable class.)
 
 - **G6 director arc stepper (reckoning)** — the first arc stepper: `director::step_sagas` advances open
   SagaStore arcs — a hardened vendetta (≥3 traded blows) between two souls of different houses ESCALATES

@@ -225,6 +225,13 @@ impl AbilitySpec {
         self.effects().iter().any(|e| e.op == EffectOp::Scry)
     }
 
+    /// Is this a CRAFT-BOOST ability (master_craft) — a spec carrying a `craft_boost` effect? The
+    /// autocaster fires it as a self-buff: an immediate burst of the crafter's trade-good.
+    #[inline]
+    pub fn is_craft_boost(&self) -> bool {
+        self.effects().iter().any(|e| e.op == EffectOp::CraftBoost)
+    }
+
     /// The first `plant_belief` effect's amount (the charm/deceit magnitude), else 0 — `plantOf`.
     #[inline]
     pub fn plant_of(&self) -> f32 {
@@ -530,6 +537,23 @@ const LVL_DMG_CAP: f32 = 2.5;
 /// plant_belief amount (0..1-ish) → i16 standing units. Sized so a silver_tongue (−0.4) warms ~1200
 /// (a meaningful nudge against the ~±10k standing scale), a plant_rumor (+0.5) sours ~1500.
 const PLANT_SCALE: f32 = 3_000.0;
+/// Units of trade-good a master-craft flourish yields per cast, capped so it can't hoard unboundedly.
+const CRAFT_BOOST_UNITS: i32 = 3;
+const CRAFT_BOOST_CAP: i32 = 64;
+
+/// The commodity a profession OUTPUTS (mirrors the planner/market produced-good table), if any.
+#[inline]
+fn produced_good(prof: u8) -> Option<usize> {
+    match prof {
+        1 => Some(0), // Farmer → Food
+        2 => Some(2), // Miner → Ore
+        3 => Some(1), // Woodcutter → Wood
+        4 => Some(3), // Blacksmith → Tool
+        5 => Some(4), // Hunter → Herb
+        6 => Some(5), // Trader → Potion
+        _ => None,
+    }
+}
 
 /// The SIMPLIFIED autocaster — a parallel own-write phase run after combat (see `World::tick`).
 /// For each living agent that holds a known ability:
@@ -546,10 +570,12 @@ pub fn cast(world: &mut World) {
         ref faction,
         ref level,
         ref alive,
+        ref profession,
         ref progression,
         ref mut beliefs,
         ref mut combat,
         ref mut ability_cd,
+        ref mut econ,
         ..
     } = *world;
 
@@ -559,8 +585,9 @@ pub fn cast(world: &mut World) {
         .par_iter_mut()
         .zip(ability_cd.par_iter_mut())
         .zip(beliefs.par_iter_mut())
+        .zip(econ.par_iter_mut())
         .enumerate()
-        .map(|(i, ((cb, cd), bel))| {
+        .map(|(i, (((cb, cd), bel), ec))| {
             let mut emit = Emit::none();
             if !alive[i] || cb.state == FighterState::Dead as u8 {
                 return emit;
@@ -653,6 +680,27 @@ pub fn cast(world: &mut World) {
                             magnitude: 1,
                             target: bel.bodies[bix].subject,
                         });
+                    }
+                }
+            }
+
+            // ── 5) craft_boost: nothing else fired + holds a ready master-craft ability + plies a
+            //       producing trade → an immediate BURST of its trade-good (own-write inventory). The
+            //       craft_boost op made live: a master crafter's flourish of extra output.
+            if emit.n == 0 {
+                if let Some(cb_spec) = first_known(known, |s| s.is_craft_boost()) {
+                    if let Some(good) = produced_good(profession[i]) {
+                        let inv = &mut ec.inventory[good];
+                        if *inv < CRAFT_BOOST_CAP {
+                            *inv = (*inv + CRAFT_BOOST_UNITS).min(CRAFT_BOOST_CAP);
+                            *cd = cb_spec.header.cooldown;
+                            emit.push(Intent::Deed {
+                                actor: i as u32,
+                                verb: cb_spec.grants_tag as u8,
+                                magnitude: CRAFT_BOOST_UNITS as u16,
+                                target: i as u32,
+                            });
+                        }
                     }
                 }
             }
@@ -1001,6 +1049,27 @@ mod tests {
         assert!((b.last_z - 2.0).abs() < 1e-3, "scry refreshed the position from the truth");
         assert!(w.ability_cd[seer] > 0.0, "the scry went on cooldown");
         // scry is a self-learn — no cross-agent strike/influence emitted.
+        assert!(!w.intents.items.iter().any(|i| matches!(i, Intent::Strike { .. } | Intent::Influence { .. })));
+    }
+
+    /// A master crafter (master_craft) self-casts → an immediate burst of its trade-good (the
+    /// craft_boost op made live: an own-write to the caster's inventory).
+    #[test]
+    fn autocast_craft_boost_yields_trade_goods() {
+        let mut w = World::spawn(0xAB1C, 4);
+        let smith = 0usize;
+        w.profession[smith] = 4; // Blacksmith → produces Tool (index 3)
+        add_ability(&mut w.progression[smith], ID_MASTER_CRAFT);
+        w.ability_cd[smith] = 0.0;
+        w.combat[smith].state = FighterState::Idle as u8; // full health (no self-heal)
+        let tools_before = w.econ[smith].inventory[3];
+        cast(&mut w);
+        assert!(
+            w.econ[smith].inventory[3] > tools_before,
+            "the master crafter's flourish yielded trade-goods"
+        );
+        assert!(w.ability_cd[smith] > 0.0, "the craft_boost went on cooldown");
+        // a self-buff emits no cross-agent strike/influence.
         assert!(!w.intents.items.iter().any(|i| matches!(i, Intent::Strike { .. } | Intent::Influence { .. })));
     }
 
