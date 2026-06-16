@@ -473,31 +473,31 @@ _(append a dated entry per landed commit: what closed, gate status, hash)_
 
 ## Closing status — every reachable behavioral gap closed
 
-Every gap in the register that is **reachable within the headless Rust core's substrate** is now ✅ and
-green. The cognition spine, the full feature/GOAP layer (knowledge model incl. cross-craft + Know-goal,
-urchin/rob, affect free, recruit/warband-rally, ledger, caution, subsistence, scout, apprentice,
-reciprocity, signalsFold), the combatEvents master fold (witness beliefs, loot, capture→captivity→
-rescue, escheat, epithets, obituary), the news/economy cluster (gazette/newsread/econstats/reporter/
-bounties + the external-market caravans/arbitrage form + favored-price), dynamic occupation, the full
-director breadth (18 tropes, 6 roles, all 5 arc steppers, the SagaStore), and 11/12 ability ops are all
-at behavioral parity, deterministic, and M-invariant 1→32.
+Every gap in the register that is **reachable within the headless Rust core** is now ✅ and green —
+including the former "substrate-blocked" cluster, which a **percept/structure substrate** built this
+push has since unblocked. The cognition spine, the full feature/GOAP layer (knowledge model incl.
+cross-craft + Know-goal, urchin/rob, affect free + **wreck**, recruit/warband-rally, ledger, caution,
+subsistence, scout, apprentice, **migrate**, reciprocity, signalsFold), the combatEvents master fold
+(witness beliefs, loot, capture→captivity→rescue, escheat, epithets, obituary), the news/economy cluster
+(gazette/newsread/econstats/reporter/bounties + external-market caravans/arbitrage + favored-price),
+dynamic occupation, the full director breadth (18 tropes, 6 roles, all 5 arc steppers, the SagaStore),
+**biography**, the **percept/scarecrow** substrate, **construction + the epistemic homecoming**, the
+**inferDestination** ToM pursuit, **belief provenance/hops**, and 11/12 ability ops are all at behavioral
+parity, deterministic, and M-invariant 1→32 (206 sim-core + 4 determinism + 1 survival + 3 protocol +
+1 server green).
 
-**The residue is not "unbuilt features" — it is three deliberate substrate boundaries:**
+**The residue is now small, and each item is a deliberate boundary, not a portable feature left undone:**
 
-1. **Substrate the headless core intentionally omits** — building/structure state and mind-less props.
-   This blocks: `construction` (places-as-percepts + granary), `affect:wreck` (needs a structure
-   target), `percept`/`scarecrow` (disguise props), `walls` (collision geometry). These are
-   render/world-geometry concerns; the core is a cognition/economy simulator. Wiring them would require
-   a percept/structure layer that doc-22's core scope excludes by design.
+1. **Player-only systems with no player in the headless core** — `party` (player companions) and
+   `reputation` as the *player* standing ledger (the NPC analog — per-person `standing` → favored price
+   — IS built). No-op without an interactive fighter, which lives in the render frontend (doc-20).
 
-2. **Player-only systems with no player in the headless core** — `party` (player companions),
-   `reputation` as the *player* standing ledger (the NPC analog — per-person standing → favored price —
-   IS built). No-op without an interactive fighter.
+2. **Walls / collision geometry** — a render/world-geometry concern (like the TS dungeon/town walls,
+   which are collision-only meshes). The cognition core has no collision model by design.
 
-3. **A full multi-town worldgen substrate** — `migrate` (relocate to another town), true inter-town
-   `arbitrage`/`caravans` (vs. the external-market form already built), and the multi-town gazette
-   wire-desk. The behavioral *intent* of arbitrage/caravans is covered single-town; only a literal
-   second town is absent, which is a worldgen foundation refactor, not a feature port.
+3. **A literal second town** — true inter-town `arbitrage`/`caravans` and a multi-town gazette wire-desk.
+   The behavioral *intent* is already covered single-town (the external-market form; `migrate` resettles
+   toward the safe core). Only a second worldgen town is absent — a foundation refactor, not a port.
 
 4. **Render/LLM-only tails** — gazette template-article prose, procedural naming, the reporter's
    roaming-interview path. These produce human-facing TEXT from the numeric substrate that already
@@ -507,9 +507,16 @@ at behavioral parity, deterministic, and M-invariant 1→32.
    catalog specs (whirlwind/cleaving_blow/expose_weakness/plant_rumor) — wiring them would be dead code
    until those specs become grantable.
 
-**Bottom line:** the behavioral-parity bar is met for the cognition/economy/society core. What remains
-is, in each case, a *substrate the core deliberately lacks* (geometry/props, a player, a second town) or
-a *render-layer text tail* — not a portable feature left on the floor. Re-opening any of these is a
-scoped foundation decision (e.g. "add a structure/percept layer", "add multi-town worldgen"), best taken
+6. **Fine-grained cognition micro-fields** — a few belief metadata (suspicion/animacy/assoc), memory
+   STM/MTM/LTM tiering + `salient()`, the decide utility-oracle (`scoreAndSelect` — an architecture
+   refactor of the priority ladder), and a shared-larder `granary` benefit. Nuance/architecture, not
+   missing behavior; several are bounded by the marginal economy (a `granary` that adds agent-time risks
+   the survival floor) or would re-shape a working decide ladder for fidelity that isn't yet load-bearing.
+
+**Bottom line:** the behavioral-parity bar is met for the cognition / economy / society / **world**
+core. What remains is, in each case, a *render-layer concern* (a player, collision geometry, prose), a
+*literal second town*, *dead-code-if-wired* ability ops, or *fidelity micro-nuance* — not a portable
+feature left on the floor. Re-opening any of these is a scoped foundation decision (e.g. "add multi-town
+worldgen", "re-architect decide around a utility oracle"), best taken
 deliberately rather than as a gap-close, since each changes the core's scope rather than filling it in.
 
