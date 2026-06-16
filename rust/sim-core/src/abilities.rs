@@ -218,6 +218,13 @@ impl AbilitySpec {
         self.damage_of() == 0.0 && self.effects().iter().any(|e| e.op == EffectOp::PlantBelief)
     }
 
+    /// Is this a SCRY ability (read_mind) — a spec carrying a `scry` effect? The autocaster casts it to
+    /// firm up its vaguest belief from the truth (an ability-sanctioned reveal).
+    #[inline]
+    pub fn is_scry(&self) -> bool {
+        self.effects().iter().any(|e| e.op == EffectOp::Scry)
+    }
+
     /// The first `plant_belief` effect's amount (the charm/deceit magnitude), else 0 — `plantOf`.
     #[inline]
     pub fn plant_of(&self) -> f32 {
@@ -534,10 +541,11 @@ const PLANT_SCALE: f32 = 3_000.0;
 pub fn cast(world: &mut World) {
     let World {
         ref pos,
+        ref faction,
         ref level,
         ref alive,
-        ref beliefs,
         ref progression,
+        ref mut beliefs,
         ref mut combat,
         ref mut ability_cd,
         ..
@@ -548,8 +556,9 @@ pub fn cast(world: &mut World) {
     let out: Vec<Intent> = combat
         .par_iter_mut()
         .zip(ability_cd.par_iter_mut())
+        .zip(beliefs.par_iter_mut())
         .enumerate()
-        .map(|(i, (cb, cd))| {
+        .map(|(i, ((cb, cd), bel))| {
             let mut emit = Emit::none();
             if !alive[i] || cb.state == FighterState::Dead as u8 {
                 return emit;
@@ -581,7 +590,7 @@ pub fn cast(world: &mut World) {
 
             // ── 2) offensive: holds a ready damage ability + a believed-hostile in range → Strike ──
             if let Some(off) = first_known(known, |s| s.is_offensive()) {
-                if let Some((to, _)) = nearest_hostile_in_range(&beliefs[i], pos[i], off.header.range)
+                if let Some((to, _)) = nearest_hostile_in_range(bel, pos[i], off.header.range)
                 {
                     // level-scaled damage on the ability's base (offence-only, like combat.js).
                     let mult = (1.0 + level[i] as f32 * LVL_DMG_PER_LEVEL).min(LVL_DMG_CAP);
@@ -602,7 +611,7 @@ pub fn cast(world: &mut World) {
             //       The ability DSL's reach into the epistemic layer — a speaker/trickster shapes belief.
             if emit.n == 0 {
                 if let Some(soc) = first_known(known, |s| s.is_social()) {
-                    if let Some(to) = nearest_believed_in_range(&beliefs[i], pos[i], soc.header.range, i as u32)
+                    if let Some(to) = nearest_believed_in_range(bel, pos[i], soc.header.range, i as u32)
                     {
                         // amount sign: negative = charm (warm), positive = deceit (sour). Scaled into
                         // the i16 standing units the belief table uses.
@@ -614,6 +623,33 @@ pub fn cast(world: &mut World) {
                             verb: soc.grants_tag as u8,
                             magnitude: 1,
                             target: to,
+                        });
+                    }
+                }
+            }
+
+            // ── 4) scry: nothing else fired + holds a ready Scry ability (read_mind) → FIRM the
+            //       caster's vaguest believed-agent-in-range from the TRUTH (reveal its position +
+            //       faction, raise confidence). An OWN-write to the caster's belief row reading the
+            //       target's stable (already-moved) pos/faction column — a sanctioned ability truth-read,
+            //       like perceive. No cross-agent intent (the scryer learns; the target is untouched).
+            if emit.n == 0 {
+                if let Some(scry) = first_known(known, |s| s.is_scry()) {
+                    if let Some(bix) = vaguest_belief_in_range(bel, pos[i], scry.header.range, i as u32) {
+                        let subj = bel.bodies[bix].subject as usize;
+                        if subj < pos.len() {
+                            let b = &mut bel.bodies[bix];
+                            b.last_x = pos[subj][0];
+                            b.last_z = pos[subj][1];
+                            b.faction = faction[subj];
+                            b.confidence = b.confidence.max(58_000); // now KNOWN, first-hand-firm
+                        }
+                        *cd = scry.header.cooldown;
+                        emit.push(Intent::Deed {
+                            actor: i as u32,
+                            verb: scry.grants_tag as u8,
+                            magnitude: 1,
+                            target: bel.bodies[bix].subject,
                         });
                     }
                 }
@@ -741,6 +777,33 @@ fn nearest_believed_in_range(bt: &BeliefTable, from: [f32; 2], range: f32, self_
         }
     }
     best.map(|(id, _)| id)
+}
+
+/// The belief-table INDEX of the caster's VAGUEST (lowest-confidence) believed agent within `range` —
+/// the one a scry would most usefully firm up. Deterministic tie-break (lowest subject id); never self.
+#[inline]
+fn vaguest_belief_in_range(bt: &BeliefTable, from: [f32; 2], range: f32, self_id: u32) -> Option<usize> {
+    let r2 = range * range;
+    let mut best: Option<(usize, u16, u32)> = None; // (idx, confidence, subject)
+    for idx in 0..bt.len as usize {
+        let b = &bt.bodies[idx];
+        if b.subject == self_id {
+            continue;
+        }
+        let dx = from[0] - b.last_x;
+        let dz = from[1] - b.last_z;
+        if dx * dx + dz * dz > r2 {
+            continue;
+        }
+        let better = match best {
+            None => true,
+            Some((_, bc, bs)) => b.confidence < bc || (b.confidence == bc && b.subject < bs),
+        };
+        if better {
+            best = Some((idx, b.confidence, b.subject));
+        }
+    }
+    best.map(|(idx, _, _)| idx)
 }
 
 // ───────────────────────────── milestone grant (called from progression::tick) ─────────────────────────────
@@ -905,6 +968,35 @@ mod tests {
         assert!(w.ability_cd[0] > 0.0, "the self-cast went on cooldown");
         // no cross-agent strike from a self-cast.
         assert!(!w.intents.items.iter().any(|i| matches!(i, Intent::Strike { .. })));
+    }
+
+    /// A scryer (read_mind) firms its VAGUEST nearby belief from the truth — confidence up, position
+    /// refreshed to the target's actual location (the ability-sanctioned reveal; an own-write).
+    #[test]
+    fn autocast_scry_firms_a_vague_belief() {
+        let mut w = World::spawn(0xAB1B, 4);
+        let (seer, mark) = (0usize, 1usize);
+        w.pos[seer] = [0.0, 0.0];
+        w.pos[mark] = [5.0, 2.0]; // the TRUTH
+        add_ability(&mut w.progression[seer], ID_READ_MIND);
+        w.ability_cd[seer] = 0.0;
+        w.combat[seer].state = FighterState::Idle as u8;
+        // a vague, stale belief about the mark (low confidence, wrong position) within read_mind range.
+        let bt = &mut w.beliefs[seer];
+        bt.len = 1;
+        bt.subjects[0] = mark as u32;
+        bt.bodies[0].subject = mark as u32;
+        bt.bodies[0].last_x = 5.0;
+        bt.bodies[0].last_z = 0.0; // stale (true is z=2.0)
+        bt.bodies[0].confidence = 1_000; // vague
+
+        cast(&mut w);
+        let b = &w.beliefs[seer].bodies[0];
+        assert!(b.confidence > 1_000, "scry firmed the belief's confidence");
+        assert!((b.last_z - 2.0).abs() < 1e-3, "scry refreshed the position from the truth");
+        assert!(w.ability_cd[seer] > 0.0, "the scry went on cooldown");
+        // scry is a self-learn — no cross-agent strike/influence emitted.
+        assert!(!w.intents.items.iter().any(|i| matches!(i, Intent::Strike { .. } | Intent::Influence { .. })));
     }
 
     /// No believed-hostile in range ⇒ no offensive strike (peace stays peaceful).

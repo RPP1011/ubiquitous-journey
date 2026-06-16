@@ -101,9 +101,12 @@ walls (collision geometry) · percept/scarecrow (disguise props).
   positive) SOURS it. New `Intent::Influence{from,to,warm}` applied serially via warm/sour_belief; a
   3rd (social) autocaster branch fires it when nothing else did. Per-agent cooldown ledger already
   existed (`ability_cd`).
-⬜ scry (reveal/firm a belief) · trade_edge / craft_boost (timed economic buffs — need a buff-window
-  column) · shield (needs a shield-buffer column) · stun/slow/knockback/expose execution ·
-requirement gates (while_faithful/vs_sworn_foe/...) · procedural naming/generation.
+- ✅ **scry** (read_mind) live — the autocaster firms its VAGUEST nearby belief from the truth
+  (confidence up, position refreshed) as an own-write in the cast phase (a sanctioned ability reveal,
+  like perceive). A 4th autocaster branch; `is_scry`/`vaguest_belief_in_range`.
+⬜ trade_edge / craft_boost (timed economic buffs — need a buff-window column) · shield (needs a
+  shield-buffer column) · stun/slow/knockback/expose execution · requirement gates
+  (while_faithful/vs_sworn_foe/...) · procedural naming/generation.
 
 ### G9 — Cognition substrate depth
 ⬜ full belief fields (suspicion/sentiment/animacy/assoc/hops/provenance/destPos) ·
@@ -115,6 +118,10 @@ occupation choice (dynamic vs fixed-at-spawn) · decide utility-oracle (scoreAnd
 ## Progress log (newest first)
 
 _(append a dated entry per landed commit: what closed, gate status, hash)_
+
+- **G8 scry ability op** — read_mind made live: the autocaster firms its vaguest believed-agent-in-range
+  from the truth (reveal pos/faction, raise confidence) as an own-write in the (now belief-mutable) cast
+  phase — a sanctioned ability reveal, no cross-agent intent. 1 new test; 152 sim-core + gates green.
 
 - **G1 warband combat rally** — bands (which `groups.rs` forms by mutual standing) now *act*: a follower
   converges on its leader's foe when it also perceives that foe (shared-threat ToM; overrides personal
