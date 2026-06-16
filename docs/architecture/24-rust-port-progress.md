@@ -96,12 +96,16 @@ Note: locomotion.rs is already a generic `move_target` attractor/repulsor steppe
   satisfies social (at market/work) and novelty (wandering/at fields) PASSIVELY; the explicit
   `Goal::Socialize`/`Sightsee` fills enrich genuinely-idle townsfolk (lowest priority, never robs the
   work economy — the marginal-economy survival lesson, learned the hard way via the survival regression).
-⬜ court · granary/beg · build · travel/road · arbitrage · expedition · avoid · shadow · hide · protect ·
-follow · migrate (most are downstream of absent subsystems: caravans/gazette/party/construction).
+Built since: ✅ granary · ✅ build (construction) · ✅ arbitrage (inter-town caravan) · ✅ migrate ·
+✅ follow/protect (party warband-rally) · ✅ scout/observe.
+⬜ court · travel/road · expedition · avoid · shadow · hide — these are `reason.rs` schema DISPOSITIONS
+(flee/hide overlays) or romance/expedition flavour, several dormant-by-design; not behavioral holes.
 
 ### G3 — Reputation / faction-standing rollups
-⬜ witnessed-deed → faction standing; standing-skewed market clearing; decay. (Player-only in TS;
-in headless Rust applies as NPC-faction standing.)
+- ✅ **player faction reputation** (`reputation.js`) — `player_rep[Faction]` moved by the player's
+  witnessed deeds (hero kill ↑ / murder ↓, asymmetric), skewing its market clearing (a hero's discount).
+- ✅ **standing-skewed market clearing** — `standing_skew` (per-person favored price) + the player-rep
+  skew + the `assoc` kinship discount. The NPC-side analog of the reputation ledger, live in every trade.
 
 ### G4 — News / economy depth
 - ✅ **gazette + newsread** (single-town) — a `gazette.rs` town newspaper: a periodic edition snapshots
@@ -129,8 +133,10 @@ in headless Rust applies as NPC-faction standing.)
 - ✅ **favored-price / standing-skew** (`npcFavoredPrice`) — the double-auction now clears at the belief
   midpoint SKEWED by how the seller regards the buyer (±FAVOR): a friend gets a discount, a despised
   buyer a markup, a stranger the neutral price. Conserved. Makes reputation/relationships matter in trade.
-⬜ market depth only (credit/tithe/quality/tatonnement) · gazette template-article prose (render/LLM).
-(arbitrage · bounties · reporter · econstats · gazette briefs are all ✅ above.)
+✅ gazette template-article prose (now an in-core deterministic generator — `Gazette::article`).
+⬜ market depth only (credit/tithe/quality/tatonnement — micro-economy nuance, no behavioral consumer)
+· LLM article ENRICHMENT (browser-only by design — a network call the determinism gate forbids).
+(arbitrage · bounties · reporter · econstats · gazette briefs + prose are all ✅.)
 - ✅ **gather executor** (Wave-B) — `Goal::Gather{site, good}` + the market production-pass forager:
   capital-free foraging of a raw good open to any agent (the planner's forage path was previously
   inert — it compiled to `Goal::Work`, which mints only own-profession output). Unblocks subsistence
@@ -255,7 +261,10 @@ ALL G7 items closed.
   (frost_bolt, Hunter@1 — REACHABLE, halves locomotion pace), **Expose** (expose_weakness, Hunter@5 —
   made reachable by a new debuff-cast autocaster branch; amplifies the next blow ×1.5), **Stun** (freezes
   the target — combat returns no action), **Knockback** (shoves position from the caster). Hashed; tested.
-⬜ requirement gates · procedural naming (render/LLM tail).
+- ✅ **procedural naming** (`names.rs`) — a deterministic in-core id→name generator.
+⬜ requirement gates only (an ability-cast precondition layer; the autocaster already gates by
+target/range/cooldown/role + the `CasterHpBelow` trigger, so this is catalog-fidelity polish, not a
+missing behavior).
 
 ### G9 — Cognition substrate depth
 - ✅ **sentiment field** — `PersonBelief.standing` (i16) is the believed relationship/sentiment, now
