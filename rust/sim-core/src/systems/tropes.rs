@@ -130,6 +130,19 @@ const BEAT_MENTOR: u8 = 61;
 const BEAT_STARCROSS: u8 = 62;
 const BEAT_BOAST: u8 = 63;
 const BEAT_SPY_UNMASK: u8 = 64;
+const BEAT_FAVORED: u8 = 65;
+const BEAT_PROPHET: u8 = 66;
+const BEAT_TYRANT: u8 = 67;
+
+/// FAVORED RISE: a soul this poor (minor units) is a candidate for a patron's favour…
+const FAVORED_POOR_GOLD: i64 = 2_000;
+const FAVORED_WARM: i16 = 8_000;
+/// TYRANT OF THE MARKET: a soul this rich breeds resentment in a soul this poor.
+const TYRANT_RICH_GOLD: i64 = 30_000;
+const TYRANT_POOR_GOLD: i64 = 3_000;
+const TYRANT_SOUR: i16 = 7_000;
+/// PROPHET: the devotion a drawn follower feels for the faith-holder.
+const PROPHET_WARM: i16 = 9_000;
 
 /// BOAST BACKFIRES: a swaggering high-level soul whose self-regard grates on a neighbour (a mild chill).
 const BOAST_MIN_LEVEL: u8 = 6;
@@ -176,9 +189,12 @@ enum TropeKind {
     StarCrossed = 12,
     BoastBackfires = 13,
     SpyUnmasked = 14,
+    FavoredRise = 15,
+    Prophet = 16,
+    TyrantMarket = 17,
 }
 // (N_TROPES in components.rs must equal the count above.)
-const _: () = assert!(N_TROPES == 15);
+const _: () = assert!(N_TROPES == 18);
 
 pub fn tick(world: &mut World) {
     // Throttle: only consider drama on the evaluation boundary (never at tick 0).
@@ -205,7 +221,7 @@ pub fn tick(world: &mut World) {
     // major beats and must not be crowded out by the reliable warm filler), the warm filler LAST.
     // (kind, instigator) — fired left-to-right; the first whose constellation EXISTS wins this roll.
     type Row = (TropeKind, fn(&mut World, &[u32], usize, u32) -> bool);
-    let rows: [Row; 15] = [
+    let rows: [Row; 18] = [
         (TropeKind::Betrayal, do_betrayal),
         (TropeKind::SpyUnmasked, do_spy_unmasked),
         (TropeKind::StarCrossed, do_star_crossed),
@@ -216,6 +232,9 @@ pub fn tick(world: &mut World) {
         (TropeKind::RivalApprentices, do_rival_apprentices),
         (TropeKind::MentorPride, do_mentor_pride),
         (TropeKind::BoastBackfires, do_boast_backfires),
+        (TropeKind::Prophet, do_prophet),
+        (TropeKind::TyrantMarket, do_tyrant_market),
+        (TropeKind::FavoredRise, do_favored_rise),
         (TropeKind::Feud, do_feud),
         (TropeKind::Reunion, do_reunion),
         (TropeKind::MiserReformed, do_miser_reformed),
@@ -741,6 +760,77 @@ fn do_spy_unmasked(world: &mut World, folk: &[u32], off: usize, _now: u32) -> bo
     false
 }
 
+/// FAVORED RISE — fortune smiles on a humble soul: a POOR townsperson gains a patron's regard (a
+/// neighbour warms toward them — the rags-to-favour turn). Pro-social filler, gated on real poverty so
+/// it only lifts those who could use the lift.
+fn do_favored_rise(world: &mut World, folk: &[u32], off: usize, _now: u32) -> bool {
+    let len = folk.len();
+    for i in 0..len {
+        let a = folk[(off + i) % len];
+        if world.econ[a as usize].gold >= FAVORED_POOR_GOLD {
+            continue; // only a poor soul is "favoured" by the rise
+        }
+        for j in 0..len {
+            let b = folk[(off + j) % len];
+            if b != a && world.beliefs[b as usize].find(a).is_none() {
+                world.warm_belief(b as usize, a, FAVORED_WARM); // a patron's regard
+                push_beat(world, BEAT_FAVORED, a, b as i32);
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// PROPHET — a faith-holder draws a CONVERT: a soul of no faith adopts the prophet's god and feels
+/// devotion toward them (warmth). Grows the small-god's flock by one (the faith system's power then
+/// scales with believers). Builds on the faith substrate (only a faith-holder can prophesy).
+fn do_prophet(world: &mut World, folk: &[u32], off: usize, _now: u32) -> bool {
+    let len = folk.len();
+    for i in 0..len {
+        let prophet = folk[(off + i) % len];
+        let god = world.faith[prophet as usize];
+        if god == 0 {
+            continue; // no faith to spread
+        }
+        for j in 0..len {
+            let b = folk[(off + j) % len];
+            if b != prophet && world.faith[b as usize] == 0 {
+                world.faith[b as usize] = god; // a fresh convert joins the flock
+                world.warm_belief(b as usize, prophet, PROPHET_WARM); // devotion toward the prophet
+                push_beat(world, BEAT_PROPHET, prophet, b as i32);
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// TYRANT OF THE MARKET — a soul of great wealth breeds RESENTMENT in the poor: a destitute neighbour
+/// sours toward the rich (envy of the dominant — not latched, a grievance not yet enmity). The
+/// counterweight to favoured-rise; gated on a real wealth gap.
+fn do_tyrant_market(world: &mut World, folk: &[u32], off: usize, _now: u32) -> bool {
+    let len = folk.len();
+    for i in 0..len {
+        let rich = folk[(off + i) % len];
+        if world.econ[rich as usize].gold < TYRANT_RICH_GOLD {
+            continue; // not a tyrant of means
+        }
+        for j in 0..len {
+            let poor = folk[(off + j) % len];
+            if poor != rich
+                && world.econ[poor as usize].gold < TYRANT_POOR_GOLD
+                && world.beliefs[poor as usize].find(rich).is_none()
+            {
+                world.sour_belief(poor as usize, rich, TYRANT_SOUR, false); // resentment, not enmity
+                push_beat(world, BEAT_TYRANT, rich, poor as i32);
+                return true;
+            }
+        }
+    }
+    false
+}
+
 // ── helpers ─────────────────────────────────────────────────────────────────────────────────────
 
 /// Living-townsfolk ids in id order (the constellation pool every trope scans). Deterministic.
@@ -966,6 +1056,63 @@ mod tests {
         }).count();
         assert!(turned > 0, "nearby townsfolk turn on the exposed spy (latched hostile)");
         assert!(w.chronicle.iter().any(|b| b.kind == BEAT_SPY_UNMASK), "a spy-unmasked beat is logged");
+    }
+
+    /// FAVORED RISE: a poor soul gains a patron's regard (a neighbour warms toward them).
+    #[test]
+    fn fortune_favors_a_poor_soul() {
+        let mut w = World::spawn(0x9ED1, 6);
+        all_townsfolk(&mut w);
+        for i in 0..w.n {
+            w.econ[i].gold = 50_000; // everyone comfortable…
+        }
+        w.econ[0].gold = 500; // …except agent 0, who is poor (the favoured)
+        let folk = living_townsfolk(&w);
+        assert!(do_favored_rise(&mut w, &folk, 0, 100), "a poor soul is favoured by fortune");
+        let warmed = (1..w.n).any(|b| {
+            w.beliefs[b].find(0).map(|ix| w.beliefs[b].bodies[ix].standing > 0).unwrap_or(false)
+        });
+        assert!(warmed, "a patron warms toward the favoured soul");
+        assert!(w.chronicle.iter().any(|b| b.kind == BEAT_FAVORED), "a favoured beat is logged");
+    }
+
+    /// PROPHET: a faith-holder draws a convert (who joins the flock + feels devotion).
+    #[test]
+    fn a_prophet_draws_a_convert() {
+        let mut w = World::spawn(0x9ED2, 6);
+        all_townsfolk(&mut w);
+        for i in 0..w.n {
+            w.faith[i] = 0; // a faithless town…
+        }
+        w.faith[0] = 3; // …but agent 0 holds a small god
+        let folk = living_townsfolk(&w);
+        assert!(do_prophet(&mut w, &folk, 0, 100), "a faith-holder prophesies");
+        let convert = (1..w.n).find(|&b| w.faith[b] == 3).expect("someone joined the flock");
+        assert_eq!(w.faith[convert], 3, "the convert adopts the prophet's god");
+        let ix = w.beliefs[convert].find(0).expect("the convert regards the prophet");
+        assert!(w.beliefs[convert].bodies[ix].standing > 0, "the convert feels devotion");
+        assert!(w.chronicle.iter().any(|b| b.kind == BEAT_PROPHET), "a prophet beat is logged");
+    }
+
+    /// TYRANT OF THE MARKET: great wealth breeds a poor neighbour's resentment (soured, not hostile).
+    #[test]
+    fn wealth_breeds_resentment() {
+        let mut w = World::spawn(0x9ED3, 6);
+        all_townsfolk(&mut w);
+        w.econ[0].gold = 100_000; // a tyrant of means
+        for i in 1..w.n {
+            w.econ[i].gold = 500; // the destitute
+        }
+        let folk = living_townsfolk(&w);
+        assert!(do_tyrant_market(&mut w, &folk, 0, 100), "wealth breeds resentment");
+        let resentful = (1..w.n).any(|b| {
+            w.beliefs[b].find(0).map(|ix| {
+                let body = w.beliefs[b].bodies[ix];
+                body.standing < 0 && body.flags & HOSTILE_BIT == 0
+            }).unwrap_or(false)
+        });
+        assert!(resentful, "a poor soul resents the rich (soured, not hostile)");
+        assert!(w.chronicle.iter().any(|b| b.kind == BEAT_TYRANT), "a tyrant beat is logged");
     }
 
     /// A HOUSE FEUD is recorded between two sizeable houses (and the canonical pair is queryable).

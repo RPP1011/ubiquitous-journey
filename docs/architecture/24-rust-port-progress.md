@@ -121,12 +121,12 @@ Missing:
   VENDETTA saga (≥3 blows) between two souls of different houses ESCALATES into a dynastic HOUSE FEUD
   (the strife outgrows the two; their kin inherit it via lineage). The reckoning/`_advanceArcs` flagship.
   ⬜ still: the other 4 arc steppers (tyrant-fall/spy-web/romance/accused).
-- 🟡 **tropes 9 → 15**: + mistaken-jealousy, rival-apprentices, mentor-pride, star-crossed (across a
-  house feud), **boast-backfires** (a high-level swaggerer grates on a neighbour), **spy-unmasked** (an
-  exposed `role==spy` is feared — nearby townsfolk latch hostile; builds on the intrigue substrate). All
-  compose from belief helpers + level/role/house substrate + the trope dispatcher.
-⬜ ~5 more tropes (favored-rise/prodigal-return/prophet/tyrant-market/…) · role machinery
-  (bodyguard/duel/protégé/guardian/legend/avenger) · caravans.
+- ✅ **tropes 9 → 18** (TS parity count): + mistaken-jealousy, rival-apprentices, mentor-pride,
+  star-crossed (across a house feud), boast-backfires, spy-unmasked (intrigue), **favored-rise** (a poor
+  soul gains a patron's regard), **prophet** (a faith-holder draws a convert into the flock + devotion),
+  **tyrant-market** (great wealth breeds a poor neighbour's resentment). All compose from existing
+  belief/level/role/gold/faith/house substrate + the trope dispatcher.
+⬜ role machinery (bodyguard/duel/protégé/guardian/legend/avenger) · caravans · the other 4 arc steppers.
 
 ### G7 — World subsystems absent
 ⬜ construction (places-as-percepts + granary) · party (player companions) · biography ·
@@ -161,11 +161,11 @@ occupation choice (dynamic vs fixed-at-spawn) · decide utility-oracle (scoreAnd
 
 _(append a dated entry per landed commit: what closed, gate status, hash)_
 
-- **G6 tropes (9 → 15)** — across three commits, added 6 tropes that compose from existing substrate:
-  **mistaken-jealousy** (recoverable strain), **rival-apprentices** (same-craft chill), **mentor-pride**
-  (master↔apprentice warmth), **star-crossed** (love across a house feud), **boast-backfires** (a
-  swaggerer grates), and **spy-unmasked** (an exposed intrigue spy is feared/latched). 6 new tests; all
-  observer/director-driven, serial ⇒ deterministic, economy-safe. (N_TROPES 9→15.)
+- **G6 tropes (9 → 18, TS parity count)** — across four commits, added 9 tropes that compose from
+  existing substrate: mistaken-jealousy, rival-apprentices, mentor-pride, star-crossed (across a house
+  feud), boast-backfires, spy-unmasked (intrigue role), **favored-rise** (a poor soul gains a patron),
+  **prophet** (a faith-holder draws a convert + devotion), **tyrant-market** (wealth breeds resentment).
+  9 new tests; all observer/director-driven, serial ⇒ deterministic, economy-safe. (N_TROPES 9→18.)
 
 - **G8 craft_boost ability op** — master_craft made live: a master crafter self-casts (the 5th
   autocaster branch) for an immediate burst of its profession's trade-good (own-write to inventory,
