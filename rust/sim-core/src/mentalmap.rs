@@ -68,6 +68,48 @@ impl MentalMap {
         MentalMap { places }
     }
 
+    /// MULTI-TOWN build: the union of every town's places (market/centre/work-sites tagged by town id),
+    /// plus the shared cardinal arena-rim escapes. An agent's `nearest()` query naturally finds the place
+    /// in its OWN town (it's the closest), so the affordance layer works per-town for free.
+    pub fn build_multi(
+        markets: &[[f32; 2]],
+        work_sites: &[[[f32; 2]; crate::world::N_WORK_SITES]],
+        town_centers: &[[f32; 2]],
+        arena: f32,
+    ) -> MentalMap {
+        let mut places = Vec::new();
+        for t in 0..town_centers.len() {
+            let tid = t as u16;
+            places.push(Place {
+                kind: 0,
+                x: markets[t][0],
+                z: markets[t][1],
+                affords: AFF_CROWD | AFF_SAFE,
+                town: tid,
+            });
+            places.push(Place {
+                kind: 1,
+                x: town_centers[t][0],
+                z: town_centers[t][1],
+                affords: AFF_COMFORT | AFF_SAFE,
+                town: tid,
+            });
+            for s in &work_sites[t] {
+                places.push(Place { kind: 2, x: s[0], z: s[1], affords: AFF_RESOURCE, town: tid });
+            }
+        }
+        for (dx, dz) in [(1.0f32, 0.0f32), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
+            places.push(Place {
+                kind: 3,
+                x: dx * arena * 0.95,
+                z: dz * arena * 0.95,
+                affords: AFF_EXIT | AFF_CONCEAL,
+                town: 0,
+            });
+        }
+        MentalMap { places }
+    }
+
     /// The nearest place affording ANY of `mask` within `range` of `from` (deterministic: closest, then
     /// lowest index). `None` when no known place qualifies.
     pub fn nearest(&self, mask: u16, from: [f32; 2], range: f32) -> Option<&Place> {

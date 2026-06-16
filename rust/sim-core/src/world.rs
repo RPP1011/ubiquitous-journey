@@ -17,6 +17,12 @@ use crate::rng::DeterministicRng;
 use crate::systems;
 
 const TOWN_RADIUS: f32 = 180.0;
+/// How many distinct towns the world holds (multi-town worldgen). Kept at 2 so each town stays large
+/// enough to be economically viable — the marginal larder starves if a town's farmer pool is too thin.
+pub const N_TOWNS: usize = 2;
+/// Radius of the ring the town centres are placed on (well inside ARENA_CLAMP, far enough apart that the
+/// two towns' work/market ranges never overlap — so each economy is genuinely local).
+const TOWN_SPREAD: f32 = 280.0;
 const ARENA_CLAMP: f32 = 590.0;
 pub const N_WORK_SITES: usize = 7; // one per Profession variant (index by `Profession as usize`).
 
@@ -93,9 +99,13 @@ pub struct World {
     pub intents: IntentQueue,
 
     // ── static world (read-only after worldgen) ──
-    pub market: [f32; 2],
-    pub work_sites: [[f32; 2]; N_WORK_SITES],
-    pub town_center: [f32; 2],
+    // MULTI-TOWN: the map holds `N_TOWNS` distinct towns. Each has its own market, work sites, and centre,
+    // indexed by an agent's `town[i]`. Trade is proximity-local (a market's 18 m), so the towns are
+    // economically distinct for free; the caravan arbitrages the price gap BETWEEN them.
+    pub markets: Vec<[f32; 2]>,                  // per-town market position
+    pub work_sites: Vec<[[f32; 2]; N_WORK_SITES]>, // per-town work/resource nodes
+    pub town_centers: Vec<[f32; 2]>,            // per-town centre
+    pub town_center: [f32; 2],                  // town 0's centre (the legacy single-core readers' anchor)
     pub base_price: [i64; crate::components::N_COMMODITIES],
     pub map: MentalMap, // affordance-queried static places (read-only after worldgen)
 
@@ -128,13 +138,13 @@ pub struct World {
     /// Communal GRANARY food store (a `construction.js` building benefit): surplus-bearing farmers near
     /// the granary DEPOSIT spare Food; the hungry+foodless near it WITHDRAW a meal. A conserved buffer
     /// (food only moves between inventories and this stock — no minting) that smooths the marginal larder.
-    pub granary_stock: i32,
-    pub granary_pos: [f32; 2], // where the granary stands (town core); 0,0 until built
+    pub granary_stock: Vec<i32>,    // per-town communal Food store
+    pub granary_pos: Vec<[f32; 2]>, // per-town granary position (town core); 0,0 until built
     /// The town's defensive WALL (`walls.js`): a collision ring around the core with GATE gaps. Movement
     /// that would cross the ring anywhere but a gate is blocked (radially) — so raiders funnel through the
     /// gates instead of swarming straight in, while townsfolk (whose whole world is inside it) never touch
     /// it. Static after build (not hashed; its EFFECT on `pos` is). `radius == 0` ⇒ no wall yet.
-    pub wall: TownWall,
+    pub walls: Vec<TownWall>, // one defensive ring per town (indexed by `town[i]`)
     // ── PERCEPTS (js/sim/percept.js): hittable, perceivable PROPS with no mind. A Scarecrow dressed as
     // a person; a finished Building. Kept in their OWN id-space (`PERCEPT_ID_BASE + k`, disjoint from
     // agent ids) so every `!agent` guard in the cognition feedback path skips them: an agent can BELIEVE
@@ -280,12 +290,30 @@ impl World {
     /// Worldgen: `n` agents clustered in one dense town with professions, gold, and home anchors.
     pub fn spawn(seed: u64, n: usize) -> World {
         let mut gen = DeterministicRng::seed(seed, 0xA11CE);
-        let mut work_sites = [[0.0f32; 2]; N_WORK_SITES];
-        for s in work_sites.iter_mut() {
-            let r = TOWN_RADIUS * (0.4 + 0.6 * gen.next_f32());
-            let a = gen.next_f32() * std::f32::consts::TAU;
-            *s = [r * a.cos(), r * a.sin()];
+        // MULTI-TOWN geography: lay out `N_TOWNS` town centres spread across the arena, each with its own
+        // ring of work sites + a market at its centre. (Single-town worlds are just N_TOWNS == 1.)
+        let town_centers: Vec<[f32; 2]> = (0..N_TOWNS)
+            .map(|t| {
+                if N_TOWNS == 1 {
+                    [0.0, 0.0]
+                } else {
+                    // evenly spaced on a ring well inside the arena clamp.
+                    let a = t as f32 / N_TOWNS as f32 * std::f32::consts::TAU;
+                    [TOWN_SPREAD * a.cos(), TOWN_SPREAD * a.sin()]
+                }
+            })
+            .collect();
+        let mut work_sites: Vec<[[f32; 2]; N_WORK_SITES]> = Vec::with_capacity(N_TOWNS);
+        for tc in &town_centers {
+            let mut sites = [[0.0f32; 2]; N_WORK_SITES];
+            for s in sites.iter_mut() {
+                let r = TOWN_RADIUS * (0.4 + 0.6 * gen.next_f32());
+                let a = gen.next_f32() * std::f32::consts::TAU;
+                *s = [tc[0] + r * a.cos(), tc[1] + r * a.sin()];
+            }
+            work_sites.push(sites);
         }
+        let markets: Vec<[f32; 2]> = town_centers.clone();
         let mut w = World {
             n,
             seed,
@@ -331,9 +359,10 @@ impl World {
             surface: Vec::with_capacity(n),
             grid: Grid::new(),
             intents: IntentQueue::new(),
-            market: [0.0, 0.0],
+            markets,
             work_sites,
-            town_center: [0.0, 0.0],
+            town_center: town_centers[0],
+            town_centers,
             base_price: [10, 8, 12, 30, 15, 40],
             map: MentalMap::default(),
             sim_rng: DeterministicRng::seed(seed, 0x50C1E7),
@@ -355,9 +384,9 @@ impl World {
             bounty_target: -1,
             bounty_fund: 0,
             caravan_treasury: 200_000, // the external market's gold (counted in total_gold ⇒ conserved)
-            granary_stock: 0,
-            granary_pos: [0.0, 0.0],
-            wall: TownWall::default(),
+            granary_stock: vec![0; N_TOWNS],
+            granary_pos: vec![[0.0, 0.0]; N_TOWNS],
+            walls: Vec::new(),
             percept_n: 0,
             percept_pos: Vec::new(),
             percept_kind: Vec::new(),
@@ -366,9 +395,12 @@ impl World {
             percept_flags: Vec::new(),
         };
         for i in 0..n {
+            // assign this agent to a town (round-robin keeps the towns balanced) and cluster it there.
+            let town = (i % N_TOWNS) as u8;
+            let tc = w.town_centers[town as usize];
             let r = TOWN_RADIUS * gen.next_f32().sqrt();
             let a = gen.next_f32() * std::f32::consts::TAU;
-            let p = [r * a.cos(), r * a.sin()];
+            let p = [tc[0] + r * a.cos(), tc[1] + r * a.sin()];
             w.pos.push(p);
             let f = if gen.next_f32() < 0.06 { Faction::Monster } else { Faction::Townsfolk };
             w.faction.push(f as u8);
@@ -419,7 +451,7 @@ impl World {
             w.home.push(p); // home = spawn point (Wave-1)
             w.suspicion.push(0);
             w.home_belief_id.push(u32::MAX); // no home-building discovered yet
-            w.town.push(0);
+            w.town.push(town as u16);
             w.rng.push(DeterministicRng::seed(seed, i as u64));
             w.progression.push(Progression::default());
             w.ability_cd.push(0.0);
@@ -441,20 +473,24 @@ impl World {
             w.role.push(0);
         }
         // build the static affordance map once from the finished geography.
-        w.map = MentalMap::build(w.market, &w.work_sites, w.town_center, ARENA_CLAMP);
-        // raise the defensive WALL ring around the town: outside every work site/dweller (so the economy
+        w.map = MentalMap::build_multi(&w.markets, &w.work_sites, &w.town_centers, ARENA_CLAMP);
+        // raise a defensive WALL ring around EACH town: outside every work site/dweller (so the economy
         // never touches it), with evenly-spaced gates the only way through (raiders must funnel in).
-        w.wall = TownWall {
-            center: w.town_center,
-            radius: TOWN_RADIUS + 30.0,
-            gate_a: [
-                0.0,
-                std::f32::consts::FRAC_PI_2,
-                std::f32::consts::PI,
-                std::f32::consts::PI * 1.5,
-            ],
-            gate_half: 0.28, // ~16° openings
-        };
+        w.walls = w
+            .town_centers
+            .iter()
+            .map(|&c| TownWall {
+                center: c,
+                radius: TOWN_RADIUS + 30.0,
+                gate_a: [
+                    0.0,
+                    std::f32::consts::FRAC_PI_2,
+                    std::f32::consts::PI,
+                    std::f32::consts::PI * 1.5,
+                ],
+                gate_half: 0.28, // ~16° openings
+            })
+            .collect();
         // seed the initial relationship constellations (rival apprentices, etc.) for the director.
         systems::seeding::seed_narratives(&mut w);
         w
@@ -1020,9 +1056,12 @@ impl World {
         if self.tick == BUILD_AT {
             self.construct_homes(); // raise the town's homes ONCE, early (periodic rebuild starves the
                                     // marginal economy — it pulls food-producers off on comfort trips)
-            // and raise the communal GRANARY at the town core (a building percept + its food store).
-            self.granary_pos = self.town_center;
-            self.spawn_percept(self.town_center, 2, Faction::Townsfolk as u8, 200.0, false);
+            // and raise a communal GRANARY at EACH town core (a building percept + its food store).
+            for t in 0..self.town_centers.len() {
+                let c = self.town_centers[t];
+                self.granary_pos[t] = c;
+                self.spawn_percept(c, 2, Faction::Townsfolk as u8, 200.0, false);
+            }
         }
         if self.tick % GRANARY_EVERY == 0 {
             self.tend_granary(); // farmers deposit surplus; the hungry draw a meal (conserved buffer)
@@ -1077,29 +1116,31 @@ impl World {
     /// — so it can only SMOOTH the marginal economy (surplus → the desperate), never destabilise it.
     /// Serial id-order ⇒ deterministic. Only townsfolk within reach of the core granary participate.
     fn tend_granary(&mut self) {
-        const REACH2: f32 = 70.0 * 70.0; // within this of the granary to use it
-        const DEPOSIT_BAR: i32 = 4; // a farmer keeps this many Food for itself; only the EXCESS is shared
-        const HUNGRY_BAR: f32 = 0.4; // withdraw only when genuinely hungry (and out of food)
-        const CAP: i32 = 600; // the granary holds at most this much (a silo, not a black hole)
-        let g = self.granary_pos;
+        const REACH2: f32 = 90.0 * 90.0; // within this of the granary to use it (a town-wide larder)
+        const DEPOSIT_BAR: i32 = 3; // a farmer keeps this many Food for itself; only the EXCESS is shared
+        const HUNGRY_BAR: f32 = 0.55; // feed a soul BEFORE it's at death's door (the safety net widens)
+        const CAP: i32 = 800; // the granary holds at most this much (a silo, not a black hole)
         let food = Commodity::Food as usize;
         for i in 0..self.n {
             if !self.alive[i] || self.faction[i] != Faction::Townsfolk as u8 {
                 continue;
             }
+            // each agent uses ITS OWN town's granary (multi-town).
+            let t = (self.town[i] as usize).min(self.granary_pos.len() - 1);
+            let g = self.granary_pos[t];
             let dx = self.pos[i][0] - g[0];
             let dz = self.pos[i][1] - g[1];
             if dx * dx + dz * dz > REACH2 {
                 continue;
             }
             let inv = self.econ[i].inventory[food];
-            // a FARMER with real surplus tops up the silo (conserved: inventory → stock).
-            if self.profession[i] == 1 && inv > DEPOSIT_BAR && self.granary_stock < CAP {
+            // a FARMER with real surplus tops up its town's silo (conserved: inventory → stock).
+            if self.profession[i] == 1 && inv > DEPOSIT_BAR && self.granary_stock[t] < CAP {
                 self.econ[i].inventory[food] -= 1;
-                self.granary_stock += 1;
-            } else if inv == 0 && self.needs[i].hunger < HUNGRY_BAR && self.granary_stock > 0 {
-                // a hungry, foodless soul draws a meal from the common store (conserved: stock → inventory).
-                self.granary_stock -= 1;
+                self.granary_stock[t] += 1;
+            } else if inv == 0 && self.needs[i].hunger < HUNGRY_BAR && self.granary_stock[t] > 0 {
+                // a hungry, foodless soul draws a meal from its town's store (conserved: stock → inventory).
+                self.granary_stock[t] -= 1;
                 self.econ[i].inventory[food] += 1;
             }
         }
@@ -1509,56 +1550,86 @@ impl World {
         self.econ.iter().map(|e| e.gold + e.stash).sum::<i64>() + self.bounty_fund + self.caravan_treasury
     }
 
-    /// RUN A CARAVAN (`arbitrage.ts` / caravans, the single-town form): a merchant trades with an
-    /// EXTERNAL market across a price DIFFERENTIAL — EXPORTING the town's most-surplus non-food good at a
-    /// premium (the external market pays the merchant from its `caravan_treasury`) and IMPORTING a luxury
-    /// the town pays the external market for. The merchant profits on the spread; goods (un-conserved)
-    /// leave/arrive, gold only MOVES between the merchant and the held treasury ⇒ conserved. Food is
-    /// NEVER exported (the survival-critical staple stays home). Serial society pass ⇒ deterministic.
+    /// RUN A CARAVAN (`arbitrage.ts` / caravans — the REAL inter-town form): find the non-food good with
+    /// the widest believed-price GAP between two towns, and haul a load from the CHEAP town to the DEAR
+    /// one. A merchant in the cheap town (holding the good) sells it to a merchant in the dear town at the
+    /// dear town's price: goods move cheap→dear, gold moves dear→cheap, BOTH profit on the spread. Fully
+    /// conserved (gold + goods move between two real agents). Food is never hauled (the staple stays
+    /// home). With a single town this is a no-op. Serial society pass ⇒ deterministic.
     fn run_caravan(&mut self) {
         use crate::components::N_COMMODITIES;
-        const EXPORT_QTY: i32 = 4;
-        const EXPORT_PREMIUM: i64 = 130; // %: the external market pays 1.3× the home base price
-        const IMPORT_QTY: i32 = 2;
-        const IMPORT_MARKUP: i64 = 140; // %: the town pays 1.4× to import the luxury
-        const LUXURY: usize = 5; // Potion — the imported luxury
-        // the caravan merchant = the richest living townsperson (id-order tie-break).
-        let mut merchant: Option<usize> = None;
-        let mut best_gold = i64::MIN;
+        const HAUL: i32 = 4;
+        let n_towns = self.town_centers.len();
+        if n_towns < 2 {
+            return; // nothing to arbitrage between
+        }
+        // per-town average believed price for each good (living townsfolk only). Deterministic reduce.
+        let mut sum = vec![[0i64; N_COMMODITIES]; n_towns];
+        let mut cnt = vec![0i64; n_towns];
         for i in 0..self.n {
-            if self.alive[i] && self.faction[i] == Faction::Townsfolk as u8 && self.econ[i].gold > best_gold {
-                best_gold = self.econ[i].gold;
-                merchant = Some(i);
+            if self.alive[i] && self.faction[i] == Faction::Townsfolk as u8 {
+                let t = (self.town[i] as usize).min(n_towns - 1);
+                cnt[t] += 1;
+                for g in 0..N_COMMODITIES {
+                    let pb = self.econ[i].price_belief[g] as i64;
+                    sum[t][g] += if pb > 0 { pb } else { self.base_price[g] };
+                }
             }
         }
-        let m = match merchant {
-            Some(m) => m,
-            None => return,
-        };
-        // EXPORT: the merchant's largest NON-FOOD surplus good (g≥1), sold abroad at a premium.
-        let mut eg = 0usize;
-        let mut emax = EXPORT_QTY; // require at least an export load
+        // the widest gap over (good g≥1, cheap town, dear town).
+        let avg = |t: usize, g: usize| if cnt[t] > 0 { sum[t][g] / cnt[t] } else { self.base_price[g] };
+        let (mut best_gap, mut best) = (0i64, None);
         for g in 1..N_COMMODITIES {
-            if self.econ[m].inventory[g] >= emax {
-                emax = self.econ[m].inventory[g];
-                eg = g;
+            for a in 0..n_towns {
+                for b in 0..n_towns {
+                    if a == b {
+                        continue;
+                    }
+                    let gap = avg(b, g) - avg(a, g); // a cheap, b dear
+                    if gap > best_gap {
+                        best_gap = gap;
+                        best = Some((g, a, b));
+                    }
+                }
             }
         }
-        if eg != 0 {
-            let revenue = self.base_price[eg] * EXPORT_QTY as i64 * EXPORT_PREMIUM / 100;
-            if self.caravan_treasury >= revenue {
-                self.econ[m].inventory[eg] -= EXPORT_QTY; // goods leave with the caravan
-                self.econ[m].gold += revenue;
-                self.caravan_treasury -= revenue; // the external market pays
+        let (g, src_town, dst_town) = match best {
+            Some(x) => x,
+            None => return, // no profitable spread
+        };
+        // the richest townsperson in the CHEAP town holding a haul, and in the DEAR town who can afford it.
+        let price = avg(dst_town, g) * HAUL as i64;
+        let pick = |town: usize, need_goods: bool, world: &World| -> Option<usize> {
+            let mut best_i = None;
+            let mut best_gold = i64::MIN;
+            for i in 0..world.n {
+                if world.alive[i]
+                    && world.faction[i] == Faction::Townsfolk as u8
+                    && world.town[i] as usize == town
+                    && world.econ[i].gold > best_gold
+                    && (!need_goods || world.econ[i].inventory[g] >= HAUL)
+                {
+                    best_gold = world.econ[i].gold;
+                    best_i = Some(i);
+                }
             }
+            best_i
+        };
+        let seller = match pick(src_town, true, self) { Some(s) => s, None => return };
+        let buyer = match pick(dst_town, false, self) { Some(b) => b, None => return };
+        if seller == buyer || self.econ[buyer].gold < price {
+            return;
         }
-        // IMPORT: bring back a luxury the merchant pays the external market for (gold → treasury).
-        let cost = self.base_price[LUXURY] * IMPORT_QTY as i64 * IMPORT_MARKUP / 100;
-        if self.econ[m].gold >= cost {
-            self.econ[m].gold -= cost;
-            self.caravan_treasury += cost;
-            self.econ[m].inventory[LUXURY] += IMPORT_QTY; // goods arrive with the caravan
-        }
+        // the haul: goods cheap→dear, gold dear→cheap, at the dear town's price. Conserved.
+        self.econ[seller].inventory[g] -= HAUL;
+        self.econ[buyer].inventory[g] += HAUL;
+        self.econ[buyer].gold -= price;
+        self.econ[seller].gold += price;
+        // ECON TELEMETRY: the caravan trade folds into the observer counters like any other.
+        self.econstats.trades += 1;
+        self.econstats.volume += HAUL as u64;
+        self.econstats.gold_flowed += price.max(0) as u64;
+        self.econstats.good_volume[g] += HAUL as u64;
     }
 
     /// POST A BOUNTY (`bounties.ts`): when a hostile MONSTER/RAIDER is menacing the town core and no
@@ -1903,6 +1974,36 @@ mod tests {
         assert!(w.beliefs[near].bodies[b].flags & 0x01 == 0, "a hero is not believed hostile");
     }
 
+    /// MULTI-TOWN WORLDGEN: the world holds `N_TOWNS` distinct towns — each with its own centre, market,
+    /// work sites, wall, and granary — and every agent is assigned (and clustered near) one of them.
+    #[test]
+    fn worldgen_lays_out_distinct_towns() {
+        let w = World::spawn(0x70D, 200);
+        assert_eq!(w.town_centers.len(), N_TOWNS, "N_TOWNS centres");
+        assert_eq!(w.work_sites.len(), N_TOWNS, "per-town work sites");
+        assert_eq!(w.markets.len(), N_TOWNS, "per-town markets");
+        assert_eq!(w.walls.len(), N_TOWNS, "a wall per town");
+        // the two town centres are genuinely apart (their economies don't overlap).
+        if N_TOWNS >= 2 {
+            let d = ((w.town_centers[0][0] - w.town_centers[1][0]).powi(2)
+                + (w.town_centers[0][1] - w.town_centers[1][1]).powi(2))
+            .sqrt();
+            assert!(d > TOWN_RADIUS * 2.0, "towns are far enough apart to be distinct (d={d})");
+        }
+        // every town is populated, and each agent lives near ITS town centre.
+        let mut pop = vec![0usize; N_TOWNS];
+        for i in 0..w.n {
+            let t = w.town[i] as usize;
+            pop[t] += 1;
+            let tc = w.town_centers[t];
+            let d = ((w.pos[i][0] - tc[0]).powi(2) + (w.pos[i][1] - tc[1]).powi(2)).sqrt();
+            assert!(d <= TOWN_RADIUS + 1.0, "agent {i} is clustered in its own town");
+        }
+        for (t, &p) in pop.iter().enumerate() {
+            assert!(p > 0, "town {t} is populated");
+        }
+    }
+
     /// WALL COLLISION: a move that would cross the ring at a SOLID span is blocked back to its own side;
     /// a move through a GATE opening passes freely. (The town's defensive perimeter, `walls.js`.)
     #[test]
@@ -1937,12 +2038,13 @@ mod tests {
     #[test]
     fn the_granary_redistributes_surplus_food() {
         let mut w = World::spawn(0x6A11, 4);
-        w.granary_pos = [0.0, 0.0];
+        w.granary_pos[0] = [0.0, 0.0];
         let (farmer, pauper) = (0usize, 1usize);
         let food = Commodity::Food as usize;
         for &i in &[farmer, pauper] {
             w.alive[i] = true;
             w.faction[i] = Faction::Townsfolk as u8;
+            w.town[i] = 0; // both belong to town 0 (whose granary they stand at)
             w.pos[i] = [2.0, 0.0];
         }
         w.profession[farmer] = 1; // a farmer
@@ -1950,15 +2052,15 @@ mod tests {
         w.econ[pauper].inventory[food] = 0; // and a foodless neighbour
         w.needs[pauper].hunger = 0.1; // who is hungry
 
-        let total_before = w.econ[farmer].inventory[food] + w.econ[pauper].inventory[food] + w.granary_stock;
+        let total_before = w.econ[farmer].inventory[food] + w.econ[pauper].inventory[food] + w.granary_stock[0];
         // one pass (id order): the farmer deposits a surplus unit, the foodless pauper draws one out.
         w.tend_granary();
         assert_eq!(w.econ[farmer].inventory[food], 7, "one unit left the surplus farmer's store");
         assert!(w.econ[pauper].inventory[food] > 0, "the hungry pauper drew a meal from the common store");
-        let total_after = w.econ[farmer].inventory[food] + w.econ[pauper].inventory[food] + w.granary_stock;
+        let total_after = w.econ[farmer].inventory[food] + w.econ[pauper].inventory[food] + w.granary_stock[0];
         assert_eq!(total_before, total_after, "food is conserved — only moved (farmer→silo→pauper), never minted");
         // a WELL-FED soul does not raid the silo: nothing flows to one that isn't hungry.
-        let stock = w.granary_stock;
+        let stock = w.granary_stock[0];
         w.econ[pauper].inventory[food] = 0;
         w.needs[pauper].hunger = 0.9; // content
         w.tend_granary();
@@ -2500,31 +2602,40 @@ mod tests {
         assert!(farmers1 >= farmers0, "the food floor protected the farmers ({farmers0} -> {farmers1})");
     }
 
-    /// CARAVAN / ARBITRAGE: a merchant exports surplus + imports a luxury across the external price
-    /// differential — profiting on the spread; gold conserved (it only moves merchant↔external treasury).
+    /// CARAVAN / ARBITRAGE (inter-town): a merchant hauls a good from the town where it's CHEAP to the
+    /// town where it's DEAR — goods move cheap→dear, gold moves dear→cheap, both profit on the spread.
+    /// Fully conserved (gold + goods move between two real agents in two different towns).
     #[test]
-    fn a_caravan_trades_the_spread_conserving_gold() {
+    fn a_caravan_hauls_a_good_between_towns_conserving_gold() {
         use crate::components::N_COMMODITIES;
-        let mut w = World::spawn(0xCA64, 6);
-        let merchant = 0usize;
+        let mut w = World::spawn(0xCA64, 8);
+        assert!(w.town_centers.len() >= 2, "this test needs a multi-town world");
+        // a seller in town 0 (where Tools are cheap) and a buyer in town 1 (where Tools are dear).
+        let (seller, buyer) = (0usize, 1usize);
         for i in 0..w.n {
             w.faction[i] = Faction::Townsfolk as u8;
             w.alive[i] = true;
-            w.econ[i].gold = 0;
+            w.econ[i].gold = 100;
+            w.econ[i].inventory = [0; N_COMMODITIES];
+            w.econ[i].price_belief = [0; N_COMMODITIES];
         }
-        w.econ[merchant].gold = 50_000; // the richest — the caravan merchant
-        w.econ[merchant].inventory = [0; N_COMMODITIES];
-        w.econ[merchant].inventory[3] = 10; // a surplus of Tools to export
+        w.town[seller] = 0;
+        w.econ[seller].gold = 9_000; // the richest in town 0
+        w.econ[seller].inventory[3] = 10; // holds Tools (the haul good)
+        w.econ[seller].price_belief[3] = 50; // Tools believed CHEAP here
+        w.town[buyer] = 1;
+        w.econ[buyer].gold = 9_000; // the richest in town 1
+        w.econ[buyer].price_belief[3] = 200; // Tools believed DEAR there (the spread)
+
         let total = w.total_gold();
-        let gold0 = w.econ[merchant].gold;
-        let tools0 = w.econ[merchant].inventory[3];
+        let s_tools0 = w.econ[seller].inventory[3];
+        let s_gold0 = w.econ[seller].gold;
 
         w.run_caravan();
-        assert!(w.econ[merchant].inventory[3] < tools0, "the merchant exported surplus tools");
-        // it earned export revenue (and spent some on the luxury import) — net it traded the spread.
-        assert_ne!(w.econ[merchant].gold, gold0, "the merchant's purse changed (it traded abroad)");
-        assert!(w.econ[merchant].inventory[5] > 0, "it imported a luxury (Potion)");
-        assert_eq!(w.total_gold(), total, "gold conserved across the caravan (purse ↔ external treasury)");
+        assert!(w.econ[seller].inventory[3] < s_tools0, "the seller's tools were hauled out of the cheap town");
+        assert!(w.econ[buyer].inventory[3] > 0, "the dear town received the tools");
+        assert!(w.econ[seller].gold > s_gold0, "the seller profited on the spread");
+        assert_eq!(w.total_gold(), total, "gold conserved across the inter-town caravan");
     }
 
     /// BOUNTY: a threat to the core is posted (a conserved levy into the fund), and its slayer claims

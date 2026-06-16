@@ -523,9 +523,16 @@ feature port:**
    which are collision-only meshes). The cognition core has no collision/movement-blocking model by
    design. Closing this means *adding a collision system*.
 
-3. **A literal second town** — true inter-town `arbitrage`/`caravans` and a multi-town gazette wire-desk.
-   The behavioral *intent* is already covered single-town (the external-market form; `migrate` resettles
-   toward the safe core). Closing this means *adding multi-town worldgen* — a foundation refactor.
+3. **A literal second town — ✅ BUILT (user-requested).** `N_TOWNS = 2` distinct towns, each with its
+   OWN centre, market, ring of work sites, defensive wall, and communal granary; every agent is assigned
+   a `town` (round-robin) and clustered + anchored there. `market.clear` loops per town (trade is
+   proximity-local — 18 m of a market — so the two economies are genuinely separate, 560 m apart). The
+   mental map spans all towns (an agent's `nearest()` finds its own town's places). The caravan is now a
+   REAL inter-town arbitrage: it finds the non-food good with the widest believed-price GAP between the
+   two towns and hauls a load from the CHEAP town's merchant to the DEAR town's — goods cheap→dear, gold
+   dear→cheap, both profit, fully conserved. **The marginal economy SURVIVED the split** (the granary
+   safety-net was widened — deposit-bar 4→3, feed-bar 0.4→0.55 — to hold the 3-seed survival gate at
+   ~190 townsfolk/town). New `worldgen_lays_out_distinct_towns` + `a_caravan_hauls_a_good_between_towns`.
 
 4. **Render/LLM-only tails** — gazette template-article prose, procedural naming, the reporter's
    roaming-interview path. These produce human-facing TEXT from the numeric substrate that already

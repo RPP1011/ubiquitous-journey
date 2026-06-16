@@ -136,7 +136,8 @@ pub fn clear(world: &mut World) {
             // canonical good→site mapping (`good_site_index(produced_good(prof)) == prof-1`). (Was `prof`
             // — an off-by-one that meant profession production NEVER fired in the live sim, so the town
             // subsisted entirely on the foraging path; fixing it makes the craft economy real.)
-            let site = world.work_sites[(prof as usize - 1).min(crate::world::N_WORK_SITES - 1)];
+            let ti = (world.town[i] as usize).min(world.work_sites.len() - 1);
+            let site = world.work_sites[ti][(prof as usize - 1).min(crate::world::N_WORK_SITES - 1)];
             if within(world.pos[i], site, WORK_RANGE) && world.econ[i].inventory[g] < PRODUCE_CAP {
                 world.econ[i].inventory[g] += 1;
                 // GRADED RECIPE (recipeKnow.ts): a MASTER of the craft yields an EXTRA unit — a bonus on
@@ -171,29 +172,40 @@ pub fn clear(world: &mut World) {
     // ── 2. PARTICIPANTS ─────────────────────────────────────────────────────────────────────────
     // alive, non-monster, with the Market goal, AT the market. Collected in ascending id order, so
     // the per-commodity seller/buyer sub-lists inherit that order (deterministic pairing).
-    let market = world.market;
-    let mut participants: Vec<usize> = Vec::new();
-    for i in 0..world.n {
-        if world.alive[i]
-            && world.faction[i] != Faction::Monster as u8
-            && matches!(world.goal[i].kind(), GoalKind::Market)
-            && within(world.pos[i], market, MARKET_RANGE)
-        {
-            participants.push(i);
+    // MULTI-TOWN: each town's market clears its OWN local participants (the two markets are far enough
+    // apart that a participant is only ever in range of its own town's market — so the economies are
+    // distinct; the caravan bridges the price gap between them). Transfers accrue across towns.
+    let base = world.base_price;
+    let mut transfers: Vec<Intent> = Vec::new();
+    let markets = world.markets.clone();
+    for &market in &markets {
+        let mut participants: Vec<usize> = Vec::new();
+        for i in 0..world.n {
+            if world.alive[i]
+                && world.faction[i] != Faction::Monster as u8
+                && matches!(world.goal[i].kind(), GoalKind::Market)
+                && within(world.pos[i], market, MARKET_RANGE)
+            {
+                participants.push(i);
+            }
         }
+        if participants.len() < 2 {
+            continue;
+        }
+        run_auction(world, &participants, &base, &mut transfers);
     }
-    if participants.len() < 2 {
-        return;
-    }
+    world.intents.items.extend(transfers);
+}
 
+/// Clear one market's id-sorted `participants` (the per-town double auction). Appends Transfer intents to
+/// `transfers`; own-writes each trader's believed price. Extracted so each town's market clears alone.
+fn run_auction(world: &mut World, participants: &[usize], base: &[i64; N_COMMODITIES], transfers: &mut Vec<Intent>) {
     // ── 3. AUCTION ──────────────────────────────────────────────────────────────────────────────
     // Per commodity, pair id-sorted sellers↔buyers in order at the midpoint of their believed prices.
     // A per-participant running gold BUDGET (spent only on emitted buys, carried ACROSS commodities)
     // keeps a buyer from being matched beyond what it can pay this tick — so every emitted transfer
     // actually clears in the merge, and `learn_price` fires only on trades that truly consummate
     // (no learning from rejected intents). Seller stock is bounded per-commodity by `sell_left`.
-    let base = world.base_price;
-    let mut transfers: Vec<Intent> = Vec::new();
     let mut gold_budget: Vec<i64> = participants.iter().map(|&i| world.econ[i].gold).collect();
     // map agent id → its index in `participants` (for the budget lookup; participants is id-sorted
     // and tiny, so a binary search stays deterministic + cheap — no HashMap on the behaviour path).
@@ -232,8 +244,8 @@ pub fn clear(world: &mut World) {
             // clearing price = midpoint of the two believed prices, SKEWED by how the seller regards the
             // buyer (npcFavoredPrice): a friend gets a deal, a despised buyer is gouged. Conserved — the
             // skew only moves WHERE the midpoint sits, the transfer still moves gold one-for-one.
-            let ask = believed_price(&world.econ[s], &base, g);
-            let bid = believed_price(&world.econ[b], &base, g);
+            let ask = believed_price(&world.econ[s], base, g);
+            let bid = believed_price(&world.econ[b], base, g);
             let mid = (ask + bid) / 2; // major units (the neutral midpoint)
             // TRADE_EDGE (the haggle ability buff): a seller with an active buff haggles its sale UP.
             let edge = if world.trade_buff[s] > world.tick { 1.0 + TRADE_EDGE } else { 1.0 };
@@ -262,8 +274,8 @@ pub fn clear(world: &mut World) {
 
             // both sides drift their OWN belief toward the clear (own-write; s != b ⇒ distinct rows).
             // The trade is guaranteed to consummate (budget+stock reserved), so this learns a REAL clear.
-            learn_price(&mut world.econ[s], &base, g, clear);
-            learn_price(&mut world.econ[b], &base, g, clear);
+            learn_price(&mut world.econ[s], base, g, clear);
+            learn_price(&mut world.econ[b], base, g, clear);
 
             sell_left[si] -= 1;
             buy_left[bi] -= 1;
@@ -275,8 +287,6 @@ pub fn clear(world: &mut World) {
             }
         }
     }
-
-    world.intents.items.extend(transfers);
 }
 
 #[cfg(test)]
@@ -316,11 +326,12 @@ mod tests {
         let mut w = World::spawn(0xEC1, 6);
         let (master, rusty) = (0usize, 1usize);
         // both farmers (profession 1 → Food) standing at the farm site (work_sites[0]).
-        let farm = w.work_sites[0]; // the Farmer production site (prof 1 → site prof-1 = 0)
+        let farm = w.work_sites[0][0]; // the Farmer production site (prof 1 → site prof-1 = 0)
         for &i in &[master, rusty] {
             w.faction[i] = Faction::Townsfolk as u8;
             w.alive[i] = true;
             w.profession[i] = 1;
+            w.town[i] = 0; // both belong to town 0 (whose farm site they stand at)
             w.pos[i] = farm;
             w.econ[i].inventory = [0; N_COMMODITIES];
         }
@@ -350,14 +361,14 @@ mod tests {
         }
         w.faction[s] = Faction::Townsfolk as u8;
         w.faction[b] = Faction::Townsfolk as u8;
-        w.market = [0.0, 0.0];
+        w.markets[0] = [0.0, 0.0];
         w.pos[s] = [0.0, 0.0];
         w.pos[b] = [1.0, 0.0];
         // Trader produces nothing, so production never perturbs the test inventories.
         w.profession[s] = Profession::Trader as u8;
         w.profession[b] = Profession::Trader as u8;
-        w.goal[s] = Goal::Market { site: w.market };
-        w.goal[b] = Goal::Market { site: w.market };
+        w.goal[s] = Goal::Market { site: w.markets[0] };
+        w.goal[b] = Goal::Market { site: w.markets[0] };
         let food = Commodity::Food as usize;
         w.econ[s].inventory[food] = KEEP[food] + 3; // surplus to sell
         w.econ[b].inventory[food] = 0; // wants food

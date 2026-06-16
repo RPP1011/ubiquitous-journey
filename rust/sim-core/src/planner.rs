@@ -608,7 +608,7 @@ mod tests {
             profession: w.profession[i],
             beliefs,
             memory,
-            market: w.market,
+            market: w.markets[0],
             work_sites,
             base_price,
             experience: w.experience[i],
@@ -633,7 +633,7 @@ mod tests {
         };
         beliefs.len = 1;
         let memory = Memory::default();
-        let ws = w.work_sites;
+        let ws = w.work_sites[0];
         let bp = w.base_price;
         let pv = pv_of(&w, 0, &beliefs, &memory, &ws, &bp);
         match plan(Atom::Dead(7), &pv) {
@@ -660,7 +660,7 @@ mod tests {
             salience: 60000,
             ..Default::default()
         });
-        let ws = w.work_sites;
+        let ws = w.work_sites[0];
         let bp = w.base_price;
         let pv = pv_of(&w, 0, &beliefs, &memory, &ws, &bp);
         assert!(plan(Atom::Dead(7), &pv).is_none(), "a slain foe yields no avenge plan");
@@ -673,10 +673,10 @@ mod tests {
         // whose first compiled step is a Market trip.
         w.econ[0].inventory = [9, 0, 0, 0, 0, 0]; // surplus Food
         w.econ[0].gold = 0;
-        w.pos[0] = [w.market[0] + 80.0, w.market[1] + 80.0];
+        w.pos[0] = [w.markets[0][0] + 80.0, w.markets[0][1] + 80.0];
         let beliefs = BeliefTable::default();
         let memory = Memory::default();
-        let ws = w.work_sites;
+        let ws = w.work_sites[0];
         let bp = w.base_price;
         let pv = pv_of(&w, 0, &beliefs, &memory, &ws, &bp);
         match plan(Atom::GoldGe(5000), &pv) {
@@ -691,7 +691,7 @@ mod tests {
         w.econ[0].gold = 999_999;
         let beliefs = BeliefTable::default();
         let memory = Memory::default();
-        let ws = w.work_sites;
+        let ws = w.work_sites[0];
         let bp = w.base_price;
         let pv = pv_of(&w, 0, &beliefs, &memory, &ws, &bp);
         assert!(plan(Atom::GoldGe(5000), &pv).is_none(), "an already-rich agent needs no plan");

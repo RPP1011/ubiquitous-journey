@@ -48,7 +48,8 @@ pub fn step(world: &mut World) {
         ref beliefs,
         ref home,
         ref combat,
-        ref wall,
+        ref walls,
+        ref town,
         ..
     } = *world;
 
@@ -62,8 +63,11 @@ pub fn step(world: &mut World) {
             let mul = if combat[i].slow > 0.0 { SLOW_MUL } else { 1.0 };
             let old = *p;
             step_one(p, r, &goal[i], &beliefs[i], home[i], STEP * mul);
-            // WALL collision: a move that crosses the ring anywhere but a gate is blocked to our side.
-            wall.resolve(old, p);
+            // WALL collision (this agent's OWN town wall): a move crossing the ring anywhere but a gate
+            // is blocked to our side.
+            if let Some(w) = walls.get(town[i] as usize) {
+                w.resolve(old, p);
+            }
         });
 }
 
