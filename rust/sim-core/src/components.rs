@@ -222,6 +222,9 @@ pub struct CombatBody {
     pub recover: f32,
     pub stagger: f32,
     pub attack_cd: f32,
+    /// A temporary damage BUFFER (the ability `shield` op, e.g. second_wind): incoming Strike damage is
+    /// absorbed here before health. 0 = no shield. Set by a self-cast; depleted by blows (no regen).
+    pub shield: f32,
 }
 impl Default for CombatBody {
     fn default() -> Self {
@@ -235,6 +238,7 @@ impl Default for CombatBody {
             recover: 0.0,
             stagger: 0.0,
             attack_cd: 0.0,
+            shield: 0.0,
         }
     }
 }

@@ -42,6 +42,7 @@ pub fn world_hash(w: &World) -> u64 {
             h = fold(h, &q.to_le_bytes());
         }
         h = fold(h, &w.combat[i].health.to_bits().to_le_bytes());
+        h = fold(h, &w.combat[i].shield.to_bits().to_le_bytes());
         h = fold(h, &[w.goal[i].kind() as u8]);
         // Wave-3 society columns
         h = fold(h, &[w.faith[i]]);

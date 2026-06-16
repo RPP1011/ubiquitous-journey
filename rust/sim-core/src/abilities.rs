@@ -522,6 +522,8 @@ const DT: f32 = 0.1;
 const SELF_CAST_HP_FRAC: f32 = 0.5;
 /// Max health (TUNE.maxHealth) — the fraction the heal trigger / self-cast gate measure against.
 const MAX_HEALTH: f32 = 100.0;
+/// Cap on the stacked shield buffer (a self-cast can't pile an unbounded damage soak).
+const SHIELD_CAP: f32 = 60.0;
 /// Per-level damage scaling (mirrors combat's offence curve) applied to the ability's base damage.
 const LVL_DMG_PER_LEVEL: f32 = 0.06;
 const LVL_DMG_CAP: f32 = 2.5;
@@ -699,8 +701,10 @@ fn apply_self_support(cb: &mut crate::components::CombatBody, spec: &AbilitySpec
                 // honour `caster_hp_below` (true here by construction) / unconditional.
                 cb.health = (cb.health + e.amount).min(MAX_HEALTH);
             }
-            // shield: no buffer column on CombatBody — skipped (noted breadth).
-            EffectOp::Shield => {}
+            // shield: raise the damage-buffer (capped) — soaked by the next blows in the Strike merge.
+            EffectOp::Shield => {
+                cb.shield = (cb.shield + e.amount).min(SHIELD_CAP);
+            }
             _ => {}
         }
     }
@@ -965,6 +969,7 @@ mod tests {
         assert!(w.combat[0].health > before, "self-heal restored own health");
         // second_wind heals 45 from 20 → 65 (capped at max 100).
         assert!((w.combat[0].health - 65.0).abs() < 1e-3, "healed by the spec amount");
+        assert!(w.combat[0].shield > 0.0, "second_wind also raised a damage shield");
         assert!(w.ability_cd[0] > 0.0, "the self-cast went on cooldown");
         // no cross-agent strike from a self-cast.
         assert!(!w.intents.items.iter().any(|i| matches!(i, Intent::Strike { .. })));

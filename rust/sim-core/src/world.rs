@@ -360,6 +360,14 @@ impl World {
                     if to >= self.n || !self.alive[to] {
                         continue;
                     }
+                    // a SHIELD buffer (the ability shield op) soaks the blow before health (depletes;
+                    // no regen). Overflow carries through to health.
+                    let mut dmg = dmg;
+                    if self.combat[to].shield > 0.0 {
+                        let absorbed = self.combat[to].shield.min(dmg);
+                        self.combat[to].shield -= absorbed;
+                        dmg -= absorbed;
+                    }
                     self.combat[to].health -= dmg;
                     // EPISTEMIC SEED (the vendetta loop): the victim REMEMBERS being struck — an
                     // `assaulted` episode the GOAP layer reads next tick to derive an avenge
@@ -792,6 +800,26 @@ mod tests {
         let b = w.beliefs[near].find(hero as u32).expect("the witness forms a belief about the hero");
         assert!(w.beliefs[near].bodies[b].standing > 0, "the monster-slayer is admired");
         assert!(w.beliefs[near].bodies[b].flags & 0x01 == 0, "a hero is not believed hostile");
+    }
+
+    /// A SHIELD buffer soaks Strike damage before health: a blow smaller than the shield leaves health
+    /// untouched and depletes the shield; the overflow of a bigger blow carries through to health.
+    #[test]
+    fn shield_absorbs_before_health() {
+        let mut w = World::spawn(0x5417, 4);
+        let (atk, def) = (0usize, 1usize);
+        w.combat[def].health = 100.0;
+        w.combat[def].shield = 25.0;
+        // a 10-dmg blow: fully soaked by the shield.
+        w.intents.push(Intent::Strike { from: atk as u32, to: def as u32, dmg: 10.0 });
+        w.drain_intents();
+        assert_eq!(w.combat[def].health, 100.0, "a sub-shield blow leaves health untouched");
+        assert!((w.combat[def].shield - 15.0).abs() < 1e-3, "the shield depleted by the blow");
+        // a 40-dmg blow: 15 soaks the shield, 25 carries to health.
+        w.intents.push(Intent::Strike { from: atk as u32, to: def as u32, dmg: 40.0 });
+        w.drain_intents();
+        assert!((w.combat[def].shield).abs() < 1e-3, "the shield is spent");
+        assert!((w.combat[def].health - 75.0).abs() < 1e-3, "the overflow carried through to health");
     }
 
     /// A `Hand` intent moves gold + goods one way and CONSERVES the totals (the resolver primitive

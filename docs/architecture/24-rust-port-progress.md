@@ -104,9 +104,11 @@ walls (collision geometry) · percept/scarecrow (disguise props).
 - ✅ **scry** (read_mind) live — the autocaster firms its VAGUEST nearby belief from the truth
   (confidence up, position refreshed) as an own-write in the cast phase (a sanctioned ability reveal,
   like perceive). A 4th autocaster branch; `is_scry`/`vaguest_belief_in_range`.
-⬜ trade_edge / craft_boost (timed economic buffs — need a buff-window column) · shield (needs a
-  shield-buffer column) · stun/slow/knockback/expose execution · requirement gates
-  (while_faithful/vs_sworn_foe/...) · procedural naming/generation.
+- ✅ **shield** op live — `CombatBody.shield` damage-buffer column: a self-cast (second_wind) raises it
+  (capped); the Strike merge soaks damage into it before health (depletes, no regen, overflow carries
+  through). Hashed for M-invariance.
+⬜ trade_edge / craft_boost (timed economic buffs — need a buff-window column) · stun/slow/knockback/
+  expose execution · requirement gates (while_faithful/vs_sworn_foe/...) · procedural naming/generation.
 
 ### G9 — Cognition substrate depth
 ⬜ full belief fields (suspicion/sentiment/animacy/assoc/hops/provenance/destPos) ·
