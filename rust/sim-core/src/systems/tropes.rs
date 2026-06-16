@@ -124,6 +124,16 @@ const BEAT_HOUSE_FEUD: u8 = 55;
 const BEAT_SLANDER: u8 = 56;
 const BEAT_FEUD: u8 = 57;
 const BEAT_VENDETTA: u8 = 58;
+const BEAT_JEALOUSY: u8 = 59;
+const BEAT_RIVALRY: u8 = 60;
+
+/// MISTAKEN JEALOUSY: a believed FRIEND this warm is dear enough to be jealous OVER…
+const JEALOUSY_FRIEND_BOND: i16 = 10_000;
+/// …and the misunderstanding COOLS that warmth this much — but never craters/latches (it's recoverable).
+const JEALOUSY_SOUR: i16 = 8_000;
+/// RIVAL APPRENTICES: only the low-LEVEL (still learning their craft) become rivals; a mild mutual chill.
+const RIVAL_MAX_LEVEL: u8 = 4;
+const RIVALRY_SOUR: i16 = 6_000;
 
 /// The relationship-trope KINDS — the per-kind cooldown index (`TropeState.last_kind_at[kind]`). The
 /// dispatcher tries them in PRIORITY order (scarce/dramatic first), NOT this declaration order.
@@ -139,9 +149,11 @@ enum TropeKind {
     MiserReformed = 6,
     DebtRepaid = 7,
     FalseWitness = 8,
+    MistakenJealousy = 9,
+    RivalApprentices = 10,
 }
 // (N_TROPES in components.rs must equal the count above.)
-const _: () = assert!(N_TROPES == 9);
+const _: () = assert!(N_TROPES == 11);
 
 pub fn tick(world: &mut World) {
     // Throttle: only consider drama on the evaluation boundary (never at tick 0).
@@ -168,11 +180,13 @@ pub fn tick(world: &mut World) {
     // major beats and must not be crowded out by the reliable warm filler), the warm filler LAST.
     // (kind, instigator) — fired left-to-right; the first whose constellation EXISTS wins this roll.
     type Row = (TropeKind, fn(&mut World, &[u32], usize, u32) -> bool);
-    let rows: [Row; 9] = [
+    let rows: [Row; 11] = [
         (TropeKind::Betrayal, do_betrayal),
         (TropeKind::Vendetta, do_vendetta),
         (TropeKind::HouseFeud, do_house_feud),
+        (TropeKind::MistakenJealousy, do_mistaken_jealousy),
         (TropeKind::UnlikelyFriendship, do_unlikely_friendship),
+        (TropeKind::RivalApprentices, do_rival_apprentices),
         (TropeKind::Feud, do_feud),
         (TropeKind::Reunion, do_reunion),
         (TropeKind::MiserReformed, do_miser_reformed),
@@ -507,6 +521,71 @@ fn do_vendetta(world: &mut World, folk: &[u32], off: usize, _now: u32) -> bool {
     false
 }
 
+/// MISTAKEN JEALOUSY — a misunderstanding strains a real friendship: `a` warmly trusts `b`, but comes
+/// (unfoundedly) to suspect them, so `a`'s warmth toward `b` COOLS — without latching hostile (it is a
+/// recoverable misunderstanding, not a true betrayal; `b` is unaware and unchanged). The one-sided,
+/// reversible cooling that the patrician's reconcile pass can later mend.
+fn do_mistaken_jealousy(world: &mut World, folk: &[u32], off: usize, _now: u32) -> bool {
+    let len = folk.len();
+    for i in 0..len {
+        let a = folk[(off + i) % len];
+        let bt = &world.beliefs[a as usize];
+        let mut pick: Option<u32> = None;
+        for k in 0..bt.len as usize {
+            let body = &bt.bodies[k];
+            let b = body.subject;
+            if b as usize >= world.n || b == a || !is_town(world, b as usize) {
+                continue;
+            }
+            // a dear, trusting friend (not already cooled/hostile) — someone to be jealous OVER.
+            if body.standing >= JEALOUSY_FRIEND_BOND && (body.flags & HOSTILE_BIT) == 0 {
+                pick = Some(b);
+                break;
+            }
+        }
+        if let Some(b) = pick {
+            world.sour_belief(a as usize, b, JEALOUSY_SOUR, false); // cool, but DON'T latch — recoverable
+            push_beat(world, BEAT_JEALOUSY, a, b as i32);
+            return true;
+        }
+    }
+    false
+}
+
+/// RIVAL APPRENTICES — two still-learning souls of the SAME craft fall into a professional rivalry: a
+/// MILD mutual chill (soured both ways, not latched — a competitive edge, not enmity). Only the
+/// low-level (apprentices) qualify; masters have nothing left to prove. Seeds the kind of relationship
+/// the director can later escalate (a rivalry that hardens) or the patrician reconcile.
+fn do_rival_apprentices(world: &mut World, folk: &[u32], off: usize, _now: u32) -> bool {
+    let len = folk.len();
+    for i in 0..len {
+        let a = folk[(off + i) % len];
+        let (pa, la) = (world.profession[a as usize], world.level[a as usize]);
+        if pa == 0 || la > RIVAL_MAX_LEVEL {
+            continue; // no craft, or already past apprenticeship
+        }
+        // find a DIFFERENT apprentice of the SAME craft (deterministic: first in the rotated scan).
+        for j in 0..len {
+            let b = folk[(off + j) % len];
+            if b == a {
+                continue;
+            }
+            if world.profession[b as usize] == pa
+                && world.level[b as usize] <= RIVAL_MAX_LEVEL
+                // don't manufacture a rivalry where a bond already exists either way.
+                && world.beliefs[a as usize].find(b).is_none()
+                && world.beliefs[b as usize].find(a).is_none()
+            {
+                world.sour_belief(a as usize, b, RIVALRY_SOUR, false);
+                world.sour_belief(b as usize, a, RIVALRY_SOUR, false);
+                push_beat(world, BEAT_RIVALRY, a, b as i32);
+                return true;
+            }
+        }
+    }
+    false
+}
+
 // ── helpers ─────────────────────────────────────────────────────────────────────────────────────
 
 /// Living-townsfolk ids in id order (the constellation pool every trope scans). Deterministic.
@@ -608,6 +687,44 @@ mod tests {
         assert!(w.memory[0].has(EpisodeKind::Assaulted, 1), "the victim resents the betrayer");
         // and a betrayal beat is logged.
         assert!(w.chronicle.iter().any(|b| b.kind == BEAT_BETRAYAL), "a betrayal beat is logged");
+    }
+
+    /// MISTAKEN JEALOUSY cools a dear friendship one-sidedly WITHOUT latching hostility (recoverable).
+    #[test]
+    fn mistaken_jealousy_cools_a_friendship_without_latching() {
+        let mut w = World::spawn(0x9EA1, 6);
+        all_townsfolk(&mut w);
+        w.warm_belief(0, 1, 18_000); // agent 0 dearly trusts agent 1
+        let before = w.beliefs[0].bodies[w.beliefs[0].find(1).unwrap()].standing;
+        let folk = living_townsfolk(&w);
+        assert!(do_mistaken_jealousy(&mut w, &folk, 0, 100), "a dear friendship can be strained");
+        let body = w.beliefs[0].bodies[w.beliefs[0].find(1).unwrap()];
+        assert!(body.standing < before, "the warmth cooled, got {} (was {before})", body.standing);
+        assert_eq!(body.flags & HOSTILE_BIT, 0, "a misunderstanding does NOT latch hostile");
+        assert!(w.chronicle.iter().any(|b| b.kind == BEAT_JEALOUSY), "a jealousy beat is logged");
+    }
+
+    /// RIVAL APPRENTICES: two low-level souls of the same craft fall into a mild MUTUAL rivalry.
+    #[test]
+    fn rival_apprentices_form_a_mutual_chill() {
+        let mut w = World::spawn(0x9EA2, 6);
+        all_townsfolk(&mut w);
+        // two apprentices of the same craft (profession 4 = blacksmith), still low level.
+        w.profession[0] = 4;
+        w.level[0] = 1;
+        w.profession[1] = 4;
+        w.level[1] = 2;
+        // everyone else a different craft so the pair (0,1) is the rivalry.
+        for i in 2..w.n {
+            w.profession[i] = 1;
+        }
+        let folk = living_townsfolk(&w);
+        assert!(do_rival_apprentices(&mut w, &folk, 0, 100), "two same-craft apprentices become rivals");
+        let a = w.beliefs[0].bodies[w.beliefs[0].find(1).expect("0 now regards 1")];
+        let b = w.beliefs[1].bodies[w.beliefs[1].find(0).expect("1 now regards 0")];
+        assert!(a.standing < 0 && b.standing < 0, "a MUTUAL chill");
+        assert_eq!(a.flags & HOSTILE_BIT, 0, "a rivalry is a chill, not open enmity");
+        assert!(w.chronicle.iter().any(|b| b.kind == BEAT_RIVALRY), "a rivalry beat is logged");
     }
 
     /// A HOUSE FEUD is recorded between two sizeable houses (and the canonical pair is queryable).

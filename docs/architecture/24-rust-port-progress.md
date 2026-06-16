@@ -121,7 +121,11 @@ Missing:
   VENDETTA saga (≥3 blows) between two souls of different houses ESCALATES into a dynastic HOUSE FEUD
   (the strife outgrows the two; their kin inherit it via lineage). The reckoning/`_advanceArcs` flagship.
   ⬜ still: the other 4 arc steppers (tyrant-fall/spy-web/romance/accused).
-⬜ 11 missing tropes · role machinery (bodyguard/duel/protégé/guardian/legend/avenger) · caravans.
+- 🟡 **tropes 9 → 11**: + **mistaken-jealousy** (a misunderstanding cools a dear friendship one-sidedly,
+  NOT latched — recoverable) and **rival-apprentices** (two low-level same-craft souls fall into a mild
+  mutual chill). Both compose from existing belief helpers + the trope dispatcher.
+⬜ ~9 more tropes (star-crossed/favored-rise/spy-unmasked/mentor-pride/prodigal-return/prophet/tyrant-
+  market/boast-backfires/…) · role machinery (bodyguard/duel/protégé/guardian/legend/avenger) · caravans.
 
 ### G7 — World subsystems absent
 ⬜ construction (places-as-percepts + granary) · party (player companions) · biography ·
@@ -155,6 +159,11 @@ occupation choice (dynamic vs fixed-at-spawn) · decide utility-oracle (scoreAnd
 ## Progress log (newest first)
 
 _(append a dated entry per landed commit: what closed, gate status, hash)_
+
+- **G6 tropes (9 → 11)** — added **mistaken-jealousy** (a misunderstanding cools a dear friendship
+  one-sidedly without latching — the recoverable strain the patrician can later mend) and
+  **rival-apprentices** (two low-level same-craft souls fall into a mild mutual chill). Both compose
+  from the existing belief helpers + trope dispatcher (N_TROPES 9→11). 2 new tests; M-invariant.
 
 - **G8 craft_boost ability op** — master_craft made live: a master crafter self-casts (the 5th
   autocaster branch) for an immediate burst of its profession's trade-good (own-write to inventory,
