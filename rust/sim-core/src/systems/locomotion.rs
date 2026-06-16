@@ -48,10 +48,11 @@ pub fn step(world: &mut World) {
         ref beliefs,
         ref home,
         ref combat,
+        ref wall,
         ..
     } = *world;
 
-    // par_iter over the two own-write columns (pos + rng) zipped; goal/beliefs/home/combat are read-only.
+    // par_iter over the two own-write columns (pos + rng) zipped; goal/beliefs/home/combat/wall read-only.
     // IndexedParallelIterator preserves index `i`, so every read below is own-row.
     pos.par_iter_mut()
         .zip(rng.par_iter_mut())
@@ -59,7 +60,10 @@ pub fn step(world: &mut World) {
         .for_each(|(i, (p, r))| {
             // a SLOWED body (the ability `slow` op, e.g. frost_bolt) moves at half pace while it lasts.
             let mul = if combat[i].slow > 0.0 { SLOW_MUL } else { 1.0 };
+            let old = *p;
             step_one(p, r, &goal[i], &beliefs[i], home[i], STEP * mul);
+            // WALL collision: a move that crosses the ring anywhere but a gate is blocked to our side.
+            wall.resolve(old, p);
         });
 }
 

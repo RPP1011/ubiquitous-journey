@@ -217,8 +217,13 @@ Missing: — none. (avenger + legend roles landed under G6's role machinery; see
   surplus-bearing FARMER near it deposits spare Food, a HUNGRY+foodless soul withdraws a meal. CONSERVED
   (food only moves inventory↔`granary_stock`, never minted) so it can only SMOOTH the marginal larder
   (surplus → the desperate), never destabilise it (survival held). Hashed; tested.
-⬜ party (player companions — no player in the headless core) · walls (collision geometry — a render
-concern).
+- ✅ **walls (collision system)** — `js/sim/walls.js`: a defensive WALL ring (`TownWall`) around the town
+  core with evenly-spaced GATE gaps. The FIRST collision model in the core: locomotion's `wall.resolve`
+  blocks any move that would cross the ring at a solid span (snaps it back to its side; tangential motion
+  is free, so an agent slides along to a gate), while a move through a gate passes. Placed outside every
+  work site/dweller (radius `TOWN_RADIUS+30`) so the economy never touches it — raiders funnel through
+  gates. Read-only in the parallel locomotion (own-write pos); deterministic; survival held; tested.
+⬜ party (player companions — needs a player agent in the headless core).
 
 ### G8 — Ability execution depth
 - ✅ **plant_belief** live — the social ability op now reaches the epistemic layer: a charmer

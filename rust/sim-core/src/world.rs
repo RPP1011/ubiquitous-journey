@@ -130,6 +130,11 @@ pub struct World {
     /// (food only moves between inventories and this stock — no minting) that smooths the marginal larder.
     pub granary_stock: i32,
     pub granary_pos: [f32; 2], // where the granary stands (town core); 0,0 until built
+    /// The town's defensive WALL (`walls.js`): a collision ring around the core with GATE gaps. Movement
+    /// that would cross the ring anywhere but a gate is blocked (radially) — so raiders funnel through the
+    /// gates instead of swarming straight in, while townsfolk (whose whole world is inside it) never touch
+    /// it. Static after build (not hashed; its EFFECT on `pos` is). `radius == 0` ⇒ no wall yet.
+    pub wall: TownWall,
     // ── PERCEPTS (js/sim/percept.js): hittable, perceivable PROPS with no mind. A Scarecrow dressed as
     // a person; a finished Building. Kept in their OWN id-space (`PERCEPT_ID_BASE + k`, disjoint from
     // agent ids) so every `!agent` guard in the cognition feedback path skips them: an agent can BELIEVE
@@ -164,6 +169,71 @@ pub const NO_DISGUISE: u8 = 0xFF;
 pub const PERCEPT_ID_BASE: u32 = 1_000_000;
 /// Damage amplification on an EXPOSED target (the `expose` ability op — expose_weakness's combo setup).
 const EXPOSE_MULT: f32 = 1.5;
+
+/// Number of GATES in the town wall (evenly spaced openings the only way through the ring).
+pub const N_GATES: usize = 4;
+
+/// The town's defensive wall — a collision RING with gate gaps (`js/sim/walls.js`). A move whose endpoint
+/// crosses the ring (inside↔outside) anywhere but a gate is blocked back to its own side; tangential
+/// motion is free, so an agent slides ALONG the wall to a gate. Static config (built once); `Copy`.
+#[derive(Clone, Copy)]
+pub struct TownWall {
+    pub center: [f32; 2],
+    pub radius: f32,         // 0 ⇒ no wall
+    pub gate_a: [f32; N_GATES], // gate centre angles (radians)
+    pub gate_half: f32,      // gate half-width (radians) — the opening
+}
+impl Default for TownWall {
+    fn default() -> Self {
+        TownWall { center: [0.0, 0.0], radius: 0.0, gate_a: [0.0; N_GATES], gate_half: 0.0 }
+    }
+}
+impl TownWall {
+    /// Is the ray at `angle` (radians) passing through a GATE opening?
+    #[inline]
+    fn at_gate(&self, angle: f32) -> bool {
+        for &g in &self.gate_a {
+            // smallest absolute angular distance to this gate centre.
+            let mut d = (angle - g).abs() % std::f32::consts::TAU;
+            if d > std::f32::consts::PI {
+                d = std::f32::consts::TAU - d;
+            }
+            if d <= self.gate_half {
+                return true;
+            }
+        }
+        false
+    }
+    /// Resolve a move from `old` to `np` against the wall. If `np` ends up on the OTHER side of the ring
+    /// from `old` and the crossing is NOT through a gate, snap `np` back to `old`'s side (block the radial
+    /// crossing) — tangential progress is preserved (the agent keeps sliding toward a gate). Own-write.
+    #[inline]
+    pub fn resolve(&self, old: [f32; 2], np: &mut [f32; 2]) {
+        if self.radius <= 0.0 {
+            return;
+        }
+        let (cx, cz) = (self.center[0], self.center[1]);
+        let r_old = ((old[0] - cx).powi(2) + (old[1] - cz).powi(2)).sqrt();
+        let r_new = ((np[0] - cx).powi(2) + (np[1] - cz).powi(2)).sqrt();
+        let crosses = (r_old < self.radius) != (r_new < self.radius);
+        if !crosses {
+            return; // stayed on one side — free
+        }
+        // the angle at which the path meets the ring (use the new point's bearing — close enough at the
+        // small per-tick step). Through a gate ⇒ allowed.
+        let angle = (np[1] - cz).atan2(np[0] - cx);
+        if self.at_gate(angle) {
+            return;
+        }
+        // blocked: keep the agent on its starting side by clamping its radius just shy of the wall.
+        const SKIN: f32 = 0.5;
+        let target_r = if r_old < self.radius { self.radius - SKIN } else { self.radius + SKIN };
+        // preserve the new BEARING (tangential slide) but pin the radius to our side of the wall.
+        let bearing = (np[1] - cz).atan2(np[0] - cx);
+        np[0] = cx + bearing.cos() * target_r;
+        np[1] = cz + bearing.sin() * target_r;
+    }
+}
 /// `captive_of` sentinel: a free agent (not held prisoner).
 pub const CAPTIVE_NONE: i32 = -1;
 /// The `role` code for an AVENGER — a kinsman/friend who has taken up the slain's cause (the director
@@ -287,6 +357,7 @@ impl World {
             caravan_treasury: 200_000, // the external market's gold (counted in total_gold ⇒ conserved)
             granary_stock: 0,
             granary_pos: [0.0, 0.0],
+            wall: TownWall::default(),
             percept_n: 0,
             percept_pos: Vec::new(),
             percept_kind: Vec::new(),
@@ -371,6 +442,19 @@ impl World {
         }
         // build the static affordance map once from the finished geography.
         w.map = MentalMap::build(w.market, &w.work_sites, w.town_center, ARENA_CLAMP);
+        // raise the defensive WALL ring around the town: outside every work site/dweller (so the economy
+        // never touches it), with evenly-spaced gates the only way through (raiders must funnel in).
+        w.wall = TownWall {
+            center: w.town_center,
+            radius: TOWN_RADIUS + 30.0,
+            gate_a: [
+                0.0,
+                std::f32::consts::FRAC_PI_2,
+                std::f32::consts::PI,
+                std::f32::consts::PI * 1.5,
+            ],
+            gate_half: 0.28, // ~16° openings
+        };
         // seed the initial relationship constellations (rival apprentices, etc.) for the director.
         systems::seeding::seed_narratives(&mut w);
         w
@@ -1819,6 +1903,35 @@ mod tests {
         assert!(w.beliefs[near].bodies[b].flags & 0x01 == 0, "a hero is not believed hostile");
     }
 
+    /// WALL COLLISION: a move that would cross the ring at a SOLID span is blocked back to its own side;
+    /// a move through a GATE opening passes freely. (The town's defensive perimeter, `walls.js`.)
+    #[test]
+    fn the_town_wall_blocks_except_at_gates() {
+        let wall = TownWall {
+            center: [0.0, 0.0],
+            radius: 100.0,
+            gate_a: [0.0; N_GATES], // all gates at angle 0 (the +x direction) for the test
+            gate_half: 0.28,
+        };
+        // crossing the SOLID north span (angle ~+z, far from the +x gate): blocked, stays inside.
+        let old = [0.0, 90.0];
+        let mut np = [0.0, 130.0]; // would step outside, at angle ~90° (no gate there)
+        wall.resolve(old, &mut np);
+        let r = (np[0] * np[0] + np[1] * np[1]).sqrt();
+        assert!(r < 100.0, "a move through a solid wall span is blocked to the inside (r={r})");
+
+        // crossing through the +x GATE: allowed straight through.
+        let old2 = [90.0, 0.0];
+        let mut np2 = [130.0, 0.0]; // step outward along +x — a gate is here
+        wall.resolve(old2, &mut np2);
+        assert_eq!(np2, [130.0, 0.0], "a move through a gate passes unobstructed");
+
+        // a move that never crosses the ring is untouched.
+        let mut np3 = [50.0, 0.0];
+        wall.resolve([40.0, 0.0], &mut np3);
+        assert_eq!(np3, [50.0, 0.0], "movement entirely inside the wall is free");
+    }
+
     /// GRANARY: a surplus farmer deposits spare Food into the communal store; a hungry, foodless soul
     /// withdraws a meal. Conserved (food only moves between inventories and the stock).
     #[test]
@@ -1951,13 +2064,22 @@ mod tests {
         let raider = 0usize;
         w.alive[raider] = true;
         w.faction[raider] = Faction::Raider as u8;
-        w.pos[raider] = [0.0, 0.0];
+        // isolate: the other agents are inert (dead) so no homes/granary compete as believed buildings.
+        for j in 1..w.n {
+            w.alive[j] = false;
+        }
+        w.pos[raider] = [40.0, 0.0];
         w.combat[raider].health = 100.0;
-        let hut = w.spawn_percept([1.5, 0.0], 2, Faction::Townsfolk as u8, 30.0, false);
+        let hut = w.spawn_percept([41.5, 0.0], 2, Faction::Townsfolk as u8, 30.0, false);
 
+        // drive the wreck mechanism directly (perceive a building → combat targets it → strike resolves
+        // on its health), avoiding the tick's construction/granary spawns that would compete as targets.
         let start_hp = w.percept_health[0];
-        for _ in 0..600 {
-            w.tick();
+        for _ in 0..50 {
+            w.build_surface();
+            crate::perceive::perceive(&mut w);
+            crate::systems::combat::resolve(&mut w);
+            w.drain_intents();
             if w.percept_flags[0] & 0x01 == 0 {
                 break; // razed
             }
