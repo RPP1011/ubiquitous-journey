@@ -467,14 +467,18 @@ fn intention_atom(it: &Intention) -> Option<Atom> {
             Some(Atom::Gave(it.subject))
         }
         x if x == IntentionKind::Loot as u8 => Some(Atom::Looted(it.subject)),
+        x if x == IntentionKind::Rescue as u8 => Some(Atom::Freed(it.subject)),
         _ => None,
     }
 }
 
-/// Is this an AGGRESSIVE intention (one that stands and fights, overriding the flee reflex)?
+/// Is this an AGGRESSIVE intention (one that braves danger, overriding the flee reflex)? Avenge/Defend
+/// stand and fight; Rescue braves the captor to free a friend (served before flee for the same reason).
 #[inline]
 fn is_aggressive(kind: u8) -> bool {
-    kind == IntentionKind::Avenge as u8 || kind == IntentionKind::Defend as u8
+    kind == IntentionKind::Avenge as u8
+        || kind == IntentionKind::Defend as u8
+        || kind == IntentionKind::Rescue as u8
 }
 
 /// Is an intention's predicate satisfied (so it should pop)? Belief/own-state only.
@@ -495,6 +499,11 @@ fn intention_satisfied(it: &Intention, pv: &Pv) -> bool {
             pv.memory.has(EpisodeKind::Gave, it.subject)
         }
         x if x == IntentionKind::Loot as u8 => pv.memory.has(EpisodeKind::Looted, it.subject),
+        // freed the captive (the marker), or I no longer believe them held (someone else freed them).
+        x if x == IntentionKind::Rescue as u8 => {
+            pv.memory.has(EpisodeKind::Freed, it.subject)
+                || pv.beliefs.find(it.subject).map_or(true, |ix| pv.beliefs.bodies[ix].flags & 0x02 == 0)
+        }
         // plan-less dispositions pop on expiry only (handled in prune_goals).
         _ => false,
     }
@@ -540,6 +549,59 @@ mod tests {
         w.beliefs[0].clear();
         decide(&mut w);
         assert_eq!(w.goal[0].kind(), GoalKind::Eat, "a hungry agent with food must choose Eat");
+    }
+
+    /// END-TO-END RESCUE (the dormant Free verb made live): a brave townsperson who believes a captive
+    /// friend nearby braves the captor to cut their bonds — and the captive is freed.
+    #[test]
+    fn brave_soul_rescues_a_captive_friend() {
+        let mut w = World::spawn(0x9E5C, 8);
+        let (rescuer, captive, captor) = (0usize, 1usize, 2usize);
+        // isolate: everyone else inert so only the rescue plays out.
+        for i in 3..w.n {
+            w.alive[i] = false;
+        }
+        w.faction[rescuer] = Faction::Townsfolk as u8;
+        w.personality[rescuer].aggression = 0.95; // brave enough to dare it
+        w.needs[rescuer] = Needs::default();
+        w.econ[rescuer].inventory[Commodity::Food as usize] = 3;
+        w.pos[rescuer] = [0.0, 0.0];
+        w.memory[rescuer] = crate::components::Memory::default();
+        w.goals[rescuer] = GoalStack::default();
+        // the captive, held by a (distant, living) captor so only the rescuer can free it.
+        w.faction[captive] = Faction::Townsfolk as u8;
+        w.alive[captive] = true;
+        w.pos[captive] = [4.0, 0.0];
+        w.captive_of[captive] = captor as i32;
+        w.alive[captor] = true;
+        w.pos[captor] = [300.0, 0.0]; // far away — won't be freed by captor-death, won't interfere
+        // the rescuer BELIEVES its friend is held captive right there.
+        let bt = &mut w.beliefs[rescuer];
+        bt.clear();
+        bt.subjects[0] = captive as u32;
+        bt.bodies[0] = PersonBelief {
+            subject: captive as u32,
+            last_x: 4.0,
+            last_z: 0.0,
+            confidence: 60000,
+            standing: 8000, // a dear friend
+            flags: 0x02,    // believed captive
+            ..Default::default()
+        };
+        bt.len = 1;
+
+        for _ in 0..12 {
+            w.tick();
+        }
+        assert_eq!(
+            w.captive_of[captive],
+            crate::world::CAPTIVE_NONE,
+            "the brave rescuer should have freed the captive friend"
+        );
+        assert!(
+            w.memory[rescuer].has(EpisodeKind::Freed, captive as u32),
+            "the rescuer remembers cutting the bonds (the settling marker)"
+        );
     }
 
     /// WARBAND RALLY: a band follower whose leader is fighting a foe the follower ALSO perceives

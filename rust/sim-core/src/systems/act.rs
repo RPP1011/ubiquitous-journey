@@ -32,10 +32,11 @@ const VERB_GIVE: u8 = 10;
 const VERB_PAY: u8 = 11;
 const VERB_ROB: u8 = 12;
 const VERB_LOOT: u8 = 13;
+const VERB_FREE: u8 = 14;
 
 pub fn act(world: &mut World) {
     let n = world.n;
-    let World { ref pos, ref goal, ref alive, ref econ, .. } = *world;
+    let World { ref pos, ref goal, ref alive, ref econ, ref captive_of, .. } = *world;
 
     // Parallel: each agent inspects ONLY its own goal/pos; cross-agent effects are emitted as intents.
     let out: Vec<Intent> = (0..n)
@@ -86,7 +87,13 @@ pub fn act(world: &mut World) {
                             }
                         }
                     }
-                    _ => {} // free/wreck: dormant until captivity/building state lands.
+                    v if v == InteractVerb::Free as u8 => {
+                        // cut a captive's bonds (only if the target is actually held — truth read).
+                        if captive_of[t] != crate::world::CAPTIVE_NONE {
+                            emit.push(Intent::Deed { actor: me, verb: VERB_FREE, magnitude: 1, target });
+                        }
+                    }
+                    _ => {} // wreck: dormant until building state lands.
                 }
             }
             emit.into_iter()

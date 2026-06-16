@@ -83,11 +83,12 @@ Current: strike→assaulted, kill→slew stamp.
   corpse (`Slew` memory + wealth cue ⇒ Loot intention ⇒ `Atom::Looted` ⇒ reach-and-take ⇒ conserved
   `Hand` of the whole purse ⇒ `Looted` marker). Closes the economy-on-death loop (a fallen agent's
   gold returns to circulation instead of stranding on the corpse).
-- 🟡 **capture-on-defeat → captivity** — a raider's lethal blow on a townsperson may take them
-  PRISONER instead of killing (`captive_of` column; rng-gated in the serial merge). A captive is inert
-  (decide → Idle) and frozen (needs: no drain/starve — held + fed), and is RELEASED the moment its
-  captor falls (`release_freed_captives`). Hashed. ⬜ still: the belief-gated **rescue** (the dormant
-  `Free` verb — a friend who believes you captive comes to cut your bonds).
+- ✅ **capture-on-defeat → captivity → rescue (the dormant `Free` verb, now LIVE)** — a raider's lethal
+  blow on a townsperson may take them PRISONER (`captive_of` column; rng-gated). A captive is inert +
+  frozen (held & fed) + released when its captor falls. Nearby townsfolk SEE the capture (a believed-
+  captive belief flag, the capture-witness fold), and a BRAVE friend braves the captor to cut the bonds:
+  Rescue intention → `Atom::Freed` → Free primitive → `Goal::Interact{Free}` → conserved free deed →
+  `captive_of` cleared + `Freed` marker. The full capture→rescue arc, end-to-end tested.
 Missing:
 ⬜ escheat (heirless estates) · epithet grant · obituary · vendetta-arc open · avenger/legend roles.
 
@@ -124,6 +125,12 @@ occupation choice (dynamic vs fixed-at-spawn) · decide utility-oracle (scoreAnd
 ## Progress log (newest first)
 
 _(append a dated entry per landed commit: what closed, gate status, hash)_
+
+- **G5 rescue / the Free verb (LIVE)** — completed the captivity arc: a capture-witness fold sets a
+  believed-captive flag (0x02) on nearby townsfolk; a brave friend derives a Rescue intention (treated
+  aggressive so it braves the captor, overriding flee), the planner routes `Freed`→Free→reach-and-free,
+  and the act `Free` executor emits a conserved free deed that clears `captive_of` + stamps a `Freed`
+  marker. The dormant Free verb is now live; full capture→rescue arc end-to-end tested. 1 new e2e test.
 
 - **G5 capture-on-defeat / captivity** — raiders now take PRISONERS: a raider's lethal blow on a
   townsperson may capture instead of kill (rng-gated in the serial merge; new `captive_of` column).

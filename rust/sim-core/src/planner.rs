@@ -51,6 +51,7 @@ pub enum Atom {
     Took(u32),    // coin taken from a subject by force (satisfied by a `Robbed` memory marker)
     Gave(u32),    // a good handed to a subject (satisfied by a `Gave` memory marker — alms/repay)
     Looted(u32),  // a fallen subject's purse stripped (satisfied by a `Looted` memory marker)
+    Freed(u32),   // a captive subject's bonds cut (satisfied by a `Freed` memory marker)
 }
 
 /// The acquire/move verbs the primitives bind to (compiled onto executor goals by `compile`).
@@ -67,6 +68,7 @@ enum Verb {
     Give, // hand a good to a benefactor (→ Goal::Interact{Give})
     Pay,  // hand coin to a benefactor (→ Goal::Interact{Pay})
     Loot, // strip a fallen target (→ Goal::Interact{Loot})
+    Free, // cut a captive's bonds (→ Goal::Interact{Free})
 }
 
 /// One bound plan step (the concrete params an effect-match chose).
@@ -232,6 +234,8 @@ fn atom_holds(atom: &Atom, pv: &Pv) -> bool {
         Atom::Gave(s) => pv.memory.has(EpisodeKind::Gave, s),
         // corpse stripped: true once a `Looted` marker for this fallen subject is in memory.
         Atom::Looted(s) => pv.memory.has(EpisodeKind::Looted, s),
+        // bonds cut: true once a `Freed` marker for this captive is in memory.
+        Atom::Freed(s) => pv.memory.has(EpisodeKind::Freed, s),
     }
 }
 
@@ -329,6 +333,12 @@ fn primitives_raw(atom: &Atom, pv: &Pv) -> Vec<Prim> {
             preconds: vec![Atom::InReach(s)],
             cost: ACT_BASE,
         }],
+        // freed(subj): cut its bonds; precondition is being in reach (the reach-and-free, like give).
+        Atom::Freed(s) => vec![Prim {
+            step: Step { verb: Verb::Free, place: Place::Subject(s), subject: s, good: 0 },
+            preconds: vec![Atom::InReach(s)],
+            cost: ACT_BASE,
+        }],
     }
 }
 
@@ -403,7 +413,7 @@ fn compile(step: Step, pv: &Pv) -> Goal {
         }
         Verb::Buy | Verb::Sell => Goal::Market { site: pv.market },
         Verb::Approach | Verb::Attack => fight_goal(pv, step.subject),
-        Verb::Rob | Verb::Give | Verb::Pay | Verb::Loot => {
+        Verb::Rob | Verb::Give | Verb::Pay | Verb::Loot | Verb::Free => {
             let to = believed_pos(pv, Place::Subject(step.subject)).unwrap_or(pv.pos);
             action_goal(verb_u8(step.verb), step.subject, to)
         }
@@ -436,6 +446,7 @@ pub const VERB_ROB: u8 = 7;
 const VERB_GIVE: u8 = 8;
 const VERB_PAY: u8 = 9;
 const VERB_LOOT: u8 = 10;
+const VERB_FREE: u8 = 11;
 
 #[inline]
 fn verb_u8(v: Verb) -> u8 {
@@ -451,6 +462,7 @@ fn verb_u8(v: Verb) -> u8 {
         Verb::Give => VERB_GIVE,
         Verb::Pay => VERB_PAY,
         Verb::Loot => VERB_LOOT,
+        Verb::Free => VERB_FREE,
     }
 }
 
@@ -515,6 +527,7 @@ pub fn step_effect_holds(ps: &PlanStep, pv: &Pv) -> bool {
         VERB_ROB => atom_holds(&Atom::Took(ps.subject), pv),
         VERB_GIVE => atom_holds(&Atom::Gave(ps.subject), pv),
         VERB_LOOT => atom_holds(&Atom::Looted(ps.subject), pv),
+        VERB_FREE => atom_holds(&Atom::Freed(ps.subject), pv),
         // SELL and the other terminal acts (give/pay/loot) do NOT self-advance — they are the last
         // step and the goal's own predicate (gold target / received / robbed) ends the plan. A
         // `_ => true` here would skip the terminal act before the `act` phase ever fired it.
@@ -550,6 +563,7 @@ fn action_goal(terminal_verb: u8, subj: u32, to: [f32; 2]) -> Goal {
         VERB_GIVE => Goal::Interact { verb: InteractVerb::Give as u8, target: subj, to },
         VERB_PAY => Goal::Interact { verb: InteractVerb::Pay as u8, target: subj, to },
         VERB_LOOT => Goal::Interact { verb: InteractVerb::Loot as u8, target: subj, to },
+        VERB_FREE => Goal::Interact { verb: InteractVerb::Free as u8, target: subj, to },
         // VERB_ATTACK (and any approach/goto fallback): the combat path.
         _ => Goal::Fight { target: subj, to },
     }

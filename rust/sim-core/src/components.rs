@@ -560,6 +560,7 @@ pub enum EpisodeKind {
     Succoured = 5,      // `with` helped me while I was desperate — derives a repay intention
     Gave = 6,           // I gave to `with` — the marker that SETTLES a donate intention
     Looted = 7,         // I stripped `with`'s corpse — the marker that SETTLES a loot intention
+    Freed = 8,          // I cut `with`'s bonds — the marker that SETTLES a rescue intention
 }
 
 /// One salient episode (the dense, inline memory cell).
@@ -646,6 +647,7 @@ pub enum IntentionKind {
     Donate = 10,     // a wealthy altruist gives to a believed-poor neighbour (alms) — pred: gave marker
     Sate = 11,       // a hungry, foodless soul forages/buys a meal (subsistence) — pred: holds food
     Loot = 12,       // strip a slain foe's purse (from a `slew` memory) — pred: looted marker
+    Rescue = 13,     // free a believed-captive friend (cut their bonds) — pred: freed marker
 }
 
 pub const NONE_ID: u32 = u32::MAX;

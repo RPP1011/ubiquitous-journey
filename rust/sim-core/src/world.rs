@@ -412,6 +412,8 @@ impl World {
                         self.captive_of[to] = from as i32;
                         self.combat[to].health = 1.0; // subdued, not slain
                         self.combat[to].state = crate::components::FighterState::Idle as u8;
+                        // nearby townsfolk SEE the capture ⇒ believe `to` is held (the rescue seed).
+                        self.fold_capture_witnesses(to);
                         continue; // captured — skip the death + slew/witness fold below
                     }
                     if self.combat[to].health <= 0.0 {
@@ -524,6 +526,28 @@ impl World {
                             salience: 35000,
                             _pad2: 0,
                         });
+                    }
+                    // a FREE deed (act verb 14) cuts a captive's bonds: release the target (captive_of →
+                    // free), stamp the rescuer's `Freed` marker (settles its rescue intention), and clear
+                    // the rescuer's "captive" belief flag about the freed soul. Serial ⇒ deterministic.
+                    if verb == 14 && (target as usize) < self.n && target as usize != actor {
+                        let t = target as usize;
+                        if self.captive_of[t] != CAPTIVE_NONE {
+                            self.captive_of[t] = CAPTIVE_NONE;
+                        }
+                        self.memory[actor].record(Episode {
+                            kind: EpisodeKind::Freed as u8,
+                            place: 0,
+                            valence: 1,
+                            _pad: 0,
+                            with: target,
+                            t: self.tick,
+                            salience: 45000,
+                            _pad2: 0,
+                        });
+                        if let Some(ix) = self.beliefs[actor].find(target) {
+                            self.beliefs[actor].bodies[ix].flags &= !0x02; // no longer believed captive
+                        }
                     }
                     // a GIVE/PAY deed (act verbs 10/11) stamps the donor's `Gave` marker (settles its
                     // donate/repay) AND a `Succoured` memory on the RECIPIENT (who may repay later) —
@@ -759,6 +783,34 @@ impl World {
                     self.sour_belief(w, killer as u32, 2_000, true); // a predator that took a neighbour
                 } else if kfac == tf {
                     self.warm_belief(w, killer as u32, 1_500); // a townsperson who slew a monster — a hero
+                }
+            }
+        }
+    }
+
+    /// CAPTURE-WITNESS fold: when `captive` is taken, nearby living townsfolk form/refresh a belief that
+    /// it is HELD (PersonBelief flag 0x02) at its last-seen spot — the epistemic seed a would-be rescuer
+    /// reads to mount a rescue. Serial id-order scan in `drain_intents` ⇒ deterministic cross-row writes.
+    fn fold_capture_witnesses(&mut self, captive: usize) {
+        const WITNESS_RANGE2: f32 = 30.0 * 30.0;
+        let cpos = self.pos[captive];
+        let tf = Faction::Townsfolk as u8;
+        for w in 0..self.n {
+            if w == captive || !self.alive[w] || self.faction[w] != tf {
+                continue;
+            }
+            let dx = self.pos[w][0] - cpos[0];
+            let dz = self.pos[w][1] - cpos[1];
+            if dx * dx + dz * dz > WITNESS_RANGE2 {
+                continue;
+            }
+            if let Some(ix) = self.ensure_belief(w, captive as u32) {
+                let b = &mut self.beliefs[w].bodies[ix];
+                b.flags |= 0x02; // believed captive
+                b.last_x = cpos[0];
+                b.last_z = cpos[1];
+                if b.confidence < 40_000 {
+                    b.confidence = 40_000;
                 }
             }
         }

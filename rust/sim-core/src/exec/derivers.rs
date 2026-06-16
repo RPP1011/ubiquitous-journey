@@ -382,6 +382,60 @@ pub fn loot(gstack: &mut GoalStack, ctx: &DeriveCtx) {
     }
 }
 
+// ── rescue (the live trigger for the dormant Free verb — brave the danger to free a captive friend) ──
+const PRI_RESCUE: u16 = 820;
+/// A belief reads as a FRIEND worth rescuing above this standing.
+const RESCUE_FRIEND_STANDING: i16 = 2_000;
+/// Only a BRAVE soul dares a rescue (it means closing on the captor). Aggression above.
+const RESCUE_BRAVE: f32 = 0.55;
+/// How far a rescuer will set out to free a believed-captive friend.
+const RESCUE_RANGE: f32 = 90.0;
+const RESCUE_EXPIRY: u32 = 400;
+
+/// RESCUE — the live trigger for the dormant Free verb (`js/sim/features/affect.ts` free): a BRAVE
+/// townsperson who believes a FRIEND is held CAPTIVE (PersonBelief flag 0x02, set by the capture-witness
+/// fold) sets out to cut their bonds. Belief-gated (it acts on the believed-captive flag — wrong exactly
+/// when the rumour of capture misleads). Treated as aggressive so it BRAVES the captor (overrides flee).
+pub fn rescue(gstack: &mut GoalStack, ctx: &DeriveCtx) {
+    if ctx.faction != Faction::Townsfolk as u8 || ctx.personality.aggression < RESCUE_BRAVE {
+        return;
+    }
+    let bt = ctx.beliefs;
+    let r2 = RESCUE_RANGE * RESCUE_RANGE;
+    let mut target: Option<u32> = None;
+    for k in 0..bt.len as usize {
+        let b = &bt.bodies[k];
+        if b.flags & 0x02 == 0 || b.standing <= RESCUE_FRIEND_STANDING {
+            continue; // not a believed-captive friend
+        }
+        if ctx.memory.has(EpisodeKind::Freed, b.subject) {
+            continue; // already freed (by me)
+        }
+        let dx = ctx.pos[0] - b.last_x;
+        let dz = ctx.pos[1] - b.last_z;
+        if dx * dx + dz * dz > r2 {
+            continue;
+        }
+        target = Some(match target {
+            Some(t) => t.min(b.subject),
+            None => b.subject,
+        });
+    }
+    if let Some(friend) = target {
+        gstack.push(Intention {
+            kind: IntentionKind::Rescue as u8,
+            flags: 0,
+            priority: PRI_RESCUE,
+            subject: friend,
+            place: 0,
+            _pad: [0; 3],
+            amt: 0,
+            born: ctx.now,
+            expire: ctx.now + RESCUE_EXPIRY,
+        });
+    }
+}
+
 /// GRIEVE — a `witnessed_death` memory ⇒ a plan-less mourning disposition (biases, decays — no plan).
 pub fn grieve(gstack: &mut GoalStack, ctx: &DeriveCtx) {
     let m = ctx.memory;
