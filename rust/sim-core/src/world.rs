@@ -114,6 +114,9 @@ pub const CAPTIVE_NONE: i32 = -1;
 /// Chance a RAIDER's lethal blow on a townsperson TAKES them captive instead of killing (a prisoner of
 /// the raid, freed when the captor falls). Drawn from `sim_rng` in the serial merge ⇒ deterministic.
 const CAPTURE_CHANCE: f32 = 0.30;
+/// Settle stranded estates on this tick cadence — long enough that a fresh corpse can still be looted
+/// before its un-looted purse escheats to an heir.
+const ESCHEAT_EVERY: u32 = 240;
 
 impl World {
     /// Worldgen: `n` agents clustered in one dense town with professions, gold, and home anchors.
@@ -663,6 +666,56 @@ impl World {
         systems::faith::tick(self);
         systems::groups::tick(self);
         systems::quests::tick(self);
+        if self.tick % ESCHEAT_EVERY == 0 {
+            self.escheat_estates(); // a heirless corpse's stranded purse passes to a living heir
+        }
+    }
+
+    /// ESCHEAT (combatEvents `_reapCorpses` heir-pass): a DEAD agent's un-looted purse is stranded out
+    /// of the closed money loop forever. This passes it to a living HEIR — a kinsman of the same house
+    /// first, else the nearest living townsperson (the estate escheats to the town). Conserved (gold
+    /// only MOVES). Throttled so a fresh corpse still has a window to be LOOTED before its estate passes.
+    /// Serial id-order ⇒ deterministic.
+    fn escheat_estates(&mut self) {
+        for i in 0..self.n {
+            if self.alive[i] || self.econ[i].gold <= 0 {
+                continue; // only the dead with a purse left to settle
+            }
+            let mut heir: Option<usize> = None;
+            // 1. a living kinsman of the same house (lowest id — deterministic).
+            let house = self.house[i];
+            if house != 0 {
+                for h in 0..self.n {
+                    if h != i && self.alive[h] && self.house[h] == house {
+                        heir = Some(h);
+                        break;
+                    }
+                }
+            }
+            // 2. else the nearest living townsperson (the estate escheats to the town).
+            if heir.is_none() {
+                let mut best = (f32::INFINITY, usize::MAX);
+                for h in 0..self.n {
+                    if h == i || !self.alive[h] || self.faction[h] != Faction::Townsfolk as u8 {
+                        continue;
+                    }
+                    let dx = self.pos[h][0] - self.pos[i][0];
+                    let dz = self.pos[h][1] - self.pos[i][1];
+                    let d2 = dx * dx + dz * dz;
+                    if d2 < best.0 || (d2 == best.0 && h < best.1) {
+                        best = (d2, h);
+                    }
+                }
+                if best.1 != usize::MAX {
+                    heir = Some(best.1);
+                }
+            }
+            if let Some(h) = heir {
+                let purse = self.econ[i].gold;
+                self.econ[i].gold -= purse;
+                self.econ[h].gold += purse;
+            }
+        }
     }
 
     /// Like `tick`, but returns the wall-seconds spent in `perceive` (the spike's measured cost,
@@ -913,6 +966,50 @@ mod tests {
         let b = w.beliefs[near].find(hero as u32).expect("the witness forms a belief about the hero");
         assert!(w.beliefs[near].bodies[b].standing > 0, "the monster-slayer is admired");
         assert!(w.beliefs[near].bodies[b].flags & 0x01 == 0, "a hero is not believed hostile");
+    }
+
+    /// ESCHEAT: a dead agent's stranded purse passes to a living KINSMAN (same house) — conserved, so
+    /// gold re-enters circulation instead of stranding on the corpse forever.
+    #[test]
+    fn estate_escheats_to_a_living_kinsman() {
+        let mut w = World::spawn(0xE57A, 6);
+        let (deceased, kin, stranger) = (0usize, 1usize, 2usize);
+        w.alive[deceased] = false;
+        w.econ[deceased].gold = 5_000;
+        w.house[deceased] = 7;
+        w.house[kin] = 7; // same house
+        w.alive[kin] = true;
+        w.house[stranger] = 9; // a different house — should NOT inherit over the kinsman
+        w.alive[stranger] = true;
+        let total = w.total_gold();
+        let kin_before = w.econ[kin].gold;
+        w.escheat_estates();
+        assert_eq!(w.econ[deceased].gold, 0, "the corpse's purse was settled");
+        assert_eq!(w.econ[kin].gold, kin_before + 5_000, "the kinsman inherited the estate");
+        assert_eq!(w.total_gold(), total, "gold conserved (moved to the heir, not minted)");
+    }
+
+    /// With no kin, the estate escheats to the nearest living townsperson (the town inherits).
+    #[test]
+    fn heirless_estate_escheats_to_the_town() {
+        let mut w = World::spawn(0xE57B, 6);
+        let (deceased, near, far) = (0usize, 1usize, 2usize);
+        w.alive[deceased] = false;
+        w.econ[deceased].gold = 3_000;
+        w.house[deceased] = 0; // no house ⇒ no kin
+        w.pos[deceased] = [0.0, 0.0];
+        for &h in &[near, far] {
+            w.faction[h] = Faction::Townsfolk as u8;
+            w.alive[h] = true;
+            w.house[h] = 0;
+        }
+        w.pos[near] = [3.0, 0.0];
+        w.pos[far] = [300.0, 0.0];
+        let total = w.total_gold();
+        let near_before = w.econ[near].gold;
+        w.escheat_estates();
+        assert_eq!(w.econ[near].gold, near_before + 3_000, "the nearest townsperson inherits");
+        assert_eq!(w.total_gold(), total, "gold conserved");
     }
 
     /// CAPTURE-ON-DEFEAT: a raider's lethal blows on townsfolk take SOME prisoner (captive, alive) and

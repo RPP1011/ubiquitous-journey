@@ -96,8 +96,12 @@ Current: strike→assaulted, kill→slew stamp.
   captive belief flag, the capture-witness fold), and a BRAVE friend braves the captor to cut the bonds:
   Rescue intention → `Atom::Freed` → Free primitive → `Goal::Interact{Free}` → conserved free deed →
   `captive_of` cleared + `Freed` marker. The full capture→rescue arc, end-to-end tested.
+- ✅ **escheat** (`_reapCorpses` heir-pass) — a dead agent's un-looted purse no longer strands out of
+  the money loop: it passes to a living KINSMAN (same house) or, heirless, escheats to the nearest
+  living townsperson. Conserved; throttled (every 240 ticks) so a fresh corpse can still be looted first.
+- ✅ **vendetta-arc open/close** — folded into the SagaStore (see G6).
 Missing:
-⬜ escheat (heirless estates) · epithet grant · obituary · vendetta-arc open · avenger/legend roles.
+⬜ epithet grant · obituary · avenger/legend roles.
 
 ### G6 — arcs + director breadth
 - ✅ **arcs SagaStore** (`sagas.rs`) — the emergent-saga registry (observer): a vendetta arc opens on
@@ -136,6 +140,10 @@ occupation choice (dynamic vs fixed-at-spawn) · decide utility-oracle (scoreAnd
 ## Progress log (newest first)
 
 _(append a dated entry per landed commit: what closed, gate status, hash)_
+
+- **G5 escheat (inheritance)** — a dead agent's un-looted purse no longer strands out of the closed
+  money loop: a throttled society pass passes it to a living kinsman (same house), else escheats it to
+  the nearest living townsperson. Conserved; throttled so a fresh corpse can be looted first. 2 new tests.
 
 - **G4 market standing-skew (favored price)** — the double-auction clears at the belief midpoint SKEWED
   by the seller's belief-standing toward the buyer (±20%): friends get a deal, the despised are gouged,
