@@ -63,6 +63,7 @@ pub enum GoalKind {
     Gather = 11,    // forage a RAW good at a resource node (capital-free, any agent — the gather verb)
     Socialize = 12, // seek company at a gathering place — restores the SOCIAL need (the socialize fill)
     Sightsee = 13,  // visit a novel place — restores the NOVELTY need (the sightsee fill)
+    Observe = 14,   // go watch an uncertain-but-valuable subject first-hand to FIRM the belief (scout)
 }
 
 /// types/combat.ts FighterState — the directional-melee swing state machine.
@@ -274,6 +275,10 @@ pub enum Goal {
     Socialize { to: [f32; 2] },
     /// Visit a novel place (`to`) — the sightsee fill. Restores the NOVELTY need on arrival.
     Sightsee { to: [f32; 2] },
+    /// Go watch an uncertain-but-valuable subject first-hand (`to` = its believed position) to FIRM the
+    /// belief — the scout/observe channel of the knowledge model. No on-arrival verb: perceive raises
+    /// the belief's confidence on sight (first-hand watching IS the learning).
+    Observe { to: [f32; 2] },
 }
 
 /// The non-combat interaction verbs a `Goal::Interact` carries (the conserved social/economic acts).
@@ -304,6 +309,7 @@ impl Goal {
             Goal::Gather { .. } => GoalKind::Gather,
             Goal::Socialize { .. } => GoalKind::Socialize,
             Goal::Sightsee { .. } => GoalKind::Sightsee,
+            Goal::Observe { .. } => GoalKind::Observe,
         }
     }
     /// The locomotion target this goal implies (None ⇒ stand still / in-place verb). A Fight now
@@ -315,7 +321,8 @@ impl Goal {
             | Goal::Comfort { to }
             | Goal::Home { to }
             | Goal::Socialize { to }
-            | Goal::Sightsee { to } => Some(*to),
+            | Goal::Sightsee { to }
+            | Goal::Observe { to } => Some(*to),
             Goal::Fight { to, .. } | Goal::Interact { to, .. } => Some(*to),
             _ => None,
         }

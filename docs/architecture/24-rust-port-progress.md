@@ -35,7 +35,11 @@ Current: 7 derivers (avenge, seek_fortune, grieve, defend, donate, repay, steal)
   `Experience` store (fixed per-verb array, determinism-safe), `experience.rs` math (decay/burn/windfall/
   felt-surcharge/classify-yield), planner cost read, windfall-on-rob-success + burn-on-lost-venture
   writes, and a behavioral steal-gate (a burned thief retires). Hashed for the M-invariance canary.
-- ⬜ **knowledge model** — observe / ask / study (`Know(topic)` + graded recipes)
+- 🟡 **knowledge model** — the **observe / whereabouts (scout)** channel landed: a curious IDLE soul
+  goes to watch its vaguest-but-valuable belief first-hand (`Goal::Observe`), and perceive firms the
+  confidence on arrival (first-hand watching IS the learning). Idle-tier ⇒ economy-safe. ⬜ still: the
+  `ask`/`study` channels, the `Know(topic)` goal-stack abstraction, and graded recipes (recipeKnow) —
+  the recipe path is entangled with dynamic occupation (also absent), so deferred together.
 - 🟡 **recruiter / warband** — **warband combat rally LANDED**: a band follower converges on its
   leader's foe *if it also perceives it* (shared-threat ToM; overrides personal flee; combat-only, so
   no peacetime economic cost). Built via a serial leader-foe snapshot read in the parallel decide.
@@ -125,6 +129,11 @@ occupation choice (dynamic vs fixed-at-spawn) · decide utility-oracle (scoreAnd
 ## Progress log (newest first)
 
 _(append a dated entry per landed commit: what closed, gate status, hash)_
+
+- **G1 scout / observe channel (knowledge model)** — the proactive whereabouts channel: a curious idle
+  townsperson goes to watch its vaguest-but-valuable belief (`Goal::Observe`, gated to the idle tier so
+  it never robs foraging time); perceive firms the confidence on arrival (first-hand watching = the
+  learning). 1 new test; survival regression unaffected. (ask/study + recipe knowledge still deferred.)
 
 - **G5 rescue / the Free verb (LIVE)** — completed the captivity arc: a capture-witness fold sets a
   believed-captive flag (0x02) on nearby townsfolk; a brave friend derives a Rescue intention (treated

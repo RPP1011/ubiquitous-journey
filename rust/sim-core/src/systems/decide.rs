@@ -44,6 +44,13 @@ const COMFORT_SEEK: f32 = 0.45;
 /// never robbed of foraging time (the marginal-economy survival lesson).
 const SOCIAL_SEEK: f32 = 0.08;
 const NOVELTY_SEEK: f32 = 0.06;
+/// SCOUT (the observe/whereabouts knowledge channel): a CURIOUS idle soul goes to firm its vaguest
+/// but VALUABLE belief first-hand. Curiosity gate + a confidence WINDOW (a real hunch, not yet trusted)
+/// + a worth cue (a believed-rich mark or a believed friend). Idle-tier ⇒ never robs foraging time.
+const SCOUT_CURIOUS: f32 = 0.55;
+const SCOUT_CONF_LO: u16 = 8_000; // firm enough to be a hunch (not perceptual noise)
+const SCOUT_CONF_HI: u16 = 45_000; // below the act-on-it firm bar (still worth resolving)
+const SCOUT_WEALTH: u16 = 20_000; // a believed-rich subject worth a closer look
 
 /// Per-tick chance a profession-holder takes a market trip instead of working (rng-gated).
 const MARKET_CHANCE: f32 = 0.08;
@@ -342,6 +349,32 @@ pub fn decide(world: &mut World) {
             //    survival lesson). Most townsfolk satisfy these passively while at market/work (needs.rs)
             //    and never reach here; this enriches the genuinely idle.
             if townsfolk {
+                // SCOUT first: a curious soul resolves an uncertain-but-valuable hunch (observe to firm
+                // it — perceive raises the belief's confidence on arrival). The proactive knowledge model.
+                if personality[i].curiosity >= SCOUT_CURIOUS {
+                    let bt = &beliefs[i];
+                    let mut best: Option<([f32; 2], u16, u32)> = None; // (pos, conf, subject) — vaguest
+                    for b in 0..(bt.len as usize).min(BELIEF_CAP) {
+                        let cell = &bt.bodies[b];
+                        if cell.confidence < SCOUT_CONF_LO || cell.confidence >= SCOUT_CONF_HI {
+                            continue; // not in the worth-resolving uncertainty window
+                        }
+                        if !(cell.wealth >= SCOUT_WEALTH || cell.standing > 0) {
+                            continue; // not a valuable subject (rich mark / friend)
+                        }
+                        let better = match best {
+                            None => true,
+                            Some((_, bc, bs)) => cell.confidence < bc || (cell.confidence == bc && cell.subject < bs),
+                        };
+                        if better {
+                            best = Some(([cell.last_x, cell.last_z], cell.confidence, cell.subject));
+                        }
+                    }
+                    if let Some((to, _, _)) = best {
+                        *g = Goal::Observe { to };
+                        return;
+                    }
+                }
                 let social_def = if need.social < SOCIAL_SEEK { SOCIAL_SEEK - need.social } else { 0.0 };
                 let novelty_def = if need.novelty < NOVELTY_SEEK { NOVELTY_SEEK - need.novelty } else { 0.0 };
                 if social_def > 0.0 && social_def >= novelty_def {
@@ -674,6 +707,37 @@ mod tests {
             GoalKind::Socialize,
             "an idle lonely townsperson should seek company"
         );
+    }
+
+    /// SCOUT (knowledge model): a curious IDLE townsperson with an uncertain-but-valuable hunch goes to
+    /// observe it first-hand (firm the belief) rather than aimlessly wander.
+    #[test]
+    fn curious_idle_soul_scouts_a_vague_valuable_hunch() {
+        let mut w = World::spawn(0xBEEF, 64);
+        let i = (0..w.n)
+            .find(|&i| w.faction[i] == Faction::Townsfolk as u8)
+            .expect("a townsperson exists");
+        w.profession[i] = Profession::None as u8; // idle ⇒ reaches the scout tier
+        w.personality[i].curiosity = 0.9; // a curious soul
+        w.needs[i] = Needs::default(); // content (no survival/social/novelty pull)
+        w.econ[i].inventory[Commodity::Food as usize] = 3;
+        w.memory[i] = crate::components::Memory::default();
+        w.goals[i] = GoalStack::default();
+        // a vague (mid-confidence) belief about a believed-RICH subject — worth resolving.
+        let bt = &mut w.beliefs[i];
+        bt.clear();
+        bt.subjects[0] = 42;
+        bt.bodies[0] = PersonBelief {
+            subject: 42,
+            last_x: 30.0,
+            last_z: 10.0,
+            confidence: 20_000, // in the scout window (8k..45k)
+            wealth: 40_000,     // a juicy mark
+            ..Default::default()
+        };
+        bt.len = 1;
+        decide(&mut w);
+        assert_eq!(w.goal[i].kind(), GoalKind::Observe, "a curious idle soul should scout its hunch");
     }
 
     /// SUBSISTENCE: a hungry townsperson with an EMPTY larder no longer stalls on the inert Eat reflex
