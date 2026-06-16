@@ -77,14 +77,18 @@ pub const BEAT_MENTOR: u8 = 40;
 /// Cluster offset for a trio from the town core (a quiet spot inside the defended ring; successive
 /// trios spread apart a little — the deterministic `8 + idx*6` base from the TS).
 fn trio_base(world: &World, idx: usize) -> [f32; 2] {
-    let c = world.town_center;
-    let off = 8.0 + idx as f32 * 6.0;
+    let nt = world.town_centers.len().max(1);
+    let c = world.town_centers[idx % nt]; // trio `idx` belongs to town `idx % nt`
+    let off = 8.0 + (idx / nt) as f32 * 6.0; // successive trios in the SAME town spread apart
     [c[0] + off, c[1] + off]
 }
 
-/// THE ENTRY POINT — plant every seed once. Called at the END of `World::spawn`.
+/// THE ENTRY POINT — plant every seed once. Called at the END of `World::spawn`. A rival-apprentice
+/// family is seeded in EVERY settlement (founding drama region-wide, not just town 0): TRIOS families
+/// per town, distributed by `idx % n_towns`.
 pub fn seed_narratives(world: &mut World) {
-    for idx in 0..TRIOS {
+    let nt = world.town_centers.len().max(1);
+    for idx in 0..(TRIOS * nt) {
         seed_rival_apprentices(world, idx);
     }
 }
@@ -93,6 +97,7 @@ pub fn seed_narratives(world: &mut World) {
 /// the (proximity-gated) apprenticeship pass immediately recognises the master.
 fn seed_rival_apprentices(world: &mut World, idx: usize) {
     let base = trio_base(world, idx);
+    let town = (idx % world.town_centers.len().max(1)) as u16; // the settlement this family belongs to
 
     // A homebody master near the defended core. Spawned a SEASONED blacksmith: a craft-dominant
     // profile (so the matcher reads a master + XP routes to smithing), the class granted at a master's
@@ -112,6 +117,11 @@ fn seed_rival_apprentices(world: &mut World, idx: usize) {
     // already leaning toward the craft.
     let a = world.spawn_agent([base[0] - 3.0, base[1] + 2.0], Faction::Townsfolk, Profession::Blacksmith);
     let b = world.spawn_agent([base[0] + 3.0, base[1] + 2.0], Faction::Townsfolk, Profession::Blacksmith);
+    // the whole family belongs to its settlement (spawn_agent defaults town 0 — set it so they live,
+    // work, and trade in their OWN town's economy, not town 0's).
+    world.town[master] = town;
+    world.town[a] = town;
+    world.town[b] = town;
     for &ap in &[a, b] {
         world.level[ap] = APPRENTICE_LEVEL;
         world.personality[ap].ambition = APPRENTICE_AMBITION;

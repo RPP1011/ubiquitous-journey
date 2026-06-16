@@ -115,6 +115,34 @@ enum EndHow {
     CaptainLost, // the captain fell afield (a doomed expedition).
 }
 
+/// The captain's HOME town centre (per-town: a company musters from and returns to its OWN settlement,
+/// not always town 0). Falls back to the legacy anchor for a degenerate world.
+fn home_center(world: &World, captain: u32) -> [f32; 2] {
+    let ci = captain as usize;
+    if ci >= world.n || world.town_centers.is_empty() {
+        return world.town_center;
+    }
+    let t = (world.town[ci] as usize).min(world.town_centers.len() - 1);
+    world.town_centers[t]
+}
+
+/// The wilderness LAIR nearest `from` — the den a town's company marches out to clear (so the
+/// adventuring loop and the monster-lair ecology connect). `None` if the world has no lairs.
+fn nearest_lair(world: &World, from: [f32; 2]) -> Option<[f32; 2]> {
+    let mut best = None;
+    let mut bd = f32::MAX;
+    for &l in &world.lair_pos {
+        let dx = l[0] - from[0];
+        let dz = l[1] - from[1];
+        let d = dx * dx + dz * dz;
+        if d < bd {
+            bd = d;
+            best = Some(l);
+        }
+    }
+    best
+}
+
 /// Advance one company by index; returns `Some(how)` if it resolved this tick (the caller ends it).
 fn advance_one(world: &mut World, ci: usize) -> Option<EndHow> {
     let c = world.expeditions.companies[ci];
@@ -125,6 +153,7 @@ fn advance_one(world: &mut World, ci: usize) -> Option<EndHow> {
     }
     let now = world.tick;
     let cap_pos = world.pos[cap];
+    let home = home_center(world, c.captain); // this company's OWN town (return leg + home test)
 
     match c.phase {
         PHASE_OUT => {
@@ -139,16 +168,16 @@ fn advance_one(world: &mut World, ci: usize) -> Option<EndHow> {
             let timed_out = now >= world.expeditions.companies[ci].hunt_until;
             let cleared = horrors_left(world, ci) == 0;
             if timed_out || losses || cleared {
-                // Turn for home: the captain leads the band back to the town center.
+                // Turn for home: the captain leads the band back to its OWN town centre.
                 let c = &mut world.expeditions.companies[ci];
                 c.phase = PHASE_RETURN;
-                c.target = world.town_center;
-                set_band_goal(world, ci, Goal::Wander { to: world.town_center });
+                c.target = home;
+                set_band_goal(world, ci, Goal::Wander { to: home });
             }
             None
         }
         PHASE_RETURN => {
-            if dist2(cap_pos, world.town_center) < HOME_DIST * HOME_DIST {
+            if dist2(cap_pos, home) < HOME_DIST * HOME_DIST {
                 Some(EndHow::Home)
             } else {
                 None
@@ -304,10 +333,15 @@ fn form(world: &mut World, cap: usize, followers: &[usize]) {
         nm += 1;
     }
 
-    // Choose the adventure point on the outer ring (deterministic angle from sim_rng).
+    // March on the wilderness LAIR nearest the captain's OWN town (the den the town wants cleared) — so
+    // the adventuring loop and the monster-lair ecology connect. Fall back to an outer-ring point if the
+    // world has no lairs. The angle is drawn UNCONDITIONALLY so the rng stream stays stable either way.
     let ang = world.sim_rng.next_f32() * std::f32::consts::TAU;
-    let r = ARENA_CLAMP * TARGET_RING;
-    let target = [world.town_center[0] + r * ang.cos(), world.town_center[1] + r * ang.sin()];
+    let home = home_center(world, cap as u32);
+    let target = nearest_lair(world, home).unwrap_or_else(|| {
+        let r = ARENA_CLAMP * TARGET_RING;
+        [home[0] + r * ang.cos(), home[1] + r * ang.sin()]
+    });
 
     let company = Company {
         captain: cap as u32,

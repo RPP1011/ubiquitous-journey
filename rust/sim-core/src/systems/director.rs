@@ -179,7 +179,7 @@ pub fn enlist_proteges(world: &mut World) {
 /// is recognized as a GUARDIAN of it (the render-read protector marker; the watch system drives the
 /// actual threat response). Idempotent; serial id-order ⇒ deterministic.
 pub fn enlist_guardians(world: &mut World) {
-    let core = world.town_center;
+    let nt = world.town_centers.len();
     for g in 0..world.n {
         if !world.alive[g]
             || world.faction[g] != Faction::Townsfolk as u8
@@ -188,6 +188,8 @@ pub fn enlist_guardians(world: &mut World) {
         {
             continue;
         }
+        // a guardian stands within ITS OWN town's core (per-town, not just town 0).
+        let core = world.town_centers[(world.town[g] as usize).min(nt.saturating_sub(1))];
         let dx = world.pos[g][0] - core[0];
         let dz = world.pos[g][1] - core[1];
         if dx * dx + dz * dz <= GUARDIAN_RANGE2 {
