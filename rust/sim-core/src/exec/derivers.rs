@@ -436,6 +436,37 @@ pub fn rescue(gstack: &mut GoalStack, ctx: &DeriveCtx) {
     }
 }
 
+// ── apprentice (the live `goalLearn(recipe)` — a Know(topic) goal on the stack) ──
+const PRI_KNOW: u16 = 400;
+/// Below this own-craft recipe skill, a crafter aspires to MASTER it (poses the Know goal).
+const KNOW_MASTERY_BAR: f32 = 0.8;
+const KNOW_EXPIRY: u32 = 200;
+
+/// APPRENTICE — the live trigger for `goalLearn(recipe)` (`js/sim/features/apprentice.ts` / learning.ts):
+/// a crafter who has NOT yet mastered its own craft's recipe poses a KNOW goal — the Know(topic)
+/// goal-stack abstraction. The goal biases it toward PRACTISING its trade (where learn-by-doing + the
+/// study/ask channels firm the recipe); it pops once mastery is reached (the deriver stops re-posing it).
+/// Own-state only (its own recipe skill).
+pub fn apprentice(gstack: &mut GoalStack, ctx: &DeriveCtx) {
+    if ctx.faction != Faction::Townsfolk as u8 || ctx.profession == 0 {
+        return; // only a craft-holding townsperson learns a recipe
+    }
+    if ctx.recipe_own >= KNOW_MASTERY_BAR {
+        return; // already a master — nothing left to learn
+    }
+    gstack.push(Intention {
+        kind: IntentionKind::Know as u8,
+        flags: 0,
+        priority: PRI_KNOW,
+        subject: NONE_ID,
+        place: ctx.profession, // the topic: the craft being learned (its profession)
+        _pad: [0; 3],
+        amt: 0,
+        born: ctx.now,
+        expire: ctx.now + KNOW_EXPIRY,
+    });
+}
+
 /// GRIEVE — a `witnessed_death` memory ⇒ a plan-less mourning disposition (biases, decays — no plan).
 pub fn grieve(gstack: &mut GoalStack, ctx: &DeriveCtx) {
     let m = ctx.memory;

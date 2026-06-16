@@ -655,6 +655,7 @@ pub enum IntentionKind {
     Sate = 11,       // a hungry, foodless soul forages/buys a meal (subsistence) — pred: holds food
     Loot = 12,       // strip a slain foe's purse (from a `slew` memory) — pred: looted marker
     Rescue = 13,     // free a believed-captive friend (cut their bonds) — pred: freed marker
+    Know = 14,       // LEARN a topic (firm an own-craft recipe) — the `goalLearn` goal-stack abstraction
 }
 
 pub const NONE_ID: u32 = u32::MAX;

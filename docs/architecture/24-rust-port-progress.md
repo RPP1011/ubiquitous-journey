@@ -46,8 +46,13 @@ Current: 7 derivers (avenge, seek_fortune, grieve, defend, donate, repay, steal)
   a rusty crafter co-located with a same-craft MASTER firms its recipe and pays CONSERVED tuition to the
   teacher (the taught route to mastery); (4) the **ask channel**: with no master nearby, a rusty crafter
   ASKS a more-skilled co-located peer for a smaller, tuition-free recipe nudge. **All 3 knowledge channels
-  (observe/ask/study) now live.** ⬜ still: the `Know(topic)` goal-stack abstraction (refactoring these
-  into explicit Know-goals).
+  (observe/ask/study) now live.**
+- ✅ **`Know(topic)` goal-stack abstraction** — `IntentionKind::Know` + the `apprentice` deriver: a
+  crafter who hasn't mastered its own-craft recipe poses a Know goal on the persistent goal stack (the
+  `goalLearn` representation), and decide serves it as a disposition biasing the agent toward PRACTISING
+  its trade (where learn-by-doing + study/ask firm the recipe). Pops once mastery is reached (the deriver
+  stops re-posing). The knowledge-seeking now flows through the explicit goal layer. **Knowledge model
+  fully complete — observe/ask/study + graded per-craft recipes + cross-craft + the Know-goal layer.**
 - ✅ **cross-craft learning** — the `recipe` skill is now PER GOOD (`[f32; N_COMMODITIES]`): an agent
   retains its mastery of a craft it has practised even after retraining into another (a switcher who
   once mastered a trade is still skilled at it; an unpractised craft fades). Production / learn-by-doing /
@@ -227,6 +232,11 @@ _(append a dated entry per landed commit: what closed, gate status, hash)_
   (set in the social cast branch), and the market clears that seller's sales +15% while active. Conserved
   (a price shift). Only the 4 control ops remain — all on Rust-unreachable (NO_CLASS) catalog specs.
   1 new test; hashed; survival unaffected.
+
+- **`Know(topic)` goal-stack abstraction (the LAST gap)** — `IntentionKind::Know` + the `apprentice`
+  deriver: an unmastered crafter poses a Know goal on the persistent goal stack (the `goalLearn`
+  representation), served as a disposition biasing it toward practising its trade; pops at mastery.
+  Knowledge-seeking now flows through the explicit goal layer. 1 new test; survival + determinism green.
 
 - **cross-craft learning (knowledge model complete)** — refactored the `recipe` skill to PER GOOD
   (`[f32; N_COMMODITIES]`): an agent retains mastery of a craft it has practised even after retraining

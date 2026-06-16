@@ -18,6 +18,8 @@ pub struct DeriveCtx<'a> {
     /// Own outcome-conditioned caution store (doc 11) — read by watched-strategy derivers (the steal
     /// gate: a thief whose heists keep failing stops arming new ones — the burned hand).
     pub experience: Experience,
+    /// Own-craft recipe skill (0..1) — read by the apprentice deriver to pose a Know(recipe) goal.
+    pub recipe_own: f32,
     pub beliefs: &'a BeliefTable,
     pub memory: &'a Memory,
     pub now: u32,
@@ -40,6 +42,7 @@ pub static DERIVERS: &[Deriver] = &[
     super::derivers::subsistence,
     super::derivers::loot,
     super::derivers::rescue,
+    super::derivers::apprentice,
 ];
 
 /// Run every registered deriver over the agent's goal stack (own-state only ⇒ deterministic).

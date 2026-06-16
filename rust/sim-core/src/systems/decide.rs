@@ -82,6 +82,7 @@ pub fn decide(world: &mut World) {
         ref econ,
         ref personality,
         ref ambition,
+        ref recipe,
         ref faction,
         ref profession,
         ref pos,
@@ -197,6 +198,9 @@ pub fn decide(world: &mut World) {
                     personality: personality[i],
                     hunger: need.hunger,
                     experience: *my_exp,
+                    recipe_own: crate::world::prof_good(profession[i])
+                        .map(|g| recipe[i][g])
+                        .unwrap_or(1.0),
                     beliefs: &beliefs[i],
                     memory: &memory[i],
                     now,
@@ -311,6 +315,16 @@ pub fn decide(world: &mut World) {
                             .unwrap_or(home[i]);
                         *g = Goal::Comfort { to };
                         return;
+                    }
+                    // a plan-less KNOW disposition (the apprentice's goalLearn): bias toward PRACTISING
+                    // the craft — go to the work site, where learn-by-doing + study/ask firm the recipe.
+                    if gstack.items[idx].kind == IntentionKind::Know as u8 {
+                        let prof = profession[i];
+                        if prof != Profession::None as u8 {
+                            let site_idx = (prof as usize - 1).min(work_sites.len() - 1);
+                            *g = Goal::Work { site: work_sites[site_idx] };
+                            return;
+                        }
                     }
                 }
             }
@@ -707,6 +721,34 @@ mod tests {
             GoalKind::Socialize,
             "an idle lonely townsperson should seek company"
         );
+    }
+
+    /// KNOW (the apprentice's goalLearn on the goal stack): a crafter who has NOT mastered its own
+    /// craft's recipe poses a Know intention and is biased toward PRACTISING (Work) to firm it.
+    #[test]
+    fn an_unmastered_crafter_poses_a_know_goal_and_practises() {
+        let mut w = World::spawn(0xBEEF, 64);
+        let i = (0..w.n)
+            .find(|&i| w.faction[i] == Faction::Townsfolk as u8 && w.profession[i] == 4) // a blacksmith
+            .or_else(|| {
+                // ensure at least one blacksmith
+                let j = (0..w.n).find(|&j| w.faction[j] == Faction::Townsfolk as u8).unwrap();
+                w.profession[j] = 4;
+                Some(j)
+            })
+            .unwrap();
+        w.needs[i] = Needs::default();
+        w.econ[i].inventory[Commodity::Food as usize] = 3;
+        w.beliefs[i].clear();
+        w.memory[i] = crate::components::Memory::default();
+        w.goals[i] = GoalStack::default();
+        w.recipe[i][3] = 0.3; // rusty at the Tool craft → wants to master it
+        decide(&mut w);
+        assert!(
+            (0..w.goals[i].len as usize).any(|k| w.goals[i].items[k].kind == IntentionKind::Know as u8),
+            "an unmastered crafter poses a Know(recipe) intention on the stack"
+        );
+        assert_eq!(w.goal[i].kind(), GoalKind::Work, "and is biased toward practising its craft");
     }
 
     /// SCOUT (knowledge model): a curious IDLE townsperson with an uncertain-but-valuable hunch goes to
