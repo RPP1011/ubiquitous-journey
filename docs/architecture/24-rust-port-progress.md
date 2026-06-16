@@ -100,8 +100,13 @@ Current: strike→assaulted, kill→slew stamp.
   the money loop: it passes to a living KINSMAN (same house) or, heirless, escheats to the nearest
   living townsperson. Conserved; throttled (every 240 ticks) so a fresh corpse can still be looted first.
 - ✅ **vendetta-arc open/close** — folded into the SagaStore (see G6).
+- ✅ **epithet grant** — the brand PRIMITIVES existed (`brand_epithet`) but nothing earned them. Added
+  `earn_epithets` (throttled society pass): accumulated deed tallies (doc-13 signals) cross thresholds
+  → a thief is branded VILLAIN, a foe-slayer / captive-freer a HERO, a peril-survivor a SURVIVOR;
+  idempotent (first earned title sticks), logged as a chronicle epithet beat. (The free deed now also
+  folds into the Rescue signal so rescuers can earn HERO.)
 Missing:
-⬜ epithet grant · obituary · avenger/legend roles.
+⬜ obituary (a death-summary beat) · avenger/legend roles.
 
 ### G6 — arcs + director breadth
 - ✅ **arcs SagaStore** (`sagas.rs`) — the emergent-saga registry (observer): a vendetta arc opens on
@@ -140,6 +145,11 @@ occupation choice (dynamic vs fixed-at-spawn) · decide utility-oracle (scoreAnd
 ## Progress log (newest first)
 
 _(append a dated entry per landed commit: what closed, gate status, hash)_
+
+- **G5 epithet grants (earned)** — the hero/villain/survivor brand was a dead primitive (nothing called
+  it). `earn_epithets` now brands souls from accumulated deeds: a thief→villain, a foe-slayer/captive-
+  freer→hero, a peril-survivor→survivor (idempotent, first title sticks, logged as a chronicle beat).
+  The free deed also now folds into the Rescue signal. 1 new test; M-invariant; survival unaffected.
 
 - **G5 escheat (inheritance)** — a dead agent's un-looted purse no longer strands out of the closed
   money loop: a throttled society pass passes it to a living kinsman (same house), else escheats it to

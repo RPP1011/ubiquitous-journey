@@ -117,6 +117,8 @@ const CAPTURE_CHANCE: f32 = 0.30;
 /// Settle stranded estates on this tick cadence — long enough that a fresh corpse can still be looted
 /// before its un-looted purse escheats to an heir.
 const ESCHEAT_EVERY: u32 = 240;
+/// Re-assess earned epithets on this cadence (deeds accrue slowly; no need to scan every tick).
+const EPITHET_EVERY: u32 = 120;
 
 impl World {
     /// Worldgen: `n` agents clustered in one dense town with professions, gold, and home anchors.
@@ -502,6 +504,7 @@ impl World {
                     let dtag = match verb {
                         12 => Some(crate::components::DeedTag::Theft),
                         10 | 11 => Some(crate::components::DeedTag::Gift),
+                        14 => Some(crate::components::DeedTag::Rescue),
                         _ => None,
                     };
                     if let Some(t) = dtag {
@@ -668,6 +671,9 @@ impl World {
         systems::quests::tick(self);
         if self.tick % ESCHEAT_EVERY == 0 {
             self.escheat_estates(); // a heirless corpse's stranded purse passes to a living heir
+        }
+        if self.tick % EPITHET_EVERY == 0 {
+            systems::houses::earn_epithets(self); // brand hero/villain/survivor from accumulated deeds
         }
     }
 

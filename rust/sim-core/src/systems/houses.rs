@@ -154,6 +154,48 @@ pub fn brand_forsworn(world: &mut World, i: usize, forsworn: u32, at: u32) -> bo
     brand_epithet(world, i, EPITHET_VILLAIN)
 }
 
+// Deed thresholds for earning a title (the combat/society reputation the brand records).
+const VILLAIN_THEFTS: u32 = 4; // a notorious thief earns the dark name
+const HERO_KILLS: u32 = 6; // a town defender who has felled enough foes
+const HERO_RESCUES: u32 = 3; // …or a soul who has freed enough captives
+const SURVIVOR_PERILS: u32 = 6; // one who has come through enough brushes with death
+
+/// EARN EPITHETS (the hero/villain/survivor brand the combat/society layer grants, `houses.js` +
+/// `combatEvents.grantEpithet`): an unnamed living soul whose accumulated DEEDS (the doc-13 signal
+/// tallies) cross a threshold earns its emergent dynastic title — a notorious thief is branded VILLAIN,
+/// a prolific foe-slayer / captive-freer a HERO, a survivor of many perils a SURVIVOR. Idempotent
+/// (`brand_epithet` never clobbers an earned title) so the FIRST title earned sticks for life. Observer
+/// (reads own deed tallies to NARRATE, never to drive a decision); serial id-order ⇒ deterministic.
+pub fn earn_epithets(world: &mut World) {
+    use crate::components::DeedTag;
+    for i in 0..world.n {
+        if !world.alive[i] || world.epithet[i] != EPITHET_NONE {
+            continue; // dead or already named (the idempotent guard, hoisted)
+        }
+        let (thefts, kills, rescues, perils) = {
+            let s = &world.signals[i];
+            (
+                crate::signals::deed_count(s, DeedTag::Theft),
+                crate::signals::deed_count(s, DeedTag::Kill),
+                crate::signals::deed_count(s, DeedTag::Rescue),
+                s.perils,
+            )
+        };
+        let epithet = if thefts >= VILLAIN_THEFTS {
+            EPITHET_VILLAIN
+        } else if kills >= HERO_KILLS || rescues >= HERO_RESCUES {
+            EPITHET_HERO
+        } else if perils >= SURVIVOR_PERILS {
+            EPITHET_SURVIVOR
+        } else {
+            EPITHET_NONE
+        };
+        if epithet != EPITHET_NONE {
+            brand_epithet(world, i, epithet);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -246,6 +288,41 @@ mod tests {
         let mut w = World::spawn(0x40058, 4);
         assert!(brand_epithet(&mut w, 3, EPITHET_SURVIVOR));
         assert_eq!(w.epithet[3], EPITHET_SURVIVOR);
+    }
+
+    /// EARNED epithets: accumulated deeds cross thresholds and brand the right emergent title — a
+    /// thief → villain, a foe-slayer → hero, a peril-survivor → survivor; the first earned title sticks.
+    #[test]
+    fn deeds_earn_the_right_epithet() {
+        use crate::components::DeedTag;
+        let mut w = World::spawn(0x4005E, 8);
+        for i in 0..w.n {
+            w.epithet[i] = EPITHET_NONE;
+            w.alive[i] = true;
+            w.signals[i] = crate::components::Signals::default();
+        }
+        // a notorious thief.
+        for _ in 0..VILLAIN_THEFTS {
+            crate::signals::fold_deed(&mut w.signals[0], DeedTag::Theft, w.tick);
+        }
+        // a prolific foe-slayer.
+        for _ in 0..HERO_KILLS {
+            crate::signals::fold_deed(&mut w.signals[1], DeedTag::Kill, w.tick);
+        }
+        // a survivor of many perils.
+        w.signals[2].perils = SURVIVOR_PERILS;
+        // an unremarkable soul.
+        earn_epithets(&mut w);
+        assert_eq!(w.epithet[0], EPITHET_VILLAIN, "the thief is branded a villain");
+        assert_eq!(w.epithet[1], EPITHET_HERO, "the slayer is branded a hero");
+        assert_eq!(w.epithet[2], EPITHET_SURVIVOR, "the survivor is branded");
+        assert_eq!(w.epithet[3], EPITHET_NONE, "an unremarkable soul earns no title");
+        // idempotent: a thief who later slays many is NOT re-branded a hero.
+        for _ in 0..HERO_KILLS {
+            crate::signals::fold_deed(&mut w.signals[0], DeedTag::Kill, w.tick);
+        }
+        earn_epithets(&mut w);
+        assert_eq!(w.epithet[0], EPITHET_VILLAIN, "the first earned title sticks for life");
     }
 
     /// Determinism: a feud-maintaining run is M-invariant (M=1 ≡ M=N) via the world golden hash. (Houses
