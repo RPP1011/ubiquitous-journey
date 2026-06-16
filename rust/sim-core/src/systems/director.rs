@@ -127,6 +127,69 @@ pub fn enlist_bodyguards(world: &mut World) {
     }
 }
 
+/// A renowned hero of at least this rank is recognized as a living LEGEND.
+const LEGEND_LEVEL: u8 = 12;
+/// The `role` codes for a legend / a duellist (mirrors `world.role`).
+const ROLE_DUELIST: u8 = 5;
+const ROLE_LEGEND: u8 = 7;
+/// A belief reads as a sworn FOE (a duel candidate) at/below this standing.
+const DUEL_FOE_STANDING: i16 = -8_000;
+
+/// ENLIST LEGENDS (the director's legend role): a very high-rank HERO (an earned epithet) is recognized
+/// as a living LEGEND — a renown marker the render layer reads. Idempotent (the role sticks). Serial.
+pub fn enlist_legends(world: &mut World) {
+    for i in 0..world.n {
+        if world.alive[i]
+            && world.faction[i] == Faction::Townsfolk as u8
+            && world.level[i] >= LEGEND_LEVEL
+            && world.epithet[i] == crate::systems::houses::EPITHET_HERO
+            && world.role[i] == 0
+        {
+            world.role[i] = ROLE_LEGEND;
+        }
+    }
+}
+
+/// ENLIST DUELLISTS (the director's duel role): two MUTUALLY sworn-hostile townsfolk (each latched
+/// hostile to the other) formalize their enmity into a sanctioned DUEL — both wear `ROLE_DUELIST`. They
+/// already hunt each other via the hostile beliefs; this marks the formal challenge. Composes with the
+/// feud/vendetta substrate. At most one duel per pass; serial id-order ⇒ deterministic.
+pub fn enlist_duellists(world: &mut World) {
+    for a in 0..world.n {
+        if !world.alive[a] || world.faction[a] != Faction::Townsfolk as u8 || world.role[a] != 0 {
+            continue;
+        }
+        // a sworn foe `b` that A latches hostile…
+        let bt = &world.beliefs[a];
+        let mut foe: Option<usize> = None;
+        for k in 0..bt.len as usize {
+            let body = &bt.bodies[k];
+            let b = body.subject as usize;
+            if b >= world.n || b == a {
+                continue;
+            }
+            if body.flags & 0x01 != 0 && body.standing <= DUEL_FOE_STANDING {
+                foe = Some(b);
+                break;
+            }
+        }
+        if let Some(b) = foe {
+            // …and B must latch hostile to A in return (a MUTUAL grievance) and be free to duel.
+            if world.alive[b]
+                && world.faction[b] == Faction::Townsfolk as u8
+                && world.role[b] == 0
+                && world.beliefs[b].find(a as u32).map_or(false, |ix| {
+                    world.beliefs[b].bodies[ix].flags & 0x01 != 0
+                })
+            {
+                world.role[a] = ROLE_DUELIST;
+                world.role[b] = ROLE_DUELIST;
+                return; // one formal duel per pass
+            }
+        }
+    }
+}
+
 /// ARC STEPPER (`director._advanceArcs` / `_stepReckoning`): advance open sagas toward their next beat.
 /// The flagship reckoning: a long-burning personal VENDETTA between two souls of different houses
 /// SPILLS into a dynastic HOUSE FEUD — the strife outgrows the two and their kin inherit it (lineage
@@ -163,8 +226,11 @@ pub fn tick(world: &mut World) {
     // ARC STEPPER: advance open sagas (a hardened vendetta spills into a house feud) before the
     // trope/raid logic, so a freshly-escalated feud is live material this same evaluation.
     step_sagas(world);
-    // ROLE MACHINERY: a notable gains a bodyguard (combat-only follow ⇒ economy-safe).
+    // ROLE MACHINERY: a notable gains a bodyguard (combat-only follow ⇒ economy-safe); a renowned hero
+    // becomes a legend; two sworn foes formalize a duel.
     enlist_bodyguards(world);
+    enlist_legends(world);
+    enlist_duellists(world);
 
     // ── pacing + budget bookkeeping (work on a Copy of the director state, write back at the end) ──
     let mut dir = world.director;
@@ -425,6 +491,47 @@ mod tests {
     use super::*;
     use crate::components::GoalKind;
     use crate::world::World;
+
+    /// LEGEND: a very high-rank HERO is recognized as a living legend; a lesser or untitled soul is not.
+    #[test]
+    fn a_renowned_hero_becomes_a_legend() {
+        let mut w = World::spawn(0x1E6D, 6);
+        for i in 0..w.n {
+            w.faction[i] = Faction::Townsfolk as u8;
+            w.alive[i] = true;
+            w.role[i] = 0;
+        }
+        w.level[0] = 14;
+        w.epithet[0] = crate::systems::houses::EPITHET_HERO; // a renowned hero
+        w.level[1] = 14;
+        w.epithet[1] = crate::systems::houses::EPITHET_NONE; // high rank but untitled
+        enlist_legends(&mut w);
+        assert_eq!(w.role[0], ROLE_LEGEND, "a renowned hero is recognized as a legend");
+        assert_eq!(w.role[1], 0, "a high-rank but untitled soul is not a legend");
+    }
+
+    /// DUEL: two MUTUALLY sworn-hostile townsfolk are formalized into a duel (both wear the duellist
+    /// mark); a one-sided grievance does NOT make a duel.
+    #[test]
+    fn two_sworn_foes_formalize_a_duel() {
+        let mut w = World::spawn(0xD0E1, 6);
+        for i in 0..w.n {
+            w.faction[i] = Faction::Townsfolk as u8;
+            w.alive[i] = true;
+            w.role[i] = 0;
+            w.beliefs[i].clear();
+        }
+        // a MUTUAL sworn enmity between 0 and 1.
+        w.sour_belief(0, 1, 20_000, true);
+        w.sour_belief(1, 0, 20_000, true);
+        // a ONE-SIDED grievance: 2 hates 3, but 3 is indifferent.
+        w.sour_belief(2, 3, 20_000, true);
+        enlist_duellists(&mut w);
+        assert_eq!(w.role[0], ROLE_DUELIST, "the mutual foe 0 is a duellist");
+        assert_eq!(w.role[1], ROLE_DUELIST, "the mutual foe 1 is a duellist");
+        assert_eq!(w.role[2], 0, "a one-sided grievance is no duel");
+        assert_eq!(w.role[3], 0, "the indifferent party is no duellist");
+    }
 
     /// BODYGUARD: a notable (high-rank) townsperson is assigned a capable nearby protector — band-bound
     /// to the principal (so the warband rally defends them) and marked ROLE_BODYGUARD.

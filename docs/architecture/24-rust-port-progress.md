@@ -136,7 +136,11 @@ Missing:
   **avenger** (grudge + the avenge GOAP loop hunts the killer; `ROLE_AVENGER`); (2) a NOTABLE gains a
   **bodyguard** — a capable nearby protector band-bound to the principal (`band_leader = vip`,
   `ROLE_BODYGUARD`) so the existing warband-rally defends them IN COMBAT, with zero peacetime cost.
-⬜ other roles (duel/protégé/guardian/legend) · caravans · the other 4 arc steppers.
+- 🟡 **+ legend + duellist roles**: a very high-rank HERO is recognized as a living **legend**
+  (`ROLE_LEGEND`); two MUTUALLY sworn-hostile townsfolk formalize a sanctioned **duel** (both
+  `ROLE_DUELIST` — composes with the feud/vendetta substrate). 4 roles now live (avenger/bodyguard/
+  legend/duellist).
+⬜ protégé/guardian roles · caravans (needs multi-town travel) · the other 4 arc steppers.
 
 ### G7 — World subsystems absent
 ⬜ construction (places-as-percepts + granary) · party (player companions) · biography ·
@@ -187,6 +191,10 @@ _(append a dated entry per landed commit: what closed, gate status, hash)_
   (set in the social cast branch), and the market clears that seller's sales +15% while active. Conserved
   (a price shift). Only the 4 control ops remain — all on Rust-unreachable (NO_CLASS) catalog specs.
   1 new test; hashed; survival unaffected.
+
+- **G6 legend + duellist roles** — two more director roles: a very high-rank hero is recognized as a
+  living **legend**; two mutually sworn-hostile townsfolk formalize a **duel** (both marked duellist —
+  composing with the feud/vendetta substrate). 4 roles now live. 2 new tests; M-invariant.
 
 - **G6 avenger role machinery** — the first director role: a townsperson's MURDER (folk slays folk) now
   enlists a living kinsman (else a dear friend) as an avenger — they inherit the grudge (Assaulted memory
