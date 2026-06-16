@@ -182,6 +182,13 @@ pub fn world_hash(w: &World) -> u64 {
     for p in w.gazette.prices {
         h = fold(h, &p.to_le_bytes());
     }
+    // economic telemetry (observer counters folded in the trade merge).
+    h = fold(h, &w.econstats.trades.to_le_bytes());
+    h = fold(h, &w.econstats.volume.to_le_bytes());
+    h = fold(h, &w.econstats.gold_flowed.to_le_bytes());
+    for v in w.econstats.good_volume {
+        h = fold(h, &v.to_le_bytes());
+    }
     // Wave-4 director (the drama budget/pacing) — serial-phase state, covered so any non-determinism
     // in trope selection / accrual is caught by the M-invariance gate.
     h = fold(h, &(w.house_feuds.len() as u64).to_le_bytes());

@@ -108,6 +108,7 @@ pub struct World {
     pub tropes: TropeState,           // the relationship-trope engine's cooldown/telemetry state (serial)
     pub sagas: crate::sagas::SagaStore, // emergent-saga registry (observer: vendettas/rescues; doc 12/19)
     pub gazette: crate::gazette::Gazette, // the town newspaper (observer; published in the society phase)
+    pub econstats: crate::components::EconStats, // economic telemetry (observer; folded in the trade merge)
 }
 
 /// A perceived faction sentinel: no disguise active.
@@ -205,6 +206,7 @@ impl World {
             tropes: TropeState::default(),
             sagas: crate::sagas::SagaStore::default(),
             gazette: crate::gazette::Gazette::default(),
+            econstats: crate::components::EconStats::default(),
         };
         for i in 0..n {
             let r = TOWN_RADIUS * gen.next_f32().sqrt();
@@ -390,6 +392,12 @@ impl World {
                         self.econ[to].inventory[g] += qty;
                         self.econ[to].gold -= price;
                         self.econ[from].gold += price;
+                        // ECON TELEMETRY (econstats): fold the consummated trade into the observer counters.
+                        let es = &mut self.econstats;
+                        es.trades += 1;
+                        es.volume += qty as u64;
+                        es.gold_flowed += price.max(0) as u64;
+                        es.good_volume[g] += qty as u64;
                     }
                 }
                 Intent::Strike { from, to, dmg } => {
@@ -1348,6 +1356,22 @@ mod tests {
         w.drain_intents();
         assert!((w.combat[def].shield).abs() < 1e-3, "the shield is spent");
         assert!((w.combat[def].health - 75.0).abs() < 1e-3, "the overflow carried through to health");
+    }
+
+    /// ECON TELEMETRY: a cleared Transfer (a trade) folds into the observer econstats counters.
+    #[test]
+    fn a_trade_folds_into_econstats() {
+        let mut w = World::spawn(0xEC57, 4);
+        w.econ[0].inventory[Commodity::Food as usize] = 5;
+        w.econ[1].gold = 10_000;
+        let trades0 = w.econstats.trades;
+        // a 3-unit Food trade from 0 to 1 at price 600.
+        w.intents.push(Intent::Transfer { from: 0, to: 1, good: Commodity::Food as u8, qty: 3, price: 600 });
+        w.drain_intents();
+        assert_eq!(w.econstats.trades, trades0 + 1, "the trade was counted");
+        assert_eq!(w.econstats.volume, 3, "3 units of volume");
+        assert_eq!(w.econstats.gold_flowed, 600, "600 gold flowed");
+        assert_eq!(w.econstats.good_volume[Commodity::Food as usize], 3, "per-good volume tracked");
     }
 
     /// A `Hand` intent moves gold + goods one way and CONSERVES the totals (the resolver primitive

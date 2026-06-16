@@ -659,6 +659,18 @@ pub enum IntentionKind {
 
 pub const NONE_ID: u32 = u32::MAX;
 
+/// ECONOMIC TELEMETRY (`econstats.ts`): observer counters accumulated from the trade merge — total
+/// trades cleared, units moved, gold that changed hands, and per-good volume. Read by diagnostics /
+/// the render layer; never drives a decision. Folded serially ⇒ deterministic.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct EconStats {
+    pub trades: u64,                        // trades cleared
+    pub volume: u64,                        // total units traded
+    pub gold_flowed: u64,                   // gold (minor units) moved across trades
+    pub good_volume: [u64; N_COMMODITIES],  // units traded per commodity
+}
+
 /// Number of strategy slots in the caution store — one per planner verb id (the v1 `expKey` is the
 /// primitive NAME, and the verbs are a small closed set, so a fixed array indexed by verb id replaces
 /// the TS `Map` with no HashMap-order non-determinism). See `experience.rs` (docs/architecture/11).

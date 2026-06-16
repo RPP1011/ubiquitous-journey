@@ -84,9 +84,10 @@ in headless Rust applies as NPC-faction standing.)
   market signal ripples out through the NEWS, not just direct perception (doc-05). **Food is exempt** (the
   survival regression caught that converging food beliefs destabilises the marginal economy — a 49% dip);
   the news moves only the secondary goods. Conserved (beliefs only); hashed; M-invariant.
-Still ⬜ (truly multi-town): arbitrage + caravans (exploit price GAPS between towns). reporter/bounties/
-econstats are single-town-viable (not yet built). The OLD "needs multi-town substrate" framing was too
-broad — only arbitrage/caravans actually need it.
+- ✅ **econstats** — economic telemetry: observer counters (trades / units / gold-flowed / per-good
+  volume) folded into the trade merge. Hashed; deterministic; observer-only.
+Still ⬜ (single-town-viable): reporter (a roaming gazetteer) · bounties (a news-driven labor market).
+Still ⬜ (truly multi-town): arbitrage + caravans (exploit price GAPS between towns).
 - ✅ **favored-price / standing-skew** (`npcFavoredPrice`) — the double-auction now clears at the belief
   midpoint SKEWED by how the seller regards the buyer (±FAVOR): a friend gets a discount, a despised
   buyer a markup, a stranger the neutral price. Conserved. Makes reputation/relationships matter in trade.
@@ -204,6 +205,10 @@ _(append a dated entry per landed commit: what closed, gate status, hash)_
   (set in the social cast branch), and the market clears that seller's sales +15% while active. Conserved
   (a price shift). Only the 4 control ops remain — all on Rust-unreachable (NO_CLASS) catalog specs.
   1 new test; hashed; survival unaffected.
+
+- **G4 econstats** — economic telemetry: an `EconStats` observer-counter column (trades / units / gold
+  flowed / per-good volume) folded into the conserved trade merge. Observer-only, hashed, deterministic.
+  1 new test; M-invariant.
 
 - **G4 gazette + newsread** — the news layer's centerpiece, single-town: `gazette.rs` publishes a
   periodic edition (recent chronicle briefs + a median price board), and the **newsread** consumer folds
