@@ -38,6 +38,12 @@ use crate::world::World;
 const HUNGER_SEEK: f32 = 0.4;
 const ENERGY_SEEK: f32 = 0.35;
 const COMFORT_SEEK: f32 = 0.45;
+/// Soft-need seek bars (company + novelty) — a LOW severe-depletion fallback. Normal market/work/wander
+/// activity restores these passively (needs.rs), so a dedicated Socialize/Sightsee trip fires only for
+/// an agent whose routine left it genuinely starved of company/novelty — rare, so the work economy is
+/// never robbed of foraging time (the marginal-economy survival lesson).
+const SOCIAL_SEEK: f32 = 0.08;
+const NOVELTY_SEEK: f32 = 0.06;
 
 /// Per-tick chance a profession-holder takes a market trip instead of working (rng-gated).
 const MARKET_CHANCE: f32 = 0.08;
@@ -288,7 +294,33 @@ pub fn decide(world: &mut World) {
                 return;
             }
 
-            // 6. WANDER: a random point near the town centre (own rng stream; uniform over the disc).
+            // 6. IDLE TIME: nothing pressing to do. A townsperson with a run-down SOFT need spends the
+            //    idle time tending it — company at a crowd (Socialize) or fresh ground (Sightsee), the
+            //    explicit fills. This sits at the LOWEST priority (only reached when not working/fleeing/
+            //    intending), so it NEVER robs the work economy of foraging time (the marginal-economy
+            //    survival lesson). Most townsfolk satisfy these passively while at market/work (needs.rs)
+            //    and never reach here; this enriches the genuinely idle.
+            if townsfolk {
+                let social_def = if need.social < SOCIAL_SEEK { SOCIAL_SEEK - need.social } else { 0.0 };
+                let novelty_def = if need.novelty < NOVELTY_SEEK { NOVELTY_SEEK - need.novelty } else { 0.0 };
+                if social_def > 0.0 && social_def >= novelty_def {
+                    let to = map
+                        .nearest(crate::mentalmap::AFF_CROWD, pos[i], 300.0)
+                        .map(|p| [p.x, p.z])
+                        .unwrap_or(town_center);
+                    *g = Goal::Socialize { to };
+                    return;
+                } else if novelty_def > 0.0 {
+                    let to = map
+                        .nearest(crate::mentalmap::AFF_RESOURCE, pos[i], 300.0)
+                        .map(|p| [p.x, p.z])
+                        .unwrap_or(town_center);
+                    *g = Goal::Sightsee { to };
+                    return;
+                }
+            }
+
+            // …otherwise amble: a random point near the town centre (own rng stream; uniform over disc).
             let r = TOWN_RADIUS * my_rng.next_f32().sqrt();
             let a = my_rng.next_f32() * std::f32::consts::TAU;
             let to = [town_center[0] + r * a.cos(), town_center[1] + r * a.sin()];
@@ -467,6 +499,30 @@ mod tests {
         w.beliefs[0].clear();
         decide(&mut w);
         assert_eq!(w.goal[0].kind(), GoalKind::Eat, "a hungry agent with food must choose Eat");
+    }
+
+    /// SOFT NEEDS: an IDLE townsperson (no craft to ply, nothing pressing) whose social need has run
+    /// down spends the idle time seeking company — the socialize fill. (Working townsfolk satisfy
+    /// social passively at market/work and never reach this idle step — the marginal-economy design.)
+    #[test]
+    fn idle_lonely_townsperson_seeks_company() {
+        let mut w = World::spawn(0xBEEF, 64);
+        let i = (0..w.n)
+            .find(|&i| w.faction[i] == Faction::Townsfolk as u8)
+            .expect("a townsperson exists");
+        w.profession[i] = Profession::None as u8; // idle: no craft ⇒ reaches the idle-time step
+        w.needs[i] = Needs::default();
+        w.needs[i].social = 0.0; // starved for company
+        w.beliefs[i].clear();
+        w.memory[i] = crate::components::Memory::default();
+        w.goals[i] = GoalStack::default();
+        w.econ[i].inventory[Commodity::Food as usize] = 3; // not hungry (no forage override)
+        decide(&mut w);
+        assert_eq!(
+            w.goal[i].kind(),
+            GoalKind::Socialize,
+            "an idle lonely townsperson should seek company"
+        );
     }
 
     /// SUBSISTENCE: a hungry townsperson with an EMPTY larder no longer stalls on the inert Eat reflex

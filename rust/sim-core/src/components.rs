@@ -60,7 +60,9 @@ pub enum GoalKind {
     Fight = 8,
     Home = 9,
     Interact = 10,
-    Gather = 11, // forage a RAW good at a resource node (capital-free, any agent — the gather verb)
+    Gather = 11,    // forage a RAW good at a resource node (capital-free, any agent — the gather verb)
+    Socialize = 12, // seek company at a gathering place — restores the SOCIAL need (the socialize fill)
+    Sightsee = 13,  // visit a novel place — restores the NOVELTY need (the sightsee fill)
 }
 
 /// types/combat.ts FighterState — the directional-melee swing state machine.
@@ -263,6 +265,11 @@ pub enum Goal {
     /// Locomotion walks to `site`; the market production pass mints one unit of `good` on arrival. This
     /// is what lets a destitute non-farmer actually feed itself (the subsistence forage path).
     Gather { site: [f32; 2], good: u8 },
+    /// Seek company at a gathering place (`to`) — the socialize fill. Locomotion walks there; needs.rs
+    /// restores the SOCIAL need on arrival (the soft-need satisfier that was previously missing).
+    Socialize { to: [f32; 2] },
+    /// Visit a novel place (`to`) — the sightsee fill. Restores the NOVELTY need on arrival.
+    Sightsee { to: [f32; 2] },
 }
 
 /// The non-combat interaction verbs a `Goal::Interact` carries (the conserved social/economic acts).
@@ -291,6 +298,8 @@ impl Goal {
             Goal::Home { .. } => GoalKind::Home,
             Goal::Interact { .. } => GoalKind::Interact,
             Goal::Gather { .. } => GoalKind::Gather,
+            Goal::Socialize { .. } => GoalKind::Socialize,
+            Goal::Sightsee { .. } => GoalKind::Sightsee,
         }
     }
     /// The locomotion target this goal implies (None ⇒ stand still / in-place verb). A Fight now
@@ -298,7 +307,11 @@ impl Goal {
     pub fn move_target(&self) -> Option<[f32; 2]> {
         match self {
             Goal::Work { site } | Goal::Market { site } | Goal::Gather { site, .. } => Some(*site),
-            Goal::Wander { to } | Goal::Comfort { to } | Goal::Home { to } => Some(*to),
+            Goal::Wander { to }
+            | Goal::Comfort { to }
+            | Goal::Home { to }
+            | Goal::Socialize { to }
+            | Goal::Sightsee { to } => Some(*to),
             Goal::Fight { to, .. } | Goal::Interact { to, .. } => Some(*to),
             _ => None,
         }

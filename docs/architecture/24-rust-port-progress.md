@@ -47,9 +47,15 @@ Current: 7 derivers (avenge, seek_fortune, grieve, defend, donate, repay, steal)
 - ⬜ **newsread** — gazette median → price-belief fold (needs G4 substrate)
 - ⬜ **signalsFold** — outcome-streak / deed-ledger plan-outcome handler
 
-### G2 — Steer-fill table (5 of ~23)
-⬜ socialize · court · sightsee · granary/beg · build · travel/road · arbitrage · expedition ·
-avoid · shadow · hide · protect · follow · migrate · seek-glory(have) · comfort(have).
+### G2 — Steer-fill table / goal variety
+Note: locomotion.rs is already a generic `move_target` attractor/repulsor stepper, so this is a
+*decide-side goal-variety* gap, not a locomotion one.
+- ✅ **socialize + sightsee** (+ the previously-unsatisfiable **social/novelty needs**) — needs.rs now
+  satisfies social (at market/work) and novelty (wandering/at fields) PASSIVELY; the explicit
+  `Goal::Socialize`/`Sightsee` fills enrich genuinely-idle townsfolk (lowest priority, never robs the
+  work economy — the marginal-economy survival lesson, learned the hard way via the survival regression).
+⬜ court · granary/beg · build · travel/road · arbitrage · expedition · avoid · shadow · hide · protect ·
+follow · migrate (most are downstream of absent subsystems: caravans/gazette/party/construction).
 
 ### G3 — Reputation / faction-standing rollups
 ⬜ witnessed-deed → faction standing; standing-skewed market clearing; decay. (Player-only in TS;
@@ -99,6 +105,14 @@ occupation choice (dynamic vs fixed-at-spawn) · decide utility-oracle (scoreAnd
 ## Progress log (newest first)
 
 _(append a dated entry per landed commit: what closed, gate status, hash)_
+
+- **G2 socialize/sightsee + soft-need satisfaction** — closed the "social/novelty needs drain but are
+  never satisfiable" hole. needs.rs restores them PASSIVELY as a side-effect of market/work/wander; the
+  explicit `Goal::Socialize`/`Sightsee` fills run only at the lowest (idle-time) decide priority so they
+  never steal foraging time. **Lesson (documented):** dedicated soft-need trips reliably destabilized
+  the marginal food economy (the survival regression caught a 380→170 collapse across retunings, and
+  tuning was non-monotonic/chaotic near the edge) — passive satisfaction + idle-only explicit fills is
+  the robust design. 3 new tests; survival regression still green (all seeds ≥50%); M-invariant.
 
 - **G5 loot vertical** — the dormant Loot verb made live. New `EpisodeKind::Looted` +
   `IntentionKind::Loot` + `Atom::Looted` + a loot primitive (reach-and-take) + a `loot` deriver
