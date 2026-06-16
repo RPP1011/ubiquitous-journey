@@ -136,11 +136,10 @@ Missing:
   **avenger** (grudge + the avenge GOAP loop hunts the killer; `ROLE_AVENGER`); (2) a NOTABLE gains a
   **bodyguard** — a capable nearby protector band-bound to the principal (`band_leader = vip`,
   `ROLE_BODYGUARD`) so the existing warband-rally defends them IN COMBAT, with zero peacetime cost.
-- 🟡 **+ legend + duellist roles**: a very high-rank HERO is recognized as a living **legend**
-  (`ROLE_LEGEND`); two MUTUALLY sworn-hostile townsfolk formalize a sanctioned **duel** (both
-  `ROLE_DUELIST` — composes with the feud/vendetta substrate). 4 roles now live (avenger/bodyguard/
-  legend/duellist).
-⬜ protégé/guardian roles · caravans (needs multi-town travel) · the other 4 arc steppers.
+- ✅ **role machinery — all 6 roles live**: avenger (hunts a kinsman's killer), bodyguard (warband-rally
+  defends a notable), legend (a renowned hero), duellist (mutual sworn foes), protégé (an apprentice who
+  reveres a same-craft master — composes with mentor-pride), guardian (a capable soul in the town core).
+⬜ caravans (needs multi-town travel) · the other 4 arc steppers (spy-web/romance/accused/tyrant-fall).
 
 ### G7 — World subsystems absent
 ⬜ construction (places-as-percepts + granary) · party (player companions) · biography ·
@@ -191,6 +190,11 @@ _(append a dated entry per landed commit: what closed, gate status, hash)_
   (set in the social cast branch), and the market clears that seller's sales +15% while active. Conserved
   (a price shift). Only the 4 control ops remain — all on Rust-unreachable (NO_CLASS) catalog specs.
   1 new test; hashed; survival unaffected.
+
+- **G6 protégé + guardian roles — ALL 6 director roles now live** — protégé (an apprentice who reveres a
+  high-level same-craft master — composes with mentor-pride) + guardian (a capable soul standing in the
+  town core). The director role-machinery cluster is complete: avenger/bodyguard/legend/duellist/protégé/
+  guardian. 2 new tests; M-invariant.
 
 - **G6 legend + duellist roles** — two more director roles: a very high-rank hero is recognized as a
   living **legend**; two mutually sworn-hostile townsfolk formalize a **duel** (both marked duellist —

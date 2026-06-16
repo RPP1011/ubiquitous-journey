@@ -129,11 +129,72 @@ pub fn enlist_bodyguards(world: &mut World) {
 
 /// A renowned hero of at least this rank is recognized as a living LEGEND.
 const LEGEND_LEVEL: u8 = 12;
-/// The `role` codes for a legend / a duellist (mirrors `world.role`).
+/// The `role` codes (mirrors `world.role`: 0 none .. 5 duelist, then the director-enlisted extras).
 const ROLE_DUELIST: u8 = 5;
 const ROLE_LEGEND: u8 = 7;
+const ROLE_PROTEGE: u8 = 8;
+const ROLE_GUARDIAN: u8 = 9;
 /// A belief reads as a sworn FOE (a duel candidate) at/below this standing.
 const DUEL_FOE_STANDING: i16 = -8_000;
+/// PROTÉGÉ: a still-learning apprentice is at most this level; their mentor is at least `MENTOR_LEVEL`,
+/// bound to them this warmly.
+const APPRENTICE_MAX: u8 = 4;
+const MENTOR_LEVEL: u8 = 7;
+const MENTOR_BOND: i16 = 4_000;
+/// GUARDIAN: a capable townsperson (this rank) standing within this range of the town core defends it.
+const GUARDIAN_LEVEL: u8 = 6;
+const GUARDIAN_RANGE2: f32 = 70.0 * 70.0;
+
+/// ENLIST PROTÉGÉS (the director's protégé role): a still-learning apprentice who looks up to a
+/// high-level MASTER of the same craft (a warm believed bond — the mentor-pride trope's fruit) is
+/// recognized as that master's PROTÉGÉ. Composes with mentor-pride. Idempotent; serial.
+pub fn enlist_proteges(world: &mut World) {
+    for p in 0..world.n {
+        if !world.alive[p]
+            || world.faction[p] != Faction::Townsfolk as u8
+            || world.role[p] != 0
+            || world.profession[p] == 0
+            || world.level[p] > APPRENTICE_MAX
+        {
+            continue;
+        }
+        let prof = world.profession[p];
+        let bt = &world.beliefs[p];
+        for k in 0..bt.len as usize {
+            let body = &bt.bodies[k];
+            let m = body.subject as usize;
+            if m < world.n
+                && world.level[m] >= MENTOR_LEVEL
+                && world.profession[m] == prof
+                && body.standing > MENTOR_BOND
+            {
+                world.role[p] = ROLE_PROTEGE;
+                break;
+            }
+        }
+    }
+}
+
+/// ENLIST GUARDIANS (the director's guardian role): a capable townsperson standing within the town CORE
+/// is recognized as a GUARDIAN of it (the render-read protector marker; the watch system drives the
+/// actual threat response). Idempotent; serial id-order ⇒ deterministic.
+pub fn enlist_guardians(world: &mut World) {
+    let core = world.town_center;
+    for g in 0..world.n {
+        if !world.alive[g]
+            || world.faction[g] != Faction::Townsfolk as u8
+            || world.role[g] != 0
+            || world.level[g] < GUARDIAN_LEVEL
+        {
+            continue;
+        }
+        let dx = world.pos[g][0] - core[0];
+        let dz = world.pos[g][1] - core[1];
+        if dx * dx + dz * dz <= GUARDIAN_RANGE2 {
+            world.role[g] = ROLE_GUARDIAN;
+        }
+    }
+}
 
 /// ENLIST LEGENDS (the director's legend role): a very high-rank HERO (an earned epithet) is recognized
 /// as a living LEGEND — a renown marker the render layer reads. Idempotent (the role sticks). Serial.
@@ -231,6 +292,8 @@ pub fn tick(world: &mut World) {
     enlist_bodyguards(world);
     enlist_legends(world);
     enlist_duellists(world);
+    enlist_proteges(world);
+    enlist_guardians(world);
 
     // ── pacing + budget bookkeeping (work on a Copy of the director state, write back at the end) ──
     let mut dir = world.director;
@@ -491,6 +554,45 @@ mod tests {
     use super::*;
     use crate::components::GoalKind;
     use crate::world::World;
+
+    /// PROTÉGÉ: an apprentice who looks up to a high-level same-craft master is marked their protégé.
+    #[test]
+    fn an_apprentice_who_reveres_a_master_is_a_protege() {
+        let mut w = World::spawn(0x9307, 6);
+        let (apprentice, master) = (0usize, 1usize);
+        for i in 0..w.n {
+            w.faction[i] = Faction::Townsfolk as u8;
+            w.alive[i] = true;
+            w.role[i] = 0;
+            w.beliefs[i].clear();
+        }
+        w.profession[apprentice] = 4; // both blacksmiths
+        w.level[apprentice] = 2; // still learning
+        w.profession[master] = 4;
+        w.level[master] = 9; // a master
+        w.warm_belief(apprentice, master as u32, 9_000); // looks up to them
+        enlist_proteges(&mut w);
+        assert_eq!(w.role[apprentice], ROLE_PROTEGE, "the apprentice is the master's protégé");
+        assert_eq!(w.role[master], 0, "the master is not a protégé");
+    }
+
+    /// GUARDIAN: a capable townsperson standing within the town core is recognized as its guardian.
+    #[test]
+    fn a_capable_soul_in_the_core_guards_the_town() {
+        let mut w = World::spawn(0x6A4D, 6);
+        let (guard, farflung) = (0usize, 1usize);
+        for i in 0..w.n {
+            w.faction[i] = Faction::Townsfolk as u8;
+            w.alive[i] = true;
+            w.role[i] = 0;
+            w.level[i] = 8; // all capable
+        }
+        w.pos[guard] = w.town_center; // in the core
+        w.pos[farflung] = [w.town_center[0] + 500.0, w.town_center[1]]; // far from the core
+        enlist_guardians(&mut w);
+        assert_eq!(w.role[guard], ROLE_GUARDIAN, "a capable soul in the core guards it");
+        assert_eq!(w.role[farflung], 0, "a far-flung soul is no guardian");
+    }
 
     /// LEGEND: a very high-rank HERO is recognized as a living legend; a lesser or untitled soul is not.
     #[test]
