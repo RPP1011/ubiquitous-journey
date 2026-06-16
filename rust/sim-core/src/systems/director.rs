@@ -401,10 +401,14 @@ pub fn tick(world: &mut World) {
 
     let pop = town_pop(world);
     let attackers = attacker_count(world);
+    // QUIET scales with the REGION: a 16-town world almost always has a predator menacing SOME town, so
+    // a fixed "<=1 attacker anywhere" bar would suppress the difficulty-curve raid forever. The bar is
+    // "roughly quiet per town" (≈one tolerated menace per settlement) so the valve still fires region-wide.
+    let quiet_bar = QUIET_THRESHOLD.max(world.town_centers.len());
 
     // tension tracks peril; a high peak that resolves to quiet opens a relief breather.
     dir.tension = attackers as f32;
-    let peak_resolved = dir.had_threat && attackers <= QUIET_THRESHOLD;
+    let peak_resolved = dir.had_threat && attackers <= quiet_bar;
     if peak_resolved {
         dir.relief_until = now + RELIEF_TICKS;
     }
@@ -419,7 +423,7 @@ pub fn tick(world: &mut World) {
     dir.points = dir.points.clamp(0, POINTS_CAP);
     dir.last_pop = pop as i32;
 
-    let quiet = attackers <= QUIET_THRESHOLD;
+    let quiet = attackers <= quiet_bar;
 
     // The RAID is the difficulty curve AND the anti-massacre valve, so it fires on quiet + its own
     // cooldown ALONE — it ignores the drama budget (a depopulated town can't accrue points yet still
