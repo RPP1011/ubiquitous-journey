@@ -44,8 +44,10 @@ Current: 7 derivers (avenge, seek_fortune, grieve, defend, donate, repay, steal)
   `work_sites[prof]`, so craft production NEVER fired live — the town subsisted only on foraging; town
   survival jumped to 80–98% once the craft economy worked); (3) the **study channel** (`learning.ts`):
   a rusty crafter co-located with a same-craft MASTER firms its recipe and pays CONSERVED tuition to the
-  teacher (the taught route to mastery). ⬜ still: the `ask` channel + the `Know(topic)` goal-stack
-  abstraction + cross-craft learning (needs dynamic occupation, also absent).
+  teacher (the taught route to mastery); (4) the **ask channel**: with no master nearby, a rusty crafter
+  ASKS a more-skilled co-located peer for a smaller, tuition-free recipe nudge. **All 3 knowledge channels
+  (observe/ask/study) now live.** ⬜ still: the `Know(topic)` goal-stack abstraction (refactoring these
+  into explicit Know-goals) + cross-craft learning (needs dynamic occupation, also absent).
 - 🟡 **recruiter / warband** — **warband combat rally LANDED**: a band follower converges on its
   leader's foe *if it also perceives it* (shared-threat ToM; overrides personal flee; combat-only, so
   no peacetime economic cost). Built via a serial leader-foe snapshot read in the parallel decide.
@@ -193,6 +195,10 @@ _(append a dated entry per landed commit: what closed, gate status, hash)_
   (set in the social cast branch), and the market clears that seller's sales +15% while active. Conserved
   (a price shift). Only the 4 control ops remain — all on Rust-unreachable (NO_CLASS) catalog specs.
   1 new test; hashed; survival unaffected.
+
+- **G1 knowledge model — ask channel (observe/ask/study all live)** — extended the study pass: with no
+  master nearby, a rusty crafter ASKS a more-skilled co-located peer for a smaller, tuition-free recipe
+  nudge. All three knowledge channels now live. 1 new test; conserved; M-invariant.
 
 - **G6 spy-web + accused arc steppers — ALL 5 arc steppers now live** — spy-web (an active intrigue
   `role==spy` opens the arc) + accused (a pariah whom ≥4 believe a hostile foe). With reckoning/romance/

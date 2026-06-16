@@ -718,40 +718,49 @@ impl World {
         }
     }
 
-    /// STUDY CHANNEL (the knowledge model's `study`, `features/learning.ts`): a rusty crafter who is
-    /// co-located with a MASTER of the SAME craft learns from them — its recipe skill firms up, and it
-    /// pays CONSERVED tuition to the teacher (no minting; the teacher is rewarded for the lesson). The
-    /// taught route to mastery (faster than learn-by-doing alone). Serial id-order ⇒ deterministic.
+    /// STUDY + ASK CHANNELS (the knowledge model's taught/asked routes, `features/learning.ts`): a rusty
+    /// crafter co-located with a same-craft peer firms its recipe — STUDY under a MASTER (the bigger
+    /// gain, paying CONSERVED tuition), or, failing a master, ASK a more-skilled peer (a smaller, vaguer
+    /// bump, no tuition — you just ask around). Study is preferred; ask is the fallback. Serial ⇒
+    /// deterministic; conserved (gold only moved for tuition); economy-safe (recipe only adds a bonus).
     fn study_recipes(&mut self) {
         const STUDY_GAIN: f32 = 0.12;
+        const ASK_GAIN: f32 = 0.04; // the ask channel: vaguer than study, no teacher/tuition needed
         const TUITION: i64 = 500; // minor units, conserved teacher↔student
-        const STUDY_RANGE2: f32 = 8.0 * 8.0;
+        const RANGE2: f32 = 8.0 * 8.0;
         const MASTER_BAR: f32 = 0.8;
         for student in 0..self.n {
             let prof = self.profession[student];
             if prof == 0 || !self.alive[student] || self.recipe[student] >= MASTER_BAR {
-                continue; // only a still-learning crafter studies
+                continue; // only a still-learning crafter learns
             }
             let spos = self.pos[student];
-            for teacher in 0..self.n {
-                if teacher == student
-                    || self.profession[teacher] != prof
-                    || !self.alive[teacher]
-                    || self.recipe[teacher] < MASTER_BAR
-                {
-                    continue; // need a co-located MASTER of the same craft
-                }
-                let dx = self.pos[teacher][0] - spos[0];
-                let dz = self.pos[teacher][1] - spos[1];
-                if dx * dx + dz * dz > STUDY_RANGE2 {
+            let mut master: Option<usize> = None;
+            let mut peer: Option<usize> = None; // a more-skilled (but non-master) co-located peer
+            for other in 0..self.n {
+                if other == student || self.profession[other] != prof || !self.alive[other] {
                     continue;
                 }
-                self.recipe[student] = (self.recipe[student] + STUDY_GAIN).min(1.0);
+                let dx = self.pos[other][0] - spos[0];
+                let dz = self.pos[other][1] - spos[1];
+                if dx * dx + dz * dz > RANGE2 {
+                    continue;
+                }
+                if self.recipe[other] >= MASTER_BAR {
+                    master = Some(other);
+                    break; // a master is the best teacher — take them
+                } else if self.recipe[other] > self.recipe[student] && peer.is_none() {
+                    peer = Some(other); // remember the first more-skilled peer (the ask fallback)
+                }
+            }
+            if let Some(teacher) = master {
+                self.recipe[student] = (self.recipe[student] + STUDY_GAIN).min(1.0); // taught
                 if self.econ[student].gold >= TUITION {
                     self.econ[student].gold -= TUITION; // conserved tuition to the teacher
                     self.econ[teacher].gold += TUITION;
                 }
-                break; // one lesson per student per pass
+            } else if peer.is_some() {
+                self.recipe[student] = (self.recipe[student] + ASK_GAIN).min(1.0); // asked (no tuition)
             }
         }
     }
@@ -1123,6 +1132,28 @@ mod tests {
         assert!(w.recipe[student] > 0.4, "the student's recipe firmed up under the master");
         assert!(w.econ[master].gold > teacher_gold, "the teacher was paid tuition");
         assert_eq!(w.total_gold(), total, "tuition is conserved (moved, not minted)");
+    }
+
+    /// ASK CHANNEL: with no master nearby, a rusty crafter ASKS a more-skilled co-located peer for a
+    /// smaller, tuition-free recipe nudge.
+    #[test]
+    fn a_crafter_asks_a_more_skilled_peer() {
+        let mut w = World::spawn(0x57D2, 6);
+        let (student, peer) = (0usize, 1usize);
+        w.profession[student] = 4;
+        w.profession[peer] = 4;
+        w.alive[student] = true;
+        w.alive[peer] = true;
+        w.recipe[student] = 0.3;
+        w.recipe[peer] = 0.6; // more skilled, but NOT a master
+        w.pos[student] = [0.0, 0.0];
+        w.pos[peer] = [2.0, 0.0];
+        w.econ[student].gold = 5_000;
+        let total = w.total_gold();
+        w.study_recipes();
+        assert!(w.recipe[student] > 0.3, "asking a peer nudged the recipe up");
+        assert!(w.recipe[student] < 0.42, "the ask bump is smaller than a taught lesson");
+        assert_eq!(w.total_gold(), total, "asking pays no tuition (gold untouched + conserved)");
     }
 
     /// AVENGER ROLE: a townsperson murdered by another townsperson enlists a living KINSMAN as an
