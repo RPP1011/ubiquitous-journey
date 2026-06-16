@@ -126,11 +126,11 @@ Missing:
   soul gains a patron's regard), **prophet** (a faith-holder draws a convert into the flock + devotion),
   **tyrant-market** (great wealth breeds a poor neighbour's resentment). All compose from existing
   belief/level/role/gold/faith/house substrate + the trope dispatcher.
-- 🟡 **role machinery — avenger** landed: a townsperson MURDERED by another townsperson enlists a living
-  KINSMAN (else a dear friend) as an **avenger** — they gain the grudge (Assaulted memory + latched-hostile
-  belief, so the avenge GOAP loop hunts the killer) + wear `ROLE_AVENGER`. Composes the murder→avenger→
-  vendetta arc from existing substrate.
-⬜ other roles (bodyguard/duel/protégé/guardian/legend) · caravans · the other 4 arc steppers.
+- 🟡 **role machinery — avenger + bodyguard** landed: (1) a MURDER enlists a kinsman/friend as an
+  **avenger** (grudge + the avenge GOAP loop hunts the killer; `ROLE_AVENGER`); (2) a NOTABLE gains a
+  **bodyguard** — a capable nearby protector band-bound to the principal (`band_leader = vip`,
+  `ROLE_BODYGUARD`) so the existing warband-rally defends them IN COMBAT, with zero peacetime cost.
+⬜ other roles (duel/protégé/guardian/legend) · caravans · the other 4 arc steppers.
 
 ### G7 — World subsystems absent
 ⬜ construction (places-as-percepts + granary) · party (player companions) · biography ·

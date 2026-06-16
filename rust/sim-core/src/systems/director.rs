@@ -75,6 +75,58 @@ const BEAT_CRISIS: u8 = 12;
 /// A vendetta that has traded this many blows is a real, hardened feud — ripe to ESCALATE.
 const ESCALATE_BEATS: u16 = 3;
 
+/// A townsperson of this rank is a NOTABLE worth guarding (the bodyguard's principal).
+const BODYGUARD_VIP_LEVEL: u8 = 8;
+/// A capable protector is at least this level.
+const BODYGUARD_MIN_LEVEL: u8 = 5;
+/// The protector must be within this distance of the principal to be assigned.
+const BODYGUARD_RANGE2: f32 = 40.0 * 40.0;
+/// The `role` code for a bodyguard (mirrors `world.role`).
+const ROLE_BODYGUARD: u8 = 4;
+
+/// ENLIST BODYGUARDS (the director's bodyguard role machinery): a NOTABLE townsperson (high rank) with
+/// no protector is assigned a capable, unattached nearby townsperson as a bodyguard. The assignment is
+/// just `band_leader = principal` + the `ROLE_BODYGUARD` mark — so the EXISTING warband-rally (decide's
+/// 2c) makes the bodyguard converge on the principal's foe IN COMBAT, with NO peacetime cost (the rally
+/// is combat-only; in peace the bodyguard works its own trade). Serial id-order ⇒ deterministic.
+pub fn enlist_bodyguards(world: &mut World) {
+    use crate::components::NO_BAND;
+    for vip in 0..world.n {
+        if !world.alive[vip]
+            || world.faction[vip] != Faction::Townsfolk as u8
+            || world.level[vip] < BODYGUARD_VIP_LEVEL
+            || world.band_leader[vip] != NO_BAND
+        {
+            continue; // not a free-standing notable in need of a guard
+        }
+        // already guarded? (someone follows this VIP) — then skip.
+        if (0..world.n).any(|b| world.band_leader[b] == vip as i32 && world.role[b] == ROLE_BODYGUARD) {
+            continue;
+        }
+        // find a capable, unattached nearby townsperson to stand guard (lowest id — deterministic).
+        let vpos = world.pos[vip];
+        for b in 0..world.n {
+            if b == vip
+                || !world.alive[b]
+                || world.faction[b] != Faction::Townsfolk as u8
+                || world.level[b] < BODYGUARD_MIN_LEVEL
+                || world.band_leader[b] != NO_BAND
+                || world.role[b] != 0
+            {
+                continue;
+            }
+            let dx = world.pos[b][0] - vpos[0];
+            let dz = world.pos[b][1] - vpos[1];
+            if dx * dx + dz * dz > BODYGUARD_RANGE2 {
+                continue;
+            }
+            world.band_leader[b] = vip as i32; // follows + rallies to the principal (warband logic)
+            world.role[b] = ROLE_BODYGUARD;
+            break; // one guard per VIP per pass
+        }
+    }
+}
+
 /// ARC STEPPER (`director._advanceArcs` / `_stepReckoning`): advance open sagas toward their next beat.
 /// The flagship reckoning: a long-burning personal VENDETTA between two souls of different houses
 /// SPILLS into a dynastic HOUSE FEUD — the strife outgrows the two and their kin inherit it (lineage
@@ -111,6 +163,8 @@ pub fn tick(world: &mut World) {
     // ARC STEPPER: advance open sagas (a hardened vendetta spills into a house feud) before the
     // trope/raid logic, so a freshly-escalated feud is live material this same evaluation.
     step_sagas(world);
+    // ROLE MACHINERY: a notable gains a bodyguard (combat-only follow ⇒ economy-safe).
+    enlist_bodyguards(world);
 
     // ── pacing + budget bookkeeping (work on a Copy of the director state, write back at the end) ──
     let mut dir = world.director;
@@ -371,6 +425,35 @@ mod tests {
     use super::*;
     use crate::components::GoalKind;
     use crate::world::World;
+
+    /// BODYGUARD: a notable (high-rank) townsperson is assigned a capable nearby protector — band-bound
+    /// to the principal (so the warband rally defends them) and marked ROLE_BODYGUARD.
+    #[test]
+    fn a_notable_gains_a_bodyguard() {
+        use crate::components::NO_BAND;
+        let mut w = World::spawn(0xB0D7, 6);
+        let (vip, guard) = (0usize, 1usize);
+        for i in 0..w.n {
+            w.faction[i] = Faction::Townsfolk as u8;
+            w.alive[i] = true;
+            w.band_leader[i] = NO_BAND;
+            w.role[i] = 0;
+            w.level[i] = 1;
+            w.pos[i] = [500.0, 500.0]; // everyone else far away + low-level
+        }
+        w.level[vip] = 9; // a notable worth guarding
+        w.pos[vip] = [0.0, 0.0];
+        w.level[guard] = 6; // a capable protector…
+        w.pos[guard] = [5.0, 0.0]; // …nearby
+        enlist_bodyguards(&mut w);
+        assert_eq!(w.band_leader[guard], vip as i32, "the guard is band-bound to the principal");
+        assert_eq!(w.role[guard], ROLE_BODYGUARD, "the guard wears the bodyguard mark");
+        // re-running does NOT pile on a second guard (idempotent — the VIP is already guarded).
+        let guards_before = (0..w.n).filter(|&b| w.band_leader[b] == vip as i32).count();
+        enlist_bodyguards(&mut w);
+        let guards_after = (0..w.n).filter(|&b| w.band_leader[b] == vip as i32).count();
+        assert_eq!(guards_before, guards_after, "an already-guarded notable gains no second guard");
+    }
 
     /// ARC STEPPER: a long-burning vendetta between two souls of different houses ESCALATES into a
     /// dynastic house feud (the strife outgrows the two). A short-lived vendetta does NOT.
