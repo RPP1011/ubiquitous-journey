@@ -109,6 +109,7 @@ pub struct World {
     pub sagas: crate::sagas::SagaStore, // emergent-saga registry (observer: vendettas/rescues; doc 12/19)
     pub gazette: crate::gazette::Gazette, // the town newspaper (observer; published in the society phase)
     pub econstats: crate::components::EconStats, // economic telemetry (observer; folded in the trade merge)
+    pub reporter_last_volume: u64, // trade volume at the last filed report (so each report is a delta)
 }
 
 /// A perceived faction sentinel: no disguise active.
@@ -207,6 +208,7 @@ impl World {
             sagas: crate::sagas::SagaStore::default(),
             gazette: crate::gazette::Gazette::default(),
             econstats: crate::components::EconStats::default(),
+            reporter_last_volume: 0,
         };
         for i in 0..n {
             let r = TOWN_RADIUS * gen.next_f32().sqrt();
@@ -720,6 +722,7 @@ impl World {
         }
         if self.tick % GAZETTE_EVERY == 0 {
             self.publish_gazette(); // the town newspaper goes to press (an edition of briefs + prices)
+            systems::chronicle::file_report(self); // the reporter files the cycle's market story
         }
     }
 

@@ -26,6 +26,10 @@ pub const KIND_CLASSUP: u8 = 1;
 /// has fallen", "a villain meets their end"): `epithet * 100 + level`. Mirrors `gazette.buildObituary`'s
 /// "obituaries are for the notable" trigger; the plain `KIND_DEATH` still logs for every death.
 pub const KIND_OBITUARY: u8 = 3;
+/// A REPORTER's filed market story (the `reporter.ts` wire desk, headless subset): `subject` = the
+/// gazette edition, `magnitude` = trade volume reported this cycle. The roaming-interview + LLM-article
+/// parts of `reporter.ts` are render/browser-only (doc 22 §10); this is the deterministic wire filing.
+pub const KIND_REPORT: u8 = 4;
 /// A death is "notable" (earns an obituary) at or above this total level even without an epithet.
 const OBITUARY_LEVEL: u16 = 5;
 
@@ -41,6 +45,17 @@ fn push(world: &mut World, kind: u8, subject: u32, magnitude: i32) {
         world.chronicle.remove(0);
     }
     world.chronicle.push(Beat { t, kind, subject, magnitude });
+}
+
+/// REPORTER (the gazetteer's wire desk, headless subset of `reporter.ts`): file a market-report beat —
+/// the trade VOLUME since the last report, tagged with the current gazette edition. The town's filed
+/// economic news. Observer-only; serial ⇒ deterministic. `last_volume` is tracked on the world so each
+/// report covers only the new trades (a delta, not the cumulative total).
+pub fn file_report(world: &mut World) {
+    let vol = world.econstats.volume;
+    let delta = vol.saturating_sub(world.reporter_last_volume);
+    world.reporter_last_volume = vol;
+    push(world, KIND_REPORT, world.gazette.edition, delta.min(i32::MAX as u64) as i32);
 }
 
 pub fn tick(world: &mut World) {
@@ -111,6 +126,22 @@ mod tests {
             crate::systems::houses::EPITHET_HERO as i32,
             "the obituary carries the hero's title"
         );
+    }
+
+    /// REPORTER: a filed report logs a KIND_REPORT beat carrying the DELTA trade volume since the last
+    /// report (not the cumulative total).
+    #[test]
+    fn reporter_files_a_market_report_delta() {
+        let mut w = World::spawn(0x4E05, 4);
+        w.econstats.volume = 100;
+        file_report(&mut w);
+        let first: &Beat = w.chronicle.iter().rev().find(|b| b.kind == KIND_REPORT).unwrap();
+        assert_eq!(first.magnitude, 100, "the first report covers all trades so far");
+        // more trades, then a second report covers only the NEW volume.
+        w.econstats.volume = 130;
+        file_report(&mut w);
+        let second: &Beat = w.chronicle.iter().rev().find(|b| b.kind == KIND_REPORT).unwrap();
+        assert_eq!(second.magnitude, 30, "the second report covers only the new 30 units (a delta)");
     }
 
     /// A single death logs exactly one DEATH beat (and only once, even across later ticks).

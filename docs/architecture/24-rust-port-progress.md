@@ -86,7 +86,10 @@ in headless Rust applies as NPC-faction standing.)
   the news moves only the secondary goods. Conserved (beliefs only); hashed; M-invariant.
 - ✅ **econstats** — economic telemetry: observer counters (trades / units / gold-flowed / per-good
   volume) folded into the trade merge. Hashed; deterministic; observer-only.
-Still ⬜ (single-town-viable): reporter (a roaming gazetteer) · bounties (a news-driven labor market).
+- ✅ **reporter** (wire-desk subset) — the gazetteer files a market-report `KIND_REPORT` chronicle beat
+  each gazette cycle (the DELTA trade volume since the last filing, tagged with the edition). The
+  roaming-interview + LLM-article path is render/browser-only (out of headless scope).
+Still ⬜ (single-town-viable): bounties (a news-driven labor market).
 Still ⬜ (truly multi-town): arbitrage + caravans (exploit price GAPS between towns).
 - ✅ **favored-price / standing-skew** (`npcFavoredPrice`) — the double-auction now clears at the belief
   midpoint SKEWED by how the seller regards the buyer (±FAVOR): a friend gets a discount, a despised
@@ -205,6 +208,11 @@ _(append a dated entry per landed commit: what closed, gate status, hash)_
   (set in the social cast branch), and the market clears that seller's sales +15% while active. Conserved
   (a price shift). Only the 4 control ops remain — all on Rust-unreachable (NO_CLASS) catalog specs.
   1 new test; hashed; survival unaffected.
+
+- **G4 reporter (wire desk)** — the gazetteer files a market-report `KIND_REPORT` chronicle beat each
+  gazette cycle (the delta trade volume since the last filing, tagged with the edition). Observer-only,
+  deterministic, hashed. The roaming-interview/LLM-article path is render-only (out of headless scope).
+  1 new test; M-invariant.
 
 - **G4 econstats** — economic telemetry: an `EconStats` observer-counter column (trades / units / gold
   flowed / per-good volume) folded into the conserved trade merge. Observer-only, hashed, deterministic.
