@@ -907,9 +907,24 @@ mod tests {
         false
     }
 
+    /// A guaranteed-QUIET world for the raid-valve tests: no monsters, and no lairs to respawn them — so
+    /// the "quiet" gate holds and the difficulty-curve raid fires on its cooldown. (The living wilderness
+    /// now keeps a standing predator population, so a vanilla world is rarely quiet enough to test the
+    /// raid MECHANISM in isolation.)
+    fn quiet_world(seed: u64) -> World {
+        let mut w = World::spawn(seed, 80);
+        w.lair_pos.clear();
+        for i in 0..w.n {
+            if w.faction[i] == Faction::Monster as u8 {
+                w.alive[i] = false;
+            }
+        }
+        w
+    }
+
     #[test]
     fn raid_fires_when_world_is_quiet() {
-        let mut w = World::spawn(0xD11EC7, 80);
+        let mut w = quiet_world(0xD11EC7);
         assert!(
             run_until_beat(&mut w, BEAT_RAID, 12000),
             "director should eventually inject a raid when the world goes quiet"
@@ -918,7 +933,7 @@ mod tests {
 
     #[test]
     fn spawned_raiders_carry_zero_gold_and_conserve() {
-        let mut w = World::spawn(0xD11EC7, 80);
+        let mut w = quiet_world(0xD11EC7);
         let gold_before = w.total_gold();
         assert!(run_until_beat(&mut w, BEAT_RAID, 12000), "need a raid to inspect the raiders");
         for i in 0..w.n {
@@ -932,7 +947,7 @@ mod tests {
 
     #[test]
     fn raid_sets_a_moving_fight_on_a_victim() {
-        let mut w = World::spawn(0xD11EC7, 80);
+        let mut w = quiet_world(0xD11EC7);
         assert!(run_until_beat(&mut w, BEAT_RAID, 12000), "director should inject a raid");
         let any_raider_fighting = (0..w.n).any(|i| {
             w.faction[i] == Faction::Raider as u8 && w.goal[i].kind() == GoalKind::Fight

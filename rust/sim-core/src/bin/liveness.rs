@@ -90,4 +90,39 @@ fn main() {
         w.sagas.open_count(sim_core::sagas::SagaKind::Rescue),
     );
     println!("  quests on the board: {}", w.quests.len());
+
+    // EMERGENT SPECIALIZATION: per-town profession mix. A town's "dominant share" = the fraction of its
+    // workers in its single biggest trade; higher = more specialised. Identical worldgen, so any spread
+    // above the uniform 1/6 baseline emerged from the mastery-aware per-town reallocation + trade.
+    let names = ["", "Farm", "Mine", "Wood", "Smith", "Hunt", "Trade"];
+    let mut town_counts = vec![[0usize; 7]; nt];
+    for i in 0..w.n {
+        if w.alive[i] && w.faction[i] == Faction::Townsfolk as u8 {
+            let p = w.profession[i] as usize;
+            if p >= 1 && p <= 6 {
+                town_counts[(w.town[i] as usize).min(nt - 1)][p] += 1;
+            }
+        }
+    }
+    let mut shares = 0f32;
+    let mut nonzero = 0;
+    let mut doms: Vec<&str> = Vec::new();
+    for c in &town_counts {
+        let total: usize = c[1..=6].iter().sum();
+        if total == 0 {
+            continue;
+        }
+        let (dom, dn) = (1..=6).map(|p| (p, c[p])).max_by_key(|&(_, n)| n).unwrap();
+        shares += dn as f32 / total as f32;
+        doms.push(names[dom]);
+        nonzero += 1;
+    }
+    println!(
+        "\nEMERGENT SPECIALIZATION (uniform baseline = 0.17 dominant share):"
+    );
+    println!(
+        "  mean dominant-craft share across towns: {:.2}",
+        if nonzero > 0 { shares / nonzero as f32 } else { 0.0 }
+    );
+    println!("  each town's dominant trade: {:?}", doms);
 }

@@ -1566,55 +1566,81 @@ impl World {
     /// per pass, rng-gated) and FOOD-PROTECTED (never sheds the farmers below a floor — the marginal-
     /// economy staple stays staffed). Serial, `sim_rng`-gated in fixed order ⇒ deterministic.
     fn choose_occupations(&mut self) {
-        const OVER_FACTOR: f32 = 1.5; // a trade with > this × average is "over-supplied"
-        const SWITCH_CHANCE: f32 = 0.5; // per-pass probability that one retraining happens
+        const OVER_FACTOR: f32 = 1.5; // a trade with > this × the town average is "over-supplied"
+        const SWITCH_CHANCE: f32 = 0.5; // per-town per-pass probability that one retraining happens
         const FARMER: u8 = 1;
-        // count practitioners per profession (1..=6) among living townsfolk.
-        let mut counts = [0usize; crate::world::N_WORK_SITES];
-        let mut workers = 0usize;
+        const MIN_TOWN_WORKERS: usize = 10;
+        let nt = self.town_centers.len().max(1);
+        // PER-TOWN profession census (a settlement can run short of a craft even when the REGION's
+        // average looks fine — the old global balance hid that, and homogenised every town).
+        let mut counts = vec![[0usize; crate::world::N_WORK_SITES]; nt];
+        let mut workers = vec![0usize; nt];
         for i in 0..self.n {
             let p = self.profession[i] as usize;
-            if self.alive[i] && self.faction[i] == Faction::Townsfolk as u8 && p >= 1 && p < counts.len() {
-                counts[p] += 1;
-                workers += 1;
+            if self.alive[i] && self.faction[i] == Faction::Townsfolk as u8 && p >= 1 && p < crate::world::N_WORK_SITES {
+                let t = (self.town[i] as usize).min(nt - 1);
+                counts[t][p] += 1;
+                workers[t] += 1;
             }
         }
-        if workers < 12 {
-            return; // too small a workforce to bother rebalancing
-        }
-        // the least-supplied trade (1..=6).
-        let mut under = 1usize;
-        for p in 2..counts.len() {
-            if counts[p] < counts[under] {
-                under = p;
+        // Rebalance EACH town toward its OWN labour needs. SPECIALIZATION EMERGES from the benefit of
+        // labour specialization: a town keeps its MASTERS (high recipe skill ⇒ high output), and only
+        // its UNSPECIALISED surplus reallocates to fill a local gap — so each town's craft mix drifts to
+        // fit whoever became skilled at what, and towns genuinely differentiate (the caravan then hauls
+        // each town's surplus to those that lack it). Food-protected PER TOWN ⇒ no settlement starves.
+        for t in 0..nt {
+            if workers[t] < MIN_TOWN_WORKERS {
+                continue; // too small a workforce to rebalance
             }
-        }
-        let avg = workers as f32 / 6.0;
-        if (counts[under] as f32) >= avg * 0.8 {
-            return; // already balanced enough — leave the workforce be
-        }
-        if self.sim_rng.next_f32() >= SWITCH_CHANCE {
-            return; // gradual: not every pass retrains someone
-        }
-        let farmer_floor = (workers as f32 * 0.18) as usize; // keep the staple staffed
-        // pick an over-supplied agent to retrain (a rotated id-order scan ⇒ fair + deterministic).
-        let start = (self.sim_rng.next_f32() * self.n as f32) as usize;
-        for k in 0..self.n {
-            let i = (start + k) % self.n;
-            let p = self.profession[i] as usize;
-            if !self.alive[i] || self.faction[i] != Faction::Townsfolk as u8 || p == 0 || p == under {
-                continue;
+            if self.sim_rng.next_f32() >= SWITCH_CHANCE {
+                continue; // gradual: not every town retrains someone each pass
             }
-            if (counts[p] as f32) <= avg * OVER_FACTOR {
-                continue; // only shed from a genuinely over-supplied trade
+            let avg = workers[t] as f32 / 6.0;
+            // this town's least-supplied trade (the gap to fill).
+            let mut under = 1usize;
+            for p in 2..crate::world::N_WORK_SITES {
+                if counts[t][p] < counts[t][under] {
+                    under = p;
+                }
             }
-            if p as u8 == FARMER && counts[FARMER as usize] <= farmer_floor {
-                continue; // FOOD PROTECTION: never thin the farmers below the floor
+            if (counts[t][under] as f32) >= avg * 0.8 {
+                continue; // this town is balanced enough
             }
-            self.profession[i] = under as u8; // retrain into the under-supplied trade
-            // CROSS-CRAFT: keep the per-good recipe skills — a switcher who once practised the new craft
-            // is still skilled at it; one long-unpractised is rusty (its recipe has faded). No reset.
-            return; // one retraining per pass (gradual)
+            let farmer_floor = (workers[t] as f32 * 0.18) as usize; // keep the staple staffed per town
+            // shed from an over-supplied craft — and pick the LEAST-skilled such worker so little hard-won
+            // mastery is lost (the town's masters stay put; specialization persists). Rotated start ⇒ fair.
+            let start = (self.sim_rng.next_f32() * self.n as f32) as usize;
+            let mut victim: Option<usize> = None;
+            let mut victim_skill = f32::INFINITY;
+            for k in 0..self.n {
+                let i = (start + k) % self.n;
+                if !self.alive[i] || self.faction[i] != Faction::Townsfolk as u8 {
+                    continue;
+                }
+                if (self.town[i] as usize).min(nt - 1) != t {
+                    continue;
+                }
+                let p = self.profession[i] as usize;
+                if p == 0 || p == under {
+                    continue;
+                }
+                if (counts[t][p] as f32) <= avg * OVER_FACTOR {
+                    continue; // only shed from a genuinely over-supplied trade
+                }
+                if p as u8 == FARMER && counts[t][FARMER as usize] <= farmer_floor {
+                    continue; // FOOD PROTECTION (per town): never thin the farmers below the floor
+                }
+                let sk = crate::world::prof_good(p as u8).map(|g| self.recipe[i][g]).unwrap_or(1.0);
+                if sk < victim_skill {
+                    victim_skill = sk;
+                    victim = Some(i);
+                }
+            }
+            if let Some(i) = victim {
+                self.profession[i] = under as u8; // retrain the least-specialised surplus worker
+                // CROSS-CRAFT: per-good recipe skills are KEPT — a returning practitioner is still skilled;
+                // a long-idle one is rusty (its recipe faded). Mastery is the engine of specialization.
+            }
         }
     }
 
