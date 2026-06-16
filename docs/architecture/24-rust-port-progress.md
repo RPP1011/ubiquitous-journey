@@ -511,17 +511,17 @@ salient()/tiers**, **suspicion** (the spy-unmask counter), **duel election**, an
 (the 4 control ops — stun/slow/knockback/expose — now live) are at behavioral parity, deterministic, and
 M-invariant 1→32 (**209 sim-core** + 4 determinism + 1 survival + 3 protocol + 1 server green).
 
-**The residue is now ONLY scope the core deliberately lacks — each needs a foundation decision, not a
-feature port:**
+**Two of the three foundation items the user asked for are now BUILT (walls + multi-town); the residue
+needs either a player agent or is a refactor/render concern:**
 
 1. **Player-only systems with no player in the headless core** — `party` (player companions) and
    `reputation` as the *player* standing ledger (the NPC analogs — per-person `standing` → favored price,
    and warband-following — ARE built). No-op without an interactive fighter, which lives in the render
    frontend (doc-20). Closing these means *adding a player agent* to the headless core.
 
-2. **Walls / collision geometry** — a render/world-geometry concern (like the TS dungeon/town walls,
-   which are collision-only meshes). The cognition core has no collision/movement-blocking model by
-   design. Closing this means *adding a collision system*.
+2. **Walls / collision geometry — ✅ BUILT (user-requested).** `TownWall` collision ring per town with
+   gate gaps; locomotion's `wall.resolve` blocks the radial crossing (tangential slide preserved). The
+   core's first collision model. Raiders funnel through gates; the economy never touches the wall.
 
 3. **A literal second town — ✅ BUILT (user-requested).** `N_TOWNS = 2` distinct towns, each with its
    OWN centre, market, ring of work sites, defensive wall, and communal granary; every agent is assigned
