@@ -4,6 +4,38 @@
 **Bar:** behavioral parity — port every feature/function; the *only* sanctioned divergence is
 determinism (per-entity RNG, fixed-point gold, inline tables vs JS `Map`s). NOT "spirit-only."
 
+> ## 0.0 — REFRESHED SNAPSHOT (2026-06-15, later same day, post-audit commits)
+> The inventory below (§0–§13) was taken **before** ~8 more commits landed. A 6-agent re-audit of the
+> *current* tree corrected it. **What changed since the original count:** `signals.rs` (~23 of 57 fns),
+> the RPG layer (`tags.rs` all 30, `rpgxp.rs`, `abilities.rs` — 12 catalog specs as data + 8/12 effect
+> ops executable), `reason.rs` (3/9 schemas, 6/13 preds), the **ambitions** layer (`pick_ambition` +
+> spawn-assignment + livelihood bias), **mood-coloured combat** (provoked fight-back), and the
+> `protocol`+`server` crates (render-only wire format) are now present. The 8 **society systems**
+> (seeding/lineage/houses/intrigue/patrician/watch/defenses/faith/expeditions/chronicle/groups) are
+> ported as working **skeletons** (NOT independently confirmed at method-level parity — director itself
+> is only 9/20 tropes, 0 arc steppers).
+>
+> **Current honest completeness ≈ 15–20% of behavioral parity by callable.** The deterministic
+> tick-spine + a society skeleton are solid; the depth layers are still absent. **Biggest genuine gaps,
+> in priority order:**
+> 1. **Feature layer** — only 7 derivers (avenge/seek_fortune/grieve/defend/donate/repay/steal). Absent:
+>    the **knowledge model** (observe/ask/study), **recruiter/warband**, **caution/experience**, **affect**
+>    (free/wreck), apprentice, migrate, newsread, reciprocity, scout, subsistence, signalsFold.
+> 2. **Steer-fill table** — 5 of ~23 fills (work/market/wander/flee/comfort). No socialize/court/sightsee/
+>    shadow/hide/avoid/road/arbitrage/expedition/build/beg.
+> 3. **Reputation** (player standing ledger) — entirely absent.
+> 4. **News/economy depth** — arbitrage/bounties/reporter/gazette/econstats absent (need a multi-town +
+>    gazette substrate the 1-town core lacks); market has no credit/tithe/favored-price/quality.
+> 5. **combatEvents master fold** — strike/kill stamp only; no epithet/capture/witness-rep/loot/obituary.
+> 6. **arcs SagaStore** + director breadth (11 missing tropes, 5 arc steppers, roles, caravans).
+> 7. **construction / party / biography / walls / percept(scarecrow)** — entirely absent.
+> 8. **Ability execution depth** — plant_belief/scry/trade_edge/craft_boost carried in IR but inert;
+>    no cooldown ledger, no requirement gates, no procedural naming/generation.
+>
+> **Corrected stale claim:** the original §2 marked `_runMarket` absent — it is **present** (`market.rs`
+> double-auction at belief-midpoint). The §0–§13 absence lists below are otherwise directionally right
+> but **over-count absences** for the systems now landed (above).
+
 **Legend:** ✅ ported (Rust equivalent exists) · 🟡 partial (a thin subset exists, most of the
 function's behavior is missing) · ❌ absent (no Rust equivalent at all).
 
