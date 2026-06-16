@@ -104,6 +104,7 @@ pub struct World {
     pub defenses: DefenseState,       // the watchtower ring's shot tally (serial society phase)
     pub expeditions: ExpeditionState, // wilderness adventuring companies afield (serial society phase)
     pub tropes: TropeState,           // the relationship-trope engine's cooldown/telemetry state (serial)
+    pub sagas: crate::sagas::SagaStore, // emergent-saga registry (observer: vendettas/rescues; doc 12/19)
 }
 
 /// A perceived faction sentinel: no disguise active.
@@ -181,6 +182,7 @@ impl World {
             defenses: DefenseState::default(),
             expeditions: ExpeditionState::default(),
             tropes: TropeState::default(),
+            sagas: crate::sagas::SagaStore::default(),
         };
         for i in 0..n {
             let r = TOWN_RADIUS * gen.next_f32().sqrt();
@@ -396,6 +398,13 @@ impl World {
                         // being struck stokes ANGER (decays in needs.rs) — the transient "fight back
                         // when provoked" that complements the persistent avenge grudge. Own-write.
                         self.mood[to].anger = (self.mood[to].anger + 0.35).min(1.0);
+                        // OBSERVER: open/escalate the aggressor's vendetta arc against the victim.
+                        self.sagas.open_or_touch(
+                            crate::sagas::SagaKind::Vendetta,
+                            from as u32,
+                            to as u32,
+                            self.tick,
+                        );
                     }
                     // CAPTURE-ON-DEFEAT: a RAIDER's lethal blow on a TOWNSPERSON may take them captive
                     // instead of killing (a prisoner of the raid — freed when the captor falls). Spares
@@ -443,6 +452,10 @@ impl World {
                             // about the killer (the combatEvents master fold — a killer's reputation
                             // now spreads via these witnesses, then gossip carries it further).
                             self.fold_kill_witnesses(from, to);
+                            // OBSERVER: a slaying RESOLVES the vendetta between the two (either way it
+                            // was burning) — the saga closes.
+                            self.sagas.close(crate::sagas::SagaKind::Vendetta, from as u32, to as u32, self.tick);
+                            self.sagas.close(crate::sagas::SagaKind::Vendetta, to as u32, from as u32, self.tick);
                         }
                     }
                 }
@@ -548,6 +561,8 @@ impl World {
                         if let Some(ix) = self.beliefs[actor].find(target) {
                             self.beliefs[actor].bodies[ix].flags &= !0x02; // no longer believed captive
                         }
+                        // OBSERVER: a rescue is its own (closed, one-beat) saga.
+                        self.sagas.record(crate::sagas::SagaKind::Rescue, actor as u32, target, self.tick);
                     }
                     // a GIVE/PAY deed (act verbs 10/11) stamps the donor's `Gave` marker (settles its
                     // donate/repay) AND a `Succoured` memory on the RECIPIENT (who may repay later) —
@@ -610,6 +625,7 @@ impl World {
         systems::act::act(self); // parallel on-arrival interaction verbs → Hand/Deed intents
         self.drain_intents(); // serial deterministic merge
         self.release_freed_captives(); // serial: a prisoner whose captor fell is freed
+        self.sagas.sweep(self.tick); // serial: drop stale closed sagas (observer registry upkeep)
         systems::progression::tick(self); // parallel: own progression from deeds
         self.society_phase(); // serial: director/lineage/faith/groups/quests/chronicle
         self.tick += 1;
@@ -668,6 +684,7 @@ impl World {
         systems::act::act(self);
         self.drain_intents();
         self.release_freed_captives();
+        self.sagas.sweep(self.tick);
         systems::progression::tick(self);
         self.society_phase();
         self.tick += 1;

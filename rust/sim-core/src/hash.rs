@@ -163,6 +163,17 @@ pub fn world_hash(w: &World) -> u64 {
         h = fold(h, &q.count.to_le_bytes());
         h = fold(h, &q.got.to_le_bytes());
     }
+    // emergent-saga registry (observer; folded serially in drain_intents) — covered so any
+    // non-determinism in the open/touch/close/sweep is caught by the M-invariance gate.
+    h = fold(h, &(w.sagas.sagas.len() as u64).to_le_bytes());
+    for s in &w.sagas.sagas {
+        h = fold(h, &[s.kind, s.status]);
+        h = fold(h, &s.beats.to_le_bytes());
+        h = fold(h, &s.a.to_le_bytes());
+        h = fold(h, &s.b.to_le_bytes());
+        h = fold(h, &s.opened.to_le_bytes());
+        h = fold(h, &s.last.to_le_bytes());
+    }
     // Wave-4 director (the drama budget/pacing) — serial-phase state, covered so any non-determinism
     // in trope selection / accrual is caught by the M-invariance gate.
     h = fold(h, &(w.house_feuds.len() as u64).to_le_bytes());

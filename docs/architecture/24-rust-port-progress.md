@@ -97,7 +97,11 @@ Missing:
 ⬜ escheat (heirless estates) · epithet grant · obituary · vendetta-arc open · avenger/legend roles.
 
 ### G6 — arcs + director breadth
-⬜ arcs SagaStore (open/append/close/sweep) · 11 missing tropes · 5 arc steppers · role machinery
+- ✅ **arcs SagaStore** (`sagas.rs`) — the emergent-saga registry (observer): a vendetta arc opens on
+  an assault, escalates a beat on each repeat, and closes on the slaying (either direction); a rescue
+  is a one-beat closed arc. Folded in the serial merge (deterministic, hashed), swept of stale closed
+  arcs each tick, bounded (256, oldest-evicted). open_or_touch/close/record/sweep/open_count.
+⬜ 11 missing tropes · 5 arc STEPPERS (the director advancing open arcs) · role machinery
 (bodyguard/duel/protégé/guardian/legend/avenger) · caravans.
 
 ### G7 — World subsystems absent
@@ -129,6 +133,11 @@ occupation choice (dynamic vs fixed-at-spawn) · decide utility-oracle (scoreAnd
 ## Progress log (newest first)
 
 _(append a dated entry per landed commit: what closed, gate status, hash)_
+
+- **G6 arcs SagaStore** — the emergent-saga registry (`sagas.rs`, observer-only): vendettas open on
+  assault / escalate on repeat / close on the slaying; rescues are one-beat arcs. Folded in the serial
+  merge (deterministic), swept each tick, bounded + hashed. The structured narrative layer the director's
+  (still-absent) arc steppers will hang on. 3 new tests; 160 sim-core + gates green; M-invariant.
 
 - **G1 scout / observe channel (knowledge model)** — the proactive whereabouts channel: a curious idle
   townsperson goes to watch its vaguest-but-valuable belief (`Goal::Observe`, gated to the idle tier so
