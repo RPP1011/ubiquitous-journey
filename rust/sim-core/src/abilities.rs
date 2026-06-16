@@ -210,6 +210,25 @@ impl AbilitySpec {
         self.header.target == TargetKind::Enemy && self.damage_of() > 0.0
     }
 
+    /// Is this a SOCIAL ability the autocaster should cast at a nearby agent — a non-damaging spec
+    /// carrying a `plant_belief` effect (silver_tongue charm / plant_rumor deceit / haggle)? The op that
+    /// reaches into the epistemic layer: it shifts how the target REGARDS the caster.
+    #[inline]
+    pub fn is_social(&self) -> bool {
+        self.damage_of() == 0.0 && self.effects().iter().any(|e| e.op == EffectOp::PlantBelief)
+    }
+
+    /// The first `plant_belief` effect's amount (the charm/deceit magnitude), else 0 — `plantOf`.
+    #[inline]
+    pub fn plant_of(&self) -> f32 {
+        for e in self.effects() {
+            if e.op == EffectOp::PlantBelief {
+                return e.amount;
+            }
+        }
+        0.0
+    }
+
     /// True if this ability "rides the swing" (melee): enemy-targeted, instant, non-circle, short reach
     /// (`isMelee` in `ir.ts`). The autocaster treats melee + ranged offensives the same (both emit a
     /// Strike); the flag is kept for parity/inspection.
@@ -499,6 +518,9 @@ const MAX_HEALTH: f32 = 100.0;
 /// Per-level damage scaling (mirrors combat's offence curve) applied to the ability's base damage.
 const LVL_DMG_PER_LEVEL: f32 = 0.06;
 const LVL_DMG_CAP: f32 = 2.5;
+/// plant_belief amount (0..1-ish) → i16 standing units. Sized so a silver_tongue (−0.4) warms ~1200
+/// (a meaningful nudge against the ~±10k standing scale), a plant_rumor (+0.5) sours ~1500.
+const PLANT_SCALE: f32 = 3_000.0;
 
 /// The SIMPLIFIED autocaster — a parallel own-write phase run after combat (see `World::tick`).
 /// For each living agent that holds a known ability:
@@ -572,6 +594,28 @@ pub fn cast(world: &mut World) {
                         magnitude: dmg.max(0.0) as u16,
                         target: to,
                     });
+                }
+            }
+
+            // ── 3) social: nothing else fired + holds a ready plant_belief ability + a believed agent
+            //       in range → Influence (charm warms / deceit sours the target's regard of the caster).
+            //       The ability DSL's reach into the epistemic layer — a speaker/trickster shapes belief.
+            if emit.n == 0 {
+                if let Some(soc) = first_known(known, |s| s.is_social()) {
+                    if let Some(to) = nearest_believed_in_range(&beliefs[i], pos[i], soc.header.range, i as u32)
+                    {
+                        // amount sign: negative = charm (warm), positive = deceit (sour). Scaled into
+                        // the i16 standing units the belief table uses.
+                        let warm = (-soc.plant_of() * PLANT_SCALE).clamp(-30_000.0, 30_000.0) as i16;
+                        *cd = soc.header.cooldown;
+                        emit.push(Intent::Influence { from: i as u32, to, warm });
+                        emit.push(Intent::Deed {
+                            actor: i as u32,
+                            verb: soc.grants_tag as u8,
+                            magnitude: 1,
+                            target: to,
+                        });
+                    }
                 }
             }
             emit
@@ -668,6 +712,35 @@ fn nearest_hostile_in_range(bt: &BeliefTable, from: [f32; 2], range: f32) -> Opt
         }
     }
     best.map(|(id, idx, _)| (id, idx))
+}
+
+/// Nearest believed agent within `range` (any — friend or stranger, not just hostile), reading the
+/// agent's OWN belief table only. The charm/deceit target: whoever the speaker can reach. Deterministic
+/// tie-break by lowest subject id; `self_id` is never targeted.
+#[inline]
+fn nearest_believed_in_range(bt: &BeliefTable, from: [f32; 2], range: f32, self_id: u32) -> Option<u32> {
+    let r2 = range * range;
+    let mut best: Option<(u32, f32)> = None;
+    for idx in 0..bt.len as usize {
+        let b = &bt.bodies[idx];
+        if b.subject == self_id {
+            continue;
+        }
+        let dx = from[0] - b.last_x;
+        let dz = from[1] - b.last_z;
+        let d2 = dx * dx + dz * dz;
+        if d2 > r2 {
+            continue;
+        }
+        let better = match best {
+            None => true,
+            Some((bid, bd)) => d2 < bd || (d2 == bd && b.subject < bid),
+        };
+        if better {
+            best = Some((b.subject, d2));
+        }
+    }
+    best.map(|(id, _)| id)
 }
 
 // ───────────────────────────── milestone grant (called from progression::tick) ─────────────────────────────
@@ -775,6 +848,45 @@ mod tests {
 
         w.drain_intents();
         assert!(w.combat[1].health < hp_before, "the believed target took ability damage");
+    }
+
+    /// A charmer (silver_tongue) casts at a nearby agent → an Influence intent that WARMS how that
+    /// agent regards the caster (the plant_belief ability op reaching into the epistemic layer).
+    #[test]
+    fn autocast_social_charm_warms_target_regard() {
+        let mut w = World::spawn(0xAB1A, 4);
+        let (speaker, mark) = (0usize, 1usize);
+        w.pos[speaker] = [0.0, 0.0];
+        w.pos[mark] = [3.0, 0.0]; // inside silver_tongue range (6)
+        add_ability(&mut w.progression[speaker], ID_SILVER_TONGUE);
+        w.ability_cd[speaker] = 0.0;
+        w.combat[speaker].state = FighterState::Idle as u8;
+        // the speaker believes a (non-hostile) agent is nearby.
+        let bt = &mut w.beliefs[speaker];
+        bt.len = 1;
+        bt.subjects[0] = mark as u32;
+        bt.bodies[0].subject = mark as u32;
+        bt.bodies[0].last_x = 3.0;
+        bt.bodies[0].last_z = 0.0;
+        bt.bodies[0].flags = 0; // not hostile
+        w.beliefs[mark].clear();
+
+        cast(&mut w);
+        assert!(
+            w.intents.items.iter().any(|i| matches!(i, Intent::Influence { .. })),
+            "a social cast emits an Influence intent"
+        );
+        assert!(w.ability_cd[speaker] > 0.0, "the social ability went on cooldown");
+        assert!(
+            !w.intents.items.iter().any(|i| matches!(i, Intent::Strike { .. })),
+            "a charm is not a strike"
+        );
+        w.drain_intents();
+        let b = w.beliefs[mark].find(speaker as u32).expect("the mark now regards the charmer");
+        assert!(
+            w.beliefs[mark].bodies[b].standing > 0,
+            "the charm warmed how the mark regards the speaker"
+        );
     }
 
     /// A hurt NPC holding a self-heal ability self-casts → its OWN health is restored (own-write).

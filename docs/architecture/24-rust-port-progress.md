@@ -92,7 +92,13 @@ vendetta-arc open · avenger/legend roles.
 walls (collision geometry) · percept/scarecrow (disguise props).
 
 ### G8 — Ability execution depth
-⬜ plant_belief/scry/trade_edge/craft_boost live (carried in IR, inert) · per-agent cooldown ledger ·
+- ✅ **plant_belief** live — the social ability op now reaches the epistemic layer: a charmer
+  (silver_tongue/haggle, negative amount) WARMS how a nearby agent regards it; a deceiver (plant_rumor,
+  positive) SOURS it. New `Intent::Influence{from,to,warm}` applied serially via warm/sour_belief; a
+  3rd (social) autocaster branch fires it when nothing else did. Per-agent cooldown ledger already
+  existed (`ability_cd`).
+⬜ scry (reveal/firm a belief) · trade_edge / craft_boost (timed economic buffs — need a buff-window
+  column) · shield (needs a shield-buffer column) · stun/slow/knockback/expose execution ·
 requirement gates (while_faithful/vs_sworn_foe/...) · procedural naming/generation.
 
 ### G9 — Cognition substrate depth
@@ -105,6 +111,13 @@ occupation choice (dynamic vs fixed-at-spawn) · decide utility-oracle (scoreAnd
 ## Progress log (newest first)
 
 _(append a dated entry per landed commit: what closed, gate status, hash)_
+
+- **G8 plant_belief ability op** — the ability DSL's reach into the epistemic core, made live. A
+  speaker's silver-tongue / merchant's haggle (negative `plant_belief`) WARMS how a nearby agent
+  regards the caster; a trickster's plant-rumor (positive) SOURS it. New `Intent::Influence{from,to,warm}`
+  applied serially (warm/sour_belief); a 3rd social autocaster branch fires it when no self-heal/offensive
+  did. Economy-safe (no foraging-time cost — the cast phase is independent of goals/locomotion). 1 new
+  test. 149 sim-core + gates green; M-invariant; gold conserved.
 
 - **G2 socialize/sightsee + soft-need satisfaction** — closed the "social/novelty needs drain but are
   never satisfiable" hole. needs.rs restores them PASSIVELY as a side-effect of market/work/wander; the

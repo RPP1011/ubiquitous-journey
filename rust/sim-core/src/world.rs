@@ -425,6 +425,20 @@ impl World {
                         self.econ[t].inventory[g] += qty;
                     }
                 }
+                Intent::Influence { from, to, warm } => {
+                    // the plant_belief ability op: shift `to`'s believed standing toward `from`. A
+                    // speaker's charm (warm > 0) warms it; a deceiver's rumor (warm < 0) sours it (not
+                    // latched-hostile — a deceiver earns wariness, not open enmity). Serial ⇒ deterministic.
+                    let (f, t) = (from as usize, to as usize);
+                    if f >= self.n || t >= self.n || f == t {
+                        continue;
+                    }
+                    if warm >= 0 {
+                        self.warm_belief(t, from, warm);
+                    } else {
+                        self.sour_belief(t, from, -warm, false);
+                    }
+                }
                 Intent::Deed { actor, verb, magnitude, target } => {
                     let actor = actor as usize;
                     if actor >= self.n {

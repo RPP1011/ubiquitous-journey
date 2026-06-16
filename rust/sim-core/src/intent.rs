@@ -17,6 +17,10 @@ pub enum Intent {
     /// `from` to `to` (only what `from` actually holds). The resolver's `deliverTo`/`take` as an
     /// intent — the primitive behind give/pay (from=self) and rob/loot (from=victim) and teach (tuition).
     Hand { from: u32, to: u32, gold: i64, good: u8, qty: i32 },
+    /// A social INFLUENCE: shift `to`'s believed standing toward `from` by `warm` (the `plant_belief`
+    /// ability op — a speaker's charm warms it, a trickster's rumor sours it). Not conserved (belief is
+    /// not a quantity); applied serially via warm/sour_belief so it's the deterministic epistemic write.
+    Influence { from: u32, to: u32, warm: i16 },
 }
 
 impl Intent {
@@ -29,6 +33,7 @@ impl Intent {
             Intent::Strike { from, to, .. } => (to, from, 1),
             Intent::Deed { actor, target, .. } => (target, actor, 2),
             Intent::Hand { from, to, .. } => (to, from, 3),
+            Intent::Influence { from, to, .. } => (to, from, 4),
         }
     }
 }
