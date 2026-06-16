@@ -112,6 +112,7 @@ pub struct World {
     pub reporter_last_volume: u64, // trade volume at the last filed report (so each report is a delta)
     pub bounty_target: i32, // the agent id a town bounty is posted on (-1 = none) — bounties.ts
     pub bounty_fund: i64,   // gold (minor units) pledged to whoever claims the bounty (a real, held pool)
+    pub caravan_treasury: i64, // gold held by the EXTERNAL market the caravans trade with (arbitrage.ts)
 }
 
 /// A perceived faction sentinel: no disguise active.
@@ -139,6 +140,8 @@ const STUDY_EVERY: u32 = 90;
 const GAZETTE_EVERY: u32 = 60;
 /// Post/refresh a town bounty on this cadence.
 const BOUNTY_EVERY: u32 = 80;
+/// Run a caravan to the external market on this cadence (trade is periodic, not every tick).
+const CARAVAN_EVERY: u32 = 100;
 
 impl World {
     /// Worldgen: `n` agents clustered in one dense town with professions, gold, and home anchors.
@@ -215,6 +218,7 @@ impl World {
             reporter_last_volume: 0,
             bounty_target: -1,
             bounty_fund: 0,
+            caravan_treasury: 200_000, // the external market's gold (counted in total_gold ⇒ conserved)
         };
         for i in 0..n {
             let r = TOWN_RADIUS * gen.next_f32().sqrt();
@@ -740,6 +744,9 @@ impl World {
         if self.tick % BOUNTY_EVERY == 0 {
             self.post_bounty(); // post/refresh a town bounty on a threat to the core (a funded reward)
         }
+        if self.tick % CARAVAN_EVERY == 0 {
+            self.run_caravan(); // a merchant trades the price spread with the external market (arbitrage)
+        }
     }
 
     /// Publish a fresh GAZETTE edition (the brief/edition core of `gazette.ts`): snapshot the recent
@@ -923,7 +930,59 @@ impl World {
     /// conservation invariant. A bounty levy moves gold from purses INTO the fund and a claim moves it
     /// back out, so the fund must count or the invariant would spuriously break mid-bounty.
     pub fn total_gold(&self) -> i64 {
-        self.econ.iter().map(|e| e.gold + e.stash).sum::<i64>() + self.bounty_fund
+        self.econ.iter().map(|e| e.gold + e.stash).sum::<i64>() + self.bounty_fund + self.caravan_treasury
+    }
+
+    /// RUN A CARAVAN (`arbitrage.ts` / caravans, the single-town form): a merchant trades with an
+    /// EXTERNAL market across a price DIFFERENTIAL — EXPORTING the town's most-surplus non-food good at a
+    /// premium (the external market pays the merchant from its `caravan_treasury`) and IMPORTING a luxury
+    /// the town pays the external market for. The merchant profits on the spread; goods (un-conserved)
+    /// leave/arrive, gold only MOVES between the merchant and the held treasury ⇒ conserved. Food is
+    /// NEVER exported (the survival-critical staple stays home). Serial society pass ⇒ deterministic.
+    fn run_caravan(&mut self) {
+        use crate::components::N_COMMODITIES;
+        const EXPORT_QTY: i32 = 4;
+        const EXPORT_PREMIUM: i64 = 130; // %: the external market pays 1.3× the home base price
+        const IMPORT_QTY: i32 = 2;
+        const IMPORT_MARKUP: i64 = 140; // %: the town pays 1.4× to import the luxury
+        const LUXURY: usize = 5; // Potion — the imported luxury
+        // the caravan merchant = the richest living townsperson (id-order tie-break).
+        let mut merchant: Option<usize> = None;
+        let mut best_gold = i64::MIN;
+        for i in 0..self.n {
+            if self.alive[i] && self.faction[i] == Faction::Townsfolk as u8 && self.econ[i].gold > best_gold {
+                best_gold = self.econ[i].gold;
+                merchant = Some(i);
+            }
+        }
+        let m = match merchant {
+            Some(m) => m,
+            None => return,
+        };
+        // EXPORT: the merchant's largest NON-FOOD surplus good (g≥1), sold abroad at a premium.
+        let mut eg = 0usize;
+        let mut emax = EXPORT_QTY; // require at least an export load
+        for g in 1..N_COMMODITIES {
+            if self.econ[m].inventory[g] >= emax {
+                emax = self.econ[m].inventory[g];
+                eg = g;
+            }
+        }
+        if eg != 0 {
+            let revenue = self.base_price[eg] * EXPORT_QTY as i64 * EXPORT_PREMIUM / 100;
+            if self.caravan_treasury >= revenue {
+                self.econ[m].inventory[eg] -= EXPORT_QTY; // goods leave with the caravan
+                self.econ[m].gold += revenue;
+                self.caravan_treasury -= revenue; // the external market pays
+            }
+        }
+        // IMPORT: bring back a luxury the merchant pays the external market for (gold → treasury).
+        let cost = self.base_price[LUXURY] * IMPORT_QTY as i64 * IMPORT_MARKUP / 100;
+        if self.econ[m].gold >= cost {
+            self.econ[m].gold -= cost;
+            self.caravan_treasury += cost;
+            self.econ[m].inventory[LUXURY] += IMPORT_QTY; // goods arrive with the caravan
+        }
     }
 
     /// POST A BOUNTY (`bounties.ts`): when a hostile MONSTER/RAIDER is menacing the town core and no
@@ -1430,6 +1489,33 @@ mod tests {
         w.drain_intents();
         assert!((w.combat[def].shield).abs() < 1e-3, "the shield is spent");
         assert!((w.combat[def].health - 75.0).abs() < 1e-3, "the overflow carried through to health");
+    }
+
+    /// CARAVAN / ARBITRAGE: a merchant exports surplus + imports a luxury across the external price
+    /// differential — profiting on the spread; gold conserved (it only moves merchant↔external treasury).
+    #[test]
+    fn a_caravan_trades_the_spread_conserving_gold() {
+        use crate::components::N_COMMODITIES;
+        let mut w = World::spawn(0xCA64, 6);
+        let merchant = 0usize;
+        for i in 0..w.n {
+            w.faction[i] = Faction::Townsfolk as u8;
+            w.alive[i] = true;
+            w.econ[i].gold = 0;
+        }
+        w.econ[merchant].gold = 50_000; // the richest — the caravan merchant
+        w.econ[merchant].inventory = [0; N_COMMODITIES];
+        w.econ[merchant].inventory[3] = 10; // a surplus of Tools to export
+        let total = w.total_gold();
+        let gold0 = w.econ[merchant].gold;
+        let tools0 = w.econ[merchant].inventory[3];
+
+        w.run_caravan();
+        assert!(w.econ[merchant].inventory[3] < tools0, "the merchant exported surplus tools");
+        // it earned export revenue (and spent some on the luxury import) — net it traded the spread.
+        assert_ne!(w.econ[merchant].gold, gold0, "the merchant's purse changed (it traded abroad)");
+        assert!(w.econ[merchant].inventory[5] > 0, "it imported a luxury (Potion)");
+        assert_eq!(w.total_gold(), total, "gold conserved across the caravan (purse ↔ external treasury)");
     }
 
     /// BOUNTY: a threat to the core is posted (a conserved levy into the fund), and its slayer claims

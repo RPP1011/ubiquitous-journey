@@ -94,8 +94,12 @@ in headless Rust applies as NPC-faction standing.)
   whoever slays the target claims the fund (paid in the kill branch). The moneyed pay to be rid of a
   threat, a fighter earns it. `total_gold` counts the fund so conservation holds mid-bounty. Hashed.
   **All single-town news/economy systems now done** (gazette/newsread/econstats/reporter/bounties).
-Still ⬜ (truly multi-town): arbitrage + caravans (exploit price GAPS between towns — the one multi-town
-worldgen substrate).
+- ✅ **caravans + arbitrage** (single-town form via an external market) — a merchant trades a price
+  DIFFERENTIAL with an EXTERNAL market: exports the town's most-surplus non-food good at a premium (the
+  external `caravan_treasury` pays the merchant) and imports a luxury (the merchant pays the treasury).
+  Profits on the spread; gold conserved (`total_gold` counts the treasury); Food never exported (the
+  staple stays home). This is the single-town substitute for the inter-town price gap — closes the
+  behavioral intent of arbitrage/caravans without the full multi-town worldgen split.
 - ✅ **favored-price / standing-skew** (`npcFavoredPrice`) — the double-auction now clears at the belief
   midpoint SKEWED by how the seller regards the buyer (±FAVOR): a friend gets a discount, a despised
   buyer a markup, a stranger the neutral price. Conserved. Makes reputation/relationships matter in trade.
@@ -213,6 +217,12 @@ _(append a dated entry per landed commit: what closed, gate status, hash)_
   (set in the social cast branch), and the market clears that seller's sales +15% while active. Conserved
   (a price shift). Only the 4 control ops remain — all on Rust-unreachable (NO_CLASS) catalog specs.
   1 new test; hashed; survival unaffected.
+
+- **G4 caravans + arbitrage (external-market form) — news/economy cluster essentially complete** — a
+  merchant trades a price spread with an external market (`caravan_treasury`): export the town's surplus
+  non-food good at a premium, import a luxury; profit on the differential, gold conserved (treasury
+  counted in `total_gold`), Food never exported. The single-town substitute for the inter-town price gap.
+  1 new test; survival + determinism green; M-invariant.
 
 - **G4 bounties — all single-town news systems done** — a conserved news-driven labour market: a threat
   to the core triggers a town bounty (a levy from the wealthy into a held `bounty_fund`), claimed by
