@@ -5,9 +5,9 @@
 //! intents), so the whole tick stays deterministic (M=1 ≡ M=N).
 
 use crate::components::{
-    BeliefTable, Beat, CombatBody, Commodity, DirectorState, Economy, Episode, EpisodeKind, Faction,
-    Goal, GoalStack, Memory, Mood, Needs, Perceivable, Personality, Plan, Profession, Progression,
-    DefenseState, ExpeditionState, Quest, Signals, TropeState, WatchState, NO_BAND, NO_GOD,
+    BeliefTable, Beat, CombatBody, Commodity, DirectorState, Economy, Episode, EpisodeKind, Experience,
+    Faction, Goal, GoalStack, Memory, Mood, Needs, Perceivable, Personality, Plan, Profession,
+    Progression, DefenseState, ExpeditionState, Quest, Signals, TropeState, WatchState, NO_BAND, NO_GOD,
 };
 use crate::grid::Grid;
 use crate::intent::{Intent, IntentQueue};
@@ -59,6 +59,7 @@ pub struct World {
     pub memory: Vec<Memory>,
     pub goals: Vec<GoalStack>, // standing intentions (deriveGoals→pushGoal; persists across ticks)
     pub plan: Vec<Plan>,       // cached plan toward the top intention (cursor-advanced; replan-on-change)
+    pub experience: Vec<Experience>, // outcome-conditioned caution: per-strategy surcharge (doc 11, experience.rs)
     // ── Wave-3 society columns ──
     pub faith: Vec<u8>,         // small-god id (0 = none, NO_GOD)
     pub band_leader: Vec<i32>,  // band/clan leader id (-1 = none, NO_BAND)
@@ -145,6 +146,7 @@ impl World {
             memory: Vec::with_capacity(n),
             goals: Vec::with_capacity(n),
             plan: Vec::with_capacity(n),
+            experience: Vec::with_capacity(n),
             faith: Vec::with_capacity(n),
             band_leader: Vec::with_capacity(n),
             house: Vec::with_capacity(n),
@@ -233,6 +235,7 @@ impl World {
             w.memory.push(Memory::default());
             w.goals.push(GoalStack::default());
             w.plan.push(Plan::default());
+            w.experience.push(Experience::default());
             w.beliefs.push(BeliefTable::default());
             w.beliefs_prev.push(BeliefTable::default());
             w.faith.push(NO_GOD);
@@ -280,6 +283,7 @@ impl World {
         self.memory.push(Memory::default());
         self.goals.push(GoalStack::default());
         self.plan.push(Plan::default());
+        self.experience.push(Experience::default());
         self.faith.push(NO_GOD);
         self.band_leader.push(NO_BAND);
         self.house.push(0);
@@ -451,6 +455,12 @@ impl World {
                             salience: 40000,
                             _pad2: 0,
                         });
+                        // CAUTION windfall (doc 11): a heist that PAID emboldens the rob strategy
+                        // (negative surcharge, shallow/diminishing) — the burned-hand's opposite. Own-write.
+                        crate::experience::record_windfall(
+                            &mut self.experience[actor].e[crate::planner::VERB_ROB as usize],
+                            self.tick,
+                        );
                     }
                     // a GIVE/PAY deed (act verbs 10/11) stamps the donor's `Gave` marker (settles its
                     // donate/repay) AND a `Succoured` memory on the RECIPIENT (who may repay later) —

@@ -125,6 +125,18 @@ pub fn steal(gstack: &mut GoalStack, ctx: &DeriveCtx) {
     if ctx.personality.risk_tolerance < STEAL_BOLD || ctx.personality.altruism > STEAL_UNCARING {
         return; // character gate: bold AND uncaring
     }
+    // CAUTION gate (doc 11): a thief whose heists keep failing has BURNED the rob strategy past the bar
+    // — it has learned its lesson and won't arm a fresh one (the burned hand). risk_tolerance already
+    // relieves the felt surcharge, so the bold stay at it longer. Own-state read.
+    if crate::experience::felt_surcharge(
+        &ctx.experience,
+        crate::planner::VERB_ROB,
+        ctx.personality.risk_tolerance,
+        ctx.now,
+    ) >= crate::experience::BURNED_BAR
+    {
+        return;
+    }
     // pick the believed-richest mark within range (deterministic: wealth, then lowest id).
     let bt = ctx.beliefs;
     let r2 = STEAL_MARK_RANGE * STEAL_MARK_RANGE;

@@ -27,11 +27,11 @@
 use rayon::prelude::*;
 
 use crate::components::{
-    Commodity, EpisodeKind, Faction, Goal, GoalStack, Intention, IntentionKind, Plan, Profession,
-    BELIEF_CAP,
+    BeliefTable, Commodity, EpisodeKind, Experience, Faction, Goal, GoalStack, Intention,
+    IntentionKind, Plan, Profession, BELIEF_CAP,
 };
 use crate::exec::registry::{run_derivers, DeriveCtx};
-use crate::planner::{compile_current, solve_plan, step_effect_holds, Atom, Pv};
+use crate::planner::{compile_current, solve_plan, step_effect_holds, Atom, Pv, VERB_ROB};
 use crate::world::World;
 
 /// Need thresholds — a need is only a candidate once it dips below its seek bar.
@@ -79,6 +79,7 @@ pub fn decide(world: &mut World) {
         ref mut goal,
         ref mut goals,
         ref mut plan,
+        ref mut experience,
         ref mut rng,
         ..
     } = *world;
@@ -86,9 +87,10 @@ pub fn decide(world: &mut World) {
     goal.par_iter_mut()
         .zip(goals.par_iter_mut())
         .zip(plan.par_iter_mut())
+        .zip(experience.par_iter_mut())
         .zip(rng.par_iter_mut())
         .enumerate()
-        .for_each(|(i, (((g, gstack), pl), my_rng))| {
+        .for_each(|(i, ((((g, gstack), pl), my_exp), my_rng))| {
             // The dead make no decisions and carry no intentions.
             if !alive[i] {
                 *g = Goal::Idle;
@@ -143,6 +145,9 @@ pub fn decide(world: &mut World) {
                 market,
                 work_sites,
                 base_price: &base_price,
+                experience: *my_exp,
+                risk_tolerance: personality[i].risk_tolerance,
+                now,
             };
 
             // 2/3/4. THE GOAL STACK: derive standing intentions from memory, prune resolved/stale ones,
@@ -157,11 +162,16 @@ pub fn decide(world: &mut World) {
                     pos: pos[i],
                     personality: personality[i],
                     hunger: need.hunger,
+                    experience: *my_exp,
                     beliefs: &beliefs[i],
                     memory: &memory[i],
                     now,
                 };
                 run_derivers(gstack, &dctx);
+                // CAUTION burn-on-failure (doc 11): an intention the planner flagged UNREACHABLE last
+                // tick is a WASTED watched venture — burn its strategy before prune drops it, so the
+                // surcharge accrues (a thief whose marks keep slipping learns robbing isn't worth it).
+                burn_failed_ventures(gstack, my_exp, &beliefs[i], now);
                 prune_goals(gstack, &pv, now);
 
                 // 2. STAND AND FIGHT: the top AGGRESSIVE intention (a locatable grudge to avenge, or a
@@ -331,6 +341,23 @@ fn serve(gstack: &mut GoalStack, idx: usize, pl: &mut Plan, pv: &Pv) -> Option<G
             // plan consumed but the predicate hasn't fired (e.g. a quarry slipped away) → unreachable.
             gstack.items[idx].flags |= Intention::F_UNREACHABLE;
             None
+        }
+    }
+}
+
+/// CAUTION burn-on-failure (doc 11): a watched venture the planner flagged UNREACHABLE (the quarry
+/// slipped out of belief — a wasted pursuit) burns its strategy's surcharge before it is pruned. The
+/// rob bet's plan-time confidence (how well-tracked the mark was) attenuates the burn (a confident bet
+/// that fails is bad luck, not folly). Own-write to the agent's experience row ⇒ deterministic.
+fn burn_failed_ventures(gstack: &GoalStack, exp: &mut Experience, bt: &BeliefTable, now: u32) {
+    for k in 0..gstack.len as usize {
+        let it = gstack.items[k];
+        if it.flags & Intention::F_UNREACHABLE != 0 && it.kind == IntentionKind::Steal as u8 {
+            let conf = bt
+                .find(it.subject)
+                .map(|ix| bt.bodies[ix].confidence as f32 / 65535.0)
+                .unwrap_or(0.0);
+            crate::experience::record_waste(&mut exp.e[VERB_ROB as usize], conf, now);
         }
     }
 }
@@ -604,6 +631,50 @@ mod tests {
         assert!(w.econ[mark].gold < mark_before, "the rich mark should have been robbed");
         assert!(w.econ[thief].gold > 0, "the thief should have taken coin");
         assert_eq!(w.total_gold(), total, "gold conserved (moved by force, not minted)");
+    }
+
+    /// CAUTION (doc 11): a poor+bold+uncaring thief who would normally arm a heist DOESN'T once its rob
+    /// strategy is burned past the bar — the burned hand. (The un-burned path is proven by
+    /// `poor_bold_thief_robs_a_rich_mark`; this is the same setup minus the rob success, plus burns.)
+    #[test]
+    fn a_burned_thief_stops_arming_heists() {
+        let mut w = World::spawn(0x5732A1, 8);
+        let (thief, mark) = (0usize, 1usize);
+        w.faction[thief] = Faction::Townsfolk as u8;
+        w.faction[mark] = Faction::Townsfolk as u8;
+        w.needs[thief] = Needs::default();
+        w.econ[thief].gold = 0;
+        w.personality[thief].risk_tolerance = 0.95;
+        w.personality[thief].altruism = 0.05;
+        w.pos[thief] = [0.0, 0.0];
+        w.pos[mark] = [1.5, 0.0];
+        w.beliefs[thief].clear();
+        w.beliefs[thief].subjects[0] = mark as u32;
+        w.beliefs[thief].bodies[0] = PersonBelief {
+            subject: mark as u32,
+            last_x: 1.5,
+            last_z: 0.0,
+            confidence: 60000,
+            wealth: 60000,
+            ..Default::default()
+        };
+        w.beliefs[thief].len = 1;
+        w.goals[thief] = GoalStack::default();
+        w.memory[thief] = Memory::default();
+        // BURN the rob strategy hard (several wasted heists' worth) so the felt surcharge clears the bar.
+        for _ in 0..6 {
+            crate::experience::record_waste(
+                &mut w.experience[thief].e[crate::planner::VERB_ROB as usize],
+                0.0,
+                w.tick,
+            );
+        }
+        decide(&mut w);
+        assert!(
+            !(0..w.goals[thief].len as usize)
+                .any(|k| w.goals[thief].items[k].kind == IntentionKind::Steal as u8),
+            "a thief whose rob strategy is burned past the bar should NOT arm a fresh heist"
+        );
     }
 
     /// A brave townsperson who believes a hostile is menacing a believed friend stands and fights it

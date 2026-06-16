@@ -31,7 +31,10 @@ that closes it.
 
 ### G1 — Feature layer (highest behavioral leverage; coupled hand-ports)
 Current: 7 derivers (avenge, seek_fortune, grieve, defend, donate, repay, steal). Missing:
-- ⬜ **caution / experience** — outcome-conditioned burned-hand surcharge (doc 11)
+- ✅ **caution / experience** — outcome-conditioned burned-hand surcharge (doc 11). Per-strategy
+  `Experience` store (fixed per-verb array, determinism-safe), `experience.rs` math (decay/burn/windfall/
+  felt-surcharge/classify-yield), planner cost read, windfall-on-rob-success + burn-on-lost-venture
+  writes, and a behavioral steal-gate (a burned thief retires). Hashed for the M-invariance canary.
 - ⬜ **knowledge model** — observe / ask / study (`Know(topic)` + graded recipes)
 - ⬜ **recruiter / warband** — recruit-as-Inform + muster + march-on-foe
 - ⬜ **affect** — free (rescue captive) / wreck (sabotage)
@@ -92,6 +95,14 @@ occupation choice (dynamic vs fixed-at-spawn) · decide utility-oracle (scoreAnd
 ## Progress log (newest first)
 
 _(append a dated entry per landed commit: what closed, gate status, hash)_
+
+- **G1 caution / experience (doc-11 flagship)** — the burned-hand half of regret. New `Experience`
+  column (a fixed `[ActExp; 12]` indexed by planner verb — no HashMap, so determinism-safe) + `experience.rs`
+  (lazy half-life decay, asymmetric burn/windfall clamps, luck-discounted attribution, rt-relief read).
+  Wired: the planner prices `felt_surcharge` into each strategy's cost; a successful rob writes a
+  (shallow, diminishing) windfall; a lost-track venture burns a waste; and the steal deriver gates on
+  the felt surcharge so a thief whose heists keep failing retires (even the boldest, once fully burned).
+  Added to the world hash. 5 new tests. 144 sim-core + gates green; M-invariant; gold conserved.
 
 - **G5 combatEvents witness fold** — bystanders now learn from killings. A new `fold_kill_witnesses`
   in the serial `drain_intents` kill branch: nearby living townsfolk record `WitnessedDeath` (grief)

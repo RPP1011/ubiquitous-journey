@@ -121,6 +121,14 @@ pub fn world_hash(w: &World) -> u64 {
         let pl = &w.plan[i];
         h = fold(h, &[pl.len, pl.cur, pl.goal_kind]);
         h = fold(h, &pl.goal_subject.to_le_bytes());
+        // outcome-conditioned caution store (doc 11) — per-strategy surcharge; covered so any
+        // non-determinism in the burn/windfall writes (parallel own-write + serial merge) is caught.
+        let ex = &w.experience[i];
+        for e in ex.e {
+            h = fold(h, &e.s.to_bits().to_le_bytes());
+            h = fold(h, &e.t.to_le_bytes());
+            h = fold(h, &e.n.to_le_bytes());
+        }
         // belief table (the dominant state)
         let bt = &w.beliefs[i];
         h = fold(h, &[bt.len]);

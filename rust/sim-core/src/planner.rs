@@ -15,9 +15,10 @@
 //! staleness entirely — robustly deterministic, no persistent Plan column needed.
 
 use crate::components::{
-    BeliefTable, EpisodeKind, Goal, InteractVerb, Memory, Plan, PlanStep, N_COMMODITIES, NONE_ID,
-    PLAN_CAP,
+    BeliefTable, EpisodeKind, Experience, Goal, InteractVerb, Memory, Plan, PlanStep, N_COMMODITIES,
+    NONE_ID, PLAN_CAP,
 };
+use crate::experience::felt_surcharge;
 use crate::world::N_WORK_SITES;
 
 /// Backward-chaining recursion depth cap (mirrors `PLAN.maxDepth`).
@@ -102,6 +103,11 @@ pub struct Pv<'a> {
     pub market: [f32; 2],
     pub work_sites: &'a [[f32; 2]; N_WORK_SITES],
     pub base_price: &'a [i64; N_COMMODITIES],
+    /// Outcome-conditioned caution (doc 11): the agent's own per-strategy surcharge store (Copy, by
+    /// value) + its risk tolerance + now — read by `primitives_for` to price each strategy's `cost`.
+    pub experience: Experience,
+    pub risk_tolerance: f32,
+    pub now: u32,
 }
 
 // ── good ⇄ work-site mapping (mirrors the PROFESSIONS output→site table) ──
@@ -230,6 +236,18 @@ fn atom_holds(atom: &Atom, pv: &Pv) -> bool {
 /// carries its step, its unmet preconditions, and its believed cost. Infeasible binds (an unreachable
 /// goto) are dropped here so the failing branch simply has no candidate.
 fn primitives_for(atom: &Atom, pv: &Pv) -> Vec<Prim> {
+    let mut prims = primitives_raw(atom, pv);
+    // OUTCOME-CONDITIONED CAUTION (doc 11): price each candidate strategy's learned surcharge into its
+    // cost (beside travel/act cost) — a strategy that keeps failing feels dearer, a proven one cheaper.
+    // 0 for the verbs that never get an outcome written, so ordinary plans are unaffected.
+    for p in prims.iter_mut() {
+        p.cost += felt_surcharge(&pv.experience, verb_u8(p.step.verb), pv.risk_tolerance, pv.now);
+    }
+    prims
+}
+
+/// The raw effect-unifying primitives (before the caution surcharge is priced in).
+fn primitives_raw(atom: &Atom, pv: &Pv) -> Vec<Prim> {
     match *atom {
         // goto(place): effect At(place); no precondition (movement is primitive). Drop if unreachable.
         Atom::At(place) => {
@@ -403,7 +421,9 @@ const VERB_BUY: u8 = 3;
 const VERB_SELL: u8 = 4;
 const VERB_APPROACH: u8 = 5;
 const VERB_ATTACK: u8 = 6;
-const VERB_ROB: u8 = 7;
+/// The watched theft strategy id (doc 11 caution): the rob verb's experience slot. Public so the
+/// outcome writers (`decide` burn-on-failure, `drain_intents` windfall-on-success) key the same slot.
+pub const VERB_ROB: u8 = 7;
 const VERB_GIVE: u8 = 8;
 const VERB_PAY: u8 = 9;
 const VERB_LOOT: u8 = 10;
@@ -567,6 +587,9 @@ mod tests {
             market: w.market,
             work_sites,
             base_price,
+            experience: w.experience[i],
+            risk_tolerance: w.personality[i].risk_tolerance,
+            now: w.tick,
         }
     }
 

@@ -631,6 +631,36 @@ pub enum IntentionKind {
 
 pub const NONE_ID: u32 = u32::MAX;
 
+/// Number of strategy slots in the caution store — one per planner verb id (the v1 `expKey` is the
+/// primitive NAME, and the verbs are a small closed set, so a fixed array indexed by verb id replaces
+/// the TS `Map` with no HashMap-order non-determinism). See `experience.rs` (docs/architecture/11).
+pub const N_STRAT: usize = 12;
+
+/// One strategy's learned caution record (the belief-table shape: signed surcharge / last-write time /
+/// write count). `s` > 0 = burned (this strategy feels dearer); `s` < 0 = emboldened by success.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ActExp {
+    pub s: f32,  // signed surcharge (decayed lazily toward 0)
+    pub t: u32,  // sim-tick of last write (for lazy half-life decay)
+    pub n: u16,  // write count (diminishing-windfall input)
+    pub _pad: u16,
+}
+
+/// The per-agent outcome-conditioned caution store (doc 11): a signed surcharge per STRATEGY (verb),
+/// written when a watched act falls short / is wasted / turns perilous, eroded by time and success,
+/// and read inside the planner's `cost`. NATURE stays fixed — this never touches `Personality`.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct Experience {
+    pub e: [ActExp; N_STRAT], // indexed by planner verb id
+}
+impl Default for Experience {
+    fn default() -> Self {
+        Self { e: [ActExp::default(); N_STRAT] }
+    }
+}
+
 /// One standing intention on the goal stack (the persistent goal object). Mirrors the TS Goal's
 /// kind/subjectId/place/priority/expiresAt/bornAt/flags; `atoms`/`predicate` are dispatched by `kind`.
 #[repr(C)]
