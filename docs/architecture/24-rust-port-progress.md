@@ -105,8 +105,12 @@ Current: strike→assaulted, kill→slew stamp.
   → a thief is branded VILLAIN, a foe-slayer / captive-freer a HERO, a peril-survivor a SURVIVOR;
   idempotent (first earned title sticks), logged as a chronicle epithet beat. (The free deed now also
   folds into the Rescue signal so rescuers can earn HERO.)
+- ✅ **obituary** — a NOTABLE death (a named soul with an epithet, or one of rank ≥5) now logs a
+  `KIND_OBITUARY` chronicle beat carrying who they were (epithet×100+level) for the render-layer eulogy;
+  ordinary deaths keep the plain DEATH beat. The `gazette.buildObituary` "obituaries are for the
+  notable" trigger.
 Missing:
-⬜ obituary (a death-summary beat) · avenger/legend roles.
+⬜ avenger/legend roles (director role machinery).
 
 ### G6 — arcs + director breadth
 - ✅ **arcs SagaStore** (`sagas.rs`) — the emergent-saga registry (observer): a vendetta arc opens on
@@ -145,6 +149,10 @@ occupation choice (dynamic vs fixed-at-spawn) · decide utility-oracle (scoreAnd
 ## Progress log (newest first)
 
 _(append a dated entry per landed commit: what closed, gate status, hash)_
+
+- **G5 obituary** — a notable death (a named/epithet soul, or one of rank ≥5) now logs a `KIND_OBITUARY`
+  chronicle beat carrying the deceased's title+rank for the render-layer eulogy; ordinary deaths keep
+  the plain death beat. The gazette.buildObituary "obituaries are for the notable" trigger. 1 new test.
 
 - **G5 epithet grants (earned)** — the hero/villain/survivor brand was a dead primitive (nothing called
   it). `earn_epithets` now brands souls from accumulated deeds: a thief→villain, a foe-slayer/captive-

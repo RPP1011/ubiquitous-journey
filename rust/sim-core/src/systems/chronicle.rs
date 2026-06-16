@@ -21,6 +21,13 @@ use crate::world::World;
 /// numeric so the determinism hash folds them). RAID = 2 is reserved for the director's spawn beat.
 pub const KIND_DEATH: u8 = 0;
 pub const KIND_CLASSUP: u8 = 1;
+/// An OBITUARY beat for a NOTABLE death — a named soul (an earned epithet) or one of rank. Its
+/// `magnitude` packs the deceased's standing so the render layer can write the right notice ("the Hero
+/// has fallen", "a villain meets their end"): `epithet * 100 + level`. Mirrors `gazette.buildObituary`'s
+/// "obituaries are for the notable" trigger; the plain `KIND_DEATH` still logs for every death.
+pub const KIND_OBITUARY: u8 = 3;
+/// A death is "notable" (earns an obituary) at or above this total level even without an epithet.
+const OBITUARY_LEVEL: u16 = 5;
 
 /// Max beats kept in the rolling feed (the ring is bounded so memory never grows over a long run;
 /// mirrors `CHRONICLE.cap`). Oldest beats are evicted first.
@@ -63,6 +70,12 @@ pub fn tick(world: &mut World) {
         // never resurrected, so `alive` cannot flip back).
         if !world.chron_seen_dead[i] && !world.alive[i] {
             push(world, KIND_DEATH, i as u32, 0);
+            // OBITUARY — a NOTABLE death (a named soul, or one of rank) earns a richer notice carrying
+            // who they were (epithet × 100 + level), for the render-layer eulogy.
+            let epithet = world.epithet[i];
+            if epithet != crate::systems::houses::EPITHET_NONE || lvl >= OBITUARY_LEVEL {
+                push(world, KIND_OBITUARY, i as u32, epithet as i32 * 100 + lvl as i32);
+            }
         }
         world.chron_seen_dead[i] = !world.alive[i];
     }
@@ -72,6 +85,33 @@ pub fn tick(world: &mut World) {
 mod tests {
     use super::*;
     use crate::components::FighterState;
+
+    /// A NOTABLE death (a named soul) earns an OBITUARY beat carrying who they were; an ordinary
+    /// low-rank death gets only the plain DEATH beat.
+    #[test]
+    fn notable_death_earns_an_obituary() {
+        let mut w = World::spawn(0xC0FFEE, 8);
+        let (hero, ordinary) = (0usize, 1usize);
+        w.epithet[hero] = crate::systems::houses::EPITHET_HERO;
+        w.progression[ordinary].total_level = 0; // unremarkable, untitled
+        tick(&mut w); // prime detection state (both alive)
+        w.alive[hero] = false;
+        w.alive[ordinary] = false;
+        tick(&mut w); // detect the deaths
+        let obits: Vec<&Beat> = w.chronicle.iter().filter(|b| b.kind == KIND_OBITUARY).collect();
+        assert!(obits.iter().any(|b| b.subject == hero as u32), "a named hero earns an obituary");
+        assert!(
+            !obits.iter().any(|b| b.subject == ordinary as u32),
+            "an unremarkable soul gets only a plain death beat, no obituary"
+        );
+        // the obituary packs the deceased's epithet (for the render-layer eulogy).
+        let hero_obit = obits.iter().find(|b| b.subject == hero as u32).unwrap();
+        assert_eq!(
+            hero_obit.magnitude / 100,
+            crate::systems::houses::EPITHET_HERO as i32,
+            "the obituary carries the hero's title"
+        );
+    }
 
     /// A single death logs exactly one DEATH beat (and only once, even across later ticks).
     #[test]
