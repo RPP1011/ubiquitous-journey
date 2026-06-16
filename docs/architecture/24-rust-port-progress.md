@@ -68,15 +68,18 @@ Current: 7 derivers (avenge, seek_fortune, grieve, defend, donate, repay, steal)
   no peacetime economic cost). Built via a serial leader-foe snapshot read in the parallel decide.
   ⬜ still: recruit-as-an-explicit-Inform offer + the muster derivation (bands currently form by
   mutual standing in groups.rs, not a deliberate recruit goal).
-- ⬜ **affect** — free (rescue captive) / wreck (sabotage)
-- ✅ **subsistence** — hunger → Sate intention → forage/buy a meal (commit below). **Fixed the
-  documented starvation collapse** (town went 380→2 alive by t1500; now 380→372 at t3000).
-- ⬜ **scout** — curiosity → investigate uncertain-but-valuable belief
+- 🟡 **affect** — ✅ free (rescue captive, the full capture→rescue arc) · ⬜ wreck (sabotage — dormant,
+  needs a building/structure target state, which the headless core lacks)
+- ✅ **subsistence** — hunger → Sate intention → forage/buy a meal. **Fixed the documented starvation
+  collapse** (town went 380→2 alive by t1500; now 380→372 at t3000).
+- ✅ **scout** — curiosity → idle-tier `Goal::Observe` to firm an uncertain-but-valuable belief.
 - ⬜ **migrate** — emigration prospect → relocate
 - ⬜ **reciprocity** — believed-motive → trust/suspicion fold
-- ⬜ **apprentice** — teach recipe deriver
-- ⬜ **newsread** — gazette median → price-belief fold (needs G4 substrate)
-- ⬜ **signalsFold** — outcome-streak / deed-ledger plan-outcome handler
+- ✅ **apprentice** — the `Know(recipe)` goal-stack deriver (biases a rusty crafter to practise/study).
+- ✅ **newsread** — the gazette median → price-belief EMA fold (G4 substrate built).
+- ✅ **signalsFold** — the PLAN_OUTCOME streak handler: a resolved heist folds `Ok` (windfall, world.rs)
+  or `Fail` (wasted venture, decide.rs) onto the agent's `Heist` streak signal — the "third job in a
+  row" telemetry the saga/biography observer reads. Co-located with the caution windfall/burn.
 
 ### G2 — Steer-fill table / goal variety
 Note: locomotion.rs is already a generic `move_target` attractor/repulsor stepper, so this is a

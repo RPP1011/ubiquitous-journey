@@ -603,6 +603,14 @@ impl World {
                             &mut self.experience[actor].e[crate::planner::VERB_ROB as usize],
                             self.tick,
                         );
+                        // signalsFold (doc 13): the PLAN_OUTCOME handler folds this resolved heist onto
+                        // the agent's Heist streak signal ("third successful job in a row") — observer
+                        // telemetry the saga/biography layer reads. Own-write, deterministic-serial.
+                        crate::signals::fold_streak(
+                            &mut self.signals[actor],
+                            crate::components::StreakKey::Heist,
+                            crate::components::OutcomeStatus::Ok,
+                        );
                     }
                     // a LOOT deed (act verb 13) stamps the looter's `Looted` marker about the corpse —
                     // the marker that SETTLES the loot intention (like `Robbed` for the steal). Recovers

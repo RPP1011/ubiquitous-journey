@@ -97,6 +97,7 @@ pub fn decide(world: &mut World) {
         ref mut plan,
         ref mut experience,
         ref mut rng,
+        ref mut signals,
         ..
     } = *world;
 
@@ -117,8 +118,9 @@ pub fn decide(world: &mut World) {
         .zip(plan.par_iter_mut())
         .zip(experience.par_iter_mut())
         .zip(rng.par_iter_mut())
+        .zip(signals.par_iter_mut())
         .enumerate()
-        .for_each(|(i, ((((g, gstack), pl), my_exp), my_rng))| {
+        .for_each(|(i, (((((g, gstack), pl), my_exp), my_rng), my_sig))| {
             // The dead make no decisions and carry no intentions.
             if !alive[i] {
                 *g = Goal::Idle;
@@ -209,7 +211,7 @@ pub fn decide(world: &mut World) {
                 // CAUTION burn-on-failure (doc 11): an intention the planner flagged UNREACHABLE last
                 // tick is a WASTED watched venture — burn its strategy before prune drops it, so the
                 // surcharge accrues (a thief whose marks keep slipping learns robbing isn't worth it).
-                burn_failed_ventures(gstack, my_exp, &beliefs[i], now);
+                burn_failed_ventures(gstack, my_exp, my_sig, &beliefs[i], now);
                 prune_goals(gstack, &pv, now);
 
                 // 2. STAND AND FIGHT: the top AGGRESSIVE intention (a locatable grudge to avenge, or a
@@ -469,7 +471,13 @@ fn serve(gstack: &mut GoalStack, idx: usize, pl: &mut Plan, pv: &Pv) -> Option<G
 /// slipped out of belief — a wasted pursuit) burns its strategy's surcharge before it is pruned. The
 /// rob bet's plan-time confidence (how well-tracked the mark was) attenuates the burn (a confident bet
 /// that fails is bad luck, not folly). Own-write to the agent's experience row ⇒ deterministic.
-fn burn_failed_ventures(gstack: &GoalStack, exp: &mut Experience, bt: &BeliefTable, now: u32) {
+fn burn_failed_ventures(
+    gstack: &GoalStack,
+    exp: &mut Experience,
+    sig: &mut crate::components::Signals,
+    bt: &BeliefTable,
+    now: u32,
+) {
     for k in 0..gstack.len as usize {
         let it = gstack.items[k];
         if it.flags & Intention::F_UNREACHABLE != 0 && it.kind == IntentionKind::Steal as u8 {
@@ -478,6 +486,13 @@ fn burn_failed_ventures(gstack: &GoalStack, exp: &mut Experience, bt: &BeliefTab
                 .map(|ix| bt.bodies[ix].confidence as f32 / 65535.0)
                 .unwrap_or(0.0);
             crate::experience::record_waste(&mut exp.e[VERB_ROB as usize], conf, now);
+            // signalsFold (doc 13): the wasted heist folds a Fail onto the Heist streak — the same
+            // PLAN_OUTCOME the windfall folds Ok onto (world.rs). Own-row write (disjoint via zip).
+            crate::signals::fold_streak(
+                sig,
+                crate::components::StreakKey::Heist,
+                crate::components::OutcomeStatus::Fail,
+            );
         }
     }
 }
