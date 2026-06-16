@@ -213,8 +213,12 @@ Missing: — none. (avenger + legend roles landed under G6's role machinery; see
   routes to where it BELIEVES home stands, never to a home it no longer believes in (the `homecoming.mjs`
   gate: no telepathic re-route). Economy-neutral (a building costs no agent-time; homecoming only
   redirects an existing comfort trip). Survival held; M-invariant; the razed-home test gates the split.
+- ✅ **granary** (the construction larder benefit) — a communal Food store raised at the town core: a
+  surplus-bearing FARMER near it deposits spare Food, a HUNGRY+foodless soul withdraws a meal. CONSERVED
+  (food only moves inventory↔`granary_stock`, never minted) so it can only SMOOTH the marginal larder
+  (surplus → the desperate), never destabilise it (survival held). Hashed; tested.
 ⬜ party (player companions — no player in the headless core) · walls (collision geometry — a render
-concern). · granary (a shared-larder building benefit) is the remaining construction sub-feature.
+concern).
 
 ### G8 — Ability execution depth
 - ✅ **plant_belief** live — the social ability op now reaches the epistemic layer: a charmer

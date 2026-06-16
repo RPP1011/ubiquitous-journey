@@ -125,6 +125,11 @@ pub struct World {
     pub bounty_target: i32, // the agent id a town bounty is posted on (-1 = none) — bounties.ts
     pub bounty_fund: i64,   // gold (minor units) pledged to whoever claims the bounty (a real, held pool)
     pub caravan_treasury: i64, // gold held by the EXTERNAL market the caravans trade with (arbitrage.ts)
+    /// Communal GRANARY food store (a `construction.js` building benefit): surplus-bearing farmers near
+    /// the granary DEPOSIT spare Food; the hungry+foodless near it WITHDRAW a meal. A conserved buffer
+    /// (food only moves between inventories and this stock — no minting) that smooths the marginal larder.
+    pub granary_stock: i32,
+    pub granary_pos: [f32; 2], // where the granary stands (town core); 0,0 until built
     // ── PERCEPTS (js/sim/percept.js): hittable, perceivable PROPS with no mind. A Scarecrow dressed as
     // a person; a finished Building. Kept in their OWN id-space (`PERCEPT_ID_BASE + k`, disjoint from
     // agent ids) so every `!agent` guard in the cognition feedback path skips them: an agent can BELIEVE
@@ -196,6 +201,8 @@ const BIOGRAPHY_EVERY: u32 = 200;
 const BUILD_AT: u32 = 40;
 /// Run the resettlement (migrate) pass on this cadence — a slow trickle, gated + capped.
 const CONSTRUCT_EVERY: u32 = 60;
+/// Tend the communal granary (deposit surplus / withdraw a meal) on this cadence.
+const GRANARY_EVERY: u32 = 30;
 /// Re-tend home discovery/loss on this cadence (sight-gated; slow — a home is a settled thing).
 const HOME_TEND_EVERY: u32 = 50;
 
@@ -278,6 +285,8 @@ impl World {
             bounty_target: -1,
             bounty_fund: 0,
             caravan_treasury: 200_000, // the external market's gold (counted in total_gold ⇒ conserved)
+            granary_stock: 0,
+            granary_pos: [0.0, 0.0],
             percept_n: 0,
             percept_pos: Vec::new(),
             percept_kind: Vec::new(),
@@ -927,6 +936,12 @@ impl World {
         if self.tick == BUILD_AT {
             self.construct_homes(); // raise the town's homes ONCE, early (periodic rebuild starves the
                                     // marginal economy — it pulls food-producers off on comfort trips)
+            // and raise the communal GRANARY at the town core (a building percept + its food store).
+            self.granary_pos = self.town_center;
+            self.spawn_percept(self.town_center, 2, Faction::Townsfolk as u8, 200.0, false);
+        }
+        if self.tick % GRANARY_EVERY == 0 {
+            self.tend_granary(); // farmers deposit surplus; the hungry draw a meal (conserved buffer)
         }
         if self.tick % CONSTRUCT_EVERY == 0 {
             self.migrate_homeless(); // an endangered edge-dweller resettles toward the safe core (capped)
@@ -968,6 +983,40 @@ impl World {
                 let id = self.spawn_percept(self.home[i], 2, Faction::Townsfolk as u8, 120.0, false);
                 self.home_belief_id[i] = id; // the owner is granted sight of its own new home
                 built += 1;
+            }
+        }
+    }
+
+    /// TEND GRANARY (`construction.js` granary benefit): the communal larder redistributes Food. A
+    /// surplus-bearing FARMER near the granary deposits one spare unit; a HUNGRY, foodless soul near it
+    /// withdraws a meal. CONSERVED — food only moves between inventories and `granary_stock`, never minted
+    /// — so it can only SMOOTH the marginal economy (surplus → the desperate), never destabilise it.
+    /// Serial id-order ⇒ deterministic. Only townsfolk within reach of the core granary participate.
+    fn tend_granary(&mut self) {
+        const REACH2: f32 = 70.0 * 70.0; // within this of the granary to use it
+        const DEPOSIT_BAR: i32 = 4; // a farmer keeps this many Food for itself; only the EXCESS is shared
+        const HUNGRY_BAR: f32 = 0.4; // withdraw only when genuinely hungry (and out of food)
+        const CAP: i32 = 600; // the granary holds at most this much (a silo, not a black hole)
+        let g = self.granary_pos;
+        let food = Commodity::Food as usize;
+        for i in 0..self.n {
+            if !self.alive[i] || self.faction[i] != Faction::Townsfolk as u8 {
+                continue;
+            }
+            let dx = self.pos[i][0] - g[0];
+            let dz = self.pos[i][1] - g[1];
+            if dx * dx + dz * dz > REACH2 {
+                continue;
+            }
+            let inv = self.econ[i].inventory[food];
+            // a FARMER with real surplus tops up the silo (conserved: inventory → stock).
+            if self.profession[i] == 1 && inv > DEPOSIT_BAR && self.granary_stock < CAP {
+                self.econ[i].inventory[food] -= 1;
+                self.granary_stock += 1;
+            } else if inv == 0 && self.needs[i].hunger < HUNGRY_BAR && self.granary_stock > 0 {
+                // a hungry, foodless soul draws a meal from the common store (conserved: stock → inventory).
+                self.granary_stock -= 1;
+                self.econ[i].inventory[food] += 1;
             }
         }
     }
@@ -1768,6 +1817,40 @@ mod tests {
         let b = w.beliefs[near].find(hero as u32).expect("the witness forms a belief about the hero");
         assert!(w.beliefs[near].bodies[b].standing > 0, "the monster-slayer is admired");
         assert!(w.beliefs[near].bodies[b].flags & 0x01 == 0, "a hero is not believed hostile");
+    }
+
+    /// GRANARY: a surplus farmer deposits spare Food into the communal store; a hungry, foodless soul
+    /// withdraws a meal. Conserved (food only moves between inventories and the stock).
+    #[test]
+    fn the_granary_redistributes_surplus_food() {
+        let mut w = World::spawn(0x6A11, 4);
+        w.granary_pos = [0.0, 0.0];
+        let (farmer, pauper) = (0usize, 1usize);
+        let food = Commodity::Food as usize;
+        for &i in &[farmer, pauper] {
+            w.alive[i] = true;
+            w.faction[i] = Faction::Townsfolk as u8;
+            w.pos[i] = [2.0, 0.0];
+        }
+        w.profession[farmer] = 1; // a farmer
+        w.econ[farmer].inventory[food] = 8; // with real surplus
+        w.econ[pauper].inventory[food] = 0; // and a foodless neighbour
+        w.needs[pauper].hunger = 0.1; // who is hungry
+
+        let total_before = w.econ[farmer].inventory[food] + w.econ[pauper].inventory[food] + w.granary_stock;
+        // one pass (id order): the farmer deposits a surplus unit, the foodless pauper draws one out.
+        w.tend_granary();
+        assert_eq!(w.econ[farmer].inventory[food], 7, "one unit left the surplus farmer's store");
+        assert!(w.econ[pauper].inventory[food] > 0, "the hungry pauper drew a meal from the common store");
+        let total_after = w.econ[farmer].inventory[food] + w.econ[pauper].inventory[food] + w.granary_stock;
+        assert_eq!(total_before, total_after, "food is conserved — only moved (farmer→silo→pauper), never minted");
+        // a WELL-FED soul does not raid the silo: nothing flows to one that isn't hungry.
+        let stock = w.granary_stock;
+        w.econ[pauper].inventory[food] = 0;
+        w.needs[pauper].hunger = 0.9; // content
+        w.tend_granary();
+        assert_eq!(w.econ[pauper].inventory[food], 0, "a content soul takes nothing from the store");
+        let _ = stock;
     }
 
     /// ABILITY CONTROL OPS: an Afflict applies the debuff ops — Expose AMPLIFIES the next blow, Stun

@@ -214,6 +214,7 @@ pub fn world_hash(w: &World) -> u64 {
     h = fold(h, &w.bounty_target.to_le_bytes());
     h = fold(h, &w.bounty_fund.to_le_bytes());
     h = fold(h, &w.caravan_treasury.to_le_bytes());
+    h = fold(h, &w.granary_stock.to_le_bytes());
     // Wave-4 director (the drama budget/pacing) — serial-phase state, covered so any non-determinism
     // in trope selection / accrual is caught by the M-invariance gate.
     h = fold(h, &(w.house_feuds.len() as u64).to_le_bytes());
