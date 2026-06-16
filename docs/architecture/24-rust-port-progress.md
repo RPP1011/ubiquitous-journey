@@ -70,8 +70,11 @@ follow · migrate (most are downstream of absent subsystems: caravans/gazette/pa
 in headless Rust applies as NPC-faction standing.)
 
 ### G4 — News / economy depth (needs multi-town + gazette substrate)
-⬜ market depth (credit/tithe/favored-price/quality/tatonnement) · arbitrage · bounties · reporter ·
-gazette (template articles) · econstats.
+- ✅ **favored-price / standing-skew** (`npcFavoredPrice`) — the double-auction now clears at the belief
+  midpoint SKEWED by how the seller regards the buyer (±FAVOR): a friend gets a discount, a despised
+  buyer a markup, a stranger the neutral price. Conserved. Makes reputation/relationships matter in trade.
+⬜ market depth (credit/tithe/quality/tatonnement) · arbitrage · bounties · reporter · gazette
+(template articles) · econstats.
 - ✅ **gather executor** (Wave-B) — `Goal::Gather{site, good}` + the market production-pass forager:
   capital-free foraging of a raw good open to any agent (the planner's forage path was previously
   inert — it compiled to `Goal::Work`, which mints only own-profession output). Unblocks subsistence
@@ -133,6 +136,11 @@ occupation choice (dynamic vs fixed-at-spawn) · decide utility-oracle (scoreAnd
 ## Progress log (newest first)
 
 _(append a dated entry per landed commit: what closed, gate status, hash)_
+
+- **G4 market standing-skew (favored price)** — the double-auction clears at the belief midpoint SKEWED
+  by the seller's belief-standing toward the buyer (±20%): friends get a deal, the despised are gouged,
+  strangers pay neutral. Conserved (the skew moves only WHERE the midpoint sits). Reputation now bites in
+  trade — the `npcFavoredPrice` / motive-trust market-depth item. 1 new test; survival unaffected.
 
 - **G6 arcs SagaStore** — the emergent-saga registry (`sagas.rs`, observer-only): vendettas open on
   assault / escalate on repeat / close on the slaying; rescues are one-beat arcs. Folded in the serial

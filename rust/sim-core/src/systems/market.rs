@@ -19,7 +19,7 @@
 //! `world.rng[i]`). The actual gold/good movement is the deterministic serial merge — this pass only
 //! PROPOSES transfers + writes its own rows. No HashMap / no float-reduce on the behaviour path.
 
-use crate::components::{Commodity, Economy, Faction, Goal, GoalKind, N_COMMODITIES};
+use crate::components::{BeliefTable, Commodity, Economy, Faction, Goal, GoalKind, N_COMMODITIES};
 use crate::intent::Intent;
 use crate::world::World;
 
@@ -94,6 +94,24 @@ fn sell_qty(e: &Economy, g: usize) -> i32 {
 #[inline]
 fn want_qty(e: &Economy, g: usize) -> i32 {
     i32::from(WANT[g] > 0 && e.inventory[g] < WANT[g])
+}
+
+/// Max fraction a seller skews its price by how it REGARDS the buyer (the `npcFavoredPrice` / motive-
+/// trust gap): a friend gets a discount, a disliked buyer a markup.
+const FAVOR: f32 = 0.20;
+
+/// The seller's price skew toward `buyer`, from its OWN belief-standing about them: ≈0.8 for a dear
+/// friend (a deal), ≈1.2 for a despised buyer (gouged), 1.0 for a stranger. Clamped so trade never
+/// becomes impossible. The relationship-aware clearing that makes reputation MATTER in the market.
+#[inline]
+fn standing_skew(bt: &BeliefTable, buyer: u32) -> f32 {
+    match bt.find(buyer) {
+        Some(ix) => {
+            let st = (bt.bodies[ix].standing as f32 / 32767.0).clamp(-1.0, 1.0); // −1..1
+            (1.0 - st * FAVOR).clamp(1.0 - FAVOR, 1.0 + FAVOR)
+        }
+        None => 1.0, // no opinion ⇒ the neutral midpoint
+    }
 }
 
 pub fn clear(world: &mut World) {
@@ -193,10 +211,14 @@ pub fn clear(world: &mut World) {
                 continue;
             }
 
-            // clearing price = midpoint of the two believed prices (major) → minor-unit transfer price.
+            // clearing price = midpoint of the two believed prices, SKEWED by how the seller regards the
+            // buyer (npcFavoredPrice): a friend gets a deal, a despised buyer is gouged. Conserved — the
+            // skew only moves WHERE the midpoint sits, the transfer still moves gold one-for-one.
             let ask = believed_price(&world.econ[s], &base, g);
             let bid = believed_price(&world.econ[b], &base, g);
-            let clear = (ask + bid) / 2; // major units
+            let mid = (ask + bid) / 2; // major units (the neutral midpoint)
+            let clear = ((mid as f32) * standing_skew(&world.beliefs[s], b as u32)).round() as i64;
+            let clear = clear.max(1);
             let price_minor = clear * 100; // gold is fixed-point ×100
 
             // affordability against the buyer's REMAINING budget (already net of its earlier emitted
@@ -241,6 +263,30 @@ mod tests {
     use super::*;
     use crate::components::{Commodity, Faction, GoalKind, Goal, Profession};
     use crate::world::World;
+
+    /// The standing-skew prices a trade by how the SELLER regards the buyer: a dear friend gets a
+    /// discount (< 1), a despised buyer a markup (> 1), a stranger the neutral midpoint (1.0).
+    #[test]
+    fn standing_skews_the_clearing_price() {
+        use crate::components::PersonBelief;
+        let mut friendly = BeliefTable::default();
+        friendly.subjects[0] = 9;
+        friendly.bodies[0] = PersonBelief { subject: 9, standing: 30000, ..Default::default() };
+        friendly.len = 1;
+        let mut hostile = BeliefTable::default();
+        hostile.subjects[0] = 9;
+        hostile.bodies[0] = PersonBelief { subject: 9, standing: -30000, ..Default::default() };
+        hostile.len = 1;
+        let empty = BeliefTable::default();
+
+        let deal = standing_skew(&friendly, 9);
+        let gouge = standing_skew(&hostile, 9);
+        let neutral = standing_skew(&empty, 9);
+        assert!(deal < 1.0, "a friend gets a discount, got {deal}");
+        assert!(gouge > 1.0, "a despised buyer is gouged, got {gouge}");
+        assert!((neutral - 1.0).abs() < 1e-6, "a stranger pays the neutral midpoint");
+        assert!(deal >= 1.0 - FAVOR - 1e-6 && gouge <= 1.0 + FAVOR + 1e-6, "skew is clamped to ±FAVOR");
+    }
 
     /// A seller with surplus + a buyer who wants it, both at the market → a transfer that conserves
     /// total gold and moves exactly one unit of the good.
