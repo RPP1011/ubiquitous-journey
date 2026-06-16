@@ -21,7 +21,7 @@
 
 use rayon::prelude::*;
 
-use crate::components::{BeliefTable, FighterState, Goal};
+use crate::components::{BeliefTable, Faction, FighterState, Goal};
 use crate::intent::Intent;
 use crate::world::World;
 
@@ -49,6 +49,7 @@ pub fn resolve(world: &mut World) {
         ref goal,
         ref level,
         ref alive,
+        ref faction,
         ref beliefs,
         ref mut combat,
         ref mut rng,
@@ -89,8 +90,16 @@ pub fn resolve(world: &mut World) {
             let target = match goal[i] {
                 // an explicit fight goal: act on it ONLY while the belief about it survives.
                 Goal::Fight { target, .. } => bt.find(target).map(|idx| (target, idx)),
-                // no fight goal: the nearest in-range belief flagged hostile (bit0) is fair game.
-                _ => nearest_hostile(bt, pos[i]),
+                // no fight goal: the nearest in-range belief flagged hostile (bit0) is fair game. A
+                // RAIDER with no one to fight PILLAGES — it wrecks the nearest building it believes it
+                // sees (affect:wreck, reaching the percept's health). Townsfolk never wreck (no fallback).
+                _ => nearest_hostile(bt, pos[i]).or_else(|| {
+                    if faction[i] == Faction::Raider as u8 {
+                        nearest_building(bt, pos[i])
+                    } else {
+                        None
+                    }
+                }),
             };
             let (to, bidx) = target?;
 
@@ -161,6 +170,31 @@ fn nearest_hostile(bt: &BeliefTable, from: [f32; 2]) -> Option<(u32, usize)> {
         let better = match best {
             None => true,
             // closer wins; ties break on lowest subject id (order-independent / deterministic).
+            Some((bid, _, bd)) => d2 < bd || (d2 == bd && b.subject < bid),
+        };
+        if better {
+            best = Some((b.subject, idx, d2));
+        }
+    }
+    best.map(|(id, idx, _)| (id, idx))
+}
+
+/// Nearest believed BUILDING (belief `flags` bit1) to `from` — the raider's pillage target (affect:wreck).
+/// Reads only the agent's OWN beliefs; the wreck resolves on the building percept's health. Deterministic
+/// tie-break on lowest subject id. Returns `(subject_id, belief_index)`.
+#[inline]
+fn nearest_building(bt: &BeliefTable, from: [f32; 2]) -> Option<(u32, usize)> {
+    let mut best: Option<(u32, usize, f32)> = None;
+    for idx in 0..bt.len as usize {
+        let b = &bt.bodies[idx];
+        if b.flags & 0x02 == 0 {
+            continue; // not a believed building
+        }
+        let dx = from[0] - b.last_x;
+        let dz = from[1] - b.last_z;
+        let d2 = dx * dx + dz * dz;
+        let better = match best {
+            None => true,
             Some((bid, _, bd)) => d2 < bd || (d2 == bd && b.subject < bid),
         };
         if better {

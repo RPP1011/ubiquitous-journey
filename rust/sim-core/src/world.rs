@@ -1649,6 +1649,37 @@ mod tests {
         assert!(w.beliefs[near].bodies[b].flags & 0x01 == 0, "a hero is not believed hostile");
     }
 
+    /// AFFECT:WRECK — a RAIDER with no one to fight PILLAGES: it perceives a building, believes it a
+    /// structure, and wrecks it (the strike reaches the percept's health). Townsfolk never wreck. Ties
+    /// construction + wreck + the homecoming together (a razed home is later forgotten by its owner).
+    #[test]
+    fn a_raider_wrecks_a_building_it_finds() {
+        let mut w = World::spawn(0x57EC, 4);
+        let raider = 0usize;
+        w.alive[raider] = true;
+        w.faction[raider] = Faction::Raider as u8;
+        w.pos[raider] = [0.0, 0.0];
+        w.combat[raider].health = 100.0;
+        let hut = w.spawn_percept([1.5, 0.0], 2, Faction::Townsfolk as u8, 30.0, false);
+
+        let start_hp = w.percept_health[0];
+        for _ in 0..600 {
+            w.tick();
+            if w.percept_flags[0] & 0x01 == 0 {
+                break; // razed
+            }
+        }
+        assert!(
+            w.percept_health[0] < start_hp,
+            "a raider with no one to fight wrecks the building it perceives"
+        );
+        // the wreck left NO mind-feedback (a building has no mind): the raider bears no grudge about it.
+        assert!(
+            !w.memory[raider].has(EpisodeKind::Assaulted, hut),
+            "wrecking a mind-less structure breeds no grudge (the !agent guard held)"
+        );
+    }
+
     /// CONSTRUCTION / HOMECOMING (epistemic): an agent DISCOVERS a home building by SIGHT, and FORGETS it
     /// when the building is razed and the belief fades — it cannot telepathically keep a home it no longer
     /// believes in (the homecoming.mjs gate). Buildings are percepts (kind 2), perceivable + wreckable.

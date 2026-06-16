@@ -68,8 +68,10 @@ Current: 7 derivers (avenge, seek_fortune, grieve, defend, donate, repay, steal)
   no peacetime economic cost). Built via a serial leader-foe snapshot read in the parallel decide.
   ⬜ still: recruit-as-an-explicit-Inform offer + the muster derivation (bands currently form by
   mutual standing in groups.rs, not a deliberate recruit goal).
-- 🟡 **affect** — ✅ free (rescue captive, the full capture→rescue arc) · ⬜ wreck (sabotage — dormant,
-  needs a building/structure target state, which the headless core lacks)
+- ✅ **affect** — free (rescue captive, the full capture→rescue arc) · wreck (sabotage): a RAIDER with no
+  one to fight PILLAGES the nearest building it perceives — the strike reaches the percept's `health`,
+  razing it with NO mind-feedback (the `!agent` guard). Ties construction+wreck+homecoming together (a
+  razed home is later forgotten by its owner). Now that buildings exist as percepts, wreck is LIVE.
 - ✅ **subsistence** — hunger → Sate intention → forage/buy a meal. **Fixed the documented starvation
   collapse** (town went 380→2 alive by t1500; now 380→372 at t3000).
 - ✅ **scout** — curiosity → idle-tier `Goal::Observe` to firm an uncertain-but-valuable belief.
