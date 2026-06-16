@@ -275,10 +275,16 @@ function fillReporter(a: Agent, _ctx: CognitionCtx): Field | null {
 function fillSightsee(a: Agent, _ctx: CognitionCtx): Field | null {
   if (!a.sightTarget) {
     if (!LANDMARKS || !LANDMARKS.length) return null;   // -> caller idles (was setMoving(0))
-    const near = LANDMARKS.slice()
-      .sort((p, q) => ((p.x - a.pos.x) ** 2 + (p.z - a.pos.z) ** 2) - ((q.x - a.pos.x) ** 2 + (q.z - a.pos.z) ** 2))
-      .slice(0, 3);
-    const L = near[(rng() * near.length) | 0];
+    const byDist = LANDMARKS.slice()
+      .sort((p, q) => ((p.x - a.pos.x) ** 2 + (p.z - a.pos.z) ** 2) - ((q.x - a.pos.x) ** 2 + (q.z - a.pos.z) ** 2));
+    // head for the nearest UNSEEN landmark — the curious push outward to NEW ground rather than recycling
+    // the same near sights. Own-state read (`_seen`, the places this soul has beheld) + the static
+    // landmark list, so the epistemic split holds. Only once everywhere is known does it revisit. Pick
+    // among the nearest few candidates so successive outings vary.
+    const seen = (a as { _seen?: Set<string> })._seen;
+    const unseen = seen ? byDist.filter((L) => !seen.has(L.name)) : byDist;
+    const pool = (unseen.length ? unseen : byDist).slice(0, 3);
+    const L = pool[(rng() * pool.length) | 0];
     a.sightTarget = new THREE.Vector3(L.x, a.pos.y, L.z);
   }
   return attractField(a.sightTarget, false);

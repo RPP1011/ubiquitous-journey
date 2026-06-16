@@ -9,3 +9,7 @@ node_modules/
 
 # git worktrees used by parallel agents (never commit)
 .claude/worktrees/
+
+# DF observer replay logs (regenerable via test/record.mjs)
+*.replay.json
+replay.json

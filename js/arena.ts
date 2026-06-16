@@ -47,11 +47,42 @@ const BIOME_COLOR: Record<string, number> = {
   wilds:   0x57523f,
 };
 
-// deterministic smooth pseudo-noise in roughly [-2, 2]
+// deterministic smooth pseudo-noise in roughly [-2, 2]. Hash-based VALUE-NOISE fBm (a few octaves of
+// smoothstep-interpolated lattice noise, each rotated + offset so the grid never shows through) — this
+// gives ORGANIC blobs instead of the old sum-of-sinusoids egg-carton lattice (which tiled the biome map
+// on a ~100 m grid). Still a PURE function of (x,z): no Math.random/Date, stable across rebuilds — so it
+// is safe on the headless fixed tick and identical run-to-run (the worldgen invariant).
+function _hash2(ix: number, iz: number): number {
+  // a cheap, well-mixed integer hash → [0,1)
+  let h = (Math.imul(ix | 0, 374761393) + Math.imul(iz | 0, 668265263)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+function _valueNoise(x: number, z: number): number {
+  // bilinear-interpolated hash lattice with smoothstep easing → smooth [0,1]
+  const ix = Math.floor(x), iz = Math.floor(z);
+  const fx = x - ix, fz = z - iz;
+  const sx = fx * fx * (3 - 2 * fx), sz = fz * fz * (3 - 2 * fz);
+  const a = _hash2(ix, iz), b = _hash2(ix + 1, iz);
+  const c = _hash2(ix, iz + 1), d = _hash2(ix + 1, iz + 1);
+  const top = a + (b - a) * sx, bot = c + (d - c) * sx;
+  return top + (bot - top) * sz;
+}
+// per-octave rotations (unit-ish vectors at odd angles) break axis alignment so blobs read organic.
+const _OCT = [[1, 0], [0.78, 0.63], [-0.62, 0.79], [0.31, -0.95]];
 function noise(x: number, z: number): number {
-  return Math.sin(x * 0.055) * Math.cos(z * 0.061)
-       + 0.6 * Math.sin((x + z) * 0.033)
-       + 0.5 * Math.cos((x - z) * 0.047);
+  let v = 0, amp = 1, fm = 1 / 210, norm = 0; // base feature ~210 m, detail down to ~26 m
+  for (let o = 0; o < 4; o++) {
+    const c = _OCT[o];
+    const rx = (x * c[0] - z * c[1]) * fm + o * 101.7;
+    const rz = (x * c[1] + z * c[0]) * fm + o * 57.3;
+    v += amp * _valueNoise(rx, rz);
+    norm += amp;
+    amp *= 0.5;
+    fm *= 2.07; // a non-integer lacunarity avoids octaves re-aligning into a lattice
+  }
+  return (v / norm - 0.5) * 4; // recentre [0,1] → ~[-2, 2] to match the biome/height thresholds
 }
 
 // What biome is at world (x,z)? Stable across rebuilds.
@@ -59,9 +90,12 @@ export function biomeAt(x: number, z: number): string {
   const r = Math.hypot(x, z);
   if (r < 16) return BIOME.VILLAGE;                 // central clearing = the town
   if (r > ARENA_RADIUS * 0.74) return BIOME.WILDS;  // dangerous frontier
+  // thresholds tuned to MATCH the old world's biome FRACTIONS (≈13.5% forest, 14% hills, 72.5% plains)
+  // so the economic geography (regionAt → POI scatter → the soak economy) is unchanged — only its SHAPE
+  // is now organic value-noise blobs instead of the old sum-of-sinusoids lattice.
   const v = noise(x, z);
-  if (v > 0.85) return BIOME.FOREST;
-  if (v < -0.85) return BIOME.HILLS;
+  if (v > 0.55) return BIOME.FOREST;
+  if (v < -0.58) return BIOME.HILLS;
   return BIOME.PLAINS;
 }
 
@@ -168,13 +202,31 @@ export function regionAt(x: number, z: number): string {
 // --- named landmarks (places agents/players can reference) -----------------
 // A handful of fixed, named places. nearestLandmark gives the closest within a
 // radius for "near Highcairn", region/biography flavour, and (browser) markers.
-export interface Landmark { name: string; x: number; z: number; kind: string; }
+// A landmark may carry a one-time `find` — a CACHE of GOODS (never gold, so the closed money loop is
+// untouched; goods mint like foraging) claimed by whoever FIRST reaches it — and a `lore` line that the
+// chronicle prints on that first discovery. Remote, dangerous landmarks carry the richer finds: the
+// frontier rewards the bold explorer. `kind` is flavour (peak/ruin/grove/…) used for markers + biography.
+export interface Landmark { name: string; x: number; z: number; kind: string; find?: { good: string; qty: number }; lore?: string; }
+const R = ARENA_RADIUS;
 export const LANDMARKS: Landmark[] = [
-  { name: 'Highcairn',    x: RIDGE_X, z: RIDGE_Z,                                  kind: 'peak'  },
-  { name: 'The Old Ford', x: FORD_X,  z: ARENA_RADIUS * 0.32 + Math.sin(FORD_X * 0.04) * 22, kind: 'ford' },
-  { name: 'Wraithmere',   x: -ARENA_RADIUS * 0.5, z: -ARENA_RADIUS * 0.5,         kind: 'vale'  },
-  { name: 'Marketwell',   x: 0,       z: 0,                                       kind: 'town'  },
-  { name: 'The Thorngate', x: ARENA_RADIUS * 0.82, z: 0,                          kind: 'gate'  },
+  // the near, known places (the original five) — flavour + safe waypoints.
+  { name: 'Highcairn',     x: RIDGE_X, z: RIDGE_Z,            kind: 'peak', lore: 'a windswept perch above the valley' },
+  { name: 'The Old Ford',  x: FORD_X,  z: R * 0.32 + Math.sin(FORD_X * 0.04) * 22, kind: 'ford' },
+  { name: 'Wraithmere',    x: -R * 0.5, z: -R * 0.5,          kind: 'vale', lore: 'a sunken vale where the mist never lifts' },
+  { name: 'Marketwell',    x: 0,       z: 0,                  kind: 'town' },
+  { name: 'The Thorngate', x: R * 0.82, z: 0,                 kind: 'gate', lore: 'the thorn-choked breach in the frontier' },
+  // the wider world — scattered across every region so an explorer has somewhere new to push toward.
+  { name: 'Emberwood Glade', x: R * 0.42, z: R * 0.33,  kind: 'grove',    find: { good: 'herb', qty: 3 }, lore: 'a glade of rare flowering herbs' },
+  { name: 'Stillspring',     x: -R * 0.58, z: R * 0.14,  kind: 'spring',   find: { good: 'herb', qty: 2 }, lore: 'a clear spring ringed with medicinal moss' },
+  { name: 'The Greycairn',   x: R * 0.25, z: -R * 0.58,  kind: 'cairn',    lore: 'an ancient burial cairn of grey stone' },
+  { name: 'Sentinel Stones', x: R * 0.63, z: R * 0.53,  kind: 'henge',    lore: 'a ring of standing stones older than the town' },
+  { name: 'Whisper Falls',   x: R * 0.1,  z: R * 0.70,  kind: 'falls',    find: { good: 'herb', qty: 2 }, lore: 'a hidden cataract loud with spray' },
+  { name: 'The Lonemast',    x: R * 0.72, z: -R * 0.47, kind: 'monolith', lore: 'a single black monolith on the heath' },
+  // the deep frontier — the richest finds, the longest journeys, the most renown for first arrival.
+  { name: 'The Sunken Barrow', x: -R * 0.34, z: R * 0.45, kind: 'ruin', find: { good: 'potion', qty: 2 }, lore: 'a broken barrow-seal, its grave-goods half-plundered' },
+  { name: 'Hollow of Echoes',  x: -R * 0.76, z: -R * 0.26, kind: 'cave', find: { good: 'ore', qty: 4 },  lore: 'a deep cave threaded with ore veins' },
+  { name: 'Briar Hollow',      x: -R * 0.25, z: -R * 0.71, kind: 'hollow', find: { good: 'wood', qty: 4 }, lore: 'a thicket-choked hollow of old hardwood' },
+  { name: 'Gravewatch',        x: -R * 0.80, z: R * 0.34, kind: 'ruin', find: { good: 'potion', qty: 3 }, lore: 'a ruined watchtower, a reliquary in its cellar' },
 ];
 export function nearestLandmark(x: number, z: number, maxR = Infinity): Landmark | null {
   let best: Landmark | null = null, bd = maxR * maxR;

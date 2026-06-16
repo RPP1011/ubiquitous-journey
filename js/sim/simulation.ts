@@ -36,6 +36,7 @@ import { foldLoss, foldDeed, foldScarcity, noteWitness } from './signals.js';
 import { runStatusSensor } from './statusSensor.js';
 import { Gazette } from './gazette.js';
 import { Reporter } from './reporter.js';
+import { Exploration } from './exploration.js';
 import { Bounties } from './bounties.js';
 import { Arbitrage } from './arbitrage.js';
 import { Intrigue } from './intrigue.js';
@@ -216,6 +217,7 @@ export class Simulation {
   _decayPhase?: number;   // belief-decay stride phase (rotates 0..K-1; see the ToM pass)
   gazette: Gazette;
   reporter: Reporter;
+  exploration: Exploration;
   bounties: Bounties;
   arbitrage: Arbitrage;
   intrigue: Intrigue;
@@ -349,6 +351,7 @@ export class Simulation {
     // optional LLM upgrade in the browser). Deterministic on the tick; read-only.
     this.gazette = new Gazette(this);
     this.reporter = new Reporter(this);
+    this.exploration = new Exploration(this);   // discovery rewards for reaching landmarks
     // NPC bounty-hunters: townsfolk READ the Gazette's notices and race the player
     // to the posted bounties — the newspaper as a live labour market.
     this.bounties = new Bounties(this);
@@ -503,6 +506,7 @@ export class Simulation {
     // send out the gazetteer(s) — the press corps that turns the emergent drama
     // into a published town newspaper (the Gazette).
     this.reporter.spawn();
+    this.exploration.primeKnown();   // landmarks at the town centre are "known" — no heroic first-find there
     // MENTAL MAP: snapshot the now-existing static geography (towns/gates/POIs/landmarks)
     // into the shared, read-only places registry the world-model reasons over.
     this.map = MentalMap.build(this.world, this.towns);
@@ -1462,6 +1466,8 @@ export class Simulation {
       this.watch.tick(ctx, step);
       // adventuring parties: muster/steer/resolve expeditions into the wilds.
       this.expeditions.tick(ctx, step);
+      // discovery: reward souls who REACH a landmark (memory + explore XP + first-find renown/cache).
+      this.exploration.tick(ctx);
       // the Patrician: broker the worst feud so managed tension never boils over.
       this.patrician.tick(ctx, step);
       // CONSTRUCTION: survey plots + commission the public tavern, then advance/

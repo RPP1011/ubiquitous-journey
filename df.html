@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Market Town — ASCII observer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0b0d10; }
+  body {
+    font-family: "Cascadia Mono", "DejaVu Sans Mono", "Consolas", monospace;
+    color: #c8d0c0; display: flex; flex-direction: column;
+  }
+  #status {
+    flex: 0 0 auto; padding: 4px 10px; font-size: 13px; letter-spacing: .5px;
+    background: #11140f; border-bottom: 1px solid #2a3022; color: #cdd6c4;
+  }
+  #status b { color: #e8c879; }
+  #status .warn { color: #e0a64a; }
+  #wrap { flex: 1 1 auto; display: flex; min-height: 0; }
+  /* the glyph map — a <pre> so spacing is exact */
+  #map {
+    flex: 1 1 auto; white-space: pre; overflow: hidden;
+    font-size: 13px; line-height: 15px; letter-spacing: 1.6px;
+    padding: 6px 4px 6px 8px; background: #0b0d10; user-select: none;
+  }
+  #panels {
+    flex: 0 0 340px; display: flex; flex-direction: column; min-height: 0;
+    border-left: 1px solid #2a3022; background: #0e110b;
+  }
+  #look { flex: 1 1 55%; overflow: auto; padding: 8px 10px; border-bottom: 1px solid #2a3022; }
+  #side { flex: 1 1 45%; overflow: auto; padding: 8px 10px; }
+  .ptitle { color: #e8c879; font-size: 13px; letter-spacing: 1.5px; text-transform: uppercase;
+            margin-bottom: 4px; border-bottom: 1px solid #2a3022; padding-bottom: 2px; }
+  .psec { color: #8fb070; font-size: 12px; margin-top: 6px; letter-spacing: .5px; }
+  .prow { font-size: 12.5px; line-height: 16px; color: #b9c2ac; white-space: pre-wrap; }
+  #help {
+    flex: 0 0 auto; padding: 3px 10px; font-size: 11px; color: #7a8470;
+    background: #11140f; border-top: 1px solid #2a3022; letter-spacing: .3px;
+  }
+  #help b { color: #9aa888; }
+</style>
+</head>
+<body>
+  <div id="status">booting…</div>
+  <div id="wrap">
+    <div id="map"></div>
+    <div id="panels">
+      <div id="look"></div>
+      <div id="side"></div>
+    </div>
+  </div>
+  <div id="help">
+    <b>↑↓←→/hjkl</b> look · <b>n/p</b> next/prev soul · <b>space</b> pause · <b>. ,</b> step ±1 ·
+    <b>&lt; &gt;</b> jump ±10 (replay) · <b>+/-</b> speed · <b>[ ]</b> zoom · <b>Tab</b> chronicle/gazette ·
+    <b>Home</b> recenter &nbsp; — append <b>?replay=FILE</b> to play a recorded log, or <b>?seed=0x…</b> for a world
+  </div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three.module.js",
+    "three/addons/": "./vendor/addons/"
+  }
+}
+</script>
+<script type="module" src="./dist/js/df/main.js"></script>
+</body>
+</html>

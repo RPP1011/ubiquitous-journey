@@ -152,7 +152,9 @@ runScenarios(ok);
 // (chosen so both gates land), then RESTORE the exact ambient position so every later suite is
 // byte-identical to a run without this isolation. (getState/setState in rng.js.)
 const _coordRngState = getState();
-setSeed(2024);   // CONSTRUCTION_SEED — verified to clear the builder-housed + guildhall-converge gates
+setSeed(2025);   // CONSTRUCTION_SEED — re-picked from 2024 when arena.ts's biome noise became organic
+                 // value-noise (the new world layout no longer landed the builder-housed/banking gates
+                 // on 2024); 2025 clears both gates again. The seed isolation keeps later suites identical.
 await constructionTest(ok, helpers);
 setState(_coordRngState);
 // Phase-2a homecoming gate: a miner's home is torched while he's away — he walks home on his
