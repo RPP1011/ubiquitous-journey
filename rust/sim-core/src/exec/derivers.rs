@@ -3,7 +3,7 @@
 //! + refreshes, so re-running every tick is idempotent. Feature derivers live in their own files and
 //! append to `registry::DERIVERS`.
 
-use crate::components::{EpisodeKind, Faction, GoalStack, Intention, IntentionKind, NONE_ID};
+use crate::components::{Commodity, EpisodeKind, Faction, GoalStack, Intention, IntentionKind, NONE_ID};
 use crate::exec::registry::DeriveCtx;
 
 /// How long a grudge stays live (ticks) before it cools out (mirrors `MOTIVE.avengeExpiry`).
@@ -50,6 +50,13 @@ const DONATE_FOOD_KEEP: i32 = 1; // give only when holding more than this many F
 const DONATE_POOR_CUE: u16 = 8_000;
 const DONATE_RANGE: f32 = 22.0;
 const DONATE_EXPIRY: u32 = 300;
+
+// ── subsistence (the live trigger for the dormant `goalSate`, `js/sim/features/subsistence.ts`) ──
+const PRI_SATE: u16 = 840;
+/// Hunger below this (0..1) with an empty larder poses a meal as a planner goal (mirrors `eatUrgent`).
+const SATE_HUNGER: f32 = 0.45;
+/// How long a sate intention stays live before it re-derives (mirrors `SUBSIST.ttl`).
+const SATE_EXPIRY: u32 = 90;
 
 const PRI_DEFEND: u16 = 850;
 /// Only a brave-enough soul defends a friend (aggression above).
@@ -290,6 +297,32 @@ pub fn defend(gstack: &mut GoalStack, ctx: &DeriveCtx) {
             expire: ctx.now + DEFEND_EXPIRY,
         });
     }
+}
+
+/// SUBSISTENCE — the live trigger for the dormant `goalSate` (`js/sim/features/subsistence.ts`): a
+/// HUNGRY townsperson with an EMPTY larder poses "obtain a meal" to the planner, which routes by cost
+/// over the EXISTING vocabulary — BUY at market (has coin) vs forage (GATHER a raw good at a field,
+/// capital-free). So how a hungry soul survives EMERGES from its means. Belief/own-state only. Without
+/// this, a destitute agent stalls on the inert `Eat` reflex (no food ⇒ no relief) and starves beside a
+/// field it could have foraged — the documented starvation gap.
+pub fn subsistence(gstack: &mut GoalStack, ctx: &DeriveCtx) {
+    if ctx.faction != Faction::Townsfolk as u8 {
+        return; // monsters/raiders eat by other means (no economy)
+    }
+    if ctx.hunger >= SATE_HUNGER || ctx.inventory[Commodity::Food as usize] > 0 {
+        return; // not in want, or already carrying a meal (just eat it — the reactive reflex)
+    }
+    gstack.push(Intention {
+        kind: IntentionKind::Sate as u8,
+        flags: 0,
+        priority: PRI_SATE,
+        subject: NONE_ID,
+        place: 0,
+        _pad: [0; 3],
+        amt: 0,
+        born: ctx.now,
+        expire: ctx.now + SATE_EXPIRY,
+    });
 }
 
 /// GRIEVE — a `witnessed_death` memory ⇒ a plan-less mourning disposition (biases, decays — no plan).

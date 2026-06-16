@@ -35,7 +35,8 @@ Current: 7 derivers (avenge, seek_fortune, grieve, defend, donate, repay, steal)
 - ⬜ **knowledge model** — observe / ask / study (`Know(topic)` + graded recipes)
 - ⬜ **recruiter / warband** — recruit-as-Inform + muster + march-on-foe
 - ⬜ **affect** — free (rescue captive) / wreck (sabotage)
-- ⬜ **subsistence** — hunger → sate goal
+- ✅ **subsistence** — hunger → Sate intention → forage/buy a meal (commit below). **Fixed the
+  documented starvation collapse** (town went 380→2 alive by t1500; now 380→372 at t3000).
 - ⬜ **scout** — curiosity → investigate uncertain-but-valuable belief
 - ⬜ **migrate** — emigration prospect → relocate
 - ⬜ **reciprocity** — believed-motive → trust/suspicion fold
@@ -54,6 +55,10 @@ in headless Rust applies as NPC-faction standing.)
 ### G4 — News / economy depth (needs multi-town + gazette substrate)
 ⬜ market depth (credit/tithe/favored-price/quality/tatonnement) · arbitrage · bounties · reporter ·
 gazette (template articles) · econstats.
+- ✅ **gather executor** (Wave-B) — `Goal::Gather{site, good}` + the market production-pass forager:
+  capital-free foraging of a raw good open to any agent (the planner's forage path was previously
+  inert — it compiled to `Goal::Work`, which mints only own-profession output). Unblocks subsistence
+  + any forage-to-acquire plan.
 
 ### G5 — combatEvents master fold
 Current: strike→assaulted, kill→slew stamp. Missing:
@@ -83,7 +88,14 @@ occupation choice (dynamic vs fixed-at-spawn) · decide utility-oracle (scoreAnd
 
 _(append a dated entry per landed commit: what closed, gate status, hash)_
 
-- **(in progress)** Tracker doc created; baseline recorded. Starting G1 (feature layer) — the
-  highest-leverage, proven-pattern vertical set.
+- **G1 subsistence + G4 gather executor** — closed the documented **starvation collapse**. Added
+  `IntentionKind::Sate` + the `subsistence` deriver (hungry + empty larder ⇒ pose a meal to the
+  planner), a first-class `Goal::Gather{site, good}` + market-pass forager (capital-free foraging,
+  any agent), and split the planner's gather-vs-produce compile. The survival reflex now falls through
+  to foraging instead of stalling on the inert `Eat`. New `tests/town_survival.rs` regression (town
+  380→372 alive at t3000, was 380→2 at t1500). Gates: 137 sim-core + 4 determinism + 1 survival +
+  3 protocol + 1 server green; M-invariant 1–32; gold conserved.
+
+- **(start)** Tracker doc created; baseline recorded. Starting G1 (feature layer).
 </content>
 </invoke>

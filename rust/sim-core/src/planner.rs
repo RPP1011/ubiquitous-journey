@@ -366,7 +366,12 @@ fn compile(step: Step, pv: &Pv) -> Goal {
             Place::Node(g) => Goal::Work { site: pv.work_sites[good_site_index(g).unwrap_or(0)] },
             Place::Subject(s) => fight_goal(pv, s),
         },
-        Verb::Gather | Verb::Produce => {
+        // GATHER is capital-free foraging open to any agent (→ Goal::Gather carries the good); PRODUCE
+        // is the agent's own-profession output (→ Goal::Work, minted by the production pass).
+        Verb::Gather => {
+            Goal::Gather { site: pv.work_sites[good_site_index(step.good).unwrap_or(0)], good: step.good }
+        }
+        Verb::Produce => {
             Goal::Work { site: pv.work_sites[good_site_index(step.good).unwrap_or(0)] }
         }
         Verb::Buy | Verb::Sell => Goal::Market { site: pv.market },
@@ -496,9 +501,10 @@ pub fn compile_planstep(ps: &PlanStep, pv: &Pv) -> Goal {
             Place::Node(g) => Goal::Work { site: pv.work_sites[good_site_index(g).unwrap_or(0)] },
             Place::Subject(s) => fight_goal(pv, s),
         },
-        VERB_GATHER | VERB_PRODUCE => {
-            Goal::Work { site: pv.work_sites[good_site_index(ps.good).unwrap_or(0)] }
+        VERB_GATHER => {
+            Goal::Gather { site: pv.work_sites[good_site_index(ps.good).unwrap_or(0)], good: ps.good }
         }
+        VERB_PRODUCE => Goal::Work { site: pv.work_sites[good_site_index(ps.good).unwrap_or(0)] },
         VERB_BUY | VERB_SELL => Goal::Market { site: pv.market },
         VERB_APPROACH | VERB_ATTACK => fight_goal(pv, ps.subject),
         _ => Goal::Idle,

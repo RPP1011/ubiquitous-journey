@@ -19,7 +19,7 @@
 //! `world.rng[i]`). The actual gold/good movement is the deterministic serial merge — this pass only
 //! PROPOSES transfers + writes its own rows. No HashMap / no float-reduce on the behaviour path.
 
-use crate::components::{Commodity, Economy, Faction, GoalKind, N_COMMODITIES};
+use crate::components::{Commodity, Economy, Faction, Goal, GoalKind, N_COMMODITIES};
 use crate::intent::Intent;
 use crate::world::World;
 
@@ -37,6 +37,9 @@ const WANT: [i32; N_COMMODITIES] = [4, 0, 0, 1, 0, 1];
 const WORK_RANGE: f32 = 6.0;
 /// Cap on self-produced working inventory so it can't grow unbounded (the auction drains the rest).
 const PRODUCE_CAP: i32 = 64;
+/// Cap on capital-free foraging — a forager gathers only enough to subsist (a handful of meals), not a
+/// hoard. Lower than `PRODUCE_CAP`: foraging is a survival fallback, not a trade.
+const FORAGE_CAP: i32 = 4;
 
 /// The belief→price drift toward an observed clear, as a 1/256 fraction (own-write learning rate).
 const PRICE_LEARN_NUM: i64 = 64; // 64/256 = 0.25
@@ -107,6 +110,21 @@ pub fn clear(world: &mut World) {
         if let Some(g) = produced_good(prof) {
             let site = world.work_sites[(prof as usize).min(crate::world::N_WORK_SITES - 1)];
             if within(world.pos[i], site, WORK_RANGE) && world.econ[i].inventory[g] < PRODUCE_CAP {
+                world.econ[i].inventory[g] += 1;
+                deeds.push(Intent::Deed { actor: i as u32, verb: 0, magnitude: 1, target: i as u32 });
+            }
+        }
+        // GATHER (capital-free foraging) — ANY agent with a Gather goal AT the node forages one unit of
+        // its RAW good (Food/Wood/Ore/Herb), profession-independent. This is the first-class gather
+        // executor the planner's forage path needs (the subsistence starvation-gap fix): a destitute
+        // non-farmer who walked to a field actually comes away with a meal. Capped like production; the
+        // good is minted (goods are intentionally not gold-conserved, like the production pass above).
+        if let Goal::Gather { site, good } = world.goal[i] {
+            let g = good as usize;
+            if g < N_COMMODITIES
+                && within(world.pos[i], site, WORK_RANGE)
+                && world.econ[i].inventory[g] < FORAGE_CAP
+            {
                 world.econ[i].inventory[g] += 1;
                 deeds.push(Intent::Deed { actor: i as u32, verb: 0, magnitude: 1, target: i as u32 });
             }

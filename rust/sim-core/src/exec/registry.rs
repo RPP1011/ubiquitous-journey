@@ -13,6 +13,8 @@ pub struct DeriveCtx<'a> {
     pub inventory: [i32; N_COMMODITIES],
     pub pos: [f32; 2],
     pub personality: Personality,
+    /// Own hunger need (0..1, lower = hungrier) — read by the subsistence deriver to pose a meal goal.
+    pub hunger: f32,
     pub beliefs: &'a BeliefTable,
     pub memory: &'a Memory,
     pub now: u32,
@@ -32,6 +34,7 @@ pub static DERIVERS: &[Deriver] = &[
     super::derivers::defend,
     super::derivers::donate,
     super::derivers::repay,
+    super::derivers::subsistence,
 ];
 
 /// Run every registered deriver over the agent's goal stack (own-state only ⇒ deterministic).

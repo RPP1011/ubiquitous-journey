@@ -60,6 +60,7 @@ pub enum GoalKind {
     Fight = 8,
     Home = 9,
     Interact = 10,
+    Gather = 11, // forage a RAW good at a resource node (capital-free, any agent — the gather verb)
 }
 
 /// types/combat.ts FighterState — the directional-melee swing state machine.
@@ -257,6 +258,11 @@ pub enum Goal {
     /// loot/free/wreck/…). `to` is the approach point (the subject's believed pos, refreshed each tick);
     /// the `act` phase fires `verb` when in reach. The non-combat sibling of `Fight`.
     Interact { verb: u8, target: u32, to: [f32; 2] },
+    /// Forage a RAW good (`good`) at a resource node (`site`) — the capital-free GATHER verb, open to
+    /// ANY agent regardless of profession (unlike `Work`, which mints only the agent's own output).
+    /// Locomotion walks to `site`; the market production pass mints one unit of `good` on arrival. This
+    /// is what lets a destitute non-farmer actually feed itself (the subsistence forage path).
+    Gather { site: [f32; 2], good: u8 },
 }
 
 /// The non-combat interaction verbs a `Goal::Interact` carries (the conserved social/economic acts).
@@ -284,13 +290,14 @@ impl Goal {
             Goal::Fight { .. } => GoalKind::Fight,
             Goal::Home { .. } => GoalKind::Home,
             Goal::Interact { .. } => GoalKind::Interact,
+            Goal::Gather { .. } => GoalKind::Gather,
         }
     }
     /// The locomotion target this goal implies (None ⇒ stand still / in-place verb). A Fight now
     /// steps toward its believed approach point (`to`), so the hunter closes the gap before striking.
     pub fn move_target(&self) -> Option<[f32; 2]> {
         match self {
-            Goal::Work { site } | Goal::Market { site } => Some(*site),
+            Goal::Work { site } | Goal::Market { site } | Goal::Gather { site, .. } => Some(*site),
             Goal::Wander { to } | Goal::Comfort { to } | Goal::Home { to } => Some(*to),
             Goal::Fight { to, .. } | Goal::Interact { to, .. } => Some(*to),
             _ => None,
@@ -619,6 +626,7 @@ pub enum IntentionKind {
     Steal = 8,       // rob a believed-rich mark (the urchin heist) — predicate: robbed/gold target
     Defend = 9,      // a brave soul fights a believed-hostile threatening a believed-friend (Dead pred)
     Donate = 10,     // a wealthy altruist gives to a believed-poor neighbour (alms) — pred: gave marker
+    Sate = 11,       // a hungry, foodless soul forages/buys a meal (subsistence) — pred: holds food
 }
 
 pub const NONE_ID: u32 = u32::MAX;

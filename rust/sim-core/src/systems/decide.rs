@@ -27,7 +27,8 @@
 use rayon::prelude::*;
 
 use crate::components::{
-    EpisodeKind, Faction, Goal, GoalStack, Intention, IntentionKind, Plan, Profession, BELIEF_CAP,
+    Commodity, EpisodeKind, Faction, Goal, GoalStack, Intention, IntentionKind, Plan, Profession,
+    BELIEF_CAP,
 };
 use crate::exec::registry::{run_derivers, DeriveCtx};
 use crate::planner::{compile_current, solve_plan, step_effect_holds, Atom, Pv};
@@ -106,9 +107,18 @@ pub fn decide(world: &mut World) {
             let comfort_def = if need.comfort < COMFORT_SEEK { COMFORT_SEEK - need.comfort } else { 0.0 };
             if hunger_def > 0.0 || energy_def > 0.0 || comfort_def > 0.0 {
                 if hunger_def >= energy_def && hunger_def >= comfort_def {
-                    *g = Goal::Eat;
+                    // HUNGER dominant: eat in place IF carrying food (the reactive reflex). With an
+                    // EMPTY larder there is nothing to eat — fall through to the goal stack, where the
+                    // SUBSISTENCE deriver's Sate intention routes the planner to forage/buy a meal
+                    // (the starvation-gap fix). Only short-circuit when eating can actually help.
+                    if econ[i].inventory[Commodity::Food as usize] > 0 {
+                        *g = Goal::Eat;
+                        return;
+                    }
+                    // else: no food, no return — subsistence (below) drives acquisition.
                 } else if energy_def >= comfort_def {
                     *g = Goal::Rest;
+                    return;
                 } else {
                     // seek the nearest believed hearth (a COMFORT-affording place), else fall back to
                     // my own home anchor — the first MentalMap consumer.
@@ -117,8 +127,8 @@ pub fn decide(world: &mut World) {
                         .map(|p| [p.x, p.z])
                         .unwrap_or(home[i]);
                     *g = Goal::Comfort { to };
+                    return;
                 }
-                return;
             }
 
             // The believed-state view the GOAP planner reasons over (OWN state + the static world).
@@ -146,6 +156,7 @@ pub fn decide(world: &mut World) {
                     inventory: econ[i].inventory,
                     pos: pos[i],
                     personality: personality[i],
+                    hunger: need.hunger,
                     beliefs: &beliefs[i],
                     memory: &memory[i],
                     now,
@@ -348,6 +359,9 @@ fn intention_atom(it: &Intention) -> Option<Atom> {
             Some(Atom::Dead(it.subject))
         }
         x if x == IntentionKind::SeekFortune as u8 => Some(Atom::GoldGe(it.amt)),
+        // sate: obtain a single unit of Food (the planner routes forage vs buy by cost); needs.rs
+        // then eats it. One unit is enough to break the starvation stall.
+        x if x == IntentionKind::Sate as u8 => Some(Atom::Have(Commodity::Food as u8, 1)),
         x if x == IntentionKind::Steal as u8 => Some(Atom::Took(it.subject)),
         x if x == IntentionKind::Donate as u8 || x == IntentionKind::Repay as u8 => {
             Some(Atom::Gave(it.subject))
@@ -370,6 +384,8 @@ fn intention_satisfied(it: &Intention, pv: &Pv) -> bool {
             pv.memory.has(EpisodeKind::Slew, it.subject) || pv.beliefs.find(it.subject).is_none()
         }
         x if x == IntentionKind::SeekFortune as u8 => pv.gold >= it.amt,
+        // sated: a meal is in the larder (needs.rs will eat it) — the foraging worked.
+        x if x == IntentionKind::Sate as u8 => pv.inventory[Commodity::Food as usize] >= 1,
         // robbed the mark (the marker) or already met the heist's gold target.
         x if x == IntentionKind::Steal as u8 => {
             pv.memory.has(EpisodeKind::Robbed, it.subject) || pv.gold >= it.amt
@@ -413,14 +429,42 @@ mod tests {
     use crate::world::World;
 
     #[test]
-    fn hungry_agent_picks_eat() {
+    fn hungry_agent_with_food_picks_eat() {
         let mut w = World::spawn(0xBEEF, 64);
         w.needs[0].hunger = 0.0;
         w.needs[0].energy = 1.0;
         w.needs[0].comfort = 1.0;
+        w.econ[0].inventory[Commodity::Food as usize] = 3; // carrying a meal ⇒ the reactive eat reflex
         w.beliefs[0].clear();
         decide(&mut w);
-        assert_eq!(w.goal[0].kind(), GoalKind::Eat, "a starving agent must choose Eat");
+        assert_eq!(w.goal[0].kind(), GoalKind::Eat, "a hungry agent with food must choose Eat");
+    }
+
+    /// SUBSISTENCE: a hungry townsperson with an EMPTY larder no longer stalls on the inert Eat reflex
+    /// — it poses a meal to the planner and forages/buys (Work or Market), the starvation-gap fix.
+    #[test]
+    fn foodless_hungry_townsperson_forages() {
+        let mut w = World::spawn(0xBEEF, 64);
+        let i = (0..w.n)
+            .find(|&i| w.faction[i] == Faction::Townsfolk as u8)
+            .expect("a townsperson exists");
+        w.needs[i].hunger = 0.0; // starving
+        w.needs[i].energy = 1.0;
+        w.needs[i].comfort = 1.0;
+        w.econ[i].inventory = [0; crate::components::N_COMMODITIES]; // empty larder
+        w.beliefs[i].clear();
+        w.memory[i] = crate::components::Memory::default();
+        w.goals[i] = GoalStack::default();
+        decide(&mut w);
+        let k = w.goal[i].kind();
+        assert!(
+            k == GoalKind::Work || k == GoalKind::Market,
+            "a foodless hungry soul should forage/buy (Work/Market), got {k:?} — not stall on Eat"
+        );
+        assert!(
+            (0..w.goals[i].len as usize).any(|j| w.goals[i].items[j].kind == IntentionKind::Sate as u8),
+            "a Sate intention should sit on the stack"
+        );
     }
 
     #[test]
