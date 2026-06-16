@@ -40,6 +40,10 @@ const PRODUCE_CAP: i32 = 64;
 /// Cap on capital-free foraging — a forager gathers only enough to subsist (a handful of meals), not a
 /// hoard. Lower than `PRODUCE_CAP`: foraging is a survival fallback, not a trade.
 const FORAGE_CAP: i32 = 4;
+/// Graded recipe (recipeKnow.ts): a skill at/above this counts as MASTERY (the extra-output bonus); the
+/// recipe rises by `RECIPE_LEARN` each time the craft is practised, and fades when it isn't (forget pass).
+const MASTER_BAR: f32 = 0.8;
+const RECIPE_LEARN: f32 = 0.05;
 
 /// The belief→price drift toward an observed clear, as a 1/256 fraction (own-write learning rate).
 const PRICE_LEARN_NUM: i64 = 64; // 64/256 = 0.25
@@ -128,9 +132,21 @@ pub fn clear(world: &mut World) {
         }
         let prof = world.profession[i];
         if let Some(g) = produced_good(prof) {
-            let site = world.work_sites[(prof as usize).min(crate::world::N_WORK_SITES - 1)];
+            // the worker's site is `prof-1` — the SAME index `decide` sends a Work goal to, and the
+            // canonical good→site mapping (`good_site_index(produced_good(prof)) == prof-1`). (Was `prof`
+            // — an off-by-one that meant profession production NEVER fired in the live sim, so the town
+            // subsisted entirely on the foraging path; fixing it makes the craft economy real.)
+            let site = world.work_sites[(prof as usize - 1).min(crate::world::N_WORK_SITES - 1)];
             if within(world.pos[i], site, WORK_RANGE) && world.econ[i].inventory[g] < PRODUCE_CAP {
                 world.econ[i].inventory[g] += 1;
+                // GRADED RECIPE (recipeKnow.ts): a MASTER of the craft yields an EXTRA unit — a bonus on
+                // top of the baseline, so a rusty/half-learned recipe never produces LESS than before
+                // (economy-safe by construction: the marginal food supply is never reduced). And working
+                // the craft sharpens the recipe (learn-by-doing); it fades unpractised (the forget pass).
+                if world.recipe[i] >= MASTER_BAR && world.econ[i].inventory[g] < PRODUCE_CAP {
+                    world.econ[i].inventory[g] += 1;
+                }
+                world.recipe[i] = (world.recipe[i] + RECIPE_LEARN).min(1.0);
                 deeds.push(Intent::Deed { actor: i as u32, verb: 0, magnitude: 1, target: i as u32 });
             }
         }
@@ -291,6 +307,35 @@ mod tests {
         assert!(gouge > 1.0, "a despised buyer is gouged, got {gouge}");
         assert!((neutral - 1.0).abs() < 1e-6, "a stranger pays the neutral midpoint");
         assert!(deal >= 1.0 - FAVOR - 1e-6 && gouge <= 1.0 + FAVOR + 1e-6, "skew is clamped to ±FAVOR");
+    }
+
+    /// GRADED RECIPE: a MASTER at its work site produces an EXTRA unit (baseline + bonus); a half-learned
+    /// recipe produces only the baseline — never less. Practising sharpens the recipe (learn-by-doing).
+    #[test]
+    fn recipe_mastery_yields_a_production_bonus() {
+        let mut w = World::spawn(0xEC1, 6);
+        let (master, rusty) = (0usize, 1usize);
+        // both farmers (profession 1 → Food) standing at the farm site (work_sites[0]).
+        let farm = w.work_sites[0]; // the Farmer production site (prof 1 → site prof-1 = 0)
+        for &i in &[master, rusty] {
+            w.faction[i] = Faction::Townsfolk as u8;
+            w.alive[i] = true;
+            w.profession[i] = 1;
+            w.pos[i] = farm;
+            w.econ[i].inventory = [0; N_COMMODITIES];
+        }
+        w.recipe[master] = 1.0; // a master of the craft
+        w.recipe[rusty] = 0.5; // half-learned (below MASTER_BAR)
+        // everyone else idle/away so only these two produce.
+        for i in 2..w.n {
+            w.profession[i] = 0;
+        }
+        let master_skill = w.recipe[master];
+        clear(&mut w);
+        assert_eq!(w.econ[master].inventory[0], 2, "a master yields baseline + mastery bonus");
+        assert_eq!(w.econ[rusty].inventory[0], 1, "a half-learned recipe yields only the baseline");
+        assert!(w.recipe[rusty] > 0.5, "practising sharpened the rusty recipe (learn-by-doing)");
+        assert!((w.recipe[master] - master_skill).abs() < 0.06, "a master's recipe stays at the cap");
     }
 
     /// A seller with surplus + a buyer who wants it, both at the market → a transfer that conserves

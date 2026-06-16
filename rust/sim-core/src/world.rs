@@ -62,6 +62,7 @@ pub struct World {
     pub experience: Vec<Experience>, // outcome-conditioned caution: per-strategy surcharge (doc 11, experience.rs)
     pub captive_of: Vec<i32>,        // captor id while held prisoner (CAPTIVE_NONE = free) — capture-on-defeat
     pub trade_buff: Vec<u32>,        // tick-deadline of an active trade_edge (haggle) market price buff (0 = none)
+    pub recipe: Vec<f32>,            // graded recipe skill for the agent's OWN craft (0..1; learn-by-doing, fades unpractised)
     // ── Wave-3 society columns ──
     pub faith: Vec<u8>,         // small-god id (0 = none, NO_GOD)
     pub band_leader: Vec<i32>,  // band/clan leader id (-1 = none, NO_BAND)
@@ -169,6 +170,7 @@ impl World {
             experience: Vec::with_capacity(n),
             captive_of: Vec::with_capacity(n),
             trade_buff: Vec::with_capacity(n),
+            recipe: Vec::with_capacity(n),
             faith: Vec::with_capacity(n),
             band_leader: Vec::with_capacity(n),
             house: Vec::with_capacity(n),
@@ -261,6 +263,7 @@ impl World {
             w.experience.push(Experience::default());
             w.captive_of.push(CAPTIVE_NONE);
             w.trade_buff.push(0);
+            w.recipe.push(1.0); // trained at spawn — a master of their craft (fades if unpractised)
             w.beliefs.push(BeliefTable::default());
             w.beliefs_prev.push(BeliefTable::default());
             w.faith.push(NO_GOD);
@@ -311,6 +314,7 @@ impl World {
         self.experience.push(Experience::default());
         self.captive_of.push(CAPTIVE_NONE);
         self.trade_buff.push(0);
+        self.recipe.push(1.0);
         self.faith.push(NO_GOD);
         self.band_leader.push(NO_BAND);
         self.house.push(0);
@@ -691,6 +695,18 @@ impl World {
         }
         if self.tick % EPITHET_EVERY == 0 {
             systems::houses::earn_epithets(self); // brand hero/villain/survivor from accumulated deeds
+        }
+        self.forget_recipes(); // use-it-or-lose-it: an unpractised craft skill fades (only the bonus)
+    }
+
+    /// FORGET PASS (recipeKnow.ts `forgetTick`): a recipe skill not refreshed by practice fades slowly
+    /// (use-it-or-lose-it). Because the recipe only ever ADDS a mastery bonus on top of baseline output,
+    /// a fade can at worst remove that bonus — it NEVER reduces baseline production (economy-safe).
+    /// Serial own-write ⇒ deterministic.
+    fn forget_recipes(&mut self) {
+        const RECIPE_FORGET: f32 = 0.0008;
+        for r in self.recipe.iter_mut() {
+            *r = (*r - RECIPE_FORGET).max(0.0);
         }
     }
 

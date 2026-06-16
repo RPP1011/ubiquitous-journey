@@ -35,11 +35,15 @@ Current: 7 derivers (avenge, seek_fortune, grieve, defend, donate, repay, steal)
   `Experience` store (fixed per-verb array, determinism-safe), `experience.rs` math (decay/burn/windfall/
   felt-surcharge/classify-yield), planner cost read, windfall-on-rob-success + burn-on-lost-venture
   writes, and a behavioral steal-gate (a burned thief retires). Hashed for the M-invariance canary.
-- 🟡 **knowledge model** — the **observe / whereabouts (scout)** channel landed: a curious IDLE soul
-  goes to watch its vaguest-but-valuable belief first-hand (`Goal::Observe`), and perceive firms the
-  confidence on arrival (first-hand watching IS the learning). Idle-tier ⇒ economy-safe. ⬜ still: the
-  `ask`/`study` channels, the `Know(topic)` goal-stack abstraction, and graded recipes (recipeKnow) —
-  the recipe path is entangled with dynamic occupation (also absent), so deferred together.
+- 🟡 **knowledge model** — (1) the **observe / whereabouts (scout)** channel (idle-tier curious
+  investigation, perceive firms on arrival); (2) **graded recipes** (recipeKnow core): a per-agent
+  `recipe` skill (0..1) that a MASTER (≥0.8) parlays into an EXTRA production unit, raised by
+  learn-by-doing (producing) and faded by a use-it-or-lose-it forget pass. Economy-safe by construction
+  (the bonus only ADDS — a rusty recipe never produces less than baseline). **Also fixed a real
+  production-site off-by-one** (decide sent workers to `work_sites[prof-1]` but production checked
+  `work_sites[prof]`, so craft production NEVER fired live — the town subsisted only on foraging; town
+  survival jumped to 80–98% once the craft economy worked). ⬜ still: `ask`/`study`-from-teacher
+  channels + the `Know(topic)` goal-stack abstraction + cross-craft learning (needs dynamic occupation).
 - 🟡 **recruiter / warband** — **warband combat rally LANDED**: a band follower converges on its
   leader's foe *if it also perceives it* (shared-threat ToM; overrides personal flee; combat-only, so
   no peacetime economic cost). Built via a serial leader-foe snapshot read in the parallel decide.
@@ -165,6 +169,13 @@ occupation choice (dynamic vs fixed-at-spawn) · decide utility-oracle (scoreAnd
 ## Progress log (newest first)
 
 _(append a dated entry per landed commit: what closed, gate status, hash)_
+
+- **G1 graded recipes + a real production bug fix** — added the recipeKnow core: a `recipe` skill column
+  (learn-by-doing on produce, fade via a forget pass), a master's extra-output bonus (economy-safe — the
+  bonus only ADDS). **In wiring it, found + fixed a production-site off-by-one** (`work_sites[prof]` →
+  `[prof-1]`) that had meant craft production NEVER fired in the live sim — the town had subsisted only
+  on the foraging path. With the craft economy now real, town survival jumped to **80–98%** (was 53–94%).
+  2 new tests; determinism + survival green; M-invariant.
 
 - **G8 trade_edge ability op (11/12 live)** — a `trade_buff` window column: a merchant's haggle arms it
   (set in the social cast branch), and the market clears that seller's sales +15% while active. Conserved
