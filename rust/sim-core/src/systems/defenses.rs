@@ -11,9 +11,11 @@
 //! robust anti-extinction FLOOR, structural rather than a tuning fudge.
 //!
 //! WHAT THIS IMPLEMENTS (mirrors `build`/`_apparent`/`tick`/the cooldown + tally):
-//! - towers ring the single town core (`world.town_center`) on a fixed radius, computed
-//!   DETERMINISTICALLY each pass from the centre (no per-tower mesh/state to persist — the substrate
-//!   has one dense town; the TS per-town array is intentionally collapsed, like watch.rs).
+//! - EVERY settlement rings ITS OWN core. The per-town centres are derived deterministically each
+//!   pass (`town_cores`): town 0 anchors at the legacy `world.town_center`; every further town id
+//!   present in `world.town` anchors at the CENTROID of its living members. A tower ring is a pure
+//!   function of a town's centre, computed fresh each pass (no per-tower mesh/state to persist), so
+//!   a freshly-founded or migrated town gets its watchtowers for free, and a gutted one keeps them.
 //! - on a cooldown (a tick-modulo throttle), every tower fires on the nearest living APPARENT-hostile
 //!   (Raider/Monster by PERCEIVED faction = disguise-or-faction) within range — a disguised infiltrator
 //!   reads as a townsperson and is SPARED (the watch is fooled too; the epistemic split honoured).
@@ -26,8 +28,9 @@
 //! SKIPPED (browser/mesh): the THREE marker group + `dispose` (visuals only); terrain height (the
 //! substrate is flat, 2-D). Touches no gold — killing a purseless raider mints nothing (conserved).
 //!
-//! Determinism: SERIAL ⇒ M=1 ≡ M=N. No rng (towers are threat-driven, not rolled). Tower positions are
-//! a pure function of `town_center`; every target pick is a scan over id order with (dist, id)
+//! Determinism: SERIAL ⇒ M=1 ≡ M=N. No rng (towers are threat-driven, not rolled). Town centres are
+//! a pure function of `town_center` + the `town`/`pos` columns scanned in id order; tower positions are
+//! a pure function of a town centre; every target pick is a scan over id order with (dist, id)
 //! tie-breaks — no HashMap / float reduce.
 
 use crate::components::Faction;
@@ -57,18 +60,21 @@ pub fn tick(world: &mut World) {
         return;
     }
 
-    let center = world.town_center;
     let range2 = RANGE * RANGE;
 
-    // Collect each tower's shot first (immutable scans), then push the intents — keeps the borrow of
-    // `world` simple and the push order tower-deterministic.
-    let mut shots: Vec<u32> = Vec::with_capacity(TOWERS);
-    for t in 0..TOWERS {
-        let ang = (t as f32 / TOWERS as f32) * std::f32::consts::TAU;
-        let tx = center[0] + ang.cos() * RING_R;
-        let tz = center[1] + ang.sin() * RING_R;
-        if let Some(to) = nearest_apparent_hostile(world, tx, tz, range2) {
-            shots.push(to);
+    // EVERY settlement rings its own core. Collect each town's tower shots first (immutable scans
+    // over the roster), then push the intents — keeps the borrow of `world` simple and the push
+    // order town-then-tower deterministic. The tally is a single GLOBAL sum across all towns.
+    let cores = town_cores(world);
+    let mut shots: Vec<u32> = Vec::with_capacity(cores.len() * TOWERS);
+    for (center, ring_r) in cores {
+        for t in 0..TOWERS {
+            let ang = (t as f32 / TOWERS as f32) * std::f32::consts::TAU;
+            let tx = center[0] + ang.cos() * ring_r;
+            let tz = center[1] + ang.sin() * ring_r;
+            if let Some(to) = nearest_apparent_hostile(world, tx, tz, range2) {
+                shots.push(to);
+            }
         }
     }
 
@@ -76,6 +82,50 @@ pub fn tick(world: &mut World) {
         world.intents.push(Intent::Strike { from: TOWER_SOURCE, to, dmg: DAMAGE });
         world.defenses.shots += 1;
     }
+}
+
+/// The per-town `(centre, ring_radius)` list — one entry per settlement, derived DETERMINISTICALLY
+/// each pass (no persisted per-town state; a tower ring is a pure function of its town's centre).
+///
+/// Town 0 anchors at the legacy `world.town_center` (the dense home town's worldgen anchor). Every
+/// FURTHER town id present in `world.town` anchors at the CENTROID of its living members — so the
+/// "region of towns" gets a watchtower ring per settlement, the cores tracking the clusters as they
+/// migrate/grow/shrink. The radius is the fixed `RING_R` (no per-town radius column in this
+/// substrate); a town with no living members contributes no ring (its core is undefined).
+///
+/// Deterministic: the present-town set is gathered by an id-order scan (the `seen` array indexes by
+/// town id, no HashMap); each centroid is a sum-then-divide over an id-order scan (no float reduce
+/// in any data-dependent order). Serial ⇒ M-invariant.
+fn town_cores(world: &World) -> Vec<([f32; 2], f32)> {
+    // Highest town id present bounds the (small, dense) id space.
+    let max_town = world.town.iter().copied().max().unwrap_or(0) as usize;
+    // Per-town living-member centroid accumulator (sum + count), indexed by town id.
+    let mut sum: Vec<[f32; 2]> = vec![[0.0, 0.0]; max_town + 1];
+    let mut count: Vec<u32> = vec![0; max_town + 1];
+    for i in 0..world.n {
+        if !world.alive[i] {
+            continue;
+        }
+        let t = world.town[i] as usize;
+        sum[t][0] += world.pos[i][0];
+        sum[t][1] += world.pos[i][1];
+        count[t] += 1;
+    }
+
+    let mut cores: Vec<([f32; 2], f32)> = Vec::with_capacity(max_town + 1);
+    for t in 0..=max_town {
+        let center = if t == 0 {
+            // town 0 keeps its worldgen anchor (also what the tests/legacy callers set directly).
+            world.town_center
+        } else if count[t] > 0 {
+            let c = count[t] as f32;
+            [sum[t][0] / c, sum[t][1] / c]
+        } else {
+            continue; // an empty (extinct/never-populated) town fields no towers
+        };
+        cores.push((center, RING_R));
+    }
+    cores
 }
 
 /// An agent's APPARENT faction — a disguised infiltrator fools the watch (mirrors `_apparent`). Reads
@@ -228,6 +278,36 @@ mod tests {
         w.drain_intents();
         assert!(!w.alive[3], "the tower's killing shot flips alive (via the sentinel-source Strike)");
         assert!(w.defenses.shots >= 1, "the tally counted the shot");
+    }
+
+    /// Two SEPARATE towns each ring their own core: a raider sitting on town A's ring and another on
+    /// town B's ring are BOTH fired on, even though B's core is far from the legacy `town_center`.
+    /// (Town 0 anchors at `town_center`; town 1 anchors at the centroid of its living members.)
+    #[test]
+    fn two_towns_each_fire_on_own_core() {
+        let mut w = World::spawn(0xD19, 8);
+        clear_field(&mut w); // all parked far away, all town 0, town_center = (0,0)
+
+        // Town B's core, far from the origin. Anchor a member of town 1 there so its centroid = core.
+        let core_b = [300.0, 300.0];
+        w.town[5] = 1;
+        w.pos[5] = [core_b[0], core_b[1]]; // the only living town-1 member ⇒ centroid = core_b
+        w.faction[5] = Faction::Townsfolk as u8; // a civilian anchor, not itself a target
+
+        // A raider on town A's tower-0 (at town_center + (RING_R,0)).
+        w.faction[3] = Faction::Raider as u8;
+        w.pos[3] = [RING_R, 0.0];
+        // A raider on town B's tower-0 (at core_b + (RING_R,0)).
+        w.faction[6] = Faction::Raider as u8;
+        w.pos[6] = [core_b[0] + RING_R, core_b[1]];
+
+        w.tick = FIRE_EVERY;
+        tick(&mut w);
+        let hit = |id: u32| {
+            w.intents.items.iter().any(|i| matches!(i, Intent::Strike { to, .. } if *to == id))
+        };
+        assert!(hit(3), "town A's tower fires on the raider at its own core");
+        assert!(hit(6), "town B's tower fires on the raider at ITS own (distant) core");
     }
 
     /// Determinism: the full sim (incl. the defences society pass) is order-independent across pool sizes.

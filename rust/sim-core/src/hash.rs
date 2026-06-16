@@ -241,8 +241,13 @@ pub fn world_hash(w: &World) -> u64 {
     h = fold(h, &d.feuds.to_le_bytes());
     h = fold(h, &d.opportunities.to_le_bytes());
     h = fold(h, &d.crises.to_le_bytes());
-    h = fold(h, &w.watch.calm.to_le_bytes());
-    h = fold(h, &w.watch.captain.to_le_bytes());
+    // Night Watch: per-town hysteresis clocks + captains (the institution is now per-settlement).
+    for c in &w.watch.calm {
+        h = fold(h, &c.to_le_bytes());
+    }
+    for c in &w.watch.captain {
+        h = fold(h, &c.to_le_bytes());
+    }
     h = fold(h, &w.defenses.shots.to_le_bytes());
     h = fold(h, &w.tropes.last_any_at.to_le_bytes());
     h = fold(h, &w.tropes.fires.to_le_bytes());

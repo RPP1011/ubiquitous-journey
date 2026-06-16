@@ -464,16 +464,14 @@ pub struct Quest {
     pub done: bool,
 }
 
-/// The Night Watch institution's serial-phase state (hysteresis + captaincy). `js/sim/watch.ts`.
-#[derive(Clone, Copy, Debug)]
+/// The Night Watch institution's serial-phase state — now PER-TOWN (one entry per settlement in the
+/// region). `js/sim/watch.ts`. Both Vecs are lazily sized to `world.town_centers.len()` on the first
+/// tick (mirrors how `chron_seen_dead`/`chron_prev_level` lazily size to `n`), so `Default` starts
+/// empty and worldgen's `WatchState::default()` stays valid regardless of town count.
+#[derive(Clone, Debug, Default)]
 pub struct WatchState {
-    pub calm: u32,    // sim-ticks since the core was last threatened (the stand-down hysteresis clock)
-    pub captain: i32, // current captain agent id (-1 = none / no watch). A change logs a beat.
-}
-impl Default for WatchState {
-    fn default() -> Self {
-        WatchState { calm: 0, captain: -1 }
-    }
+    pub calm: Vec<u32>,    // per-town sim-ticks since that core was last threatened (stand-down clock)
+    pub captain: Vec<i32>, // per-town captain agent id (-1 = none / no watch). A change logs a beat.
 }
 
 /// The watchtower ring's serial-phase tally. `js/sim/defenses.ts`.

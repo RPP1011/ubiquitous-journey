@@ -153,13 +153,13 @@ fn assign_spies(world: &mut World) {
 /// Each disguised spy near the town core that can find a willing observer + an innocent victim plants
 /// a false feud spark; it may also salt a price belief, and may be caught (unmasked). Serial, id order.
 fn run_spies(world: &mut World) {
-    let center = world.town_center;
     for i in 0..world.n {
         // a live, still-disguised spy only (an already-unmasked one is a hunted enemy, no longer spying).
         if !world.alive[i] || world.role[i] != ROLE_SPY || world.disguise[i] == NO_DISGUISE {
             continue;
         }
-        // must be embedded INSIDE the town core to whisper.
+        // must be embedded INSIDE its OWN town's core to whisper (per-town: a spy in town 5 works town 5).
+        let center = world.town_centers[(world.town[i] as usize).min(world.town_centers.len() - 1)];
         let [x, z] = world.pos[i];
         let dx = x - center[0];
         let dz = z - center[1];
