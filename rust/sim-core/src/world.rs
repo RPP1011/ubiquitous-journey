@@ -462,6 +462,21 @@ impl World {
                             self.tick,
                         );
                     }
+                    // a LOOT deed (act verb 13) stamps the looter's `Looted` marker about the corpse —
+                    // the marker that SETTLES the loot intention (like `Robbed` for the steal). Recovers
+                    // the fallen's purse into circulation (the act `Hand` moved it conserved). Own-write.
+                    if verb == 13 && (target as usize) < self.n && target as usize != actor {
+                        self.memory[actor].record(Episode {
+                            kind: EpisodeKind::Looted as u8,
+                            place: 0,
+                            valence: 1,
+                            _pad: 0,
+                            with: target,
+                            t: self.tick,
+                            salience: 35000,
+                            _pad2: 0,
+                        });
+                    }
                     // a GIVE/PAY deed (act verbs 10/11) stamps the donor's `Gave` marker (settles its
                     // donate/repay) AND a `Succoured` memory on the RECIPIENT (who may repay later) —
                     // the alms→succoured→repay chain. Serial own-writes ⇒ deterministic.

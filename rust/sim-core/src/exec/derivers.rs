@@ -337,6 +337,51 @@ pub fn subsistence(gstack: &mut GoalStack, ctx: &DeriveCtx) {
     });
 }
 
+// ── loot (the live trigger for the dormant Loot verb — the victor strips the fallen) ──
+const PRI_LOOT: u16 = 500;
+/// Only strip a corpse the killer BELIEVES carried coin (a wealth cue) — no futile trips to paupers.
+const LOOT_WEALTH_CUE: u16 = 5_000;
+/// How long a loot intention stays live before the urge to claim the spoils cools.
+const LOOT_EXPIRY: u32 = 240;
+
+/// LOOT — the live trigger for the dormant Loot verb: a victor who has SLAIN a believed-monied foe
+/// (a `Slew` memory + a believed wealth cue) goes to STRIP the corpse, recovering its purse into
+/// circulation (the economy-on-death loop — otherwise a fallen agent's gold is stranded forever). The
+/// act phase clamps to the corpse's actual purse (conserved); a penniless body just expires unstripped.
+/// Belief/own-state only: the killer loots what it BELIEVES is worth looting.
+pub fn loot(gstack: &mut GoalStack, ctx: &DeriveCtx) {
+    if ctx.faction != Faction::Townsfolk as u8 {
+        return; // the decide goal-stack runs for townsfolk; monsters/raiders have no economy
+    }
+    for k in 0..ctx.memory.len as usize {
+        let ep = ctx.memory.items[k];
+        if ep.kind != EpisodeKind::Slew as u8 || ep.with == NONE_ID {
+            continue;
+        }
+        let victim = ep.with;
+        if ctx.memory.has(EpisodeKind::Looted, victim) {
+            continue; // already stripped this corpse
+        }
+        // believed-locatable AND believed to carry coin (the wealth cue) — else not worth the trip.
+        match ctx.beliefs.find(victim) {
+            Some(ix) if ctx.beliefs.bodies[ix].wealth >= LOOT_WEALTH_CUE => {
+                gstack.push(Intention {
+                    kind: IntentionKind::Loot as u8,
+                    flags: 0,
+                    priority: PRI_LOOT,
+                    subject: victim,
+                    place: 0,
+                    _pad: [0; 3],
+                    amt: 0,
+                    born: ep.t,
+                    expire: ctx.now + LOOT_EXPIRY,
+                });
+            }
+            _ => {}
+        }
+    }
+}
+
 /// GRIEVE — a `witnessed_death` memory ⇒ a plan-less mourning disposition (biases, decays — no plan).
 pub fn grieve(gstack: &mut GoalStack, ctx: &DeriveCtx) {
     let m = ctx.memory;

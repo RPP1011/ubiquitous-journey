@@ -50,6 +50,7 @@ pub enum Atom {
     InReach(u32), // at a subject's believed position (melee reach)
     Took(u32),    // coin taken from a subject by force (satisfied by a `Robbed` memory marker)
     Gave(u32),    // a good handed to a subject (satisfied by a `Gave` memory marker — alms/repay)
+    Looted(u32),  // a fallen subject's purse stripped (satisfied by a `Looted` memory marker)
 }
 
 /// The acquire/move verbs the primitives bind to (compiled onto executor goals by `compile`).
@@ -229,6 +230,8 @@ fn atom_holds(atom: &Atom, pv: &Pv) -> bool {
         Atom::Took(s) => pv.memory.has(EpisodeKind::Robbed, s),
         // good given: true once a `Gave` marker for this recipient is in memory (alms/repay).
         Atom::Gave(s) => pv.memory.has(EpisodeKind::Gave, s),
+        // corpse stripped: true once a `Looted` marker for this fallen subject is in memory.
+        Atom::Looted(s) => pv.memory.has(EpisodeKind::Looted, s),
     }
 }
 
@@ -317,6 +320,12 @@ fn primitives_raw(atom: &Atom, pv: &Pv) -> Vec<Prim> {
         // gave(subj): hand it a good; precondition is being in reach (alms/repay reach-and-give).
         Atom::Gave(s) => vec![Prim {
             step: Step { verb: Verb::Give, place: Place::Subject(s), subject: s, good: 0 },
+            preconds: vec![Atom::InReach(s)],
+            cost: ACT_BASE,
+        }],
+        // looted(subj): strip its corpse; precondition is being in reach (the reach-and-take, like rob).
+        Atom::Looted(s) => vec![Prim {
+            step: Step { verb: Verb::Loot, place: Place::Subject(s), subject: s, good: 0 },
             preconds: vec![Atom::InReach(s)],
             cost: ACT_BASE,
         }],
@@ -502,9 +511,10 @@ pub fn step_effect_holds(ps: &PlanStep, pv: &Pv) -> bool {
         VERB_GATHER | VERB_PRODUCE | VERB_BUY => {
             pv.inventory[ps.good as usize] >= ps.n.max(1) as i32
         }
-        // a forceful rob / a gift lands when its memory marker is present (like attack→Dead).
+        // a forceful rob / a gift / a corpse-strip lands when its memory marker is present.
         VERB_ROB => atom_holds(&Atom::Took(ps.subject), pv),
         VERB_GIVE => atom_holds(&Atom::Gave(ps.subject), pv),
+        VERB_LOOT => atom_holds(&Atom::Looted(ps.subject), pv),
         // SELL and the other terminal acts (give/pay/loot) do NOT self-advance — they are the last
         // step and the goal's own predicate (gold target / received / robbed) ends the plan. A
         // `_ => true` here would skip the terminal act before the `act` phase ever fired it.

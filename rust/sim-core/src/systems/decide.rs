@@ -393,6 +393,7 @@ fn intention_atom(it: &Intention) -> Option<Atom> {
         x if x == IntentionKind::Donate as u8 || x == IntentionKind::Repay as u8 => {
             Some(Atom::Gave(it.subject))
         }
+        x if x == IntentionKind::Loot as u8 => Some(Atom::Looted(it.subject)),
         _ => None,
     }
 }
@@ -420,6 +421,7 @@ fn intention_satisfied(it: &Intention, pv: &Pv) -> bool {
         x if x == IntentionKind::Donate as u8 || x == IntentionKind::Repay as u8 => {
             pv.memory.has(EpisodeKind::Gave, it.subject)
         }
+        x if x == IntentionKind::Loot as u8 => pv.memory.has(EpisodeKind::Looted, it.subject),
         // plan-less dispositions pop on expiry only (handled in prune_goals).
         _ => false,
     }
@@ -798,6 +800,51 @@ mod tests {
         );
         let total_after: i32 = w.econ.iter().map(|e| e.inventory[Commodity::Food as usize]).sum();
         assert_eq!(total_after, total_food, "food conserved across the reciprocity");
+    }
+
+    /// END-TO-END: a victor who slew a believed-monied foe strips the corpse — the loot vertical closes
+    /// the economy-on-death loop (the fallen's purse returns to circulation rather than stranding).
+    #[test]
+    fn a_victor_loots_a_slain_monied_foe() {
+        let mut w = World::spawn(0x100D, 8);
+        let (victor, corpse) = (0usize, 1usize);
+        w.faction[victor] = Faction::Townsfolk as u8;
+        w.needs[victor] = Needs::default();
+        w.pos[victor] = [0.0, 0.0];
+        w.pos[corpse] = [1.5, 0.0];
+        w.alive[corpse] = false; // already fallen
+        w.econ[corpse].gold = 7_000; // a purse worth taking
+        w.beliefs[victor].clear();
+        w.beliefs[victor].subjects[0] = corpse as u32;
+        w.beliefs[victor].bodies[0] = PersonBelief {
+            subject: corpse as u32,
+            last_x: 1.5,
+            last_z: 0.0,
+            confidence: 60000,
+            wealth: 60000, // believed to carry coin
+            ..Default::default()
+        };
+        w.beliefs[victor].len = 1;
+        w.goals[victor] = GoalStack::default();
+        w.memory[victor] = Memory::default();
+        w.memory[victor].record(Episode {
+            kind: EpisodeKind::Slew as u8,
+            with: corpse as u32,
+            t: w.tick,
+            salience: 60000,
+            ..Default::default()
+        });
+        let total = w.total_gold();
+        for _ in 0..6 {
+            w.tick();
+        }
+        assert!(w.econ[victor].gold > 0, "the victor recovered the purse");
+        assert_eq!(w.econ[corpse].gold, 0, "the corpse was stripped bare");
+        assert!(
+            w.memory[victor].has(EpisodeKind::Looted, corpse as u32),
+            "the victor remembers stripping the corpse (the settling marker)"
+        );
+        assert_eq!(w.total_gold(), total, "gold conserved (moved off the corpse, not minted)");
     }
 
     /// The intention pops once the foe is believed slain (a Slew memory satisfies the predicate).

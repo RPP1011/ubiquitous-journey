@@ -69,9 +69,13 @@ Current: strike→assaulted, kill→slew stamp.
   belief about the killer: grief + a hostile "murderer" belief (townsperson-on-townsperson), reinforced
   predator-fear (monster takes a neighbour), or admiration (townsperson slays a monster). Gossip then
   spreads it. Also makes the previously-dead `WitnessedDeath` episode (grieve's source) actually fire.
+- ✅ **loot** (the dormant Loot verb, made live) — a victor who slew a believed-monied foe strips the
+  corpse (`Slew` memory + wealth cue ⇒ Loot intention ⇒ `Atom::Looted` ⇒ reach-and-take ⇒ conserved
+  `Hand` of the whole purse ⇒ `Looted` marker). Closes the economy-on-death loop (a fallen agent's
+  gold returns to circulation instead of stranding on the corpse).
 Missing:
-⬜ capture-on-defeat → captive → rescue · loot/escheat · epithet grant · obituary · vendetta-arc open ·
-avenger/legend roles.
+⬜ capture-on-defeat → captive → rescue · escheat (heirless estates) · epithet grant · obituary ·
+vendetta-arc open · avenger/legend roles.
 
 ### G6 — arcs + director breadth
 ⬜ arcs SagaStore (open/append/close/sweep) · 11 missing tropes · 5 arc steppers · role machinery
@@ -95,6 +99,12 @@ occupation choice (dynamic vs fixed-at-spawn) · decide utility-oracle (scoreAnd
 ## Progress log (newest first)
 
 _(append a dated entry per landed commit: what closed, gate status, hash)_
+
+- **G5 loot vertical** — the dormant Loot verb made live. New `EpisodeKind::Looted` +
+  `IntentionKind::Loot` + `Atom::Looted` + a loot primitive (reach-and-take) + a `loot` deriver
+  (from a `Slew` memory + believed wealth cue) + the `Looted` marker stamp on the act's loot deed. A
+  victor now strips a slain monied foe's corpse — gold returns to circulation (the act `Hand` already
+  conserved it). 1 e2e test. 145 sim-core + gates green; M-invariant; gold conserved.
 
 - **G1 caution / experience (doc-11 flagship)** — the burned-hand half of regret. New `Experience`
   column (a fixed `[ActExp; 12]` indexed by planner verb — no HashMap, so determinism-safe) + `experience.rs`
