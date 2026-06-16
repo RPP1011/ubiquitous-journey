@@ -188,6 +188,8 @@ const OCCUPATION_EVERY: u32 = 150;
 const BIOGRAPHY_EVERY: u32 = 200;
 /// The tick the town's homes are raised (once, after agents have settled near their hearths).
 const BUILD_AT: u32 = 40;
+/// Run the resettlement (migrate) pass on this cadence — a slow trickle, gated + capped.
+const CONSTRUCT_EVERY: u32 = 60;
 /// Re-tend home discovery/loss on this cadence (sight-gated; slow — a home is a settled thing).
 const HOME_TEND_EVERY: u32 = 50;
 
@@ -884,7 +886,11 @@ impl World {
             self.update_biographies(); // roll each life's deeds/drive/rank into its biographical summary
         }
         if self.tick == BUILD_AT {
-            self.construct_homes(); // raise the town's homes (buildings-as-percepts) — once, early
+            self.construct_homes(); // raise the town's homes ONCE, early (periodic rebuild starves the
+                                    // marginal economy — it pulls food-producers off on comfort trips)
+        }
+        if self.tick % CONSTRUCT_EVERY == 0 {
+            self.migrate_homeless(); // an endangered edge-dweller resettles toward the safe core (capped)
         }
         if self.tick % HOME_TEND_EVERY == 0 {
             self.tend_homes(); // discover a home by sight; forget one lost (the epistemic homecoming)
@@ -893,21 +899,88 @@ impl World {
 
     /// CONSTRUCTION (`js/sim/construction.js`): raise the town's homes as BUILDINGS-AS-PERCEPTS — a
     /// finished building is a percept (kind 2) in the disjoint id-space, perceivable + wreckable, with a
-    /// believed `sheltered` benefit. Spawned at each owner's home anchor so the owner DISCOVERS it by
-    /// sight (`tend_homes`). Costs no agent-time (a world pass) ⇒ economy-neutral. Deterministic id order.
+    /// believed `sheltered` benefit. Built at a HOMELESS owner's anchor so the owner DISCOVERS it by sight
+    /// (`tend_homes`). Periodic + CAPPED to a housing target (so a razed home is rebuilt but the town never
+    /// sprawls unbounded). Costs no agent-time (a world pass) ⇒ economy-neutral. Deterministic id order.
     fn construct_homes(&mut self) {
-        const PER_HOMES: usize = 20; // one home per ~20 townsfolk (a modest hamlet, not a city)
-        const CAP: usize = 24;
+        const PER_HOMES: usize = 18; // housing target: one standing home per ~18 living townsfolk
+        const PER_PASS: usize = 32; // raised in the single early build pass (capped at the target below)
+        // count living townsfolk and the standing (alive) building stock.
+        let folk = (0..self.n)
+            .filter(|&i| self.alive[i] && self.faction[i] == Faction::Townsfolk as u8)
+            .count();
+        let standing = (0..self.percept_n)
+            .filter(|&k| self.percept_kind[k] == 2 && self.percept_flags[k] & 0x01 != 0)
+            .count();
+        let target = folk / PER_HOMES;
+        if standing >= target {
+            return; // the town is adequately housed
+        }
         let mut built = 0usize;
         for i in 0..self.n {
-            if built >= CAP {
+            if built >= PER_PASS || standing + built >= target {
                 break;
             }
-            if self.alive[i] && self.faction[i] == Faction::Townsfolk as u8 && i % PER_HOMES == 0 {
-                // a neutral, non-menacing structure at the owner's hearth; sturdy but wreckable.
+            // a HOMELESS townsperson (no believed home) gets a new one raised at its current hearth.
+            if self.alive[i]
+                && self.faction[i] == Faction::Townsfolk as u8
+                && self.home_belief_id[i] == u32::MAX
+            {
                 let id = self.spawn_percept(self.home[i], 2, Faction::Townsfolk as u8, 120.0, false);
                 self.home_belief_id[i] = id; // the owner is granted sight of its own new home
                 built += 1;
+            }
+        }
+    }
+
+    /// MIGRATE (`js/sim/agent/occupation.ts`-adjacent emigration prospect → relocate): a HOMELESS soul
+    /// whose surroundings feel DANGEROUS (it believes several hostiles nearby — e.g. its home was just
+    /// razed in a raid) RESETTLES — it moves its home ANCHOR toward the safe town core, where construction
+    /// will raise it a fresh home. Population redistribution in response to conditions; economy-neutral
+    /// (it shifts an anchor, costs no livelihood time). Serial id-order ⇒ deterministic.
+    fn migrate_homeless(&mut self) {
+        const DANGER_RANGE2: f32 = 50.0 * 50.0;
+        const DANGER_COUNT: usize = 3; // a real press of hostiles — not a lone passer-by
+        const EDGE2: f32 = 110.0 * 110.0; // only an EXPOSED edge-dweller emigrates; the core stays put
+        const CAP: usize = 2; // at most a couple resettle per pass (a trickle, not an exodus) — keeps
+                              // the rest/work routing stable (the marginal-economy lesson, learned here)
+        let core = self.town_center;
+        let mut moved = 0usize;
+        for i in 0..self.n {
+            if moved >= CAP {
+                break;
+            }
+            if !self.alive[i]
+                || self.faction[i] != Faction::Townsfolk as u8
+                || self.home_belief_id[i] != u32::MAX
+            {
+                continue; // only the homeless consider resettling
+            }
+            // exposed edge only — a soul already near the safe core has nowhere safer to go.
+            let edx = self.home[i][0] - core[0];
+            let edz = self.home[i][1] - core[1];
+            if edx * edx + edz * edz < EDGE2 {
+                continue;
+            }
+            // count believed hostiles near me (the felt danger — beliefs only, the epistemic split).
+            let bt = &self.beliefs[i];
+            let mut threats = 0usize;
+            for b in 0..bt.len as usize {
+                let cell = &bt.bodies[b];
+                if cell.flags & 0x01 == 0 {
+                    continue;
+                }
+                let dx = self.pos[i][0] - cell.last_x;
+                let dz = self.pos[i][1] - cell.last_z;
+                if dx * dx + dz * dz <= DANGER_RANGE2 {
+                    threats += 1;
+                }
+            }
+            if threats >= DANGER_COUNT {
+                // resettle a fifth of the way toward the safe core (a gradual exodus, not a teleport).
+                self.home[i][0] += (core[0] - self.home[i][0]) * 0.2;
+                self.home[i][1] += (core[1] - self.home[i][1]) * 0.2;
+                moved += 1;
             }
         }
     }
@@ -1647,6 +1720,49 @@ mod tests {
         let b = w.beliefs[near].find(hero as u32).expect("the witness forms a belief about the hero");
         assert!(w.beliefs[near].bodies[b].standing > 0, "the monster-slayer is admired");
         assert!(w.beliefs[near].bodies[b].flags & 0x01 == 0, "a hero is not believed hostile");
+    }
+
+    /// MIGRATE: a HOMELESS townsperson who believes several hostiles are upon it (its home razed in a
+    /// raid) RESETTLES — its home anchor shifts toward the safe town core (where construction rebuilds).
+    #[test]
+    fn an_endangered_homeless_soul_resettles_toward_the_core() {
+        let mut w = World::spawn(0x319, 6);
+        w.town_center = [0.0, 0.0];
+        let refugee = 0usize;
+        w.alive[refugee] = true;
+        w.faction[refugee] = Faction::Townsfolk as u8;
+        w.pos[refugee] = [150.0, 0.0];
+        w.home[refugee] = [150.0, 0.0]; // its hearth, far out on the dangerous edge
+        w.home_belief_id[refugee] = u32::MAX; // homeless (its home was razed)
+        // it believes a press of raiders is right on top of it (the felt danger).
+        for (k, id) in [101u32, 102, 103].iter().enumerate() {
+            let bt = &mut w.beliefs[refugee];
+            bt.subjects[k] = *id;
+            bt.bodies[k] = crate::components::PersonBelief {
+                subject: *id,
+                last_x: 152.0,
+                last_z: 0.0,
+                confidence: 50_000,
+                flags: 0x01, // believed hostile
+                ..Default::default()
+            };
+            bt.len += 1;
+        }
+        let before = w.home[refugee][0];
+        w.migrate_homeless();
+        assert!(
+            w.home[refugee][0] < before,
+            "an endangered homeless soul shifts its home anchor toward the safe core"
+        );
+        // a SAFE homeless soul (no believed threats) stays put — migration is danger-driven.
+        let calm = 1usize;
+        w.alive[calm] = true;
+        w.faction[calm] = Faction::Townsfolk as u8;
+        w.home[calm] = [120.0, 0.0];
+        w.home_belief_id[calm] = u32::MAX;
+        let calm_before = w.home[calm][0];
+        w.migrate_homeless();
+        assert_eq!(w.home[calm][0], calm_before, "a soul in no danger does not uproot");
     }
 
     /// AFFECT:WRECK — a RAIDER with no one to fight PILLAGES: it perceives a building, believes it a

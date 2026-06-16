@@ -75,7 +75,11 @@ Current: 7 derivers (avenge, seek_fortune, grieve, defend, donate, repay, steal)
 - ✅ **subsistence** — hunger → Sate intention → forage/buy a meal. **Fixed the documented starvation
   collapse** (town went 380→2 alive by t1500; now 380→372 at t3000).
 - ✅ **scout** — curiosity → idle-tier `Goal::Observe` to firm an uncertain-but-valuable belief.
-- ⬜ **migrate** — emigration prospect → relocate
+- ✅ **migrate** — emigration prospect → relocate: a HOMELESS edge-dweller who believes a press of
+  hostiles is upon it (its home razed in a raid) RESETTLES — its home anchor shifts gradually toward the
+  safe town core. Hard-CAPPED (≤2/pass, edge-only, danger-gated) — the marginal economy starves if the
+  resettlement (or periodic rebuild) pulls food-producers off their fields, so construction stays a
+  ONCE-early pass and migrate is a slow trickle (the survival regression caught both; tuned to hold).
 - ✅ **reciprocity** — the sentiment arm of the alms loop: a gift WARMS the beneficiary's believed
   `standing` toward its benefactor (and bystanders who witness the generosity warm a little) — the
   goodwill mirror of the murder-souring witness fold. Drives the donate→succoured→repay loop's affect.
