@@ -142,6 +142,8 @@ const GAZETTE_EVERY: u32 = 60;
 const BOUNTY_EVERY: u32 = 80;
 /// Run a caravan to the external market on this cadence (trade is periodic, not every tick).
 const CARAVAN_EVERY: u32 = 100;
+/// Re-evaluate the workforce balance on this cadence (retraining is slow + occasional).
+const OCCUPATION_EVERY: u32 = 150;
 
 impl World {
     /// Worldgen: `n` agents clustered in one dense town with professions, gold, and home anchors.
@@ -746,6 +748,66 @@ impl World {
         }
         if self.tick % CARAVAN_EVERY == 0 {
             self.run_caravan(); // a merchant trades the price spread with the external market (arbitrage)
+        }
+        if self.tick % OCCUPATION_EVERY == 0 {
+            self.choose_occupations(); // self-balancing trade reallocation (food-protected)
+        }
+    }
+
+    /// DYNAMIC OCCUPATION (`agent/occupation.ts chooseOccupation`, the saturation half): the town's
+    /// workforce self-balances — an agent in an OVER-supplied trade may RETRAIN into the most
+    /// UNDER-supplied one (resetting its recipe skill; learn-by-doing rebuilds it). Gradual (one switch
+    /// per pass, rng-gated) and FOOD-PROTECTED (never sheds the farmers below a floor — the marginal-
+    /// economy staple stays staffed). Serial, `sim_rng`-gated in fixed order ⇒ deterministic.
+    fn choose_occupations(&mut self) {
+        const OVER_FACTOR: f32 = 1.5; // a trade with > this × average is "over-supplied"
+        const SWITCH_CHANCE: f32 = 0.5; // per-pass probability that one retraining happens
+        const FARMER: u8 = 1;
+        // count practitioners per profession (1..=6) among living townsfolk.
+        let mut counts = [0usize; crate::world::N_WORK_SITES];
+        let mut workers = 0usize;
+        for i in 0..self.n {
+            let p = self.profession[i] as usize;
+            if self.alive[i] && self.faction[i] == Faction::Townsfolk as u8 && p >= 1 && p < counts.len() {
+                counts[p] += 1;
+                workers += 1;
+            }
+        }
+        if workers < 12 {
+            return; // too small a workforce to bother rebalancing
+        }
+        // the least-supplied trade (1..=6).
+        let mut under = 1usize;
+        for p in 2..counts.len() {
+            if counts[p] < counts[under] {
+                under = p;
+            }
+        }
+        let avg = workers as f32 / 6.0;
+        if (counts[under] as f32) >= avg * 0.8 {
+            return; // already balanced enough — leave the workforce be
+        }
+        if self.sim_rng.next_f32() >= SWITCH_CHANCE {
+            return; // gradual: not every pass retrains someone
+        }
+        let farmer_floor = (workers as f32 * 0.18) as usize; // keep the staple staffed
+        // pick an over-supplied agent to retrain (a rotated id-order scan ⇒ fair + deterministic).
+        let start = (self.sim_rng.next_f32() * self.n as f32) as usize;
+        for k in 0..self.n {
+            let i = (start + k) % self.n;
+            let p = self.profession[i] as usize;
+            if !self.alive[i] || self.faction[i] != Faction::Townsfolk as u8 || p == 0 || p == under {
+                continue;
+            }
+            if (counts[p] as f32) <= avg * OVER_FACTOR {
+                continue; // only shed from a genuinely over-supplied trade
+            }
+            if p as u8 == FARMER && counts[FARMER as usize] <= farmer_floor {
+                continue; // FOOD PROTECTION: never thin the farmers below the floor
+            }
+            self.profession[i] = under as u8; // retrain into the under-supplied trade
+            self.recipe[i] = 0.3; // new to the craft — learn-by-doing will rebuild mastery
+            return; // one retraining per pass (gradual)
         }
     }
 
@@ -1489,6 +1551,43 @@ mod tests {
         w.drain_intents();
         assert!((w.combat[def].shield).abs() < 1e-3, "the shield is spent");
         assert!((w.combat[def].health - 75.0).abs() < 1e-3, "the overflow carried through to health");
+    }
+
+    /// DYNAMIC OCCUPATION: an over-supplied trade sheds a worker into the most under-supplied one, but
+    /// the FOOD floor is never breached (farmers stay staffed).
+    #[test]
+    fn occupations_rebalance_but_protect_food() {
+        let mut w = World::spawn(0x0CC0, 60);
+        // make everyone a townsperson; pile them all into ONE trade (blacksmith=4) — wildly unbalanced.
+        for i in 0..w.n {
+            w.faction[i] = Faction::Townsfolk as u8;
+            w.alive[i] = true;
+            w.profession[i] = 4;
+        }
+        // run several passes — the workforce should spread out of the over-supplied smithy.
+        let smiths0 = (0..w.n).filter(|&i| w.profession[i] == 4).count();
+        for _ in 0..50 {
+            w.choose_occupations();
+        }
+        let smiths1 = (0..w.n).filter(|&i| w.profession[i] == 4).count();
+        assert!(smiths1 < smiths0, "the over-supplied smithy shed workers ({smiths0} -> {smiths1})");
+        // and some retrained into other trades (the workforce diversified).
+        let distinct = (1u8..=6).filter(|&p| (0..w.n).any(|i| w.profession[i] == p)).count();
+        assert!(distinct > 1, "the workforce diversified into multiple trades, got {distinct}");
+
+        // FOOD PROTECTION: with the farmers already at/under the floor, none are shed.
+        let mut w2 = World::spawn(0x0CC1, 60);
+        for i in 0..w2.n {
+            w2.faction[i] = Faction::Townsfolk as u8;
+            w2.alive[i] = true;
+            w2.profession[i] = if i < 6 { 1 } else { 4 }; // only 6 farmers (at/under the floor), rest smiths
+        }
+        let farmers0 = (0..w2.n).filter(|&i| w2.profession[i] == 1).count();
+        for _ in 0..50 {
+            w2.choose_occupations();
+        }
+        let farmers1 = (0..w2.n).filter(|&i| w2.profession[i] == 1).count();
+        assert!(farmers1 >= farmers0, "the food floor protected the farmers ({farmers0} -> {farmers1})");
     }
 
     /// CARAVAN / ARBITRAGE: a merchant exports surplus + imports a luxury across the external price

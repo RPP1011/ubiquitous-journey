@@ -47,7 +47,13 @@ Current: 7 derivers (avenge, seek_fortune, grieve, defend, donate, repay, steal)
   teacher (the taught route to mastery); (4) the **ask channel**: with no master nearby, a rusty crafter
   ASKS a more-skilled co-located peer for a smaller, tuition-free recipe nudge. **All 3 knowledge channels
   (observe/ask/study) now live.** ⬜ still: the `Know(topic)` goal-stack abstraction (refactoring these
-  into explicit Know-goals) + cross-craft learning (needs dynamic occupation, also absent).
+  into explicit Know-goals) + cross-craft learning (multi-recipe slots).
+
+### Dynamic occupation (the `chooseOccupation` gap)
+- ✅ **dynamic occupation** (saturation half) — the workforce SELF-BALANCES: an agent in an OVER-supplied
+  trade retrains into the most UNDER-supplied one (resetting its recipe; learn-by-doing rebuilds it), but
+  a **food-protection floor** is never breached (farmers stay staffed — the marginal-economy staple).
+  Gradual (one retrain per pass, rng-gated). Survival held (95/94/78%); deterministic; M-invariant.
 - 🟡 **recruiter / warband** — **warband combat rally LANDED**: a band follower converges on its
   leader's foe *if it also perceives it* (shared-threat ToM; overrides personal flee; combat-only, so
   no peacetime economic cost). Built via a serial leader-foe snapshot read in the parallel decide.
@@ -217,6 +223,12 @@ _(append a dated entry per landed commit: what closed, gate status, hash)_
   (set in the social cast branch), and the market clears that seller's sales +15% while active. Conserved
   (a price shift). Only the 4 control ops remain — all on Rust-unreachable (NO_CLASS) catalog specs.
   1 new test; hashed; survival unaffected.
+
+- **dynamic occupation (`chooseOccupation`)** — the workforce self-balances: an over-supplied trade
+  retrains a worker into the most under-supplied one (resetting its recipe), with a **food-protection
+  floor** so the farmers are never thinned below staffing — the marginal-economy staple stays safe.
+  Gradual + rng-gated. Survival held at 95/94/78%. 1 new test; M-invariant. (Unblocks cross-craft,
+  which additionally needs multi-recipe slots.)
 
 - **G4 caravans + arbitrage (external-market form) — news/economy cluster essentially complete** — a
   merchant trades a price spread with an external market (`caravan_treasury`): export the town's surplus
