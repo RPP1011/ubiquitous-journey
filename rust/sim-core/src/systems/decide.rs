@@ -28,7 +28,7 @@ use rayon::prelude::*;
 
 use crate::components::{
     BeliefTable, Commodity, EpisodeKind, Experience, Faction, Goal, GoalStack, Intention,
-    IntentionKind, Plan, Profession, BELIEF_CAP,
+    IntentionKind, PersonBelief, Plan, Profession, BELIEF_CAP,
 };
 use crate::exec::registry::{run_derivers, DeriveCtx};
 use crate::planner::{compile_current, solve_plan, step_effect_holds, Atom, Pv, VERB_ROB};
@@ -247,7 +247,7 @@ pub fn decide(world: &mut World) {
                         if foe != i as u32 {
                             if let Some(bi) = beliefs[i].find(foe) {
                                 let b = &beliefs[i].bodies[bi];
-                                *g = Goal::Fight { target: foe, to: [b.last_x, b.last_z] };
+                                *g = Goal::Fight { target: foe, to: infer_pursuit(b, map, now) };
                                 return;
                             }
                         }
@@ -272,7 +272,7 @@ pub fn decide(world: &mut World) {
                     let d2 = dx * dx + dz * dz;
                     if d2 < best.0 || (d2 == best.0 && cell.subject < best.1) {
                         best = (d2, cell.subject);
-                        foe = Some((cell.subject, [cell.last_x, cell.last_z]));
+                        foe = Some((cell.subject, infer_pursuit(cell, map, now)));
                     }
                 }
                 if let Some((target, to)) = foe {
@@ -606,6 +606,27 @@ fn top_aggressive(gstack: &GoalStack) -> Option<usize> {
     best
 }
 
+/// `inferDestination` (the ToM pursuit, `beliefs.ts`): the believed pursuit waypoint for a foe. While the
+/// foe is freshly seen, that's simply where I believe it is. But once it has slipped out of sight (its
+/// belief gone STALE), a hunter REASONS about where a fleeing quarry is MAKING FOR — the nearest way out
+/// or hiding place from its last-known spot — and pursues THERE rather than freezing on a cold trail.
+/// Belief-only + static mental-map (the epistemic split holds): no peeking at the quarry's true position.
+#[inline]
+fn infer_pursuit(b: &PersonBelief, map: &crate::mentalmap::MentalMap, now: u32) -> [f32; 2] {
+    const STALE_TICKS: u32 = 30; // unseen this long ⇒ reason about its FLIGHT, not its last sighting
+    let last = [b.last_x, b.last_z];
+    if now.saturating_sub(b.last_tick) > STALE_TICKS {
+        if let Some(p) = map.nearest(
+            crate::mentalmap::AFF_EXIT | crate::mentalmap::AFF_CONCEAL,
+            last,
+            250.0,
+        ) {
+            return [p.x, p.z]; // it's bolting for the gate / a hiding place — cut it off there
+        }
+    }
+    last
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -775,6 +796,29 @@ mod tests {
             "an unmastered crafter poses a Know(recipe) intention on the stack"
         );
         assert_eq!(w.goal[i].kind(), GoalKind::Work, "and is biased toward practising its craft");
+    }
+
+    /// inferDestination (ToM pursuit): a FRESH belief pursues the quarry where it was last seen; once that
+    /// belief goes STALE (the quarry slipped from sight), the hunter instead makes for the nearest exit /
+    /// hiding place — reasoning about where a fleeing foe is bound, not freezing on a cold trail.
+    #[test]
+    fn a_hunter_infers_a_fled_quarrys_destination() {
+        let map = crate::mentalmap::MentalMap::build([0.0, 0.0], &[[20.0, 0.0]], [0.0, 0.0], 200.0);
+        let exit = map
+            .nearest(crate::mentalmap::AFF_EXIT | crate::mentalmap::AFF_CONCEAL, [200.0, 0.0], 1000.0)
+            .expect("the arena has an exit/conceal place");
+        // a belief about a foe last seen out near that exit.
+        let mut b = PersonBelief { subject: 7, last_x: 180.0, last_z: 0.0, last_tick: 1000, ..Default::default() };
+
+        // FRESH (just seen): pursue the last-seen spot exactly.
+        let fresh = infer_pursuit(&b, &map, 1000);
+        assert_eq!(fresh, [b.last_x, b.last_z], "a freshly-seen quarry is pursued where it was seen");
+
+        // STALE (unseen for a while): infer it bolted for the nearest way out / hiding place.
+        b.last_tick = 1000;
+        let stale = infer_pursuit(&b, &map, 1100); // 100 ticks later, well past STALE_TICKS
+        assert_eq!(stale, [exit.x, exit.z], "a vanished quarry is pursued toward its inferred destination");
+        assert_ne!(stale, [b.last_x, b.last_z], "the pursuit moved off the cold last-seen spot");
     }
 
     /// SCOUT (knowledge model): a curious IDLE townsperson with an uncertain-but-valuable hunch goes to
