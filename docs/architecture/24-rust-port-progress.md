@@ -74,7 +74,9 @@ Current: 7 derivers (avenge, seek_fortune, grieve, defend, donate, repay, steal)
   collapse** (town went 380→2 alive by t1500; now 380→372 at t3000).
 - ✅ **scout** — curiosity → idle-tier `Goal::Observe` to firm an uncertain-but-valuable belief.
 - ⬜ **migrate** — emigration prospect → relocate
-- ⬜ **reciprocity** — believed-motive → trust/suspicion fold
+- ✅ **reciprocity** — the sentiment arm of the alms loop: a gift WARMS the beneficiary's believed
+  `standing` toward its benefactor (and bystanders who witness the generosity warm a little) — the
+  goodwill mirror of the murder-souring witness fold. Drives the donate→succoured→repay loop's affect.
 - ✅ **apprentice** — the `Know(recipe)` goal-stack deriver (biases a rusty crafter to practise/study).
 - ✅ **newsread** — the gazette median → price-belief EMA fold (G4 substrate built).
 - ✅ **signalsFold** — the PLAN_OUTCOME streak handler: a resolved heist folds `Ok` (windfall, world.rs)

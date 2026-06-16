@@ -138,6 +138,10 @@ pub const CAPTIVE_NONE: i32 = -1;
 pub const ROLE_AVENGER: u8 = 6;
 /// A belief reads as a dear FRIEND (worth avenging) above this standing (i16 quantization).
 const AVENGER_FRIEND_BAR: i16 = 4_000;
+/// RECIPROCITY warmth: a beneficiary's standing-gain toward its benefactor (strong — a direct kindness
+/// received), and the smaller goodwill a bystander takes from merely witnessing the gift.
+const RECIPROCITY_WARMTH: i16 = 3_000;
+const RECIPROCITY_BYSTANDER_WARMTH: i16 = 800;
 /// How hard a fresh avenger's regard for the killer sours (latched hostile — the avenge seed).
 const AVENGER_SOUR: i16 = 20_000;
 /// Chance a RAIDER's lethal blow on a townsperson TAKES them captive instead of killing (a prisoner of
@@ -675,6 +679,14 @@ impl World {
                             salience: 45000,
                             _pad2: 0,
                         });
+                        // RECIPROCITY (the sentiment arm): the beneficiary WARMS its `standing` toward
+                        // the benefactor — a believed-generous motive folds to trust (the mirror of the
+                        // murder-souring witness fold). Drives the donate/repay loop's affect, not just
+                        // its bookkeeping. Own-write on the recipient's belief about the donor.
+                        self.warm_belief(target as usize, actor as u32, RECIPROCITY_WARMTH);
+                        // and BYSTANDERS admire the generous act (the heroism-witness mirror): nearby
+                        // living townsfolk who perceive the gift warm a little toward the giver.
+                        self.fold_gift_witnesses(actor, target as usize);
                     }
                     // Fold the deed (magnitude-scaled, tag-indexed) into the ACTOR's OWN
                     // behaviour profile, HERE in the deterministic serial merge. This is the
@@ -1329,6 +1341,27 @@ impl World {
             }
         }
     }
+
+    /// RECIPROCITY witness fold (the generosity mirror of `fold_kill_witnesses`): nearby living
+    /// townsfolk who perceive a gift WARM a little toward the giver — generosity earns believed
+    /// goodwill, just as murder earns believed enmity. Serial id-order scan in `drain_intents` ⇒
+    /// deterministic cross-row writes; own-write per witness on its belief about the donor.
+    fn fold_gift_witnesses(&mut self, donor: usize, recipient: usize) {
+        const WITNESS_RANGE2: f32 = 30.0 * 30.0;
+        let dpos = self.pos[donor];
+        let tf = Faction::Townsfolk as u8;
+        for w in 0..self.n {
+            if w == donor || w == recipient || !self.alive[w] || self.faction[w] != tf {
+                continue;
+            }
+            let dx = self.pos[w][0] - dpos[0];
+            let dz = self.pos[w][1] - dpos[1];
+            if dx * dx + dz * dz > WITNESS_RANGE2 {
+                continue;
+            }
+            self.warm_belief(w, donor as u32, RECIPROCITY_BYSTANDER_WARMTH);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1396,6 +1429,43 @@ mod tests {
         let b = w.beliefs[near].find(hero as u32).expect("the witness forms a belief about the hero");
         assert!(w.beliefs[near].bodies[b].standing > 0, "the monster-slayer is admired");
         assert!(w.beliefs[near].bodies[b].flags & 0x01 == 0, "a hero is not believed hostile");
+    }
+
+    /// RECIPROCITY: a gift (act verb 10) WARMS the beneficiary's believed standing toward the giver,
+    /// and a nearby bystander who witnesses the generosity warms a little too (the goodwill mirror of
+    /// the murder-souring witness fold). A far-off townsperson, out of sight, learns nothing.
+    #[test]
+    fn a_gift_earns_believed_goodwill() {
+        let mut w = World::spawn(0x6175, 8);
+        let (giver, recip, near, far) = (0usize, 1usize, 2usize, 3usize);
+        for &i in &[giver, recip, near, far] {
+            w.faction[i] = Faction::Townsfolk as u8;
+            w.alive[i] = true;
+            w.beliefs[i].clear();
+            w.memory[i] = crate::components::Memory::default();
+        }
+        w.pos[giver] = [0.0, 0.0];
+        w.pos[recip] = [1.0, 0.0];
+        w.pos[near] = [5.0, 0.0]; // within witness range
+        w.pos[far] = [400.0, 0.0]; // far out of sight
+        w.intents.push(Intent::Deed { actor: giver as u32, verb: 10, magnitude: 1, target: recip as u32 });
+        w.drain_intents();
+
+        let rb = w.beliefs[recip].find(giver as u32).expect("the beneficiary holds a belief about the giver");
+        assert!(
+            w.beliefs[recip].bodies[rb].standing >= RECIPROCITY_WARMTH,
+            "the beneficiary warms toward its benefactor"
+        );
+        assert!(
+            w.memory[recip].has(EpisodeKind::Succoured, giver as u32),
+            "the beneficiary remembers being succoured (drives later repayment)"
+        );
+        let nb = w.beliefs[near].find(giver as u32).expect("the bystander forms a belief about the giver");
+        assert!(w.beliefs[near].bodies[nb].standing > 0, "a bystander admires the generosity");
+        assert!(
+            w.beliefs[far].find(giver as u32).is_none(),
+            "a far-off townsperson out of sight takes nothing from the gift"
+        );
     }
 
     /// STUDY CHANNEL: a rusty crafter co-located with a master of the same craft firms up its recipe and
