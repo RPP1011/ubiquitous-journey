@@ -126,6 +126,14 @@ const BEAT_FEUD: u8 = 57;
 const BEAT_VENDETTA: u8 = 58;
 const BEAT_JEALOUSY: u8 = 59;
 const BEAT_RIVALRY: u8 = 60;
+const BEAT_MENTOR: u8 = 61;
+const BEAT_STARCROSS: u8 = 62;
+
+/// MENTOR PRIDE: only a MASTER (this level or above) takes a protégé; the warmth that binds them.
+const MENTOR_MIN_LEVEL: u8 = 7;
+const MENTOR_WARM: i16 = 9_000;
+/// STAR-CROSSED: affection across a house feud runs this deep (forbidden, and all the dearer for it).
+const STARCROSS_WARM: i16 = 11_000;
 
 /// MISTAKEN JEALOUSY: a believed FRIEND this warm is dear enough to be jealous OVER…
 const JEALOUSY_FRIEND_BOND: i16 = 10_000;
@@ -151,9 +159,11 @@ enum TropeKind {
     FalseWitness = 8,
     MistakenJealousy = 9,
     RivalApprentices = 10,
+    MentorPride = 11,
+    StarCrossed = 12,
 }
 // (N_TROPES in components.rs must equal the count above.)
-const _: () = assert!(N_TROPES == 11);
+const _: () = assert!(N_TROPES == 13);
 
 pub fn tick(world: &mut World) {
     // Throttle: only consider drama on the evaluation boundary (never at tick 0).
@@ -180,13 +190,15 @@ pub fn tick(world: &mut World) {
     // major beats and must not be crowded out by the reliable warm filler), the warm filler LAST.
     // (kind, instigator) — fired left-to-right; the first whose constellation EXISTS wins this roll.
     type Row = (TropeKind, fn(&mut World, &[u32], usize, u32) -> bool);
-    let rows: [Row; 11] = [
+    let rows: [Row; 13] = [
         (TropeKind::Betrayal, do_betrayal),
+        (TropeKind::StarCrossed, do_star_crossed),
         (TropeKind::Vendetta, do_vendetta),
         (TropeKind::HouseFeud, do_house_feud),
         (TropeKind::MistakenJealousy, do_mistaken_jealousy),
         (TropeKind::UnlikelyFriendship, do_unlikely_friendship),
         (TropeKind::RivalApprentices, do_rival_apprentices),
+        (TropeKind::MentorPride, do_mentor_pride),
         (TropeKind::Feud, do_feud),
         (TropeKind::Reunion, do_reunion),
         (TropeKind::MiserReformed, do_miser_reformed),
@@ -586,6 +598,72 @@ fn do_rival_apprentices(world: &mut World, folk: &[u32], off: usize, _now: u32) 
     false
 }
 
+/// MENTOR PRIDE — a MASTER of a craft takes pride in a still-learning soul of the same trade: a warm
+/// bond BOTH ways (the mentor's pride, the protégé's respect). Pro-social filler that rewards the
+/// emergent class/level progression with a relationship. Only fires for a genuinely-high-level master.
+fn do_mentor_pride(world: &mut World, folk: &[u32], off: usize, _now: u32) -> bool {
+    let len = folk.len();
+    for i in 0..len {
+        let a = folk[(off + i) % len];
+        let (pa, la) = (world.profession[a as usize], world.level[a as usize]);
+        if pa == 0 || la < MENTOR_MIN_LEVEL {
+            continue; // only a master mentors
+        }
+        for j in 0..len {
+            let b = folk[(off + j) % len];
+            if b == a {
+                continue;
+            }
+            // a still-learning soul of the SAME craft, not already bound to the master.
+            if world.profession[b as usize] == pa
+                && world.level[b as usize] <= RIVAL_MAX_LEVEL
+                && world.beliefs[a as usize].find(b).is_none()
+            {
+                world.warm_belief(a as usize, b, MENTOR_WARM);
+                world.warm_belief(b as usize, a, MENTOR_WARM);
+                push_beat(world, BEAT_MENTOR, a, b as i32);
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// STAR-CROSSED — affection blooms ACROSS a house feud: two souls of feuding houses come to care for
+/// each other (a forbidden, all-the-dearer bond), warm BOTH ways. Builds on the feud substrate (only
+/// fires when a house feud exists between them) — the dramatic counterweight to the feud it crosses.
+fn do_star_crossed(world: &mut World, folk: &[u32], off: usize, _now: u32) -> bool {
+    if world.house_feuds.is_empty() {
+        return false; // no feud to cross
+    }
+    let len = folk.len();
+    for i in 0..len {
+        let a = folk[(off + i) % len];
+        let ha = world.house[a as usize];
+        if ha == 0 {
+            continue;
+        }
+        for j in 0..len {
+            let b = folk[(off + j) % len];
+            if b == a {
+                continue;
+            }
+            let hb = world.house[b as usize];
+            if hb == 0 || hb == ha || !are_houses_feuding(world, ha, hb) {
+                continue;
+            }
+            // not already bound either way (a fresh forbidden bond).
+            if world.beliefs[a as usize].find(b).is_none() && world.beliefs[b as usize].find(a).is_none() {
+                world.warm_belief(a as usize, b, STARCROSS_WARM);
+                world.warm_belief(b as usize, a, STARCROSS_WARM);
+                push_beat(world, BEAT_STARCROSS, a, b as i32);
+                return true;
+            }
+        }
+    }
+    false
+}
+
 // ── helpers ─────────────────────────────────────────────────────────────────────────────────────
 
 /// Living-townsfolk ids in id order (the constellation pool every trope scans). Deterministic.
@@ -725,6 +803,50 @@ mod tests {
         assert!(a.standing < 0 && b.standing < 0, "a MUTUAL chill");
         assert_eq!(a.flags & HOSTILE_BIT, 0, "a rivalry is a chill, not open enmity");
         assert!(w.chronicle.iter().any(|b| b.kind == BEAT_RIVALRY), "a rivalry beat is logged");
+    }
+
+    /// MENTOR PRIDE: a master and a same-craft apprentice form a warm bond both ways.
+    #[test]
+    fn mentor_takes_pride_in_an_apprentice() {
+        let mut w = World::spawn(0x9EB1, 6);
+        all_townsfolk(&mut w);
+        w.profession[0] = 4; // a master blacksmith…
+        w.level[0] = 9;
+        w.profession[1] = 4; // …and a blacksmith apprentice.
+        w.level[1] = 1;
+        for i in 2..w.n {
+            w.profession[i] = 1; // others a different craft
+        }
+        let folk = living_townsfolk(&w);
+        assert!(do_mentor_pride(&mut w, &folk, 0, 100), "a master mentors a same-craft apprentice");
+        let a = w.beliefs[0].bodies[w.beliefs[0].find(1).expect("the mentor regards the protégé")];
+        let b = w.beliefs[1].bodies[w.beliefs[1].find(0).expect("the protégé regards the mentor")];
+        assert!(a.standing > 0 && b.standing > 0, "a warm bond both ways");
+        assert!(w.chronicle.iter().any(|b| b.kind == BEAT_MENTOR), "a mentor beat is logged");
+    }
+
+    /// STAR-CROSSED: affection blooms across a house feud (warm both ways) — only when a feud exists.
+    #[test]
+    fn affection_blooms_across_a_house_feud() {
+        let mut w = World::spawn(0x9EB2, 6);
+        all_townsfolk(&mut w);
+        w.house[0] = 5;
+        w.house[1] = 9;
+        set_house_feud(&mut w, 5, 9); // the feud their love must cross
+        let folk = living_townsfolk(&w);
+        assert!(do_star_crossed(&mut w, &folk, 0, 100), "love crosses a house feud");
+        let a = w.beliefs[0].bodies[w.beliefs[0].find(1).expect("0 cares for 1")];
+        let b = w.beliefs[1].bodies[w.beliefs[1].find(0).expect("1 cares for 0")];
+        assert!(a.standing > 0 && b.standing > 0, "a warm, forbidden bond both ways");
+        assert!(w.chronicle.iter().any(|b| b.kind == BEAT_STARCROSS), "a star-crossed beat is logged");
+
+        // with NO feud, it does not fire (nothing to cross).
+        let mut w2 = World::spawn(0x9EB3, 6);
+        all_townsfolk(&mut w2);
+        w2.house[0] = 5;
+        w2.house[1] = 9;
+        let folk2 = living_townsfolk(&w2);
+        assert!(!do_star_crossed(&mut w2, &folk2, 0, 100), "no feud ⇒ no star-crossed love");
     }
 
     /// A HOUSE FEUD is recorded between two sizeable houses (and the canonical pair is queryable).

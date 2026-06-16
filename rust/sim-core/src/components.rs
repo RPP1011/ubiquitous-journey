@@ -527,7 +527,7 @@ pub const MAX_HORRORS: usize = 5;
 pub const MAX_COMPANY: usize = 6;
 
 /// Number of relationship-trope kinds the trope engine cooldowns (`systems::tropes`).
-pub const N_TROPES: usize = 11;
+pub const N_TROPES: usize = 13;
 
 /// The relationship-trope engine's serial-phase cooldown/telemetry state (`js/sim/director/tropes.ts`).
 #[derive(Clone, Copy, Debug)]

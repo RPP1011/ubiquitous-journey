@@ -121,11 +121,13 @@ Missing:
   VENDETTA saga (≥3 blows) between two souls of different houses ESCALATES into a dynastic HOUSE FEUD
   (the strife outgrows the two; their kin inherit it via lineage). The reckoning/`_advanceArcs` flagship.
   ⬜ still: the other 4 arc steppers (tyrant-fall/spy-web/romance/accused).
-- 🟡 **tropes 9 → 11**: + **mistaken-jealousy** (a misunderstanding cools a dear friendship one-sidedly,
-  NOT latched — recoverable) and **rival-apprentices** (two low-level same-craft souls fall into a mild
-  mutual chill). Both compose from existing belief helpers + the trope dispatcher.
-⬜ ~9 more tropes (star-crossed/favored-rise/spy-unmasked/mentor-pride/prodigal-return/prophet/tyrant-
-  market/boast-backfires/…) · role machinery (bodyguard/duel/protégé/guardian/legend/avenger) · caravans.
+- 🟡 **tropes 9 → 13**: + **mistaken-jealousy** (a misunderstanding cools a dear friendship one-sidedly,
+  recoverable), **rival-apprentices** (two low-level same-craft souls → mild mutual chill),
+  **mentor-pride** (a master warms toward a same-craft apprentice, both ways), and **star-crossed**
+  (forbidden affection across a house feud — builds on the feud substrate). All compose from existing
+  belief helpers + the trope dispatcher.
+⬜ ~7 more tropes (favored-rise/spy-unmasked/prodigal-return/prophet/tyrant-market/boast-backfires/…) ·
+  role machinery (bodyguard/duel/protégé/guardian/legend/avenger) · caravans.
 
 ### G7 — World subsystems absent
 ⬜ construction (places-as-percepts + granary) · party (player companions) · biography ·
