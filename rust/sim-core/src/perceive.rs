@@ -71,6 +71,7 @@ fn upsert(bt: &mut BeliefTable, p: &Perceivable, conf: u16, tick: u32) {
         b.threat = p.threat;
         b.wealth = p.wealth_cue;
         b.last_tick = tick;
+        b.hops = 0; // I see it FIRST-HAND now — provenance resets (trumps any stale rumour)
         if menacing {
             b.flags |= 0x01;
         }
@@ -92,7 +93,7 @@ fn upsert(bt: &mut BeliefTable, p: &Perceivable, conf: u16, tick: u32) {
         last_tick: tick,
         standing: 0,
         flags: (if menacing { 0x01 } else { 0 }) | (if building { 0x02 } else { 0 }),
-        _pad: 0,
+        hops: 0, // first-hand
     };
     let len = bt.len as usize;
     if len < BELIEF_CAP {

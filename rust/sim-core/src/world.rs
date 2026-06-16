@@ -1466,7 +1466,7 @@ impl World {
                 last_tick: now,
                 standing: 0,
                 flags: 0,
-                _pad: 0,
+                hops: 0,
             };
             bt.len += 1;
             return Some(len);

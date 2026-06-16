@@ -246,8 +246,12 @@ concern). · granary (a shared-larder building benefit) is the remaining constru
   split holds — no peeking at the quarry's true position). `infer_pursuit` helper; tested fresh-vs-stale.
 - ✅ **place-beliefs / sentiment field** — `PersonBelief.flags` bit1 now marks a believed BUILDING/place
   (the construction homeBeliefId source); `standing` is the believed sentiment (reciprocity + combat fold).
-⬜ remaining belief fields (suspicion/animacy/assoc/hops/provenance) · memory STM/MTM/LTM tiers +
-salient() · decide utility-oracle (scoreAndSelect) · duel election. (See Closing status.)
+- ✅ **provenance / hops** (the "Hearsay" theme made literal) — `PersonBelief.hops` tracks a belief's
+  distance from its source: 0 = first-hand (perception resets it), +1 each gossip retelling, with a
+  confidence FADE (×0.85) per relay. So a third-hand rumour is shakier than a sighting, and first-hand
+  knowledge always trumps an incoming rumour (the merge weighs the faded confidence). Hashed; tested.
+⬜ remaining belief fields (suspicion/animacy/assoc) · memory STM/MTM/LTM tiers + salient() · decide
+utility-oracle (scoreAndSelect) · duel election. (See Closing status.)
 
 ---
 

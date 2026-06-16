@@ -100,17 +100,24 @@ pub fn gossip(world: &mut World) {
 ///   (which keeps perception's in-range subjects intact for the grid-superset gate).
 #[inline]
 fn merge_belief(bt: &mut BeliefTable, sb: &PersonBelief) {
+    // PROVENANCE: a retold rumour is one HOP further from the source and trusted LESS — its confidence
+    // fades a notch per relay (the "Hearsay" theme: third-hand news is shakier than what you saw). I
+    // weigh the FADED confidence against what I already hold, so first-hand knowledge wins over a rumour.
+    const RUMOUR_FADE: f32 = 0.85; // confidence retained per relay hop
+    let told_conf = (sb.confidence as f32 * RUMOUR_FADE) as u16;
+    let told_hops = sb.hops.saturating_add(1);
     if let Some(idx) = bt.find(sb.subject) {
         let b = &mut bt.bodies[idx];
-        if sb.confidence > b.confidence {
+        if told_conf > b.confidence {
             b.last_x = sb.last_x;
             b.last_z = sb.last_z;
-            b.confidence = sb.confidence;
+            b.confidence = told_conf;
             b.faction = sb.faction;
             b.level = sb.level;
             b.notoriety = sb.notoriety;
             b.threat = sb.threat;
             b.last_tick = sb.last_tick;
+            b.hops = told_hops; // I now hold this third-hand
             // standing/flags are MINE (my relationship to this third party), not the teller's.
         }
         return;
@@ -118,6 +125,8 @@ fn merge_belief(bt: &mut BeliefTable, sb: &PersonBelief) {
     let len = bt.len as usize;
     if len < BELIEF_CAP {
         let mut fresh = *sb;
+        fresh.confidence = told_conf; // adopt at the faded, hop-attenuated confidence
+        fresh.hops = told_hops;
         fresh.standing = 0; // a hearsay subject starts neutral for me — I inherit no relationship.
         fresh.flags = 0;
         bt.subjects[len] = sb.subject;
@@ -125,4 +134,32 @@ fn merge_belief(bt: &mut BeliefTable, sb: &PersonBelief) {
         bt.len += 1;
     }
     // table full: do NOT evict — gossip yields to perception's in-range beliefs.
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::components::PersonBelief;
+
+    /// PROVENANCE: a rumour fades as it's retold. A first-hand belief (hops 0) relayed once is adopted at
+    /// a HIGHER hop count and LOWER confidence; first-hand knowledge always trumps an incoming rumour.
+    #[test]
+    fn a_retold_rumour_fades_and_counts_a_hop() {
+        let mut bt = BeliefTable::default();
+        // a partner tells me, first-hand (hops 0), about a third party at high confidence.
+        let told = PersonBelief { subject: 9, confidence: 50_000, hops: 0, ..Default::default() };
+        merge_belief(&mut bt, &told);
+        let ix = bt.find(9).expect("I adopted the hearsay");
+        assert_eq!(bt.bodies[ix].hops, 1, "what I heard is now one hop from the source");
+        assert!(bt.bodies[ix].confidence < 50_000, "a retold rumour is trusted less than the telling");
+
+        // first-hand knowledge trumps a rumour: a faint relay must NOT overwrite my confident sighting.
+        let mut bt2 = BeliefTable::default();
+        bt2.subjects[0] = 9;
+        bt2.bodies[0] = PersonBelief { subject: 9, confidence: 60_000, hops: 0, ..Default::default() };
+        bt2.len = 1;
+        merge_belief(&mut bt2, &told); // told (50k → ~42k faded) < my 60k first-hand
+        assert_eq!(bt2.bodies[0].confidence, 60_000, "my first-hand belief survives a weaker rumour");
+        assert_eq!(bt2.bodies[0].hops, 0, "and stays first-hand");
+    }
 }

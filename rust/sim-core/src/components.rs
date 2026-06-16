@@ -395,8 +395,8 @@ pub struct PersonBelief {
     pub wealth: u16, // believed wealth cue (perceived prosperity — the heist/esteem signal)
     pub last_tick: u32,
     pub standing: i16, // −32768..32767 quantization of −1..1 (relationship)
-    pub flags: u8,     // bit0 hostile
-    pub _pad: u8,
+    pub flags: u8,     // bit0 hostile · bit1 believed building/place
+    pub hops: u8,      // gossip provenance: 0 = first-hand (perceived), +1 each retelling (a rumor fades)
 }
 
 /// Inline belief table — dense `subjects` match-array beside `bodies`, kept sorted by (dist², id).
