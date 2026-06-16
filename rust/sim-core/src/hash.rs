@@ -248,7 +248,7 @@ pub fn world_hash(w: &World) -> u64 {
     for c in &w.watch.captain {
         h = fold(h, &c.to_le_bytes());
     }
-    // Small gods: each god's believer-power (the recomputed substance of the pantheon).
+    // Gods: each god's believer count.
     for g in &w.gods {
         h = fold(h, &g.power.to_le_bytes());
     }

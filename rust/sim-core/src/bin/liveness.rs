@@ -126,23 +126,22 @@ fn main() {
     );
     println!("  each town's dominant trade: {:?}", doms);
 
-    // THE PANTHEON: warm hearth-gods vs eldritch gloam-gods by believer-power. The dark grows only by
-    // claiming souls who stray into the wild, then riding their faith home — so any eldritch power at all
-    // means the Gloam has taken root in the towns.
-    use sim_core::components::GOD_ELDRITCH;
-    let warm_power: u32 = w.gods.iter().filter(|g| g.origin != GOD_ELDRITCH).map(|g| g.power).sum();
-    let dark_power: u32 = w.gods.iter().filter(|g| g.origin == GOD_ELDRITCH).map(|g| g.power).sum();
+    // Gods: town gods vs wild gods, by believer count. Wild gods grow by claiming souls out in the wild,
+    // so any wild power at all means wild faith has been carried back into the towns.
+    use sim_core::components::GOD_WILD;
+    let town_power: u32 = w.gods.iter().filter(|g| g.origin != GOD_WILD).map(|g| g.power).sum();
+    let wild_power: u32 = w.gods.iter().filter(|g| g.origin == GOD_WILD).map(|g| g.power).sum();
     let faithless = (0..w.n)
         .filter(|&i| w.alive[i] && w.faction[i] == Faction::Townsfolk as u8 && w.faith[i] == 0)
         .count();
-    println!("\nTHE PANTHEON (small gods — believer-power):");
+    println!("\nGODS (believer count):");
     println!(
-        "  warm hearth-gods: {}   |   eldritch gloam-gods: {}   |   faithless: {}",
-        warm_power, dark_power, faithless
+        "  town gods: {}   |   wild gods: {}   |   faithless: {}",
+        town_power, wild_power, faithless
     );
     let mut gl: Vec<String> = Vec::new();
     for (gi, g) in w.gods.iter().enumerate() {
-        let kind = if g.origin == GOD_ELDRITCH { "gloam" } else { "hearth" };
+        let kind = if g.origin == GOD_WILD { "wild" } else { "town" };
         gl.push(format!("g{}:{}({})", gi + 1, g.power, kind));
     }
     println!("  per-god: {:?}", gl);

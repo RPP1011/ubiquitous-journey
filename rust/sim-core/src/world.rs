@@ -131,9 +131,9 @@ pub struct World {
     pub base_price: [i64; crate::components::N_COMMODITIES],
     pub map: MentalMap, // affordance-queried static places (read-only after worldgen)
 
-    /// The SMALL-GODS pantheon (`systems/faith.rs`): a registry of belief-constituted gods — WARM town-gods
-    /// seated at shrines + ELDRITCH gloam-gods seated at wilderness lairs — that contend for souls. `faith[i]`
-    /// is a 1-based index into this Vec (0 = NO_GOD). Seeded at worldgen; `power` recomputed each faith pass.
+    /// The gods (`systems/faith.rs`): town gods seated at settlements + wild gods seated at wilderness
+    /// sites, competing for believers. `faith[i]` is a 1-based index into this Vec (0 = NO_GOD). Seeded at
+    /// worldgen; `power` (= believer count) recomputed each faith pass.
     pub gods: Vec<crate::components::God>,
 
     // ── Wave-3 society/observer state (mutated in the SERIAL society phase) ──
@@ -489,20 +489,19 @@ impl World {
             lair_pos.push(p);
         }
 
-        // ── THE PANTHEON (Glare/Gloam): WARM hearth-gods seated at the first towns' shrines, and ELDRITCH
-        // gloam-gods seated at wilderness lairs — settled faith vs the hungry dark, contending for souls.
+        // Gods: town gods seated at the first towns, and wild gods seated at the lairs nearest the towns.
         let mut gods: Vec<crate::components::God> = Vec::new();
         for t in 0..n_towns.min(3) {
             gods.push(crate::components::God {
-                origin: crate::components::GOD_WARM,
-                domain: (t % 3) as u8, // hearth/plenty · hunt/war · trade/luck
+                origin: crate::components::GOD_TOWN,
+                domain: (t % 3) as u8,
                 home: town_centers[t],
                 home_town: t as i16,
                 power: 0,
             });
         }
-        // seat eldritch gods at the lairs NEAREST the towns — the most-trafficked dens, where foragers,
-        // expeditions, and refugees pass close enough for the dark to reach them.
+        // seat wild gods at the lairs nearest the towns (the most-trafficked, where foragers,
+        // expeditions, and refugees pass close enough to be claimed).
         let lair_near = |k: usize| {
             town_centers
                 .iter()
@@ -515,8 +514,8 @@ impl World {
         });
         for (k, &li) in lair_order.iter().take(2).enumerate() {
             gods.push(crate::components::God {
-                origin: crate::components::GOD_ELDRITCH,
-                domain: 3 + (k % 2) as u8, // dread/dark · death
+                origin: crate::components::GOD_WILD,
+                domain: 3 + (k % 2) as u8,
                 home: lair_pos[li],
                 home_town: -1,
                 power: 0,
