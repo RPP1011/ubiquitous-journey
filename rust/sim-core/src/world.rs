@@ -50,6 +50,11 @@ pub struct World {
     pub econ: Vec<Economy>,
     pub combat: Vec<CombatBody>,
     pub home: Vec<[f32; 2]>,
+    /// The belief-subject id of the building this agent has DISCOVERED as home (`PERCEPT_ID_BASE + k`),
+    /// or `u32::MAX` for none yet. Set by SIGHT (construction's homeBeliefId), cleared when the belief
+    /// fades/destroyed — the EPISTEMIC homecoming: the agent routes to where it BELIEVES home is, and
+    /// can't telepathically re-route to a home it no longer believes in (the homecoming.mjs gate).
+    pub home_belief_id: Vec<u32>,
     pub town: Vec<u16>,
     pub rng: Vec<DeterministicRng>,
     pub progression: Vec<Progression>,
@@ -181,6 +186,10 @@ const CARAVAN_EVERY: u32 = 100;
 const OCCUPATION_EVERY: u32 = 150;
 /// Refresh the biographical rollups on this cadence (a life-summary moves slowly; observer-only).
 const BIOGRAPHY_EVERY: u32 = 200;
+/// The tick the town's homes are raised (once, after agents have settled near their hearths).
+const BUILD_AT: u32 = 40;
+/// Re-tend home discovery/loss on this cadence (sight-gated; slow — a home is a settled thing).
+const HOME_TEND_EVERY: u32 = 50;
 
 impl World {
     /// Worldgen: `n` agents clustered in one dense town with professions, gold, and home anchors.
@@ -212,6 +221,7 @@ impl World {
             econ: Vec::with_capacity(n),
             combat: Vec::with_capacity(n),
             home: Vec::with_capacity(n),
+            home_belief_id: Vec::with_capacity(n),
             town: Vec::with_capacity(n),
             rng: Vec::with_capacity(n),
             progression: Vec::with_capacity(n),
@@ -318,6 +328,7 @@ impl World {
             w.econ.push(e);
             w.combat.push(CombatBody::default());
             w.home.push(p); // home = spawn point (Wave-1)
+            w.home_belief_id.push(u32::MAX); // no home-building discovered yet
             w.town.push(0);
             w.rng.push(DeterministicRng::seed(seed, i as u64));
             w.progression.push(Progression::default());
@@ -369,6 +380,7 @@ impl World {
         self.econ.push(Economy::default());
         self.combat.push(CombatBody::default());
         self.home.push(pos);
+        self.home_belief_id.push(u32::MAX);
         self.town.push(0);
         self.rng.push(DeterministicRng::seed(self.seed, i as u64));
         self.progression.push(Progression::default());
@@ -870,6 +882,83 @@ impl World {
         }
         if self.tick % BIOGRAPHY_EVERY == 0 {
             self.update_biographies(); // roll each life's deeds/drive/rank into its biographical summary
+        }
+        if self.tick == BUILD_AT {
+            self.construct_homes(); // raise the town's homes (buildings-as-percepts) — once, early
+        }
+        if self.tick % HOME_TEND_EVERY == 0 {
+            self.tend_homes(); // discover a home by sight; forget one lost (the epistemic homecoming)
+        }
+    }
+
+    /// CONSTRUCTION (`js/sim/construction.js`): raise the town's homes as BUILDINGS-AS-PERCEPTS — a
+    /// finished building is a percept (kind 2) in the disjoint id-space, perceivable + wreckable, with a
+    /// believed `sheltered` benefit. Spawned at each owner's home anchor so the owner DISCOVERS it by
+    /// sight (`tend_homes`). Costs no agent-time (a world pass) ⇒ economy-neutral. Deterministic id order.
+    fn construct_homes(&mut self) {
+        const PER_HOMES: usize = 20; // one home per ~20 townsfolk (a modest hamlet, not a city)
+        const CAP: usize = 24;
+        let mut built = 0usize;
+        for i in 0..self.n {
+            if built >= CAP {
+                break;
+            }
+            if self.alive[i] && self.faction[i] == Faction::Townsfolk as u8 && i % PER_HOMES == 0 {
+                // a neutral, non-menacing structure at the owner's hearth; sturdy but wreckable.
+                let id = self.spawn_percept(self.home[i], 2, Faction::Townsfolk as u8, 120.0, false);
+                self.home_belief_id[i] = id; // the owner is granted sight of its own new home
+                built += 1;
+            }
+        }
+    }
+
+    /// TEND HOMES (the discovery + loss half of construction's homecoming): a townsperson with no home
+    /// CLAIMS the nearest building it BELIEVES it sees (sight-gated); one whose believed home has faded
+    /// from memory (decayed out or destroyed) FORGETS it — so the homecoming routes only to a home still
+    /// believed in (the `homecoming.mjs` gate: no telepathic re-route to a lost home). Serial own-writes.
+    fn tend_homes(&mut self) {
+        for i in 0..self.n {
+            if !self.alive[i] || self.faction[i] != Faction::Townsfolk as u8 {
+                continue;
+            }
+            const HOME_FORGET_CONF: u16 = 6_000; // a home faded below this is no longer believed-in
+            let bt = &self.beliefs[i];
+            // forget a home no longer believed: the percept fell out of the table (razed long ago) OR the
+            // belief has DECAYED past the threshold (razed/unvisited — its memory has faded). Either way
+            // the homecoming can't route to it — no telepathy (the epistemic gate).
+            if self.home_belief_id[i] != u32::MAX {
+                let lost = match bt.find(self.home_belief_id[i]) {
+                    None => true,
+                    Some(ix) => bt.bodies[ix].confidence < HOME_FORGET_CONF,
+                };
+                if lost {
+                    self.home_belief_id[i] = u32::MAX;
+                }
+            }
+            // discover one by sight: the nearest CONFIDENTLY-believed BUILDING (belief flag bit1) is home.
+            if self.home_belief_id[i] == u32::MAX {
+                let (mx, mz) = (self.pos[i][0], self.pos[i][1]);
+                let mut best: Option<(u32, f32)> = None;
+                for b in 0..bt.len as usize {
+                    let cell = &bt.bodies[b];
+                    if cell.flags & 0x02 == 0 || cell.confidence < HOME_FORGET_CONF {
+                        continue; // not a believed building, or too faint to settle on
+                    }
+                    let dx = mx - cell.last_x;
+                    let dz = mz - cell.last_z;
+                    let d2 = dx * dx + dz * dz;
+                    let better = match best {
+                        None => true,
+                        Some((bid, bd)) => d2 < bd || (d2 == bd && cell.subject < bid),
+                    };
+                    if better {
+                        best = Some((cell.subject, d2));
+                    }
+                }
+                if let Some((id, _)) = best {
+                    self.home_belief_id[i] = id;
+                }
+            }
         }
     }
 
@@ -1558,6 +1647,43 @@ mod tests {
         let b = w.beliefs[near].find(hero as u32).expect("the witness forms a belief about the hero");
         assert!(w.beliefs[near].bodies[b].standing > 0, "the monster-slayer is admired");
         assert!(w.beliefs[near].bodies[b].flags & 0x01 == 0, "a hero is not believed hostile");
+    }
+
+    /// CONSTRUCTION / HOMECOMING (epistemic): an agent DISCOVERS a home building by SIGHT, and FORGETS it
+    /// when the building is razed and the belief fades — it cannot telepathically keep a home it no longer
+    /// believes in (the homecoming.mjs gate). Buildings are percepts (kind 2), perceivable + wreckable.
+    #[test]
+    fn a_home_is_discovered_by_sight_and_forgotten_when_razed() {
+        let mut w = World::spawn(0x40E, 4);
+        let resident = 0usize;
+        w.alive[resident] = true;
+        w.faction[resident] = Faction::Townsfolk as u8;
+        w.pos[resident] = [0.0, 0.0];
+        let home = w.spawn_percept([2.0, 0.0], 2, Faction::Townsfolk as u8, 50.0, false);
+        assert!(w.percept_flags[0] & 0x04 != 0, "a building percept carries the building bit");
+
+        // see it: the resident forms a believed-building belief, then claims it as home by sight.
+        w.build_surface();
+        crate::perceive::perceive(&mut w);
+        let b = w.beliefs[resident].find(home).expect("the resident perceives the building");
+        assert!(w.beliefs[resident].bodies[b].flags & 0x02 != 0, "it is believed a building/place");
+        w.tend_homes();
+        assert_eq!(w.home_belief_id[resident], home, "the resident discovered its home by sight");
+
+        // raze it: the building is destroyed and drops off the surface; with it gone, the belief fades.
+        w.percept_flags[0] &= !0x01; // razed
+        for _ in 0..400 {
+            w.build_surface();
+            crate::perceive::perceive(&mut w);
+            if w.beliefs[resident].find(home).is_none() {
+                break; // the belief has decayed out of the table
+            }
+        }
+        w.tend_homes();
+        assert_eq!(
+            w.home_belief_id[resident], u32::MAX,
+            "a razed, forgotten home is not telepathically retained — the epistemic homecoming holds"
+        );
     }
 
     /// PERCEPT / SCARECROW: a mind-less prop dressed as a menacing person. A nearby agent PERCEIVES it

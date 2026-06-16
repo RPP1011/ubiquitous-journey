@@ -200,8 +200,15 @@ Missing: — none. (avenger + legend roles landed under G6's role machinery; see
   mind-feedback** (no grudge/grief/progression about it — the deception). New `spawn_percept` + percept
   SoA + perceive latch + the Strike percept-branch; hashed; M-invariant; end-to-end tested (a guard
   perceives, strikes, and smashes a scarecrow dressed as a raider, taking no harm and bearing no grudge).
-⬜ construction (places-as-percepts + granary) · party (player companions) ·
-walls (collision geometry). — construction now builds on the percept substrate above.
+- ✅ **construction + the epistemic homecoming** — `js/sim/construction.js`: the town raises HOMES as
+  buildings-as-percepts (kind 2, perceivable + wreckable) at each owner's hearth. An agent DISCOVERS its
+  home by SIGHT (`tend_homes` → `home_belief_id`, gated on a confidently-believed building belief) and
+  FORGETS it when the building is razed and the belief decays past a threshold — so the Comfort goal
+  routes to where it BELIEVES home stands, never to a home it no longer believes in (the `homecoming.mjs`
+  gate: no telepathic re-route). Economy-neutral (a building costs no agent-time; homecoming only
+  redirects an existing comfort trip). Survival held; M-invariant; the razed-home test gates the split.
+⬜ party (player companions — no player in the headless core) · walls (collision geometry — a render
+concern). · granary (a shared-larder building benefit) is the remaining construction sub-feature.
 
 ### G8 — Ability execution depth
 - ✅ **plant_belief** live — the social ability op now reaches the epistemic layer: a charmer

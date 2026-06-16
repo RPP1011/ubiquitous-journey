@@ -51,8 +51,8 @@ pub fn gossip(world: &mut World) {
         //    never "first in grid order"). The grid 3×3 block is a superset; reject by exact dist.
         let mut partner: Option<u32> = None;
         grid.for_near(x, z, |p| {
-            if p.id == my_id || p.flags & 1 == 0 {
-                return; // skip self + the dead (bit0 = alive).
+            if p.id == my_id || p.flags & 1 == 0 || p.id >= crate::world::PERCEPT_ID_BASE {
+                return; // skip self, the dead (bit0), and mind-less PERCEPTS (you can't gossip with a prop).
             }
             let dx = x - p.x;
             let dz = z - p.z;

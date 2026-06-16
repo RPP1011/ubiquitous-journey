@@ -144,6 +144,9 @@ fn recruit_for(world: &mut World, leader: usize) {
     let mut cands: Vec<(f32, u32)> = Vec::new();
     world.grid.for_near(lpos[0], lpos[1], |p| {
         let j = p.id as usize;
+        if j >= world.n {
+            return; // a mind-less PERCEPT — never a band member.
+        }
         let dx = lpos[0] - p.x;
         let dz = lpos[1] - p.z;
         let d2 = dx * dx + dz * dz;

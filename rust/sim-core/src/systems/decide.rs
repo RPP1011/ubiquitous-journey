@@ -87,6 +87,7 @@ pub fn decide(world: &mut World) {
         ref profession,
         ref pos,
         ref home,
+        ref home_belief_id,
         ref work_sites,
         ref map,
         ref alive,
@@ -159,11 +160,21 @@ pub fn decide(world: &mut World) {
                     *g = Goal::Rest;
                     return;
                 } else {
-                    // seek the nearest believed hearth (a COMFORT-affording place), else fall back to
-                    // my own home anchor — the first MentalMap consumer.
-                    let to = map
-                        .nearest(crate::mentalmap::AFF_COMFORT, pos[i], 220.0)
-                        .map(|p| [p.x, p.z])
+                    // HOMECOMING (epistemic): if I have DISCOVERED a home building and still BELIEVE in
+                    // it, go to where I believe it stands — not its ground truth (a razed/forgotten home
+                    // can't pull me; the split). Else the nearest believed hearth, else my home anchor.
+                    let believed_home = if home_belief_id[i] != u32::MAX {
+                        beliefs[i]
+                            .find(home_belief_id[i])
+                            .map(|ix| [beliefs[i].bodies[ix].last_x, beliefs[i].bodies[ix].last_z])
+                    } else {
+                        None
+                    };
+                    let to = believed_home
+                        .or_else(|| {
+                            map.nearest(crate::mentalmap::AFF_COMFORT, pos[i], 220.0)
+                                .map(|p| [p.x, p.z])
+                        })
                         .unwrap_or(home[i]);
                     *g = Goal::Comfort { to };
                     return;

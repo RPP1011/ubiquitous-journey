@@ -55,6 +55,7 @@ pub fn world_hash(w: &World) -> u64 {
         h = fold(h, &w.house[i].to_le_bytes());
         // Wave-H society columns
         h = fold(h, &[w.epithet[i], w.disguise[i], w.role[i]]);
+        h = fold(h, &w.home_belief_id[i].to_le_bytes()); // discovered-home belief (construction)
         // progression (behaviour profile + emergent classes/levels) — the M-invariance gate must
         // cover this column so any non-determinism the progression fold/match introduces is caught.
         let pr = &w.progression[i];

@@ -151,8 +151,8 @@ fn run_spies(world: &mut World) {
         let mut victim: Option<usize> = None;
         world.grid.for_near(x, z, |p| {
             let j = p.id as usize;
-            if j == i || p.flags & 1 == 0 {
-                return; // self or dead.
+            if j == i || j >= world.n || p.flags & 1 == 0 {
+                return; // self, a mind-less PERCEPT (id ≥ n), or the dead.
             }
             // read the TRUE faction (the spy's own sanctioned ground-truth action — it knows who's a
             // townsperson; the lie is the INTENT, written only as a false belief below).
@@ -204,7 +204,7 @@ fn plant_price_tip(world: &mut World, spy: usize) {
             return;
         }
         let j = p.id as usize;
-        if j == spy || p.flags & 1 == 0 || world.faction[j] != Faction::Townsfolk as u8 {
+        if j == spy || j >= world.n || p.flags & 1 == 0 || world.faction[j] != Faction::Townsfolk as u8 {
             return;
         }
         let ddx = p.x - x;
@@ -237,7 +237,7 @@ fn unmask(world: &mut World, spy: usize) {
     let mut witnesses: Vec<usize> = Vec::new();
     world.grid.for_near(x, z, |p| {
         let j = p.id as usize;
-        if j == spy || p.flags & 1 == 0 || world.faction[j] != Faction::Townsfolk as u8 {
+        if j == spy || j >= world.n || p.flags & 1 == 0 || world.faction[j] != Faction::Townsfolk as u8 {
             return;
         }
         let ddx = p.x - x;

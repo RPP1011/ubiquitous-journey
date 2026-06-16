@@ -59,6 +59,7 @@ fn upsert(bt: &mut BeliefTable, p: &Perceivable, conf: u16, tick: u32) {
     // reflex engages it (a prop dressed as a raider). Only percepts ever set bit3 (agents never do), so
     // this never spuriously hostiles a real neighbour.
     let menacing = p.flags & 0x08 != 0;
+    let building = p.flags & 0x04 != 0; // a perceived structure (a place, not a person)
     if let Some(idx) = bt.find(p.id) {
         let b = &mut bt.bodies[idx];
         b.last_x = p.x;
@@ -72,6 +73,9 @@ fn upsert(bt: &mut BeliefTable, p: &Perceivable, conf: u16, tick: u32) {
         b.last_tick = tick;
         if menacing {
             b.flags |= 0x01;
+        }
+        if building {
+            b.flags |= 0x02; // bit1: a believed building/place (construction's homeBeliefId source)
         }
         return;
     }
@@ -87,7 +91,7 @@ fn upsert(bt: &mut BeliefTable, p: &Perceivable, conf: u16, tick: u32) {
         wealth: p.wealth_cue,
         last_tick: tick,
         standing: 0,
-        flags: if menacing { 0x01 } else { 0 },
+        flags: (if menacing { 0x01 } else { 0 }) | (if building { 0x02 } else { 0 }),
         _pad: 0,
     };
     let len = bt.len as usize;

@@ -123,8 +123,8 @@ fn spread(world: &mut World, power: &[usize; N_GODS as usize + 1]) {
         let [x, z] = world.pos[i];
         world.grid.for_near(x, z, |p| {
             let j = p.id as usize;
-            if j == i || p.flags & 1 == 0 {
-                return; // self or dead (flags bit0 = alive).
+            if j == i || j >= world.n || p.flags & 1 == 0 {
+                return; // self, a mind-less PERCEPT (id ≥ n), or the dead (flags bit0 = alive).
             }
             let g = world.faith[j] as usize;
             if g == NO_GOD as usize || g > N_GODS as usize {
