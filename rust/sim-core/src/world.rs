@@ -399,6 +399,10 @@ impl World {
                                 crate::components::DeedTag::Kill,
                                 self.tick,
                             );
+                            // BYSTANDERS LEARN: nearby townsfolk witness the killing and form beliefs
+                            // about the killer (the combatEvents master fold — a killer's reputation
+                            // now spreads via these witnesses, then gossip carries it further).
+                            self.fold_kill_witnesses(from, to);
                         }
                     }
                 }
@@ -615,6 +619,60 @@ impl World {
         }
     }
 
+    /// COMBAT-EVENTS WITNESS FOLD (the master `onCombatEvents` bystander half, `js/sim/combatEvents.ts`):
+    /// when `victim` falls to `killer`, every nearby TOWNSPERSON who could see it forms a belief — the
+    /// epistemic seed that makes a killer's reputation SPREAD (gossip then carries it further). Without
+    /// this only the victim+killer learned, so a murderer walked away anonymous. Serial id-order scan in
+    /// `drain_intents` ⇒ deterministic cross-row writes; own-writes per witness (memory + belief).
+    ///
+    /// What a witness takes away depends on WHO died:
+    /// - a neighbour murdered by another townsperson ⇒ grief (`WitnessedDeath`) + the killer is now
+    ///   believed a hostile MURDERER (soured + latched) — witnesses fear/flee/gossip them.
+    /// - a neighbour taken by a monster/raider ⇒ grief + reinforced fear of the predator.
+    /// - a monster/raider slain by a townsperson ⇒ ADMIRATION of the slayer (warmed standing) — the
+    ///   emergent renown of a monster-hunter.
+    fn fold_kill_witnesses(&mut self, killer: usize, victim: usize) {
+        const WITNESS_RANGE2: f32 = 30.0 * 30.0;
+        let vpos = self.pos[victim];
+        let vfac = self.faction[victim];
+        let kfac = if killer < self.n { self.faction[killer] } else { 255 };
+        let tf = Faction::Townsfolk as u8;
+        let victim_is_folk = vfac == tf;
+        for w in 0..self.n {
+            if w == killer || w == victim || !self.alive[w] || self.faction[w] != tf {
+                continue; // only living townsfolk witness, grieve, and gossip
+            }
+            let dx = self.pos[w][0] - vpos[0];
+            let dz = self.pos[w][1] - vpos[1];
+            if dx * dx + dz * dz > WITNESS_RANGE2 {
+                continue;
+            }
+            // grief for a fallen neighbour (drives the grieve disposition). Not for a slain monster.
+            if victim_is_folk {
+                self.memory[w].record(Episode {
+                    kind: EpisodeKind::WitnessedDeath as u8,
+                    place: 0,
+                    valence: -1,
+                    _pad: 0,
+                    with: victim as u32,
+                    t: self.tick,
+                    salience: 48_000,
+                    _pad2: 0,
+                });
+            }
+            // the reputational fold on the KILLER (belief-seed; gossip spreads it).
+            if killer < self.n {
+                if victim_is_folk && kfac == tf {
+                    self.sour_belief(w, killer as u32, 3_500, true); // a murderer among us
+                } else if victim_is_folk {
+                    self.sour_belief(w, killer as u32, 2_000, true); // a predator that took a neighbour
+                } else if kfac == tf {
+                    self.warm_belief(w, killer as u32, 1_500); // a townsperson who slew a monster — a hero
+                }
+            }
+        }
+    }
+
     /// Warm `observer`'s belief-standing toward `subject` (a real warming un-latches hostility).
     pub fn warm_belief(&mut self, observer: usize, subject: u32, amt: i16) {
         if let Some(ix) = self.ensure_belief(observer, subject) {
@@ -633,6 +691,69 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::components::{EpisodeKind, Faction};
+
+    /// COMBAT-EVENTS WITNESS FOLD: a townsperson murdered by another townsperson, seen by a nearby
+    /// neighbour, leaves that witness grieving AND believing the killer is a hostile murderer (the
+    /// reputational seed). A far-off townsperson learns nothing (out of sight).
+    #[test]
+    fn witnesses_learn_a_murderer() {
+        let mut w = World::spawn(0x5177, 8);
+        let (killer, victim, near, far) = (0usize, 1usize, 2usize, 3usize);
+        for &i in &[killer, victim, near, far] {
+            w.faction[i] = Faction::Townsfolk as u8;
+            w.alive[i] = true;
+            w.beliefs[i].clear();
+            w.memory[i] = crate::components::Memory::default();
+        }
+        w.pos[victim] = [0.0, 0.0];
+        w.pos[killer] = [1.0, 0.0];
+        w.pos[near] = [5.0, 0.0]; // within witness range
+        w.pos[far] = [400.0, 0.0]; // far out of sight
+        w.combat[victim].health = 1.0; // a single strike fells the victim
+        w.intents.push(Intent::Strike { from: killer as u32, to: victim as u32, dmg: 10.0 });
+        w.drain_intents();
+
+        assert!(!w.alive[victim], "the victim fell");
+        assert!(
+            w.memory[near].has(EpisodeKind::WitnessedDeath, victim as u32),
+            "the near witness grieves the fallen neighbour"
+        );
+        let b = w.beliefs[near].find(killer as u32).expect("the witness now holds a belief about the killer");
+        assert!(
+            w.beliefs[near].bodies[b].flags & 0x01 != 0,
+            "the witness believes the killer is a hostile murderer"
+        );
+        assert!(
+            w.beliefs[far].find(killer as u32).is_none(),
+            "a far-off townsperson out of sight learns nothing"
+        );
+    }
+
+    /// A townsperson who slays a MONSTER is admired by nearby townsfolk (warmed standing) — the
+    /// emergent renown of a monster-hunter (the heroism half of the witness fold).
+    #[test]
+    fn witnesses_admire_a_monster_slayer() {
+        let mut w = World::spawn(0x5178, 8);
+        let (hero, beast, near) = (0usize, 1usize, 2usize);
+        w.faction[hero] = Faction::Townsfolk as u8;
+        w.faction[beast] = Faction::Monster as u8;
+        w.faction[near] = Faction::Townsfolk as u8;
+        for &i in &[hero, beast, near] {
+            w.alive[i] = true;
+            w.beliefs[i].clear();
+        }
+        w.pos[beast] = [0.0, 0.0];
+        w.pos[hero] = [1.0, 0.0];
+        w.pos[near] = [4.0, 0.0];
+        w.combat[beast].health = 1.0;
+        w.intents.push(Intent::Strike { from: hero as u32, to: beast as u32, dmg: 10.0 });
+        w.drain_intents();
+
+        let b = w.beliefs[near].find(hero as u32).expect("the witness forms a belief about the hero");
+        assert!(w.beliefs[near].bodies[b].standing > 0, "the monster-slayer is admired");
+        assert!(w.beliefs[near].bodies[b].flags & 0x01 == 0, "a hero is not believed hostile");
+    }
 
     /// A `Hand` intent moves gold + goods one way and CONSERVES the totals (the resolver primitive
     /// behind give/pay/rob/loot/teach).

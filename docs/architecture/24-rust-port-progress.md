@@ -61,9 +61,14 @@ gazette (template articles) · econstats.
   + any forage-to-acquire plan.
 
 ### G5 — combatEvents master fold
-Current: strike→assaulted, kill→slew stamp. Missing:
-⬜ witness beliefs (bystanders learn aggressor) · capture-on-defeat → captive → rescue ·
-loot/escheat · epithet grant · obituary · vendetta-arc open · avenger/legend roles.
+Current: strike→assaulted, kill→slew stamp.
+- ✅ **witness beliefs** (bystanders learn the aggressor) — nearby townsfolk who see a killing form a
+  belief about the killer: grief + a hostile "murderer" belief (townsperson-on-townsperson), reinforced
+  predator-fear (monster takes a neighbour), or admiration (townsperson slays a monster). Gossip then
+  spreads it. Also makes the previously-dead `WitnessedDeath` episode (grieve's source) actually fire.
+Missing:
+⬜ capture-on-defeat → captive → rescue · loot/escheat · epithet grant · obituary · vendetta-arc open ·
+avenger/legend roles.
 
 ### G6 — arcs + director breadth
 ⬜ arcs SagaStore (open/append/close/sweep) · 11 missing tropes · 5 arc steppers · role machinery
@@ -87,6 +92,12 @@ occupation choice (dynamic vs fixed-at-spawn) · decide utility-oracle (scoreAnd
 ## Progress log (newest first)
 
 _(append a dated entry per landed commit: what closed, gate status, hash)_
+
+- **G5 combatEvents witness fold** — bystanders now learn from killings. A new `fold_kill_witnesses`
+  in the serial `drain_intents` kill branch: nearby living townsfolk record `WitnessedDeath` (grief)
+  and form a belief about the killer — hostile "murderer" (folk-on-folk), reinforced predator-fear, or
+  admiration of a monster-slayer. The killer's reputation now SPREADS (and gossip carries it). Wires up
+  the previously-inert `WitnessedDeath` episode. 2 new tests. 139 sim-core + gates green; M-invariant.
 
 - **G1 subsistence + G4 gather executor** — closed the documented **starvation collapse**. Added
   `IntentionKind::Sate` + the `subsistence` deriver (hungry + empty larder ⇒ pose a meal to the
