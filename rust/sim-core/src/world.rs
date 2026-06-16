@@ -110,6 +110,8 @@ pub struct World {
     pub gazette: crate::gazette::Gazette, // the town newspaper (observer; published in the society phase)
     pub econstats: crate::components::EconStats, // economic telemetry (observer; folded in the trade merge)
     pub reporter_last_volume: u64, // trade volume at the last filed report (so each report is a delta)
+    pub bounty_target: i32, // the agent id a town bounty is posted on (-1 = none) — bounties.ts
+    pub bounty_fund: i64,   // gold (minor units) pledged to whoever claims the bounty (a real, held pool)
 }
 
 /// A perceived faction sentinel: no disguise active.
@@ -135,6 +137,8 @@ const EPITHET_EVERY: u32 = 120;
 const STUDY_EVERY: u32 = 90;
 /// Put the gazette to press on this cadence (an edition every so often; newsread reads it each tick).
 const GAZETTE_EVERY: u32 = 60;
+/// Post/refresh a town bounty on this cadence.
+const BOUNTY_EVERY: u32 = 80;
 
 impl World {
     /// Worldgen: `n` agents clustered in one dense town with professions, gold, and home anchors.
@@ -209,6 +213,8 @@ impl World {
             gazette: crate::gazette::Gazette::default(),
             econstats: crate::components::EconStats::default(),
             reporter_last_volume: 0,
+            bounty_target: -1,
+            bounty_fund: 0,
         };
         for i in 0..n {
             let r = TOWN_RADIUS * gen.next_f32().sqrt();
@@ -468,6 +474,13 @@ impl World {
                         // a death RESOLVES every open arc the deceased was a party to (a tyrant's fall,
                         // a lover's end) — observer bookkeeping.
                         self.sagas.close_subject(to as u32, self.tick);
+                        // BOUNTY CLAIM: if the slain was the bounty's target, its slayer claims the fund
+                        // (conserved: the held pool → the killer's purse). Clears the bounty.
+                        if self.bounty_target == to as i32 && from != to && from < self.n {
+                            self.econ[from].gold += self.bounty_fund;
+                            self.bounty_fund = 0;
+                            self.bounty_target = -1;
+                        }
                         // The killer's `_slain` marker: an avenge intention against `to` is now
                         // SETTLED (it pops on this Slew episode rather than hunting a corpse).
                         if from != to && from < self.n {
@@ -724,6 +737,9 @@ impl World {
             self.publish_gazette(); // the town newspaper goes to press (an edition of briefs + prices)
             systems::chronicle::file_report(self); // the reporter files the cycle's market story
         }
+        if self.tick % BOUNTY_EVERY == 0 {
+            self.post_bounty(); // post/refresh a town bounty on a threat to the core (a funded reward)
+        }
     }
 
     /// Publish a fresh GAZETTE edition (the brief/edition core of `gazette.ts`): snapshot the recent
@@ -903,9 +919,64 @@ impl World {
         dt
     }
 
-    /// Total gold across the roster (purse + stash) — the conservation invariant for tests.
+    /// Total gold across the roster (purse + stash) PLUS any gold held in the town bounty fund — the
+    /// conservation invariant. A bounty levy moves gold from purses INTO the fund and a claim moves it
+    /// back out, so the fund must count or the invariant would spuriously break mid-bounty.
     pub fn total_gold(&self) -> i64 {
-        self.econ.iter().map(|e| e.gold + e.stash).sum()
+        self.econ.iter().map(|e| e.gold + e.stash).sum::<i64>() + self.bounty_fund
+    }
+
+    /// POST A BOUNTY (`bounties.ts`): when a hostile MONSTER/RAIDER is menacing the town core and no
+    /// bounty is live, the town pledges a reward on its head — a CONSERVED levy from the wealthiest few
+    /// townsfolk into the held `bounty_fund`. Whoever slays the target claims the fund (paid in the kill
+    /// branch). A real news-driven labour market: the moneyed pay to be rid of a threat, a fighter earns
+    /// it. Serial society pass ⇒ deterministic; gold only MOVES (purses → fund).
+    fn post_bounty(&mut self) {
+        const LEVY: i64 = 300;
+        const CONTRIBUTORS: usize = 4;
+        const THREAT_RANGE2: f32 = 200.0 * 200.0;
+        // an existing bounty stands until its target falls (the kill branch clears it); just tidy a
+        // target that died/escaped to another cause.
+        if self.bounty_target != -1 {
+            let t = self.bounty_target as usize;
+            if t >= self.n || !self.alive[t] {
+                self.bounty_target = -1; // claimed/gone — the fund rolls over to the next posting
+            }
+            return;
+        }
+        // find a living monster/raider menacing the town core.
+        let core = self.town_center;
+        let mut target: Option<usize> = None;
+        for i in 0..self.n {
+            let f = self.faction[i];
+            if self.alive[i] && (f == Faction::Monster as u8 || f == Faction::Raider as u8) {
+                let dx = self.pos[i][0] - core[0];
+                let dz = self.pos[i][1] - core[1];
+                if dx * dx + dz * dz <= THREAT_RANGE2 {
+                    target = Some(i);
+                    break;
+                }
+            }
+        }
+        if let Some(tg) = target {
+            // levy from the first CONTRIBUTORS able townsfolk (id order — deterministic).
+            let mut pledged = 0i64;
+            let mut taken = 0usize;
+            for c in 0..self.n {
+                if taken >= CONTRIBUTORS {
+                    break;
+                }
+                if self.alive[c] && self.faction[c] == Faction::Townsfolk as u8 && self.econ[c].gold >= LEVY {
+                    self.econ[c].gold -= LEVY;
+                    pledged += LEVY;
+                    taken += 1;
+                }
+            }
+            if pledged > 0 {
+                self.bounty_fund += pledged;
+                self.bounty_target = tg as i32;
+            }
+        }
     }
 
     // ── shared belief-seed helpers (the society/observer wave's `_plant`/`_sour`/`_warm`) ──
@@ -1359,6 +1430,40 @@ mod tests {
         w.drain_intents();
         assert!((w.combat[def].shield).abs() < 1e-3, "the shield is spent");
         assert!((w.combat[def].health - 75.0).abs() < 1e-3, "the overflow carried through to health");
+    }
+
+    /// BOUNTY: a threat to the core is posted (a conserved levy into the fund), and its slayer claims
+    /// the fund — gold conserved across the whole cycle (purses → fund → slayer).
+    #[test]
+    fn a_bounty_is_funded_then_claimed_conserving_gold() {
+        let mut w = World::spawn(0xB047, 8);
+        let (slayer, threat) = (0usize, 1usize);
+        // wealthy townsfolk to fund the bounty.
+        for i in 0..w.n {
+            w.faction[i] = Faction::Townsfolk as u8;
+            w.alive[i] = true;
+            w.econ[i].gold = 5_000;
+        }
+        // a monster menacing the core.
+        w.faction[threat] = Faction::Monster as u8;
+        w.pos[threat] = w.town_center;
+        let total = w.total_gold();
+
+        w.post_bounty();
+        assert_eq!(w.bounty_target, threat as i32, "the threat to the core is posted");
+        assert!(w.bounty_fund > 0, "the town pledged a reward (levied into the fund)");
+        assert_eq!(w.total_gold(), total, "the levy is conserved (purses → fund)");
+        let fund = w.bounty_fund;
+        let slayer_gold = w.econ[slayer].gold;
+
+        // the slayer fells the bounty target → claims the fund.
+        w.combat[threat].health = 1.0;
+        w.intents.push(Intent::Strike { from: slayer as u32, to: threat as u32, dmg: 10.0 });
+        w.drain_intents();
+        assert!(!w.alive[threat], "the threat was slain");
+        assert_eq!(w.econ[slayer].gold, slayer_gold + fund, "the slayer claimed the bounty fund");
+        assert_eq!(w.bounty_target, -1, "the bounty is cleared once claimed");
+        assert_eq!(w.total_gold(), total, "gold conserved across the whole bounty cycle");
     }
 
     /// ECON TELEMETRY: a cleared Transfer (a trade) folds into the observer econstats counters.

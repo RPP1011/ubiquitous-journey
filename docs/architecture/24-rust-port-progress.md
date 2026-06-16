@@ -89,8 +89,13 @@ in headless Rust applies as NPC-faction standing.)
 - ✅ **reporter** (wire-desk subset) — the gazetteer files a market-report `KIND_REPORT` chronicle beat
   each gazette cycle (the DELTA trade volume since the last filing, tagged with the edition). The
   roaming-interview + LLM-article path is render/browser-only (out of headless scope).
-Still ⬜ (single-town-viable): bounties (a news-driven labor market).
-Still ⬜ (truly multi-town): arbitrage + caravans (exploit price GAPS between towns).
+- ✅ **bounties** — a CONSERVED news-driven labour market: when a monster/raider menaces the town core,
+  the town posts a bounty — a levy from the wealthiest few townsfolk into a held `bounty_fund` — and
+  whoever slays the target claims the fund (paid in the kill branch). The moneyed pay to be rid of a
+  threat, a fighter earns it. `total_gold` counts the fund so conservation holds mid-bounty. Hashed.
+  **All single-town news/economy systems now done** (gazette/newsread/econstats/reporter/bounties).
+Still ⬜ (truly multi-town): arbitrage + caravans (exploit price GAPS between towns — the one multi-town
+worldgen substrate).
 - ✅ **favored-price / standing-skew** (`npcFavoredPrice`) — the double-auction now clears at the belief
   midpoint SKEWED by how the seller regards the buyer (±FAVOR): a friend gets a discount, a despised
   buyer a markup, a stranger the neutral price. Conserved. Makes reputation/relationships matter in trade.
@@ -208,6 +213,11 @@ _(append a dated entry per landed commit: what closed, gate status, hash)_
   (set in the social cast branch), and the market clears that seller's sales +15% while active. Conserved
   (a price shift). Only the 4 control ops remain — all on Rust-unreachable (NO_CLASS) catalog specs.
   1 new test; hashed; survival unaffected.
+
+- **G4 bounties — all single-town news systems done** — a conserved news-driven labour market: a threat
+  to the core triggers a town bounty (a levy from the wealthy into a held `bounty_fund`), claimed by
+  whoever slays the target (paid in the kill branch). `total_gold` now counts the fund (conservation
+  holds mid-bounty). 1 new test; hashed; M-invariant. Only the truly-multi-town arbitrage/caravans remain.
 
 - **G4 reporter (wire desk)** — the gazetteer files a market-report `KIND_REPORT` chronicle beat each
   gazette cycle (the delta trade volume since the last filing, tagged with the edition). Observer-only,
