@@ -489,15 +489,19 @@ impl World {
             lair_pos.push(p);
         }
 
-        // Gods: town gods seated at the first towns, and wild gods seated at the lairs nearest the towns.
+        // Gods: settlement gods seated at the first towns (wide, shallow), and wild-site gods seated at
+        // the lairs nearest the towns (narrow, deep). breadth/depth are placeholder magnitudes until the
+        // effects pass; believers is recomputed each faith pass.
         let mut gods: Vec<crate::components::God> = Vec::new();
         for t in 0..n_towns.min(3) {
             gods.push(crate::components::God {
-                origin: crate::components::GOD_TOWN,
-                domain: (t % 3) as u8,
-                home: town_centers[t],
+                domain: crate::components::DOMAIN_SETTLEMENT,
+                breadth: pops[t].min(u16::MAX as usize) as u16, // coverage ~ the town's population
+                depth: 2,                                       // a town patron acts broadly but shallowly
+                seat: Some(town_centers[t]),
                 home_town: t as i16,
-                power: 0,
+                believers: 0,
+                active: true,
             });
         }
         // seat wild gods at the lairs nearest the towns (the most-trafficked, where foragers,
@@ -512,13 +516,15 @@ impl World {
         lair_order.sort_by(|&a, &b| {
             lair_near(a).partial_cmp(&lair_near(b)).unwrap_or(std::cmp::Ordering::Equal).then(a.cmp(&b))
         });
-        for (k, &li) in lair_order.iter().take(2).enumerate() {
+        for &li in lair_order.iter().take(2) {
             gods.push(crate::components::God {
-                origin: crate::components::GOD_WILD,
-                domain: 3 + (k % 2) as u8,
-                home: lair_pos[li],
+                domain: crate::components::DOMAIN_WILD_SITE,
+                breadth: 30, // a narrow domain (its wilderness site)...
+                depth: 6,    // ...but it acts strongly within it
+                seat: Some(lair_pos[li]),
                 home_town: -1,
-                power: 0,
+                believers: 0,
+                active: true,
             });
         }
 

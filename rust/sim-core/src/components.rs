@@ -553,21 +553,38 @@ impl Default for TropeState {
 pub const NO_BAND: i32 = -1; // band_leader sentinel (not in a band).
 pub const NO_GOD: u8 = 0; // faith sentinel (no faith). `faith[i]` is a 1-based index into `world.gods`.
 
-// ───────────────────────────── small gods ─────────────────────────────
-/// A god's power is its number of believers (recomputed each faith pass). Two kinds compete for souls:
-/// TOWN gods seated at a settlement, and WILD gods seated at a wilderness site that claim souls who
-/// venture out. The registry is `world.gods`; `faith[i]` (1-based) is which god agent `i` believes
-/// (0 = NO_GOD). `power` is folded into the world hash.
-pub const GOD_TOWN: u8 = 0; // seated at a town; spreads among its residents
-pub const GOD_WILD: u8 = 1; // seated at a wilderness site; claims souls who go into the wild
+// ───────────────────────────── gods ─────────────────────────────
+// A god's existence is sustained by belief (`believers`, recomputed each faith pass). Its functional
+// power is breadth × depth: BREADTH = how much of the world falls in its domain at once; DEPTH = how
+// strongly it can act within that domain. A SEAT (fixed anchor) is only carried by gods too weak to
+// exist without one; stronger/wider gods are free-roaming (seat = None). Effects (what depth actually
+// does) are not wired yet — this is the data model.
+
+/// DomainKind — what a god has purview over (sets its breadth and what sustains it).
+pub const DOMAIN_SETTLEMENT: u8 = 0; // a town's residents
+pub const DOMAIN_WILD_SITE: u8 = 1; // a wilderness place (claims souls who go into the wild)
+pub const DOMAIN_ACTIVITY: u8 = 2; // an activity (hunt/forge/harvest/trade) — in-domain = those doing it
+pub const DOMAIN_CONDITION: u8 = 3; // a condition (fear/grief/vengeance/luck) — in-domain = those in it
+pub const DOMAIN_EVENT: u8 = 4; // a recurring event (festival) — active only while it runs
+pub const DOMAIN_UNIVERSAL: u8 = 5; // always active, no seat (death/sun)
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct God {
-    pub origin: u8,     // GOD_TOWN | GOD_WILD
-    pub domain: u8,     // flavour id (0..4) — unused mechanically yet
-    pub home: [f32; 2], // its seat (a town centre, or a wilderness site)
-    pub home_town: i16, // the town it is seated in (town gods), or -1 (wild gods)
-    pub power: u32,     // believer count (recomputed each faith pass) — hashed
+    pub domain: u8,             // DomainKind
+    pub breadth: u16,          // coverage — how much of the world is in-domain
+    pub depth: u16,            // manipulation strength within the domain
+    pub seat: Option<[f32; 2]>, // fixed anchor (None = free-roaming, not location-bound)
+    pub home_town: i16,        // the town/faction it is tied to (-1 = none)
+    pub believers: u32,        // the substance that sustains it (recomputed each pass) — hashed
+    pub active: bool,          // is its domain currently active? (event gods sleep when not) — hashed
+}
+
+impl God {
+    /// Functional power = breadth × depth (what it can do), distinct from `believers` (what sustains it).
+    #[inline]
+    pub fn power(&self) -> u32 {
+        self.breadth as u32 * self.depth.max(1) as u32
+    }
 }
 
 // ───────────────────────────── episodic memory (the goal-derivation source, §ToM) ─────────────────────────────

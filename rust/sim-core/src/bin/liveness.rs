@@ -126,23 +126,23 @@ fn main() {
     );
     println!("  each town's dominant trade: {:?}", doms);
 
-    // Gods: town gods vs wild gods, by believer count. Wild gods grow by claiming souls out in the wild,
-    // so any wild power at all means wild faith has been carried back into the towns.
-    use sim_core::components::GOD_WILD;
-    let town_power: u32 = w.gods.iter().filter(|g| g.origin != GOD_WILD).map(|g| g.power).sum();
-    let wild_power: u32 = w.gods.iter().filter(|g| g.origin == GOD_WILD).map(|g| g.power).sum();
+    // Gods: settlement gods vs wild-site gods, by believer count. Wild gods grow by claiming souls out
+    // in the wild, so any wild believers at all means wild faith has been carried back into the towns.
+    use sim_core::components::DOMAIN_WILD_SITE;
+    let town_bel: u32 = w.gods.iter().filter(|g| g.domain != DOMAIN_WILD_SITE).map(|g| g.believers).sum();
+    let wild_bel: u32 = w.gods.iter().filter(|g| g.domain == DOMAIN_WILD_SITE).map(|g| g.believers).sum();
     let faithless = (0..w.n)
         .filter(|&i| w.alive[i] && w.faction[i] == Faction::Townsfolk as u8 && w.faith[i] == 0)
         .count();
-    println!("\nGODS (believer count):");
+    println!("\nGODS (believers | breadth x depth = power):");
     println!(
-        "  town gods: {}   |   wild gods: {}   |   faithless: {}",
-        town_power, wild_power, faithless
+        "  town-god believers: {}   |   wild-god believers: {}   |   faithless: {}",
+        town_bel, wild_bel, faithless
     );
     let mut gl: Vec<String> = Vec::new();
     for (gi, g) in w.gods.iter().enumerate() {
-        let kind = if g.origin == GOD_WILD { "wild" } else { "town" };
-        gl.push(format!("g{}:{}({})", gi + 1, g.power, kind));
+        let kind = if g.domain == DOMAIN_WILD_SITE { "wild" } else { "town" };
+        gl.push(format!("g{}:{}bel,{}x{}={}p({})", gi + 1, g.believers, g.breadth, g.depth, g.power(), kind));
     }
     println!("  per-god: {:?}", gl);
 }

@@ -1,8 +1,8 @@
-//! Faith / small gods (`systems/faith.rs`). A god's power is its believer count, so belief feeds back
-//! on itself (belief -> power -> contagion -> more belief). Two kinds of god compete for the same souls:
-//! TOWN gods seated at a settlement (they spread among residents) and WILD gods seated at a wilderness
-//! site (they claim souls who go out into the wild). `world.gods` is the registry; `faith[i]` (1-based)
-//! is the god agent `i` believes in (0 = NO_GOD).
+//! Faith / gods (`systems/faith.rs`). A god is sustained by belief (its `believers` count); the more
+//! believers, the more contagious it is. Functional power is breadth x depth (components::God); effects
+//! aren't wired yet, so this file only tracks belief. Two domains compete for souls today: SETTLEMENT
+//! gods (spread among a town's residents) and WILD_SITE gods seated in the wild (they claim souls who go
+//! out there). `world.gods` is the registry; `faith[i]` (1-based) is the god agent `i` believes (0 = NO_GOD).
 //!
 //! Passes (serial society phase, so M-invariant):
 //! - POWER: recompute each god's believer count (folded into the world hash).
@@ -19,7 +19,7 @@
 //! frozen column then applies. Rolls use a dedicated `world.faith_rng` so faith never perturbs the
 //! economy's `sim_rng`. No gold, no spawns.
 
-use crate::components::{Faction, GOD_TOWN, GOD_WILD, MAX_VISION, NO_GOD};
+use crate::components::{Faction, DOMAIN_SETTLEMENT, DOMAIN_WILD_SITE, MAX_VISION, NO_GOD};
 use crate::world::World;
 
 const TICK_EVERY: u32 = 3; // ticks between passes.
@@ -91,7 +91,7 @@ pub fn tick(world: &mut World) {
 
     let post = tally(world);
     for (gi, g) in world.gods.iter_mut().enumerate() {
-        g.power = post[gi + 1] as u32;
+        g.believers = post[gi + 1] as u32;
     }
 }
 
@@ -103,14 +103,14 @@ fn bootstrap(world: &mut World) {
         .gods
         .iter()
         .enumerate()
-        .filter(|(_, g)| g.origin == GOD_TOWN)
+        .filter(|(_, g)| g.domain == DOMAIN_SETTLEMENT)
         .map(|(gi, _)| (gi + 1) as u8)
         .collect();
     let wild_gods: Vec<u8> = world
         .gods
         .iter()
         .enumerate()
-        .filter(|(_, g)| g.origin == GOD_WILD)
+        .filter(|(_, g)| g.domain == DOMAIN_WILD_SITE)
         .map(|(gi, _)| (gi + 1) as u8)
         .collect();
     if town_gods.is_empty() {
@@ -141,8 +141,8 @@ fn wild_claim(world: &mut World, power: &[usize]) {
         .gods
         .iter()
         .enumerate()
-        .filter(|(_, g)| g.origin == GOD_WILD)
-        .map(|(gi, g)| (gi + 1, g.home, power[gi + 1] as f32))
+        .filter(|(_, g)| g.domain == DOMAIN_WILD_SITE)
+        .map(|(gi, g)| (gi + 1, g.seat.unwrap_or([0.0, 0.0]), power[gi + 1] as f32))
         .collect();
     if seats.is_empty() {
         return;
@@ -252,7 +252,7 @@ fn doubt(world: &mut World, power: &[usize]) {
             continue;
         }
         let mut lapse = DOUBT_CHANCE * (1.0 + power[g] as f32 / CROWD_DOUBT_AT);
-        if world.gods[g - 1].origin == GOD_WILD {
+        if world.gods[g - 1].domain == DOMAIN_WILD_SITE {
             let p = world.pos[i];
             let in_town = world
                 .town_centers
@@ -283,8 +283,8 @@ mod tests {
     #[test]
     fn worldgen_seats_town_and_wild_gods() {
         let w = World::spawn(0x60D5, 5000);
-        let town = w.gods.iter().filter(|g| g.origin == GOD_TOWN).count();
-        let wild = w.gods.iter().filter(|g| g.origin == GOD_WILD).count();
+        let town = w.gods.iter().filter(|g| g.domain == DOMAIN_SETTLEMENT).count();
+        let wild = w.gods.iter().filter(|g| g.domain == DOMAIN_WILD_SITE).count();
         assert!(town >= 1, "town gods are seated in the towns");
         assert!(wild >= 1, "wild gods are seated at wilderness sites");
     }
@@ -296,7 +296,7 @@ mod tests {
             .gods
             .iter()
             .enumerate()
-            .filter(|(_, g)| g.origin == GOD_TOWN)
+            .filter(|(_, g)| g.domain == DOMAIN_SETTLEMENT)
             .map(|(gi, _)| (gi + 1) as u8)
             .collect();
         assert_eq!(town_ids.iter().map(|&g| power_of(&w, g)).sum::<usize>(), 0);
@@ -314,8 +314,8 @@ mod tests {
             .gods
             .iter()
             .enumerate()
-            .find(|(_, g)| g.origin == GOD_WILD)
-            .map(|(gi, g)| (gi + 1, g.home))
+            .find(|(_, g)| g.domain == DOMAIN_WILD_SITE)
+            .map(|(gi, g)| (gi + 1, g.seat.unwrap_or([0.0, 0.0])))
             .expect("a wild god is seated");
         let stray = (0..w.n)
             .find(|&i| w.alive[i] && w.faction[i] == Faction::Townsfolk as u8)
@@ -350,7 +350,7 @@ mod tests {
         for &i in &towns {
             w.pos[i] = [0.0, 0.0];
         }
-        let g1 = w.gods.iter().position(|g| g.origin == GOD_TOWN).map(|p| (p + 1) as u8).unwrap();
+        let g1 = w.gods.iter().position(|g| g.domain == DOMAIN_SETTLEMENT).map(|p| (p + 1) as u8).unwrap();
         for &i in &towns[..towns.len() - 1] {
             w.faith[i] = g1;
         }

@@ -248,9 +248,12 @@ pub fn world_hash(w: &World) -> u64 {
     for c in &w.watch.captain {
         h = fold(h, &c.to_le_bytes());
     }
-    // Gods: each god's believer count.
+    // Gods: believer count + breadth/depth + active flag.
     for g in &w.gods {
-        h = fold(h, &g.power.to_le_bytes());
+        h = fold(h, &g.believers.to_le_bytes());
+        h = fold(h, &g.breadth.to_le_bytes());
+        h = fold(h, &g.depth.to_le_bytes());
+        h = fold(h, &[g.active as u8]);
     }
     h = fold(h, &w.defenses.shots.to_le_bytes());
     h = fold(h, &w.tropes.last_any_at.to_le_bytes());
