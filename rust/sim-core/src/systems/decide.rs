@@ -80,7 +80,7 @@ fn nearest_forage(nodes: &[[f32; 2]], from: [f32; 2]) -> [f32; 2] {
 /// Per-tick chance a WANDERLUST townsperson roams instead of working (the see-the-world drive).
 const WANDERLUST_PULL: f32 = 0.18;
 /// Base per-tick chance a wild-god's faithful answers the call to the wild (scaled by the god's depth).
-const FAITH_CALL: f32 = 0.16;
+const FAITH_CALL: f32 = 0.07;
 /// How near a believed monster/raider a RENOWN-seeker will charge it for glory (instead of fleeing).
 const GLORY_RANGE: f32 = 45.0;
 /// Anger past this (0..1) makes a provoked agent turn and fight a believed-hostile rather than flee.

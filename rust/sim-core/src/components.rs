@@ -561,22 +561,25 @@ pub const NO_GOD: u8 = 0; // faith sentinel (no faith). `faith[i]` is a 1-based 
 // does) are not wired yet — this is the data model.
 
 /// DomainKind — what a god has purview over (sets its breadth and what sustains it).
-pub const DOMAIN_SETTLEMENT: u8 = 0; // a town's residents
+pub const DOMAIN_SETTLEMENT: u8 = 0; // a town's residents (in-domain = town[i] == home_town)
 pub const DOMAIN_WILD_SITE: u8 = 1; // a wilderness place (claims souls who go into the wild)
-pub const DOMAIN_ACTIVITY: u8 = 2; // an activity (hunt/forge/harvest/trade) — in-domain = those doing it
-pub const DOMAIN_CONDITION: u8 = 3; // a condition (fear/grief/vengeance/luck) — in-domain = those in it
-pub const DOMAIN_EVENT: u8 = 4; // a recurring event (festival) — active only while it runs
-pub const DOMAIN_UNIVERSAL: u8 = 5; // always active, no seat (death/sun)
+pub const DOMAIN_WAR: u8 = 2; // those in combat (in-domain = a Fight goal) — seatless
+pub const DOMAIN_DREAD: u8 = 3; // the frightened (in-domain = afraid) — seatless
+pub const DOMAIN_COMFORT: u8 = 4; // the grieving (in-domain = mourning) — seatless
+pub const DOMAIN_FORTUNE: u8 = 5; // the wealthy (in-domain = rich) — seatless
+pub const DOMAIN_CRAFT: u8 = 6; // a trade's practitioners (in-domain = profession == domain_param)
+pub const DOMAIN_DEATH: u8 = 7; // universal — gains power on every death; no per-agent effect
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct God {
-    pub domain: u8,             // DomainKind
-    pub breadth: u16,          // coverage — how much of the world is in-domain
-    pub depth: u16,            // manipulation strength within the domain
+    pub domain: u8,             // DomainKind (DOMAIN_*)
+    pub breadth: u16,          // coverage — how many are in-domain (recomputed) — hashed
+    pub depth: u16,            // manipulation strength within the domain (drifts with belief) — hashed
     pub seat: Option<[f32; 2]>, // fixed anchor (None = free-roaming, not location-bound)
-    pub home_town: i16,        // the town/faction it is tied to (-1 = none)
+    pub home_town: i16,        // the town it is tied to (DOMAIN_SETTLEMENT), else -1
+    pub domain_param: u16,     // domain scoping (e.g. the profession for DOMAIN_CRAFT)
     pub believers: u32,        // the substance that sustains it (recomputed each pass) — hashed
-    pub active: bool,          // is its domain currently active? (event gods sleep when not) — hashed
+    pub active: bool,          // is its domain currently active? — hashed
 }
 
 impl God {

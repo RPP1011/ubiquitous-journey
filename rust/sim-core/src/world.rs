@@ -500,6 +500,7 @@ impl World {
                 depth: 2,                                       // a town patron acts broadly but shallowly
                 seat: Some(town_centers[t]),
                 home_town: t as i16,
+                domain_param: 0,
                 believers: 0,
                 active: true,
             });
@@ -523,6 +524,29 @@ impl World {
                 depth: 6,    // ...but it acts strongly within it
                 seat: Some(lair_pos[li]),
                 home_town: -1,
+                domain_param: 0,
+                believers: 0,
+                active: true,
+            });
+        }
+        // seatless condition/activity/universal gods — free-roaming, in-domain by STATE not place.
+        let free_gods: &[(u8, u16)] = &[
+            (crate::components::DOMAIN_WAR, 0),
+            (crate::components::DOMAIN_DREAD, 0),
+            (crate::components::DOMAIN_COMFORT, 0),
+            (crate::components::DOMAIN_FORTUNE, 0),
+            (crate::components::DOMAIN_DEATH, 0),
+            (crate::components::DOMAIN_CRAFT, 4), // the forge (Blacksmith)
+            (crate::components::DOMAIN_CRAFT, 1), // the plough (Farmer)
+        ];
+        for &(domain, param) in free_gods {
+            gods.push(crate::components::God {
+                domain,
+                breadth: 0,
+                depth: 4,
+                seat: None,
+                home_town: -1,
+                domain_param: param,
                 believers: 0,
                 active: true,
             });

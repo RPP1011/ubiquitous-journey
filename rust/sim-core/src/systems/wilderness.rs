@@ -24,7 +24,7 @@ const MONSTER_CAP_FRAC: f32 = 0.12;
 /// A floor so a tiny/depopulated world still has a few predators afield.
 const MONSTER_FLOOR: usize = 6;
 /// Units of wild-god power (breadth x depth) per extra horror it breeds at its lair.
-const POWER_PER_HORROR: u32 = 18;
+const POWER_PER_HORROR: u32 = 70;
 
 /// Top up each lair's garrison (one spawn per lair per pass, under a global cap). A new predator starts
 /// at its den and drifts toward the nearest settlement's edge — civilisation's standing wilderness threat.

@@ -144,10 +144,23 @@ fn main() {
         "  town-god believers: {}   |   wild-god believers: {}   |   faithless: {}",
         town_bel, wild_bel, faithless
     );
+    let dname = |d: u8| match d {
+        0 => "town",
+        1 => "wild",
+        2 => "war",
+        3 => "dread",
+        4 => "comfort",
+        5 => "fortune",
+        6 => "craft",
+        7 => "death",
+        _ => "?",
+    };
     let mut gl: Vec<String> = Vec::new();
     for (gi, g) in w.gods.iter().enumerate() {
-        let kind = if g.domain == DOMAIN_WILD_SITE { "wild" } else { "town" };
-        gl.push(format!("g{}:{}bel,{}x{}={}p({})", gi + 1, g.believers, g.breadth, g.depth, g.power(), kind));
+        gl.push(format!(
+            "g{}:{}bel {}x{}={}p({})",
+            gi + 1, g.believers, g.breadth, g.depth, g.power(), dname(g.domain)
+        ));
     }
     println!("  per-god: {:?}", gl);
 

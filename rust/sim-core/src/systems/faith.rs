@@ -19,7 +19,10 @@
 //! frozen column then applies. Rolls use a dedicated `world.faith_rng` so faith never perturbs the
 //! economy's `sim_rng`. No gold, no spawns.
 
-use crate::components::{Faction, DOMAIN_SETTLEMENT, DOMAIN_WILD_SITE, MAX_VISION, NO_GOD};
+use crate::components::{
+    Faction, God, GoalKind, DOMAIN_COMFORT, DOMAIN_CRAFT, DOMAIN_DREAD, DOMAIN_FORTUNE,
+    DOMAIN_SETTLEMENT, DOMAIN_WAR, DOMAIN_WILD_SITE, MAX_VISION, NO_GOD,
+};
 use crate::world::World;
 
 const TICK_EVERY: u32 = 3; // ticks between passes.
@@ -85,26 +88,46 @@ pub fn tick(world: &mut World) {
         bootstrap(world);
     } else {
         wild_claim(world, &power);
+        domain_draw(world, &power);
         spread(world, &power);
         doubt(world, &power);
     }
 
-    // DYNAMICS: a god's substance (believers) drives its breadth (reach ~ flock) and, more slowly, its
-    // depth (manipulation strength) — a thriving cult deepens, a fading one shallows. So power = breadth
-    // x depth tracks belief, and the effect a god has on the world grows with its following.
-    let post = tally(world);
+    // DYNAMICS: believers sustain a god; its BREADTH = how many are in its domain right now (the active
+    // reach), and its DEPTH (manipulation strength) drifts with the flock. So power = breadth x depth
+    // tracks belief AND how active the domain is, and a god migrates on the grid as both change.
+    let n_gods = world.gods.len();
+    let mut bel = vec![0u32; n_gods + 1];
+    let mut indom = vec![0u32; n_gods + 1];
+    for i in 0..world.n {
+        if !is_faithful_candidate(world, i) {
+            continue;
+        }
+        let g = world.faith[i] as usize;
+        if g == NO_GOD as usize || g > n_gods {
+            continue;
+        }
+        bel[g] += 1;
+        if in_domain(world, i, &world.gods[g - 1]) {
+            indom[g] += 1;
+        }
+    }
     for (gi, g) in world.gods.iter_mut().enumerate() {
-        let bel = post[gi + 1] as u32;
-        g.believers = bel;
-        // breadth + depth differ by KIND: a TOWN god is WIDE (reach ~ its whole flock) but SHALLOW;
-        // a WILD god is NARROW (a small domain) but DEEP (it manipulates hard within it). Both drift,
-        // so a god that gains/loses believers migrates on the breadth x depth grid.
-        let (breadth_target, depth_target) = if g.domain == GOD_WILD_DOMAIN {
-            ((bel / 4).min(u16::MAX as u32) as u16, if bel > 0 { (8 + bel / 40).clamp(8, DEPTH_MAX as u32) as u16 } else { 1 })
+        let b = bel[gi + 1];
+        g.believers = b;
+        // breadth = active reach. For most domains that is the in-domain count; a WILD god's reach is
+        // flock-based (bel/4) so its power is stable (the lair effect reads it) rather than swinging with
+        // how many happen to be in the wild this instant.
+        g.breadth = if g.domain == DOMAIN_WILD_SITE {
+            (b / 4).min(u16::MAX as u32) as u16
         } else {
-            (bel.min(u16::MAX as u32) as u16, (bel / 110).clamp(2, 8) as u16)
+            indom[gi + 1].min(u16::MAX as u32) as u16
         };
-        g.breadth = breadth_target;
+        let depth_target = match g.domain {
+            DOMAIN_SETTLEMENT => (b / 110).clamp(2, 8) as u16, // wide, shallow
+            DOMAIN_WILD_SITE => if b > 0 { (8 + b / 40).clamp(8, DEPTH_MAX as u32) as u16 } else { 1 }, // narrow, deep
+            _ => if b > 0 { (3 + b / 45).clamp(3, DEPTH_MAX as u32) as u16 } else { 1 },
+        };
         if g.depth < depth_target {
             g.depth += 1;
         } else if g.depth > depth_target {
@@ -113,24 +136,34 @@ pub fn tick(world: &mut World) {
     }
 }
 
-/// Alias for the wild-site domain (used in the depth/breadth dynamics above).
-const GOD_WILD_DOMAIN: u8 = DOMAIN_WILD_SITE;
-
-// ── EFFECTS: what worship DOES (depth-scaled). Belief changes how the faithful behave ──
-const EFFECT_EVERY: u32 = 3; // apply on the faith cadence.
+// ── DOMAINS: who is "in" a god's domain, and what worship DOES there (depth-scaled, mood-only) ──
+const EFFECT_EVERY: u32 = 3;
 const DEPTH_MAX: u16 = 14;
-const WILD_RESOLVE: f32 = 0.9; // a deep wild god floors its faithful's anger here (reckless aggression).
-const TOWN_RESOLVE: f32 = 0.42; // a town god gives courage to DEFEND: a modest anger floor, so a struck
-                                // believer (a strike adds ~0.35) crosses the 0.5 fight bar and stands
-                                // its ground instead of fleeing — pious towns resist raids better.
-const TOWN_JOY: f32 = 0.55; // a deep town god floors its faithful's contentment here.
+const FORTUNE_RICH: u32 = 40_000; // wealth_cue above this counts as in the Fortune god's domain.
+const WILD_RESOLVE: f32 = 0.9; // wild faith floors anger this high (reckless aggression).
+const TOWN_RESOLVE: f32 = 0.42; // town faith gives courage to DEFEND (a struck believer crosses 0.5 → fights).
+const TOWN_JOY: f32 = 0.55;
 
-/// Apply each god's effect to its believers, scaled by the god's depth. A WILD god fills the faithful
-/// with battle-resolve (anger floor + fearlessness) so they STAND AND FIGHT threats instead of fleeing —
-/// the dark faith is a violent, destabilising force. A TOWN god gives contentment + courage (joy floor,
-/// less fear) — resilient townsfolk. Mood-only ⇒ economy-safe (it colours the fight/flee reflex, never
-/// food/work). Serial society pass ⇒ deterministic; the floors are re-applied each pass so decay can't
-/// erase them while the faith holds.
+/// Is agent `i` currently within `god`'s domain? (Belief sustains the god; this is its active REACH.)
+fn in_domain(w: &World, i: usize, god: &God) -> bool {
+    match god.domain {
+        DOMAIN_SETTLEMENT => (w.town[i] as i16) == god.home_town,
+        DOMAIN_WILD_SITE => {
+            let p = w.pos[i];
+            w.town_centers.iter().all(|c| (p[0] - c[0]).powi(2) + (p[1] - c[1]).powi(2) > WILD_EDGE2)
+        }
+        DOMAIN_WAR => matches!(w.goal[i].kind(), GoalKind::Fight),
+        DOMAIN_DREAD => w.mood[i].fear > 0.25,
+        DOMAIN_COMFORT => w.mood[i].grief > 0.15,
+        DOMAIN_FORTUNE => w.wealth[i] as u32 > FORTUNE_RICH,
+        DOMAIN_CRAFT => w.profession[i] == god.domain_param as u8,
+        _ => false, // DOMAIN_DEATH and any unhandled kind: no per-agent reach
+    }
+}
+
+/// Apply each god's effect (depth-scaled) to the faithful who are CURRENTLY in its domain. Mood-only ⇒
+/// economy-safe (it colours the fight/flee reflex + disposition, never food/work). Serial ⇒ deterministic;
+/// floors are re-applied each pass so mood-decay can't erase them while the faith holds.
 pub fn effects(world: &mut World) {
     if world.tick % EFFECT_EVERY != 0 || world.gods.is_empty() {
         return;
@@ -144,17 +177,42 @@ pub fn effects(world: &mut World) {
             continue;
         }
         let god = world.gods[g - 1];
-        let frac = god.depth as f32 / DEPTH_MAX as f32; // 0..1 manipulation strength
+        if !in_domain(world, i, &god) {
+            continue;
+        }
+        let frac = god.depth as f32 / DEPTH_MAX as f32;
+        let m = &mut world.mood[i];
         match god.domain {
             DOMAIN_WILD_SITE => {
-                let resolve = WILD_RESOLVE * frac;
-                world.mood[i].anger = world.mood[i].anger.max(resolve);
-                world.mood[i].fear *= 1.0 - 0.5 * frac;
+                m.anger = m.anger.max(WILD_RESOLVE * frac);
+                m.fear *= 1.0 - 0.5 * frac;
             }
             DOMAIN_SETTLEMENT => {
-                world.mood[i].joy = world.mood[i].joy.max(TOWN_JOY * frac);
-                world.mood[i].anger = world.mood[i].anger.max(TOWN_RESOLVE * frac);
-                world.mood[i].fear *= 1.0 - 0.25 * frac;
+                m.joy = m.joy.max(TOWN_JOY * frac);
+                m.anger = m.anger.max(TOWN_RESOLVE * frac);
+                m.fear *= 1.0 - 0.25 * frac;
+            }
+            DOMAIN_WAR => {
+                // in_domain = already fighting, so this only deepens an existing fight (no new combat
+                // pulled out of nowhere): relentless resolve + pride.
+                m.anger = m.anger.max(0.7 * frac);
+                m.pride = m.pride.max(0.4 * frac);
+            }
+            DOMAIN_DREAD => {
+                // a mild dread (kept small: a strong fear floor would rout the faithful off their work
+                // and starve the marginal economy). Just enough to fray nerves.
+                m.fear = m.fear.max(0.3 * frac);
+            }
+            DOMAIN_COMFORT => {
+                m.grief *= 1.0 - frac; // consoles the bereaved
+                m.fear *= 1.0 - 0.5 * frac;
+                m.joy = m.joy.max(0.4 * frac);
+            }
+            DOMAIN_FORTUNE => {
+                m.pride = m.pride.max(0.5 * frac); // smug, harmless (a market edge is a future hook)
+            }
+            DOMAIN_CRAFT => {
+                m.pride = m.pride.max(0.4 * frac); // a proud craftsman (a yield bonus is a future hook)
             }
             _ => {}
         }
@@ -179,11 +237,23 @@ fn bootstrap(world: &mut World) {
         .filter(|(_, g)| g.domain == DOMAIN_WILD_SITE)
         .map(|(gi, _)| (gi + 1) as u8)
         .collect();
+    // every OTHER god (war/dread/comfort/fortune/craft/death) gets a small starting cult too, so the
+    // whole pantheon contends; spread/claim then grow whichever the world feeds.
+    let other_gods: Vec<u8> = world
+        .gods
+        .iter()
+        .enumerate()
+        .filter(|(_, g)| g.domain != DOMAIN_SETTLEMENT && g.domain != DOMAIN_WILD_SITE)
+        .map(|(gi, _)| (gi + 1) as u8)
+        .collect();
     if town_gods.is_empty() {
         return;
     }
+    let other_per_town = other_gods.len() * 2; // ~2 believers of each other-god seeded per town
     let mut town_n = vec![0usize; nt];
     let mut wild_n = vec![0usize; nt];
+    let mut other_n = vec![0usize; nt];
+    let mut other_rot = 0usize;
     for i in 0..world.n {
         if !is_faithful_candidate(world, i) || world.faith[i] != NO_GOD {
             continue;
@@ -195,7 +265,49 @@ fn bootstrap(world: &mut World) {
         } else if !wild_gods.is_empty() && wild_n[t] < WILD_CULT_FLOCK {
             world.faith[i] = wild_gods[t % wild_gods.len()];
             wild_n[t] += 1;
+        } else if !other_gods.is_empty() && other_n[t] < other_per_town {
+            world.faith[i] = other_gods[other_rot % other_gods.len()];
+            other_rot += 1;
+            other_n[t] += 1;
         }
+    }
+}
+
+/// DOMAIN-DRIVEN CONVERSION: a FAITHLESS soul living an experience is drawn to the god of that experience
+/// — a fighter to the war god, the frightened to the dread god, the rich to fortune, the bereaved to
+/// comfort, a tradesman to his craft's patron. So a condition/activity god recruits from its own domain
+/// (the niche the generic neighbour-spread can't give it). Settlement + wild gods recruit by their own
+/// passes; this covers the rest. Chance rises with the god's power. Deterministic (id order + faith_rng).
+fn domain_draw(world: &mut World, power: &[usize]) {
+    let meta: Vec<(usize, f32)> = world
+        .gods
+        .iter()
+        .enumerate()
+        .filter(|(_, g)| {
+            g.domain != DOMAIN_SETTLEMENT && g.domain != DOMAIN_WILD_SITE && g.domain != NO_GOD
+        })
+        .map(|(gi, _)| (gi + 1, power[gi + 1] as f32))
+        .collect();
+    if meta.is_empty() {
+        return;
+    }
+    let mut conv: Vec<(usize, u8)> = Vec::new();
+    for i in 0..world.n {
+        if !is_faithful_candidate(world, i) || world.faith[i] != NO_GOD {
+            continue; // only the unaffiliated are drawn (no faith-stealing here)
+        }
+        for &(gid, flock) in &meta {
+            if in_domain(world, i, &world.gods[gid - 1]) {
+                let chance = (CLAIM_BASE + flock.sqrt() * CLAIM_POWER_BONUS).min(CLAIM_CHANCE_MAX);
+                if world.faith_rng.next_f32() < chance {
+                    conv.push((i, gid as u8));
+                }
+                break; // one draw per soul (the lowest-id domain it qualifies for)
+            }
+        }
+    }
+    for (i, g) in conv {
+        world.faith[i] = g;
     }
 }
 
