@@ -29,9 +29,14 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let n: usize = args.next().and_then(|s| s.parse().ok()).unwrap_or(5000);
     let ticks: u32 = args.next().and_then(|s| s.parse().ok()).unwrap_or(3000);
+    let nogods = args.next().as_deref() == Some("nogods"); // A/B: clear the pantheon to measure its effect
     let seed = 0xC00D19u64;
 
     let mut w = World::spawn(seed, n);
+    if nogods {
+        w.gods.clear(); // no gods => faith bootstrap/effects do nothing (the control run)
+        println!("[A/B CONTROL: no gods]");
+    }
     let nt = w.town_centers.len();
     let pop0 = per_town(&w);
     let tf0 = townsfolk(&w);

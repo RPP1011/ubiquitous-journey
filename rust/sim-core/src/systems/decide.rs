@@ -79,6 +79,8 @@ fn nearest_forage(nodes: &[[f32; 2]], from: [f32; 2]) -> [f32; 2] {
 
 /// Per-tick chance a WANDERLUST townsperson roams instead of working (the see-the-world drive).
 const WANDERLUST_PULL: f32 = 0.18;
+/// Base per-tick chance a wild-god's faithful answers the call to the wild (scaled by the god's depth).
+const FAITH_CALL: f32 = 0.16;
 /// How near a believed monster/raider a RENOWN-seeker will charge it for glory (instead of fleeing).
 const GLORY_RANGE: f32 = 45.0;
 /// Anger past this (0..1) makes a provoked agent turn and fight a believed-hostile rather than flee.
@@ -88,12 +90,14 @@ pub fn decide(world: &mut World) {
     // per-town geography (small Vecs cloned out so the `*world` destructure can borrow the rest freely).
     let markets = world.markets.clone();
     let town_centers = world.town_centers.clone();
+    let gods = world.gods.clone(); // read-only: wild-faithful are drawn toward their god's seat when idle
     let now = world.tick;
     let base_price = world.base_price;
 
     let World {
         ref town,
         ref town_radius,
+        ref faith,
         ref needs,
         ref mood,
         ref beliefs,
@@ -375,6 +379,24 @@ pub fn decide(world: &mut World) {
             let prof = profession[i];
             if prof != Profession::None as u8 && townsfolk {
                 let amb = ambition[i];
+                // THE CALL OF THE WILD: a wild-god's faithful sometimes abandons its work to pilgrimage
+                // toward its god's seat, scaled by the god's depth (a deeper god calls more insistently).
+                // Out there it meets what dwells in the wild. A modest chance ⇒ economy-safe, like wanderlust.
+                let fg = faith[i] as usize;
+                if fg != 0 && fg <= gods.len() && gods[fg - 1].domain == crate::components::DOMAIN_WILD_SITE
+                {
+                    let pull = FAITH_CALL * (gods[fg - 1].depth as f32 / 14.0);
+                    if let Some(seat) = gods[fg - 1].seat {
+                        if my_rng.next_f32() < pull {
+                            let to = [
+                                pos[i][0] + (seat[0] - pos[i][0]) * 0.4,
+                                pos[i][1] + (seat[1] - pos[i][1]) * 0.4,
+                            ];
+                            *g = Goal::Wander { to };
+                            return;
+                        }
+                    }
+                }
                 if amb == crate::components::AMB_WANDERLUST && my_rng.next_f32() < WANDERLUST_PULL {
                     let r = town_rad * my_rng.next_f32().sqrt();
                     let a = my_rng.next_f32() * std::f32::consts::TAU;
@@ -455,6 +477,22 @@ pub fn decide(world: &mut World) {
                 }
             }
 
+            // WILD-FAITHFUL are drawn toward their god's seat (out in the wild) when idle — the dark faith
+            // lures its own out of safety, where they meet what dwells there. Idle-tier ⇒ economy-safe.
+            let fg = faith[i] as usize;
+            if fg != 0
+                && fg <= gods.len()
+                && gods[fg - 1].domain == crate::components::DOMAIN_WILD_SITE
+            {
+                if let Some(seat) = gods[fg - 1].seat {
+                    let to = [
+                        pos[i][0] + (seat[0] - pos[i][0]) * 0.3,
+                        pos[i][1] + (seat[1] - pos[i][1]) * 0.3,
+                    ];
+                    *g = Goal::Wander { to };
+                    return;
+                }
+            }
             // …otherwise amble: a random point near the town centre (own rng stream; uniform over disc).
             let r = town_rad * my_rng.next_f32().sqrt();
             let a = my_rng.next_f32() * std::f32::consts::TAU;

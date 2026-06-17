@@ -102,7 +102,7 @@ pub fn tick(world: &mut World) {
         let (breadth_target, depth_target) = if g.domain == GOD_WILD_DOMAIN {
             ((bel / 4).min(u16::MAX as u32) as u16, if bel > 0 { (8 + bel / 40).clamp(8, DEPTH_MAX as u32) as u16 } else { 1 })
         } else {
-            (bel.min(u16::MAX as u32) as u16, (bel / 120).clamp(1, 5) as u16)
+            (bel.min(u16::MAX as u32) as u16, (bel / 110).clamp(2, 8) as u16)
         };
         g.breadth = breadth_target;
         if g.depth < depth_target {
@@ -119,7 +119,10 @@ const GOD_WILD_DOMAIN: u8 = DOMAIN_WILD_SITE;
 // ── EFFECTS: what worship DOES (depth-scaled). Belief changes how the faithful behave ──
 const EFFECT_EVERY: u32 = 3; // apply on the faith cadence.
 const DEPTH_MAX: u16 = 14;
-const WILD_RESOLVE: f32 = 0.9; // a deep wild god floors its faithful's anger here (>=0.5 => they FIGHT).
+const WILD_RESOLVE: f32 = 0.9; // a deep wild god floors its faithful's anger here (reckless aggression).
+const TOWN_RESOLVE: f32 = 0.42; // a town god gives courage to DEFEND: a modest anger floor, so a struck
+                                // believer (a strike adds ~0.35) crosses the 0.5 fight bar and stands
+                                // its ground instead of fleeing — pious towns resist raids better.
 const TOWN_JOY: f32 = 0.55; // a deep town god floors its faithful's contentment here.
 
 /// Apply each god's effect to its believers, scaled by the god's depth. A WILD god fills the faithful
@@ -150,6 +153,7 @@ pub fn effects(world: &mut World) {
             }
             DOMAIN_SETTLEMENT => {
                 world.mood[i].joy = world.mood[i].joy.max(TOWN_JOY * frac);
+                world.mood[i].anger = world.mood[i].anger.max(TOWN_RESOLVE * frac);
                 world.mood[i].fear *= 1.0 - 0.25 * frac;
             }
             _ => {}

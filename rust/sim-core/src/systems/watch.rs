@@ -46,6 +46,8 @@ const PER_THREAT_MILLI: usize = 700;
 const THREAT_RANGE: f32 = 64.0;
 /// Hard cap on watch size (`WATCH.max`).
 const MAX_WATCH: usize = 8;
+/// Settlement-god believers per extra watchman a town can muster (pious towns guard harder).
+const FAITH_PER_WATCH: usize = 45;
 /// Min `risk_tolerance` to volunteer — the brave answer the call (`WATCH.recruitRisk`).
 const RECRUIT_RISK: f32 = 0.45;
 /// Ticks of CALM before a surge watchman is released, one per pass (`WATCH.standDownAfter`).
@@ -69,6 +71,20 @@ pub fn tick(world: &mut World) {
         st.captain.resize(n_towns, -1);
     }
 
+    // FAITH: a town's settlement-god believers swell its watch (pious towns guard their core harder).
+    let mut faithful = vec![0usize; n_towns];
+    for i in 0..world.n {
+        if world.alive[i] && world.faction[i] == Faction::Townsfolk as u8 {
+            let g = world.faith[i] as usize;
+            if g != 0
+                && g <= world.gods.len()
+                && world.gods[g - 1].domain == crate::components::DOMAIN_SETTLEMENT
+            {
+                faithful[(world.town[i] as usize).min(n_towns - 1)] += 1;
+            }
+        }
+    }
+
     // each town guards its OWN core from its OWN townsfolk, with its own hysteresis + captain.
     for t in 0..n_towns {
         let threat = threat_count(world, t);
@@ -76,8 +92,10 @@ pub fn tick(world: &mut World) {
         // hysteresis: any threat resets THIS town's calm timer; otherwise calm accrues by the interval.
         st.calm[t] = if threat > 0 { 0 } else { st.calm[t].saturating_add(EVERY) };
 
-        // muster target swells with the threat, capped (TS `base + round(threat*perThreat)`, clamped).
-        let target = (BASE + (threat * PER_THREAT_MILLI + 500) / 1000).min(MAX_WATCH);
+        // muster target swells with the threat AND the town's faith (a pious town raises a bigger watch
+        // and tolerates a higher ceiling), capped.
+        let fb = faithful[t] / FAITH_PER_WATCH;
+        let target = (BASE + fb + (threat * PER_THREAT_MILLI + 500) / 1000).min(MAX_WATCH + fb);
         let have = watch_count(world, t);
 
         if have < target {
