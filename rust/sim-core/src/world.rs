@@ -1139,7 +1139,8 @@ impl World {
                         _ => {}
                     }
                 }
-                Intent::Deed { actor, verb, magnitude, target } => {
+                Intent::Deed { actor, target, magnitude, truth, .. } => {
+                    use crate::tags::Tag;
                     let actor = actor as usize;
                     if actor >= self.n {
                         continue;
@@ -1147,11 +1148,14 @@ impl World {
                     // fold the deed into the actor's narrative-signal tallies (the doc-13 `foldDeed`):
                     // theft (rob), gift (give/pay). Kills are folded in the Strike merge above. Makes
                     // the signals catalog LIVE (observer telemetry; deterministic serial own-write).
-                    let dtag = match verb {
-                        12 => Some(crate::components::DeedTag::Theft),
-                        10 | 11 => Some(crate::components::DeedTag::Gift),
-                        14 => Some(crate::components::DeedTag::Rescue),
-                        _ => None,
+                    let dtag = if truth & Tag::Rob.bit() != 0 {
+                        Some(crate::components::DeedTag::Theft)
+                    } else if truth & Tag::Give.bit() != 0 {
+                        Some(crate::components::DeedTag::Gift)
+                    } else if truth & Tag::Free.bit() != 0 {
+                        Some(crate::components::DeedTag::Rescue)
+                    } else {
+                        None
                     };
                     if let Some(t) = dtag {
                         crate::signals::fold_deed(&mut self.signals[actor], t, self.tick);
@@ -1159,7 +1163,7 @@ impl World {
                     // a successful ROB (deed verb 12, from `systems::act`) stamps the robber's `Robbed`
                     // marker about the mark — the `_slain`-style signal that SETTLES the steal intention
                     // (`Atom::Took`). Serial own-write ⇒ deterministic.
-                    if verb == 12 && (target as usize) < self.n && target as usize != actor {
+                    if truth & Tag::Rob.bit() != 0 && (target as usize) < self.n && target as usize != actor {
                         self.memory[actor].record(Episode {
                             kind: EpisodeKind::Robbed as u8,
                             place: 0,
@@ -1188,7 +1192,7 @@ impl World {
                     // a LOOT deed (act verb 13) stamps the looter's `Looted` marker about the corpse —
                     // the marker that SETTLES the loot intention (like `Robbed` for the steal). Recovers
                     // the fallen's purse into circulation (the act `Hand` moved it conserved). Own-write.
-                    if verb == 13 && (target as usize) < self.n && target as usize != actor {
+                    if truth & Tag::Loot.bit() != 0 && (target as usize) < self.n && target as usize != actor {
                         self.memory[actor].record(Episode {
                             kind: EpisodeKind::Looted as u8,
                             place: 0,
@@ -1203,7 +1207,7 @@ impl World {
                     // a FREE deed (act verb 14) cuts a captive's bonds: release the target (captive_of →
                     // free), stamp the rescuer's `Freed` marker (settles its rescue intention), and clear
                     // the rescuer's "captive" belief flag about the freed soul. Serial ⇒ deterministic.
-                    if verb == 14 && (target as usize) < self.n && target as usize != actor {
+                    if truth & Tag::Free.bit() != 0 && (target as usize) < self.n && target as usize != actor {
                         let t = target as usize;
                         if self.captive_of[t] != CAPTIVE_NONE {
                             self.captive_of[t] = CAPTIVE_NONE;
@@ -1227,7 +1231,7 @@ impl World {
                     // a GIVE/PAY deed (act verbs 10/11) stamps the donor's `Gave` marker (settles its
                     // donate/repay) AND a `Succoured` memory on the RECIPIENT (who may repay later) —
                     // the alms→succoured→repay chain. Serial own-writes ⇒ deterministic.
-                    if (verb == 10 || verb == 11) && (target as usize) < self.n && target as usize != actor {
+                    if truth & Tag::Give.bit() != 0 && (target as usize) < self.n && target as usize != actor {
                         self.memory[actor].record(Episode {
                             kind: EpisodeKind::Gave as u8,
                             place: 0,
@@ -1266,7 +1270,7 @@ impl World {
                     // The periodic decay + class-match + XP routing then runs in `progression::tick`.
                     crate::systems::progression::fold_deed(
                         &mut self.progression[actor],
-                        verb,
+                        truth,
                         magnitude,
                     );
                 }
@@ -2725,7 +2729,7 @@ mod tests {
         w.pos[recip] = [1.0, 0.0];
         w.pos[near] = [5.0, 0.0]; // within witness range
         w.pos[far] = [400.0, 0.0]; // far out of sight
-        w.intents.push(Intent::Deed { actor: giver as u32, verb: 10, magnitude: 1, target: recip as u32 });
+        w.intents.push(Intent::deed(giver as u32, recip as u32, 1, crate::tags::Tag::Give.bit(), 0, 0));
         w.drain_intents();
 
         let rb = w.beliefs[recip].find(giver as u32).expect("the beneficiary holds a belief about the giver");

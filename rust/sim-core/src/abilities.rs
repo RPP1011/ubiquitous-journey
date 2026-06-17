@@ -28,6 +28,13 @@ use crate::intent::Intent;
 use crate::tags::Tag;
 use crate::world::World;
 
+/// A cast deed: the action carries the ability's own tag plus `Cast` (believed == truth for a cast).
+#[inline]
+fn cast_deed(actor: u32, target: u32, magnitude: u16, grants_tag: u8) -> Intent {
+    let truth = (1u64 << grants_tag) | Tag::Cast.bit();
+    Intent::Deed { actor, target, magnitude, truth, believed: truth, motive: 0, outcome: crate::tags::outcome::SUCCESS }
+}
+
 // ───────────────────────────── the IR (port of `ir.ts`) ─────────────────────────────
 
 /// The effect op (`EffectOp` whitelist in `ir.ts`). Numeric so a spec is `Copy`/inline.
@@ -632,12 +639,7 @@ pub fn cast(world: &mut World) {
                 if let Some(spec) = first_known(known, |s| s.is_self_support()) {
                     apply_self_support(cb, &spec); // own-write to the caster's combat row
                     *cd = spec.header.cooldown;
-                    emit.push(Intent::Deed {
-                        actor: i as u32,
-                        verb: spec.grants_tag as u8,
-                        magnitude: 1,
-                        target: i as u32,
-                    });
+                    emit.push(cast_deed(i as u32, i as u32, 1, spec.grants_tag as u8));
                     return emit;
                 }
             }
@@ -651,12 +653,7 @@ pub fn cast(world: &mut World) {
                     let dmg = off.damage_of() * mult;
                     *cd = off.header.cooldown;
                     emit.push(Intent::Strike { from: i as u32, to, dmg });
-                    emit.push(Intent::Deed {
-                        actor: i as u32,
-                        verb: off.grants_tag as u8,
-                        magnitude: dmg.max(0.0) as u16,
-                        target: to,
-                    });
+                    emit.push(cast_deed(i as u32, to, dmg.max(0.0) as u16, off.grants_tag as u8));
                     // CONTROL OPS: any stun/slow/knockback/expose effect the offensive ability carries is
                     // applied to the same target (the ability DSL's debuff ops — e.g. frost_bolt's slow).
                     for e in off.effects() {
@@ -678,12 +675,7 @@ pub fn cast(world: &mut World) {
                                 emit.push(a);
                             }
                         }
-                        emit.push(Intent::Deed {
-                            actor: i as u32,
-                            verb: db.grants_tag as u8,
-                            magnitude: 0,
-                            target: to,
-                        });
+                        emit.push(cast_deed(i as u32, to, 0, db.grants_tag as u8));
                     }
                 }
             }
@@ -704,12 +696,7 @@ pub fn cast(world: &mut World) {
                             *tbuff = now + TRADE_BUFF_TICKS;
                         }
                         emit.push(Intent::Influence { from: i as u32, to, warm });
-                        emit.push(Intent::Deed {
-                            actor: i as u32,
-                            verb: soc.grants_tag as u8,
-                            magnitude: 1,
-                            target: to,
-                        });
+                        emit.push(cast_deed(i as u32, to, 1, soc.grants_tag as u8));
                     }
                 }
             }
@@ -731,12 +718,7 @@ pub fn cast(world: &mut World) {
                             b.confidence = b.confidence.max(58_000); // now KNOWN, first-hand-firm
                         }
                         *cd = scry.header.cooldown;
-                        emit.push(Intent::Deed {
-                            actor: i as u32,
-                            verb: scry.grants_tag as u8,
-                            magnitude: 1,
-                            target: bel.bodies[bix].subject,
-                        });
+                        emit.push(cast_deed(i as u32, bel.bodies[bix].subject, 1, scry.grants_tag as u8));
                     }
                 }
             }
@@ -751,12 +733,7 @@ pub fn cast(world: &mut World) {
                         if *inv < CRAFT_BOOST_CAP {
                             *inv = (*inv + CRAFT_BOOST_UNITS).min(CRAFT_BOOST_CAP);
                             *cd = cb_spec.header.cooldown;
-                            emit.push(Intent::Deed {
-                                actor: i as u32,
-                                verb: cb_spec.grants_tag as u8,
-                                magnitude: CRAFT_BOOST_UNITS as u16,
-                                target: i as u32,
-                            });
+                            emit.push(cast_deed(i as u32, i as u32, CRAFT_BOOST_UNITS as u16, cb_spec.grants_tag as u8));
                         }
                     }
                 }

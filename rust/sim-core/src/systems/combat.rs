@@ -147,11 +147,27 @@ pub fn resolve(world: &mut World) {
             // emit BOTH the strike (applied by the deterministic merge) and a deed (progression).
             Some(StrikePair {
                 strike: Intent::Strike { from: i as u32, to, dmg },
-                deed: Intent::Deed {
-                    actor: i as u32,
-                    verb: VERB_STRIKE,
-                    magnitude: dmg as u16,
-                    target: to,
+                deed: if to >= crate::world::PERCEPT_ID_BASE {
+                    // the epistemic gap in ACTION: the striker BELIEVES it struck a person (Melee) but
+                    // truly only damaged a mind-less prop (Vandalize). believed != truth.
+                    Intent::Deed {
+                        actor: i as u32,
+                        target: to,
+                        magnitude: dmg as u16,
+                        truth: crate::tags::Tag::Vandalize.bit(),
+                        believed: crate::tags::Tag::Melee.bit() | crate::tags::Tag::Risk.bit(),
+                        motive: 0,
+                        outcome: crate::tags::outcome::SUCCESS,
+                    }
+                } else {
+                    Intent::deed(
+                        i as u32,
+                        to,
+                        dmg as u16,
+                        crate::tags::Tag::Melee.bit() | crate::tags::Tag::Risk.bit(),
+                        0,
+                        crate::tags::outcome::SUCCESS,
+                    )
                 },
             })
         })

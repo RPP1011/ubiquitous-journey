@@ -11,8 +11,12 @@ pub enum Intent {
     Transfer { from: u32, to: u32, good: u8, qty: i32, price: i64 },
     /// `from` strikes `to` for `dmg`. Combat resolution.
     Strike { from: u32, to: u32, dmg: f32 },
-    /// A witnessed/published deed (actor, verb tag, magnitude) — fed to progression/witness folds.
-    Deed { actor: u32, verb: u8, magnitude: u16, target: u32 },
+    /// A witnessed/published deed — a multi-faceted tagged action fed to progression / signals / memory /
+    /// (later) god-domains. `truth` = the ground-truth action tags (what really happened); `believed` =
+    /// the actor's-perspective tags (what it thought it was doing — usually == truth, but e.g. striking
+    /// a percept believing it a person carries Melee in `believed`, not `truth`); `motive` = a `tags::
+    /// motive` bitset (why); `outcome` = a `tags::outcome` bitset (the result). Each is "as many as apply".
+    Deed { actor: u32, target: u32, magnitude: u16, truth: u64, believed: u64, motive: u32, outcome: u32 },
     /// A one-way CONSERVED handover: move `gold` (minor units) and/or `qty` of commodity `good` from
     /// `from` to `to` (only what `from` actually holds). The resolver's `deliverTo`/`take` as an
     /// intent — the primitive behind give/pay (from=self) and rob/loot (from=victim) and teach (tuition).
@@ -28,6 +32,13 @@ pub enum Intent {
 }
 
 impl Intent {
+    /// Build a Deed whose believed action matches the truth (the common case — no perception gap).
+    /// `truth` is a `Tag::bit()` OR-set; `motive`/`outcome` are `tags::motive`/`tags::outcome` bitsets.
+    #[inline]
+    pub fn deed(actor: u32, target: u32, magnitude: u16, truth: u64, motive: u32, outcome: u32) -> Intent {
+        Intent::Deed { actor, target, magnitude, truth, believed: truth, motive, outcome }
+    }
+
     /// The deterministic merge sort key: (target, source, discriminant). Same key ⇒ FIFO of push,
     /// which is itself deterministic because the parallel phase visits agents 0..n.
     #[inline]

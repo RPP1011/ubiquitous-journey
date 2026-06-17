@@ -13,6 +13,7 @@ use rayon::prelude::*;
 
 use crate::components::{Goal, InteractVerb};
 use crate::intent::Intent;
+use crate::tags::{motive, outcome, Tag};
 use crate::world::World;
 
 /// Melee/handover reach (believed-pos to target), matching combat's `REACH`.
@@ -63,19 +64,19 @@ pub fn act(world: &mut World) {
                         // hand a good to the target (only if I hold one — Hand clamps anyway).
                         if econ[i].inventory[GIFT_GOOD as usize] >= GIFT_QTY {
                             emit.push(Intent::Hand { from: me, to: target, gold: 0, good: GIFT_GOOD, qty: GIFT_QTY });
-                            emit.push(Intent::Deed { actor: me, verb: VERB_GIVE, magnitude: GIFT_QTY as u16, target });
+                            emit.push(Intent::deed(me, target, GIFT_QTY as u16, Tag::Give.bit(), motive::MERCY, outcome::SUCCESS | outcome::GAINED));
                         }
                     }
                     v if v == InteractVerb::Pay as u8 => {
                         if econ[i].gold >= PAY_AMOUNT {
                             emit.push(Intent::Hand { from: me, to: target, gold: PAY_AMOUNT, good: 0, qty: 0 });
-                            emit.push(Intent::Deed { actor: me, verb: VERB_PAY, magnitude: 1, target });
+                            emit.push(Intent::deed(me, target, 1, Tag::Give.bit() | Tag::Repay.bit(), motive::DUTY, outcome::SUCCESS));
                         }
                     }
                     v if v == InteractVerb::Rob as u8 => {
                         // take coin from the target by force (Hand clamps to the victim's purse).
                         emit.push(Intent::Hand { from: target, to: me, gold: ROB_AMOUNT, good: 0, qty: 0 });
-                        emit.push(Intent::Deed { actor: me, verb: VERB_ROB, magnitude: 1, target });
+                        emit.push(Intent::deed(me, target, 1, Tag::Rob.bit() | Tag::Steal.bit() | Tag::Stealth.bit() | Tag::Risk.bit(), motive::GREED, outcome::ROBBED | outcome::GAINED | outcome::SUCCESS));
                     }
                     v if v == InteractVerb::Loot as u8 => {
                         // strip a fallen target's whole purse.
@@ -83,14 +84,14 @@ pub fn act(world: &mut World) {
                             let purse = econ[t].gold;
                             if purse > 0 {
                                 emit.push(Intent::Hand { from: target, to: me, gold: purse, good: 0, qty: 0 });
-                                emit.push(Intent::Deed { actor: me, verb: VERB_LOOT, magnitude: 1, target });
+                                emit.push(Intent::deed(me, target, 1, Tag::Loot.bit() | Tag::Stealth.bit(), motive::GREED, outcome::GAINED | outcome::SUCCESS));
                             }
                         }
                     }
                     v if v == InteractVerb::Free as u8 => {
                         // cut a captive's bonds (only if the target is actually held — truth read).
                         if captive_of[t] != crate::world::CAPTIVE_NONE {
-                            emit.push(Intent::Deed { actor: me, verb: VERB_FREE, magnitude: 1, target });
+                            emit.push(Intent::deed(me, target, 1, Tag::Free.bit() | Tag::Rescue.bit(), motive::MERCY | motive::LOYALTY, outcome::FREED | outcome::SUCCESS));
                         }
                     }
                     _ => {} // wreck: dormant until building state lands.

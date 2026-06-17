@@ -21,7 +21,22 @@
 
 use crate::components::{BeliefTable, Commodity, Economy, Faction, Goal, GoalKind, N_COMMODITIES};
 use crate::intent::Intent;
+use crate::tags::{motive, outcome, Tag};
 use crate::world::World;
+
+/// The action tag(s) for producing/gathering commodity `g` (Food→Farming, Tool→Smithing+Crafting, …).
+#[inline]
+fn good_tag(g: usize) -> u64 {
+    match g {
+        0 => Tag::Farming.bit(),
+        1 => Tag::Woodcut.bit(),
+        2 => Tag::Mining.bit(),
+        3 => Tag::Smithing.bit() | Tag::Crafting.bit(),
+        4 => Tag::Forage.bit(),
+        5 => Tag::Crafting.bit(),
+        _ => 0,
+    }
+}
 
 /// Within this distance of `world.market` an agent counts as "at the stalls" (mirrors the JS
 /// `ECON.marketRange`; squared-compared). Goods don't teleport — a remote producer must HAUL in.
@@ -159,7 +174,7 @@ pub fn clear(world: &mut World) {
                     world.econ[i].inventory[g] += 1;
                 }
                 world.recipe[i][g] = (world.recipe[i][g] + RECIPE_LEARN).min(1.0);
-                deeds.push(Intent::Deed { actor: i as u32, verb: 0, magnitude: 1, target: i as u32 });
+                deeds.push(Intent::deed(i as u32, i as u32, 1, good_tag(g), motive::HABIT, outcome::GAINED | outcome::SUCCESS));
             }
         }
         // GATHER (capital-free foraging) — ANY agent with a Gather goal AT the node forages one unit of
@@ -174,7 +189,7 @@ pub fn clear(world: &mut World) {
                 && world.econ[i].inventory[g] < FORAGE_CAP
             {
                 world.econ[i].inventory[g] += 1;
-                deeds.push(Intent::Deed { actor: i as u32, verb: 0, magnitude: 1, target: i as u32 });
+                deeds.push(Intent::deed(i as u32, i as u32, 1, Tag::Forage.bit() | good_tag(g), motive::SURVIVAL | motive::HUNGER, outcome::GAINED | outcome::SUCCESS));
             }
         }
     }

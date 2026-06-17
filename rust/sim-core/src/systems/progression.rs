@@ -102,18 +102,20 @@ const TEMPLATES: &[ClassTemplate] = &[
         score: &[(TAG_ENDURANCE, 1.0), (TAG_EXPLORE, 0.5)] }, // survivor
 ];
 
-/// Fold one deed into the actor's behaviour profile: add `magnitude` weight to `behavior_profile[verb]`,
-/// clamped to `PROFILE_MAX`. Out-of-range verb tags are ignored (defensive — a deed may carry a
-/// flavour verb outside the closed tag vocabulary). Pure own-write ⇒ deterministic regardless of the
-/// order deeds are merged in.
+/// Fold one deed's TRUTH tag-set into the actor's behaviour profile: add `magnitude` weight to every
+/// tagged column (so a multi-tag action enriches several at once), clamped to `PROFILE_MAX`. Bits past
+/// the vocabulary are ignored. Pure own-write ⇒ deterministic regardless of merge order.
 #[inline]
-pub fn fold_deed(prog: &mut Progression, verb: u8, magnitude: u16) {
-    let t = verb as usize;
-    if t >= N_TAGS {
-        return;
-    }
+pub fn fold_deed(prog: &mut Progression, truth: u64, magnitude: u16) {
     let w = magnitude.max(1) as f32;
-    prog.behavior_profile[t] = (prog.behavior_profile[t] + w).min(PROFILE_MAX);
+    let mut bits = truth;
+    while bits != 0 {
+        let t = bits.trailing_zeros() as usize;
+        bits &= bits - 1; // clear the lowest set bit
+        if t < N_TAGS {
+            prog.behavior_profile[t] = (prog.behavior_profile[t] + w).min(PROFILE_MAX);
+        }
+    }
 }
 
 /// Total behaviour weight carried (the cheap "done enough of anything?" gate).
@@ -227,14 +229,14 @@ mod tests {
     #[test]
     fn fold_deed_accumulates_and_clamps() {
         let mut p = Progression::default();
-        fold_deed(&mut p, TAG_MELEE, 3);
-        fold_deed(&mut p, TAG_MELEE, 2);
+        fold_deed(&mut p, 1u64 << TAG_MELEE, 3);
+        fold_deed(&mut p, 1u64 << TAG_MELEE, 2);
         assert_eq!(p.behavior_profile[TAG_MELEE as usize], 5.0);
-        // out-of-range verb is ignored.
-        fold_deed(&mut p, 200, 5);
+        // out-of-range tag bit is ignored.
+        fold_deed(&mut p, 1u64 << 60, 5);
         assert_eq!(behavior_sum(&p.behavior_profile), 5.0);
         // clamps at PROFILE_MAX.
-        fold_deed(&mut p, TAG_MELEE, u16::MAX);
+        fold_deed(&mut p, 1u64 << TAG_MELEE, u16::MAX);
         assert_eq!(p.behavior_profile[TAG_MELEE as usize], PROFILE_MAX);
     }
 
@@ -245,8 +247,8 @@ mod tests {
         // hammer agent 0 with melee deeds across several ticks, going through the real schedule.
         for _ in 0..40 {
             for _ in 0..3 {
-                w.intents.push(Intent::Deed { actor: 0, verb: TAG_MELEE, magnitude: 4, target: 1 });
-                w.intents.push(Intent::Deed { actor: 0, verb: TAG_KILL, magnitude: 2, target: 1 });
+                w.intents.push(Intent::deed(0, 1, 4, 1u64 << TAG_MELEE, 0, 0));
+                w.intents.push(Intent::deed(0, 1, 2, 1u64 << TAG_KILL, 0, 0));
             }
             w.tick();
         }
@@ -262,12 +264,12 @@ mod tests {
     fn fold_is_order_independent() {
         let mut a = Progression::default();
         let mut b = Progression::default();
-        fold_deed(&mut a, TAG_FARMING, 3);
-        fold_deed(&mut a, TAG_TRADE, 1);
-        fold_deed(&mut a, TAG_FARMING, 2);
-        fold_deed(&mut b, TAG_FARMING, 2);
-        fold_deed(&mut b, TAG_TRADE, 1);
-        fold_deed(&mut b, TAG_FARMING, 3);
+        fold_deed(&mut a, 1u64 << TAG_FARMING, 3);
+        fold_deed(&mut a, 1u64 << TAG_TRADE, 1);
+        fold_deed(&mut a, 1u64 << TAG_FARMING, 2);
+        fold_deed(&mut b, 1u64 << TAG_FARMING, 2);
+        fold_deed(&mut b, 1u64 << TAG_TRADE, 1);
+        fold_deed(&mut b, 1u64 << TAG_FARMING, 3);
         assert_eq!(a.behavior_profile, b.behavior_profile);
     }
 }
