@@ -6,7 +6,7 @@ pub const VISION: f32 = 22.0;
 pub const MAX_VISION: f32 = VISION * 1.5; // grid cell — the 3×3 query is then a superset (§3.1).
 pub const BELIEF_CAP: usize = 25;
 pub const N_COMMODITIES: usize = 6; // types/economy.ts Commodity (closed set).
-pub const N_TAGS: usize = 30; // types/events.ts Tag (closed behaviour vocabulary).
+pub const N_TAGS: usize = 59; // behaviour-tag vocabulary width (tags.rs Tag::COUNT; 0..29 are fixed).
 
 /// types/agent.ts Faction (interned u8).
 #[repr(u8)]

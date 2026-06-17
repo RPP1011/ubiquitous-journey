@@ -54,11 +54,52 @@ pub enum Tag {
     Hunger = 27,
     Flee = 28,
     Stealth = 29,
+    // crime (appended — indices 0..29 are fixed so class templates don't shift)
+    Steal = 30,
+    Rob = 31,
+    Loot = 32,
+    Vandalize = 33,
+    Threaten = 34,
+    Capture = 35,
+    // charity / bonds
+    Give = 36,
+    Repay = 37,
+    Rescue = 38,
+    Free = 39,
+    Recruit = 40,
+    Mentor = 41,
+    Reconcile = 42,
+    Betray = 43,
+    // faith
+    Pray = 44,
+    Convert = 45,
+    // oaths
+    OathMake = 46,
+    OathKeep = 47,
+    OathBreak = 48,
+    // life / movement
+    Travel = 49,
+    Rest = 50,
+    Eat = 51,
+    Mourn = 52,
+    Witness = 53,
+    Birth = 54,
+    Die = 55,
+    // magic
+    Cast = 56,
+    Scry = 57,
+    PlantLie = 58,
 }
 
 impl Tag {
-    /// Number of tags in the closed vocabulary (must equal `components::N_TAGS`).
-    pub const COUNT: usize = 30;
+    /// Number of tags in the vocabulary (must equal `components::N_TAGS`). Append-only (0..29 fixed).
+    pub const COUNT: usize = 59;
+
+    /// This tag as a bit in a `u64` action-tag set.
+    #[inline]
+    pub fn bit(self) -> u64 {
+        1u64 << (self as u64)
+    }
 
     /// The canonical UPPER-CASE tag name (matches `js/rpg/tags.ts` `TAG_LIST` / the `Tag` union).
     /// Used for the FNV combo-key hash so a Rust combo key collides with the JS one.
@@ -94,11 +135,58 @@ pub const TAG_NAMES: [&str; Tag::COUNT] = [
     "TRADE", "PROFIT", "HAGGLE", "BARTER", // trade
     "PERSUADE", "GOSSIP", "DECEIVE", "LEAD", "CHARM", // social
     "ENDURANCE", "EXPLORE", "HEAL", "WANDER", "HUNGER", "FLEE", "STEALTH", // survival
+    "STEAL", "ROB", "LOOT", "VANDALIZE", "THREATEN", "CAPTURE", // crime
+    "GIVE", "REPAY", "RESCUE", "FREE", "RECRUIT", "MENTOR", "RECONCILE", "BETRAY", // charity/bonds
+    "PRAY", "CONVERT", // faith
+    "OATHMAKE", "OATHKEEP", "OATHBREAK", // oaths
+    "TRAVEL", "REST", "EAT", "MOURN", "WITNESS", "BIRTH", "DIE", // life/movement
+    "CAST", "SCRY", "PLANTLIE", // magic
 ];
 
 // Compile-time guard: the Rust vocabulary size matches the component column width. If a tag is
 // added/removed, `N_TAGS` must move with it or this fails to compile.
 const _: () = assert!(Tag::COUNT == N_TAGS, "Tag::COUNT must equal components::N_TAGS");
+
+/// MOTIVE tags — WHY an action was taken (a separate small bitset over `u32`). A deed can carry several.
+pub mod motive {
+    pub const HUNGER: u32 = 1 << 0;
+    pub const GREED: u32 = 1 << 1;
+    pub const SURVIVAL: u32 = 1 << 2;
+    pub const AVENGE: u32 = 1 << 3;
+    pub const FEAR: u32 = 1 << 4;
+    pub const FAITH: u32 = 1 << 5;
+    pub const DUTY: u32 = 1 << 6;
+    pub const LOYALTY: u32 = 1 << 7;
+    pub const AMBITION: u32 = 1 << 8;
+    pub const LOVE: u32 = 1 << 9;
+    pub const SPITE: u32 = 1 << 10;
+    pub const CURIOSITY: u32 = 1 << 11;
+    pub const DESPERATION: u32 = 1 << 12;
+    pub const MERCY: u32 = 1 << 13;
+    pub const HABIT: u32 = 1 << 14;
+    pub const COERCED: u32 = 1 << 15;
+    pub const DIRECTED: u32 = 1 << 16; // injected by the director, not self-chosen
+}
+
+/// OUTCOME tags — the RESULT of an action (a separate small bitset over `u32`).
+pub mod outcome {
+    pub const SUCCESS: u32 = 1 << 0;
+    pub const FAILURE: u32 = 1 << 1;
+    pub const KILLED: u32 = 1 << 2; // the actor killed the target
+    pub const DIED: u32 = 1 << 3; // the actor died
+    pub const WOUNDED: u32 = 1 << 4;
+    pub const ROBBED: u32 = 1 << 5; // the target was robbed
+    pub const GAINED: u32 = 1 << 6; // the actor gained goods/gold
+    pub const LOST: u32 = 1 << 7;
+    pub const WASTED: u32 = 1 << 8; // effort for nothing
+    pub const ESCAPED: u32 = 1 << 9;
+    pub const CAPTURED: u32 = 1 << 10;
+    pub const FREED: u32 = 1 << 11;
+    pub const CONVERTED: u32 = 1 << 12;
+    pub const DISCOVERED: u32 = 1 << 13;
+    pub const CONSERVED: u32 = 1 << 14;
+    pub const REFUSED: u32 = 1 << 15;
+}
 
 // ── FNV-1a, 32-bit (port of `js/rpg/tags.ts fnv1a`) ──
 // Deterministic, dependency-free. Folds over the UTF-8 bytes; the JS folds over UTF-16 code units,
@@ -159,7 +247,7 @@ mod tests {
             assert_eq!(t as u8, i);
             assert_eq!(Tag::from_name(t.name()), Some(t));
         }
-        assert!(Tag::from_index(30).is_none());
+        assert!(Tag::from_index(Tag::COUNT as u8).is_none());
         assert!(Tag::from_name("NOPE").is_none());
     }
 
@@ -185,7 +273,7 @@ mod tests {
     /// sanitize drops out-of-vocabulary indices, keeps the rest in order.
     #[test]
     fn sanitize_filters() {
-        let got = sanitize(&[0, 200, 29, 30]);
+        let got = sanitize(&[0, 200, 29, 255]);
         assert_eq!(got, vec![Tag::Melee, Tag::Stealth]);
     }
 }
