@@ -248,12 +248,14 @@ pub fn world_hash(w: &World) -> u64 {
     for c in &w.watch.captain {
         h = fold(h, &c.to_le_bytes());
     }
-    // Gods: believer count + breadth/depth + active flag.
+    // Gods: believer count + breadth/depth + domain/home_town + active flag (domain/home_town change when
+    // a dead slot is recycled into a newly-born god).
     for g in &w.gods {
         h = fold(h, &g.believers.to_le_bytes());
         h = fold(h, &g.breadth.to_le_bytes());
         h = fold(h, &g.depth.to_le_bytes());
-        h = fold(h, &[g.active as u8]);
+        h = fold(h, &[g.domain, g.active as u8]);
+        h = fold(h, &g.home_town.to_le_bytes());
     }
     h = fold(h, &w.defenses.shots.to_le_bytes());
     h = fold(h, &w.tropes.last_any_at.to_le_bytes());

@@ -163,6 +163,13 @@ fn main() {
         ));
     }
     println!("  per-god: {:?}", gl);
+    let born = w.chronicle.iter().filter(|b| b.kind == 70).count();
+    let died = w.chronicle.iter().filter(|b| b.kind == 71).count();
+    let living = w.gods.iter().filter(|g| g.active).count();
+    println!(
+        "  pantheon: {} living of {} slots   |   gods born {} · gods died {} (recent chronicle)",
+        living, w.gods.len(), born, died
+    );
 
     // FAITH EFFECT: do wild-god believers actually run hotter (anger) and fight more than town believers?
     use sim_core::components::GoalKind;

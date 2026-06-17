@@ -493,7 +493,10 @@ impl World {
         // the lairs nearest the towns (narrow, deep). breadth/depth are placeholder magnitudes until the
         // effects pass; believers is recomputed each faith pass.
         let mut gods: Vec<crate::components::God> = Vec::new();
-        for t in 0..n_towns.min(3) {
+        // ONE settlement god per town (each town its own patron deity) — so a god lives and DIES with its
+        // town: when the town empties out, its god is forgotten and dies; if the town is refounded, a new
+        // one is born (faith.rs birth/death).
+        for t in 0..n_towns {
             gods.push(crate::components::God {
                 domain: crate::components::DOMAIN_SETTLEMENT,
                 breadth: pops[t].min(u16::MAX as usize) as u16, // coverage ~ the town's population
@@ -1362,6 +1365,7 @@ impl World {
         systems::faith::tick(self);
         systems::faith::effects(self); // worship colours the faithful's behaviour (depth-scaled mood)
         systems::faith::contracts(self); // a deep god grafts its ability onto its champions
+        systems::faith::birth_and_death(self); // gods are made + unmade by belief (towns die → their god dies)
         systems::groups::tick(self);
         systems::quests::tick(self);
         if self.tick % ESCHEAT_EVERY == 0 {

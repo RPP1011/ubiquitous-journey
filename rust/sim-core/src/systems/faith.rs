@@ -177,7 +177,7 @@ pub fn effects(world: &mut World) {
             continue;
         }
         let god = world.gods[g - 1];
-        if !in_domain(world, i, &god) {
+        if !god.active || !in_domain(world, i, &god) {
             continue;
         }
         let frac = god.depth as f32 / DEPTH_MAX as f32;
@@ -248,7 +248,7 @@ pub fn contracts(world: &mut World) {
     }
     for gi in 0..world.gods.len() {
         let god = world.gods[gi];
-        if god.depth < CONTRACT_DEPTH {
+        if !god.active || god.depth < CONTRACT_DEPTH {
             continue;
         }
         let aid = match domain_ability(god.domain) {
@@ -272,17 +272,12 @@ pub fn contracts(world: &mut World) {
     }
 }
 
-/// Seed a starting flock in every town (not just town 0): a BOOT_FLOCK to the town's patron town-god (the
-/// pantheon rotates by town so faiths spread out), plus a WILD_CULT_FLOCK to a wild god.
+/// Seed a starting flock in every town: a BOOT_FLOCK to the town's OWN patron god (each town has one),
+/// a WILD_CULT_FLOCK to a wild god, and a small cult to each other god.
 fn bootstrap(world: &mut World) {
     let nt = world.town_centers.len().max(1);
-    let town_gods: Vec<u8> = world
-        .gods
-        .iter()
-        .enumerate()
-        .filter(|(_, g)| g.domain == DOMAIN_SETTLEMENT)
-        .map(|(gi, _)| (gi + 1) as u8)
-        .collect();
+    // god id for each town (its own settlement patron).
+    let town_god = town_god_ids(world, nt);
     let wild_gods: Vec<u8> = world
         .gods
         .iter()
@@ -299,9 +294,6 @@ fn bootstrap(world: &mut World) {
         .filter(|(_, g)| g.domain != DOMAIN_SETTLEMENT && g.domain != DOMAIN_WILD_SITE)
         .map(|(gi, _)| (gi + 1) as u8)
         .collect();
-    if town_gods.is_empty() {
-        return;
-    }
     let other_per_town = other_gods.len() * 2; // ~2 believers of each other-god seeded per town
     let mut town_n = vec![0usize; nt];
     let mut wild_n = vec![0usize; nt];
@@ -312,8 +304,8 @@ fn bootstrap(world: &mut World) {
             continue;
         }
         let t = (world.town[i] as usize).min(nt - 1);
-        if town_n[t] < BOOT_FLOCK {
-            world.faith[i] = town_gods[t % town_gods.len()];
+        if town_n[t] < BOOT_FLOCK && town_god[t] != NO_GOD {
+            world.faith[i] = town_god[t];
             town_n[t] += 1;
         } else if !wild_gods.is_empty() && wild_n[t] < WILD_CULT_FLOCK {
             world.faith[i] = wild_gods[t % wild_gods.len()];
@@ -322,6 +314,143 @@ fn bootstrap(world: &mut World) {
             world.faith[i] = other_gods[other_rot % other_gods.len()];
             other_rot += 1;
             other_n[t] += 1;
+        }
+    }
+}
+
+// ── BIRTH & DEATH: gods are made and unmade by belief ──
+pub const FAITH_LIFE_EVERY: u32 = 60;
+const PANTHEON_CAP: usize = 48; // hard ceiling on the registry (recycle dead slots before growing past it).
+const BIRTH_IN_DOMAIN: usize = 40; // a forgotten condition-domain reborn once this many faithless are in it.
+const BEAT_GOD_BORN: u8 = 70;
+const BEAT_GOD_DIED: u8 = 71;
+
+/// god id (1-based) of each town's OWN active settlement patron — NO_GOD if it has none (e.g. died).
+fn town_god_ids(world: &World, nt: usize) -> Vec<u8> {
+    let mut m = vec![NO_GOD; nt];
+    for (gi, g) in world.gods.iter().enumerate() {
+        if g.active && g.domain == DOMAIN_SETTLEMENT && g.home_town >= 0 && (g.home_town as usize) < nt {
+            m[g.home_town as usize] = (gi + 1) as u8;
+        }
+    }
+    m
+}
+
+/// A god DIES: it is forgotten. Its slot goes inert (recyclable), its remaining believers lapse to
+/// faithless, and the death is chronicled. `gi` is the 0-based registry index.
+fn kill_god(world: &mut World, gi: usize) {
+    let gid = (gi + 1) as u8;
+    for i in 0..world.n {
+        if world.faith[i] == gid {
+            world.faith[i] = NO_GOD; // its faithful are bereft
+        }
+    }
+    let g = &mut world.gods[gi];
+    g.active = false;
+    g.believers = 0;
+    g.breadth = 0;
+    g.depth = 0;
+    world.chronicle.push(crate::components::Beat {
+        t: world.tick,
+        kind: BEAT_GOD_DIED,
+        subject: gid as u32,
+        magnitude: world.gods[gi].domain as i32,
+    });
+}
+
+/// Bring a NEW god into being — recycling the first inert slot, or appending if there is room. Returns the
+/// 1-based id, or NO_GOD if the pantheon is full of living gods.
+fn birth_god(world: &mut World, god: God) -> u8 {
+    let slot = world.gods.iter().position(|g| !g.active);
+    let gi = match slot {
+        Some(s) => {
+            world.gods[s] = god;
+            s
+        }
+        None if world.gods.len() < PANTHEON_CAP => {
+            world.gods.push(god);
+            world.gods.len() - 1
+        }
+        None => return NO_GOD,
+    };
+    world.chronicle.push(crate::components::Beat {
+        t: world.tick,
+        kind: BEAT_GOD_BORN,
+        subject: (gi + 1) as u32,
+        magnitude: world.gods[gi].domain as i32,
+    });
+    (gi + 1) as u8
+}
+
+/// Make and unmake gods by belief (serial society pass): a settlement god DIES when its town empties out
+/// and is BORN anew if a dead town refills; a condition god dies when forgotten (believers gone) and is
+/// reborn from belief when its domain teems with the faithless but has no patron. So the pantheon is open.
+pub fn birth_and_death(world: &mut World) {
+    if world.tick % FAITH_LIFE_EVERY != 0 || world.gods.is_empty() {
+        return;
+    }
+    let nt = world.town_centers.len().max(1);
+    let mut pop = vec![0usize; nt];
+    for i in 0..world.n {
+        if world.alive[i] && world.faction[i] == Faction::Townsfolk as u8 {
+            pop[(world.town[i] as usize).min(nt - 1)] += 1;
+        }
+    }
+    // DEATH — a settlement god whose town has died out, and any condition god whose believers are gone.
+    for gi in 0..world.gods.len() {
+        let g = world.gods[gi];
+        if !g.active {
+            continue;
+        }
+        let dead = match g.domain {
+            DOMAIN_SETTLEMENT => g.home_town >= 0 && pop[(g.home_town as usize).min(nt - 1)] == 0,
+            DOMAIN_WILD_SITE => false, // wild gods endure at their lair
+            _ => g.believers == 0, // a forgotten condition god dies
+        };
+        if dead {
+            kill_god(world, gi);
+        }
+    }
+    // BIRTH — a populated town with no patron (refounded) gets a new settlement god.
+    for t in 0..nt {
+        if pop[t] == 0 {
+            continue;
+        }
+        let has = world.gods.iter().any(|g| g.active && g.domain == DOMAIN_SETTLEMENT && g.home_town == t as i16);
+        if !has {
+            birth_god(
+                world,
+                God {
+                    domain: DOMAIN_SETTLEMENT,
+                    breadth: pop[t].min(u16::MAX as usize) as u16,
+                    depth: 2,
+                    seat: Some(world.town_centers[t]),
+                    home_town: t as i16,
+                    domain_param: 0,
+                    believers: 0,
+                    active: true,
+                },
+            );
+        }
+    }
+    // BIRTH — a condition domain that teems with the faithless but has no living god coalesces one.
+    let cond: &[(u8, u16)] = &[
+        (DOMAIN_WAR, 0),
+        (DOMAIN_DREAD, 0),
+        (DOMAIN_COMFORT, 0),
+        (DOMAIN_FORTUNE, 0),
+        (DOMAIN_DEATH, 0),
+    ];
+    for &(domain, param) in cond {
+        if world.gods.iter().any(|g| g.active && g.domain == domain) {
+            continue; // already served
+        }
+        let probe = God { domain, breadth: 0, depth: 1, seat: None, home_town: -1, domain_param: param, believers: 0, active: true };
+        let n_in: usize = (0..world.n)
+            .filter(|&i| is_faithful_candidate(world, i) && world.faith[i] == NO_GOD && in_domain(world, i, &probe))
+            .count();
+        if n_in >= BIRTH_IN_DOMAIN {
+            birth_god(world, probe);
         }
     }
 }
@@ -337,7 +466,7 @@ fn domain_draw(world: &mut World, power: &[usize]) {
         .iter()
         .enumerate()
         .filter(|(_, g)| {
-            g.domain != DOMAIN_SETTLEMENT && g.domain != DOMAIN_WILD_SITE && g.domain != NO_GOD
+            g.active && g.domain != DOMAIN_SETTLEMENT && g.domain != DOMAIN_WILD_SITE
         })
         .map(|(gi, _)| (gi + 1, power[gi + 1] as f32))
         .collect();
@@ -479,7 +608,11 @@ fn doubt(world: &mut World, power: &[usize]) {
         if g == NO_GOD as usize || g > n_gods {
             continue;
         }
-        if live[g] <= SMALL_GOD_AT {
+        // ANCHORED gods (a town patron, a wild lair) smoulder — their last believers are protected so a
+        // dip doesn't extinguish them. CONDITION gods are NOT protected: they can lapse fully to nothing
+        // and DIE (birth_and_death then clears the slot), to be reborn from belief later.
+        let anchored = matches!(world.gods[g - 1].domain, DOMAIN_SETTLEMENT | DOMAIN_WILD_SITE);
+        if anchored && live[g] <= SMALL_GOD_AT {
             continue;
         }
         let mut lapse = DOUBT_CHANCE * (1.0 + power[g] as f32 / CROWD_DOUBT_AT);
@@ -564,6 +697,35 @@ mod tests {
             }
         }
         assert!(claimed, "a soul out in the wild near a wild god is claimed");
+    }
+
+    #[test]
+    fn a_settlement_god_dies_when_its_town_dies_out() {
+        let mut w = World::spawn(0x60D, 600);
+        let gid = w
+            .gods
+            .iter()
+            .position(|g| g.active && g.domain == DOMAIN_SETTLEMENT && g.home_town == 0)
+            .map(|p| (p + 1) as u8)
+            .expect("town 0 has a patron god");
+        // the town dies out — every one of its residents falls.
+        for i in 0..w.n {
+            if w.town[i] == 0 && w.faction[i] == Faction::Townsfolk as u8 {
+                w.alive[i] = false;
+            }
+        }
+        w.tick = FAITH_LIFE_EVERY; // align the cadence
+        birth_and_death(&mut w);
+        // the town-0 settlement god is GONE (its death is chronicled). Its slot may have been recycled
+        // into a newly-born god, so assert by IDENTITY (no active settlement god for the dead town), not
+        // by the slot's flag.
+        let has_town0_god =
+            w.gods.iter().any(|g| g.active && g.domain == DOMAIN_SETTLEMENT && g.home_town == 0);
+        assert!(!has_town0_god, "a town's god dies when the town dies out");
+        assert!(
+            w.chronicle.iter().any(|b| b.kind == BEAT_GOD_DIED && b.subject == gid as u32),
+            "the god's death is chronicled"
+        );
     }
 
     #[test]
