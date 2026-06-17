@@ -145,4 +145,42 @@ fn main() {
         gl.push(format!("g{}:{}bel,{}x{}={}p({})", gi + 1, g.believers, g.breadth, g.depth, g.power(), kind));
     }
     println!("  per-god: {:?}", gl);
+
+    // FAITH EFFECT: do wild-god believers actually run hotter (anger) and fight more than town believers?
+    use sim_core::components::GoalKind;
+    let mut tot = [0usize; 3]; // 0 town-faith, 1 wild-faith, 2 faithless
+    let mut anger_sum = [0f32; 3];
+    let mut fighting = [0usize; 3];
+    for i in 0..w.n {
+        if !(w.alive[i] && w.faction[i] == Faction::Townsfolk as u8) {
+            continue;
+        }
+        let g = w.faith[i] as usize;
+        let cls = if g == 0 {
+            2
+        } else if w.gods[g - 1].domain == DOMAIN_WILD_SITE {
+            1
+        } else {
+            0
+        };
+        tot[cls] += 1;
+        anger_sum[cls] += w.mood[i].anger;
+        if matches!(w.goal[i].kind(), GoalKind::Fight) {
+            fighting[cls] += 1;
+        }
+    }
+    let avg = |s: f32, n: usize| if n > 0 { s / n as f32 } else { 0.0 };
+    println!("\nFAITH EFFECT (mood-coloured behaviour):");
+    println!(
+        "  town-faithful: avg-anger {:.2}, fighting {}/{}",
+        avg(anger_sum[0], tot[0]), fighting[0], tot[0]
+    );
+    println!(
+        "  wild-faithful: avg-anger {:.2}, fighting {}/{}",
+        avg(anger_sum[1], tot[1]), fighting[1], tot[1]
+    );
+    println!(
+        "  faithless:     avg-anger {:.2}, fighting {}/{}",
+        avg(anger_sum[2], tot[2]), fighting[2], tot[2]
+    );
 }

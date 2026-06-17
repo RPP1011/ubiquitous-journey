@@ -89,9 +89,71 @@ pub fn tick(world: &mut World) {
         doubt(world, &power);
     }
 
+    // DYNAMICS: a god's substance (believers) drives its breadth (reach ~ flock) and, more slowly, its
+    // depth (manipulation strength) — a thriving cult deepens, a fading one shallows. So power = breadth
+    // x depth tracks belief, and the effect a god has on the world grows with its following.
     let post = tally(world);
     for (gi, g) in world.gods.iter_mut().enumerate() {
-        g.believers = post[gi + 1] as u32;
+        let bel = post[gi + 1] as u32;
+        g.believers = bel;
+        // breadth + depth differ by KIND: a TOWN god is WIDE (reach ~ its whole flock) but SHALLOW;
+        // a WILD god is NARROW (a small domain) but DEEP (it manipulates hard within it). Both drift,
+        // so a god that gains/loses believers migrates on the breadth x depth grid.
+        let (breadth_target, depth_target) = if g.domain == GOD_WILD_DOMAIN {
+            ((bel / 4).min(u16::MAX as u32) as u16, if bel > 0 { (8 + bel / 40).clamp(8, DEPTH_MAX as u32) as u16 } else { 1 })
+        } else {
+            (bel.min(u16::MAX as u32) as u16, (bel / 120).clamp(1, 5) as u16)
+        };
+        g.breadth = breadth_target;
+        if g.depth < depth_target {
+            g.depth += 1;
+        } else if g.depth > depth_target {
+            g.depth -= 1;
+        }
+    }
+}
+
+/// Alias for the wild-site domain (used in the depth/breadth dynamics above).
+const GOD_WILD_DOMAIN: u8 = DOMAIN_WILD_SITE;
+
+// ── EFFECTS: what worship DOES (depth-scaled). Belief changes how the faithful behave ──
+const EFFECT_EVERY: u32 = 3; // apply on the faith cadence.
+const DEPTH_MAX: u16 = 14;
+const WILD_RESOLVE: f32 = 0.9; // a deep wild god floors its faithful's anger here (>=0.5 => they FIGHT).
+const TOWN_JOY: f32 = 0.55; // a deep town god floors its faithful's contentment here.
+
+/// Apply each god's effect to its believers, scaled by the god's depth. A WILD god fills the faithful
+/// with battle-resolve (anger floor + fearlessness) so they STAND AND FIGHT threats instead of fleeing —
+/// the dark faith is a violent, destabilising force. A TOWN god gives contentment + courage (joy floor,
+/// less fear) — resilient townsfolk. Mood-only ⇒ economy-safe (it colours the fight/flee reflex, never
+/// food/work). Serial society pass ⇒ deterministic; the floors are re-applied each pass so decay can't
+/// erase them while the faith holds.
+pub fn effects(world: &mut World) {
+    if world.tick % EFFECT_EVERY != 0 || world.gods.is_empty() {
+        return;
+    }
+    for i in 0..world.n {
+        if !is_faithful_candidate(world, i) {
+            continue;
+        }
+        let g = world.faith[i] as usize;
+        if g == NO_GOD as usize || g > world.gods.len() {
+            continue;
+        }
+        let god = world.gods[g - 1];
+        let frac = god.depth as f32 / DEPTH_MAX as f32; // 0..1 manipulation strength
+        match god.domain {
+            DOMAIN_WILD_SITE => {
+                let resolve = WILD_RESOLVE * frac;
+                world.mood[i].anger = world.mood[i].anger.max(resolve);
+                world.mood[i].fear *= 1.0 - 0.5 * frac;
+            }
+            DOMAIN_SETTLEMENT => {
+                world.mood[i].joy = world.mood[i].joy.max(TOWN_JOY * frac);
+                world.mood[i].fear *= 1.0 - 0.25 * frac;
+            }
+            _ => {}
+        }
     }
 }
 

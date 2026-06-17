@@ -1336,6 +1336,7 @@ impl World {
         systems::refugees::tick(self); // survivors of gutted towns flee to safe havens (regional flows)
         systems::lineage::tick(self);
         systems::faith::tick(self);
+        systems::faith::effects(self); // worship colours the faithful's behaviour (depth-scaled mood)
         systems::groups::tick(self);
         systems::quests::tick(self);
         if self.tick % ESCHEAT_EVERY == 0 {
