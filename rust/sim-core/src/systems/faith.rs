@@ -425,6 +425,35 @@ pub fn recruit(world: &mut World) {
     }
 }
 
+// ── RELIEF: the temple's accumulated tithes (shrine_fund) flow back out as alms to the neediest faithful.
+// A god has an interest in keeping its flock alive (a starved believer is lost power), so the pantheon
+// redistributes: the rich faithful are taxed (tithe), the destitute faithful are relieved. Gold-conserved
+// (shrine_fund → believer gold), so faith becomes a counter-cyclical buffer over the marginal economy.
+pub const RELIEF_EVERY: u32 = 60;
+const RELIEF_NEED_GOLD: i64 = 150; // a believer below this gold is in need.
+const RELIEF_GRANT: i64 = 120; // alms paid per needy believer per pass.
+
+/// Disburse shrine_fund as alms to the destitute faithful (lowest first by roster order). Serial ⇒
+/// deterministic; conserved (fund → gold). Stops when the fund is empty.
+pub fn divine_relief(world: &mut World) {
+    if world.tick % RELIEF_EVERY != 0 || world.shrine_fund <= 0 {
+        return;
+    }
+    for i in 0..world.n {
+        if world.shrine_fund <= 0 {
+            break;
+        }
+        if !is_faithful_candidate(world, i) || world.faith[i] == 0 {
+            continue;
+        }
+        if world.econ[i].gold < RELIEF_NEED_GOLD {
+            let grant = RELIEF_GRANT.min(world.shrine_fund);
+            world.econ[i].gold += grant;
+            world.shrine_fund -= grant;
+        }
+    }
+}
+
 /// Contracted followers pay an ongoing TITHE to their god (gold → shrine_fund, conserved), scaled by the
 /// boon's strength and the god's greed. A generous god (greed 0) takes nothing. If the god has DIED, the
 /// bargain lapses (the boon is kept). Serial ⇒ deterministic.

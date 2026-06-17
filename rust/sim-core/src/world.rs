@@ -1382,6 +1382,7 @@ impl World {
         systems::faith::effects(self); // worship colours the faithful's behaviour (depth-scaled mood)
         systems::faith::recruit(self); // gods grant boons to recruit followers whose goals serve them
         systems::faith::collect_tithes(self); // contracted followers tithe to their god (conserved)
+        systems::faith::divine_relief(self); // the temple's hoard flows back out as alms (conserved)
         systems::faith::birth_and_death(self); // gods are made + unmade by belief (towns die → their god dies)
         systems::groups::tick(self);
         systems::quests::tick(self);
