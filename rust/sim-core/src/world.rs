@@ -1361,6 +1361,7 @@ impl World {
         systems::lineage::tick(self);
         systems::faith::tick(self);
         systems::faith::effects(self); // worship colours the faithful's behaviour (depth-scaled mood)
+        systems::faith::contracts(self); // a deep god grafts its ability onto its champions
         systems::groups::tick(self);
         systems::quests::tick(self);
         if self.tick % ESCHEAT_EVERY == 0 {

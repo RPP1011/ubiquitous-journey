@@ -1,26 +1,26 @@
-//! Faith / gods (`systems/faith.rs`). A god is sustained by belief (its `believers` count); the more
-//! believers, the more contagious it is. Functional power is breadth x depth (components::God); effects
-//! aren't wired yet, so this file only tracks belief. Two domains compete for souls today: SETTLEMENT
-//! gods (spread among a town's residents) and WILD_SITE gods seated in the wild (they claim souls who go
-//! out there). `world.gods` is the registry; `faith[i]` (1-based) is the god agent `i` believes (0 = NO_GOD).
+//! Faith / gods (`systems/faith.rs`). A god is sustained by belief (`believers`); its functional power is
+//! breadth x depth (components::God). The pantheon has many DOMAINS: SETTLEMENT (a town's residents) and
+//! WILD_SITE (the wild) plus seatless condition/activity gods (WAR/DREAD/COMFORT/FORTUNE/CRAFT/DEATH),
+//! in-domain by STATE not place. `world.gods` is the registry; `faith[i]` (1-based) is agent `i`'s god.
 //!
-//! Passes (serial society phase, so M-invariant):
-//! - POWER: recompute each god's believer count (folded into the world hash).
-//! - BOOTSTRAP: until anyone believes, seed each town with a patron town-god flock + a small wild-god cult.
-//! - WILD CLAIM: a believer out in the wild (beyond every town's edge — foragers, expeditions, refugees)
-//!   may convert to the nearest wild god (chance rises with the god's power). This is how wild faith first
-//!   appears, since no resident is in the wild while at home; it then spreads when the convert returns.
-//! - SPREAD: a faithless townsperson adopts the locally dominant faith among near neighbours (bandwagon,
-//!   sub-linear in the god's global power). Works for any god.
-//! - DOUBT: believers lapse at random; crowding raises the lapse rate for a large god; a small god's last
-//!   believers are protected. Wild-god faith lapses slowly in the wild and quickly in town.
+//! Recruitment passes (serial society phase ⇒ M-invariant):
+//! - BOOTSTRAP: seed every town a patron-god flock + a wild cult + a small cult to each other god.
+//! - WILD CLAIM: a soul out in the wild may convert to the nearest wild god (steals any faith).
+//! - DOMAIN DRAW: a faithless soul living an experience is drawn to that experience's god (a fighter→war,
+//!   the rich→fortune, a smith→the forge) — a condition god's niche.
+//! - SPREAD: a faithless townsperson adopts the locally dominant neighbour faith.
+//! - DOUBT: believers lapse; crowding lifts the rate; a small god's last believers are protected; wild
+//!   faith lapses slow in the wild, fast in town.
 //!
-//! Determinism: serial. SPREAD reads neighbours' faith while writing faith, so it decides against the
-//! frozen column then applies. Rolls use a dedicated `world.faith_rng` so faith never perturbs the
-//! economy's `sim_rng`. No gold, no spawns.
+//! Then DYNAMICS (breadth = in-domain count, depth drifts with the flock — gods migrate on the grid),
+//! `effects` (depth-scaled, mood-only ⇒ economy-safe: war = resolve, comfort consoles, town defends,
+//! wild = reckless, etc.), and `contracts` (a deep god grafts its domain ability onto its champions).
+//!
+//! Determinism: serial; rolls use a dedicated `world.faith_rng` so faith never perturbs the economy's
+//! `sim_rng`. No gold minted; the only spawns are wilderness monsters (via the lair effect, conserved).
 
 use crate::components::{
-    Faction, God, GoalKind, DOMAIN_COMFORT, DOMAIN_CRAFT, DOMAIN_DREAD, DOMAIN_FORTUNE,
+    Faction, God, GoalKind, DOMAIN_COMFORT, DOMAIN_CRAFT, DOMAIN_DEATH, DOMAIN_DREAD, DOMAIN_FORTUNE,
     DOMAIN_SETTLEMENT, DOMAIN_WAR, DOMAIN_WILD_SITE, MAX_VISION, NO_GOD,
 };
 use crate::world::World;
@@ -215,6 +215,59 @@ pub fn effects(world: &mut World) {
                 m.pride = m.pride.max(0.4 * frac); // a proud craftsman (a yield bonus is a future hook)
             }
             _ => {}
+        }
+    }
+}
+
+// ── CONTRACTS: a deep god grafts its domain's ability onto its strongest believers (champions/prophets)
+const CONTRACT_DEPTH: u16 = 5; // a god at least this deep can grant a contract.
+const CONTRACT_CHAMPIONS: usize = 3; // up to this many believers per god are gifted.
+pub const CONTRACT_EVERY: u32 = 90;
+
+/// The ability a god of `domain` grants its champions (the catalog spec that fits its nature).
+fn domain_ability(domain: u8) -> Option<u16> {
+    use crate::abilities::*;
+    Some(match domain {
+        DOMAIN_SETTLEMENT => ID_SECOND_WIND, // a protector: self-heal + shield
+        DOMAIN_WILD_SITE => ID_WHIRLWIND,    // a berserk fanatic
+        DOMAIN_WAR => ID_POWER_STRIKE,       // a holy warrior
+        DOMAIN_DREAD => ID_PLANT_RUMOR,      // a fearmonger
+        DOMAIN_COMFORT => ID_SECOND_WIND,    // a healer
+        DOMAIN_FORTUNE => ID_HAGGLE,         // a blessed dealmaker
+        DOMAIN_CRAFT => ID_MASTER_CRAFT,     // a master artisan
+        DOMAIN_DEATH => ID_FROST_BOLT,       // a reaper
+        _ => return None,
+    })
+}
+
+/// Grant each sufficiently-DEEP god's strongest believers (level desc, id asc) its domain ability — they
+/// become champions/prophets who then wield it via the autocaster. Serial ⇒ deterministic; idempotent.
+pub fn contracts(world: &mut World) {
+    if world.tick % CONTRACT_EVERY != 0 || world.gods.is_empty() {
+        return;
+    }
+    for gi in 0..world.gods.len() {
+        let god = world.gods[gi];
+        if god.depth < CONTRACT_DEPTH {
+            continue;
+        }
+        let aid = match domain_ability(god.domain) {
+            Some(a) => a,
+            None => continue,
+        };
+        let gid = (gi + 1) as u8;
+        let mut champs: Vec<(u8, usize)> = Vec::new();
+        for i in 0..world.n {
+            if is_faithful_candidate(world, i)
+                && world.faith[i] == gid
+                && !world.progression[i].abilities.iter().any(|&a| a == aid)
+            {
+                champs.push((world.level[i], i));
+            }
+        }
+        champs.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+        for &(_, i) in champs.iter().take(CONTRACT_CHAMPIONS) {
+            crate::abilities::add_ability(&mut world.progression[i], aid);
         }
     }
 }
