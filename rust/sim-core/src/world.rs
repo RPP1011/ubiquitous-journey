@@ -102,6 +102,11 @@ pub struct World {
     pub recipe: Vec<[f32; crate::components::N_COMMODITIES]>, // graded recipe skill PER GOOD (cross-craft: learn-by-doing, fades unpractised)
     // ── Wave-3 society columns ──
     pub faith: Vec<u8>,         // small-god id (0 = none, NO_GOD)
+    /// The god this agent holds a CONTRACT with (1-based god id, 0 = none). A god grants a boon as a
+    /// signing bonus to recruit a follower whose goal serves it; the follower keeps the boon. `faith.rs`.
+    pub contract_god: Vec<u16>,
+    /// The strength of that contract's boon (drives the ongoing tithe cost + the favour blessing).
+    pub contract_power: Vec<u16>,
     pub band_leader: Vec<i32>,  // band/clan leader id (-1 = none, NO_BAND)
     pub house: Vec<u32>,        // dynastic house id (0 = none)
     // ── Wave-H society columns (the society-wave fan-out substrate) ──
@@ -165,6 +170,7 @@ pub struct World {
     pub reporter_last_volume: u64, // trade volume at the last filed report (so each report is a delta)
     pub bounty_target: i32, // the agent id a town bounty is posted on (-1 = none) — bounties.ts
     pub bounty_fund: i64,   // gold (minor units) pledged to whoever claims the bounty (a real, held pool)
+    pub shrine_fund: i64,   // gold tithed by contracted followers to their gods (conserved; held pool)
     pub caravan_treasury: i64, // gold held by the EXTERNAL market the caravans trade with (arbitrage.ts)
     /// Communal GRANARY food store (a `construction.js` building benefit): surplus-bearing farmers near
     /// the granary DEPOSIT spare Food; the hungry+foodless near it WITHDRAW a meal. A conserved buffer
@@ -506,6 +512,7 @@ impl World {
                 domain_param: 0,
                 believers: 0,
                 active: true,
+                greed: (gen.next_f32() * gen.next_f32() * 200.0) as u8, // most gods generous, a few greedy
             });
         }
         // seat wild gods at the lairs nearest the towns (the most-trafficked, where foragers,
@@ -530,6 +537,7 @@ impl World {
                 domain_param: 0,
                 believers: 0,
                 active: true,
+                greed: (gen.next_f32() * gen.next_f32() * 200.0) as u8,
             });
         }
         // seatless condition/activity/universal gods — free-roaming, in-domain by STATE not place.
@@ -552,6 +560,7 @@ impl World {
                 domain_param: param,
                 believers: 0,
                 active: true,
+                greed: (gen.next_f32() * gen.next_f32() * 200.0) as u8,
             });
         }
 
@@ -598,6 +607,8 @@ impl World {
             trade_buff: Vec::with_capacity(n),
             recipe: Vec::with_capacity(n),
             faith: Vec::with_capacity(n),
+            contract_god: Vec::with_capacity(n),
+            contract_power: Vec::with_capacity(n),
             band_leader: Vec::with_capacity(n),
             house: Vec::with_capacity(n),
             epithet: Vec::with_capacity(n),
@@ -634,6 +645,7 @@ impl World {
             reporter_last_volume: 0,
             bounty_target: -1,
             bounty_fund: 0,
+            shrine_fund: 0,
             caravan_treasury: 200_000, // the external market's gold (counted in total_gold ⇒ conserved)
             player: -1,
             player_rep: [0; 5],
@@ -728,6 +740,8 @@ impl World {
             w.beliefs.push(BeliefTable::default());
             w.beliefs_prev.push(BeliefTable::default());
             w.faith.push(NO_GOD);
+            w.contract_god.push(0);
+            w.contract_power.push(0);
             w.band_leader.push(NO_BAND);
             w.house.push(0);
             w.epithet.push(0);
@@ -853,6 +867,8 @@ impl World {
         self.trade_buff.push(0);
         self.recipe.push([1.0; crate::components::N_COMMODITIES]);
         self.faith.push(NO_GOD);
+        self.contract_god.push(0);
+        self.contract_power.push(0);
         self.band_leader.push(NO_BAND);
         self.house.push(0);
         self.epithet.push(0);
@@ -1364,7 +1380,8 @@ impl World {
         systems::lineage::tick(self);
         systems::faith::tick(self);
         systems::faith::effects(self); // worship colours the faithful's behaviour (depth-scaled mood)
-        systems::faith::contracts(self); // a deep god grafts its ability onto its champions
+        systems::faith::recruit(self); // gods grant boons to recruit followers whose goals serve them
+        systems::faith::collect_tithes(self); // contracted followers tithe to their god (conserved)
         systems::faith::birth_and_death(self); // gods are made + unmade by belief (towns die → their god dies)
         systems::groups::tick(self);
         systems::quests::tick(self);
@@ -1916,7 +1933,10 @@ impl World {
     /// conservation invariant. A bounty levy moves gold from purses INTO the fund and a claim moves it
     /// back out, so the fund must count or the invariant would spuriously break mid-bounty.
     pub fn total_gold(&self) -> i64 {
-        self.econ.iter().map(|e| e.gold + e.stash).sum::<i64>() + self.bounty_fund + self.caravan_treasury
+        self.econ.iter().map(|e| e.gold + e.stash).sum::<i64>()
+            + self.bounty_fund
+            + self.caravan_treasury
+            + self.shrine_fund
     }
 
     /// RUN A CARAVAN (`arbitrage.ts` / caravans — the REAL inter-town form): find the non-food good with

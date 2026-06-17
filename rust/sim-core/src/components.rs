@@ -580,6 +580,7 @@ pub struct God {
     pub domain_param: u16,     // domain scoping (e.g. the profession for DOMAIN_CRAFT)
     pub believers: u32,        // the substance that sustains it (recomputed each pass) — hashed
     pub active: bool,          // is its domain currently active? — hashed
+    pub greed: u8,             // how much it extracts from its champions (0 = generous boon, high = a tithe)
 }
 
 impl God {

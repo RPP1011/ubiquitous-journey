@@ -163,6 +163,19 @@ fn main() {
         ));
     }
     println!("  per-god: {:?}", gl);
+    let contracted = (0..w.n).filter(|&i| w.contract_god[i] != 0).count();
+    let mut tithed = vec![0usize; w.gods.len() + 1];
+    for i in 0..w.n {
+        let c = w.contract_god[i] as usize;
+        if c > 0 && c <= w.gods.len() {
+            tithed[c] += 1;
+        }
+    }
+    let recruiters = (1..=w.gods.len()).filter(|&c| tithed[c] > 0).count();
+    println!(
+        "  contracts: {} followers under contract, held by {} gods   |   shrine fund: {}",
+        contracted, recruiters, w.shrine_fund
+    );
     let born = w.chronicle.iter().filter(|b| b.kind == 70).count();
     let died = w.chronicle.iter().filter(|b| b.kind == 71).count();
     let living = w.gods.iter().filter(|g| g.active).count();

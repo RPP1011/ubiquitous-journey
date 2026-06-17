@@ -14,7 +14,9 @@
 //!
 //! Then DYNAMICS (breadth = in-domain count, depth drifts with the flock — gods migrate on the grid),
 //! `effects` (depth-scaled, mood-only ⇒ economy-safe: war = resolve, comfort consoles, town defends,
-//! wild = reckless, etc.), and `contracts` (a deep god grafts its domain ability onto its champions).
+//! wild = reckless, etc.), `recruit` (a deep god offers a boon — a catalog ability — as a signing bonus
+//! to win a goal-aligned follower, who converts and keeps it), and `collect_tithes` (a contracted
+//! follower pays an ongoing tithe scaled by boon-strength x greed; gold → shrine_fund, conserved).
 //!
 //! Determinism: serial; rolls use a dedicated `world.faith_rng` so faith never perturbs the economy's
 //! `sim_rng`. No gold minted; the only spawns are wilderness monsters (via the lair effect, conserved).
@@ -219,55 +221,171 @@ pub fn effects(world: &mut World) {
     }
 }
 
-// ── CONTRACTS: a deep god grafts its domain's ability onto its strongest believers (champions/prophets)
-const CONTRACT_DEPTH: u16 = 5; // a god at least this deep can grant a contract.
-const CONTRACT_CHAMPIONS: usize = 3; // up to this many believers per god are gifted.
-pub const CONTRACT_EVERY: u32 = 90;
+// ── CONTRACTS / RECRUITMENT: a god grants a boon as a SIGNING BONUS to win a follower whose goal serves
+// it. The follower keeps the boon. Cost (an ongoing tithe) scales with the boon's strength x the god's
+// greed, discounted by how well the follower serves the god — an aligned follower is cheap (its deeds pay).
+pub const RECRUIT_EVERY: u32 = 120;
+const RECRUIT_MIN_DEPTH: u16 = 4;
+const RECRUIT_PER_POWER: u32 = 1400; // a god recruits one per this much power...
+const RECRUIT_CAP: usize = 2; // ...up to this many per pass.
+const FIT_MIN: f32 = 7.5; // a candidate must score at least this to be worth courting.
+const FIT_MAX: f32 = 16.0; // fitness at/above this = full alignment (the cheapest contract).
+const POWER_PER_FIT: f32 = 14.0; // boon strength per fitness point.
+pub const TITHE_EVERY: u32 = 30;
+const TITHE_DIVISOR: i64 = 4000;
+const BEAT_CONTRACT: u8 = 72;
 
-/// The ability a god of `domain` grants its champions (the catalog spec that fits its nature).
-fn domain_ability(domain: u8) -> Option<u16> {
+/// A catalog ability the god of `domain` can grant, picked to fit the candidate (a small per-domain pool).
+fn pool_ability(domain: u8, w: &World, i: usize) -> Option<u16> {
     use crate::abilities::*;
+    let lvl = w.level[i];
     Some(match domain {
-        DOMAIN_SETTLEMENT => ID_SECOND_WIND, // a protector: self-heal + shield
-        DOMAIN_WILD_SITE => ID_WHIRLWIND,    // a berserk fanatic
-        DOMAIN_WAR => ID_POWER_STRIKE,       // a holy warrior
-        DOMAIN_DREAD => ID_PLANT_RUMOR,      // a fearmonger
-        DOMAIN_COMFORT => ID_SECOND_WIND,    // a healer
-        DOMAIN_FORTUNE => ID_HAGGLE,         // a blessed dealmaker
-        DOMAIN_CRAFT => ID_MASTER_CRAFT,     // a master artisan
-        DOMAIN_DEATH => ID_FROST_BOLT,       // a reaper
+        DOMAIN_WAR => {
+            if lvl >= 8 {
+                ID_POWER_STRIKE
+            } else if w.personality[i].aggression > 0.6 {
+                ID_WHIRLWIND
+            } else {
+                ID_CLEAVING_BLOW
+            }
+        }
+        DOMAIN_WILD_SITE => if w.personality[i].aggression > 0.5 { ID_WHIRLWIND } else { ID_FROST_BOLT },
+        DOMAIN_DEATH => ID_FROST_BOLT,
+        DOMAIN_DREAD => ID_PLANT_RUMOR,
+        DOMAIN_FORTUNE => ID_HAGGLE,
+        DOMAIN_CRAFT => ID_MASTER_CRAFT,
+        DOMAIN_COMFORT | DOMAIN_SETTLEMENT => ID_SECOND_WIND,
         _ => return None,
     })
 }
 
-/// Grant each sufficiently-DEEP god's strongest believers (level desc, id asc) its domain ability — they
-/// become champions/prophets who then wield it via the autocaster. Serial ⇒ deterministic; idempotent.
-pub fn contracts(world: &mut World) {
-    if world.tick % CONTRACT_EVERY != 0 || world.gods.is_empty() {
+/// How much god `g` WANTS candidate `i` — how well its nature (behaviour profile), goal (ambition), and
+/// strength serve the god's domain. Higher = courted harder, cheaper + stronger boon.
+fn fitness(w: &World, i: usize, g: &God) -> f32 {
+    use crate::tags::Tag;
+    let p = w.personality[i];
+    let bp = &w.progression[i].behavior_profile;
+    let lvl = w.level[i] as f32;
+    let bt = |t: Tag| bp[t as usize];
+    let mut s = match g.domain {
+        DOMAIN_WAR => bt(Tag::Melee) + bt(Tag::Kill) + bt(Tag::Risk) + p.aggression * 6.0 + lvl * 0.3,
+        DOMAIN_WILD_SITE => p.risk_tolerance * 6.0 + p.aggression * 4.0,
+        DOMAIN_DEATH => bt(Tag::Kill) * 1.5 + p.aggression * 3.0,
+        DOMAIN_DREAD => p.aggression * 2.0 + bt(Tag::Deceive) * 2.0,
+        DOMAIN_FORTUNE => w.wealth[i] as f32 / 6000.0 + bt(Tag::Trade) + bt(Tag::Profit) + p.ambition * 6.0,
+        DOMAIN_CRAFT => {
+            if w.profession[i] == g.domain_param as u8 {
+                let good = crate::world::prof_good(w.profession[i]).unwrap_or(0);
+                w.recipe[i][good] * 8.0 + bt(Tag::Crafting) + p.ambition * 3.0
+            } else {
+                0.0
+            }
+        }
+        DOMAIN_COMFORT => p.altruism * 7.0,
+        DOMAIN_SETTLEMENT => {
+            if (w.town[i] as i16) == g.home_town {
+                lvl * 0.4 + p.social_drive * 3.0
+            } else {
+                0.0
+            }
+        }
+        _ => 0.0,
+    };
+    s += match (g.domain, w.ambition[i]) {
+        (DOMAIN_FORTUNE, x) if x == crate::components::AMB_WEALTH => 5.0,
+        (DOMAIN_CRAFT, x) if x == crate::components::AMB_MASTERY => 5.0,
+        (DOMAIN_WILD_SITE, x) if x == crate::components::AMB_WANDERLUST => 4.0,
+        _ => 0.0,
+    };
+    s
+}
+
+/// How OPEN candidate `i` is to a divine bargain — desperation (poverty/fear/grief/hunger) + ambition,
+/// less contentment (joy). A desperate or ambitious soul takes a costly deal; a content one refuses.
+fn openness(w: &World, i: usize) -> f32 {
+    let p = w.personality[i];
+    let m = w.mood[i];
+    let poverty = (1.0 - w.wealth[i] as f32 / 60000.0).max(0.0);
+    let hungry = (1.0 - w.needs[i].hunger).max(0.0);
+    (poverty + m.fear + m.grief + hungry) * 2.0 + (p.ambition + p.risk_tolerance) * 3.0 - m.joy * 2.0
+}
+
+/// RECRUIT: each god courts the candidates it most wants (uncontracted; scored by fitness), offering a boon
+/// as a signing bonus. A candidate accepts if its openness covers the cost (boon strength x greed, minus
+/// alignment); on accept it CONVERTS to the god and keeps the boon. Serial ⇒ deterministic.
+pub fn recruit(world: &mut World) {
+    if world.tick % RECRUIT_EVERY != 0 || world.gods.is_empty() {
         return;
     }
     for gi in 0..world.gods.len() {
-        let god = world.gods[gi];
-        if !god.active || god.depth < CONTRACT_DEPTH {
+        let g = world.gods[gi];
+        if !g.active || g.depth < RECRUIT_MIN_DEPTH {
             continue;
         }
-        let aid = match domain_ability(god.domain) {
-            Some(a) => a,
-            None => continue,
-        };
-        let gid = (gi + 1) as u8;
-        let mut champs: Vec<(u8, usize)> = Vec::new();
+        let gid = (gi + 1) as u16;
+        let cap = ((g.power() / RECRUIT_PER_POWER) as usize).clamp(1, RECRUIT_CAP);
+        let mut cands: Vec<(f32, usize)> = Vec::new();
         for i in 0..world.n {
-            if is_faithful_candidate(world, i)
-                && world.faith[i] == gid
-                && !world.progression[i].abilities.iter().any(|&a| a == aid)
-            {
-                champs.push((world.level[i], i));
+            if !is_faithful_candidate(world, i) || world.contract_god[i] != 0 || world.faith[i] as u16 == gid {
+                continue;
+            }
+            let fit = fitness(world, i, &g);
+            if fit >= FIT_MIN {
+                cands.push((fit, i));
             }
         }
-        champs.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
-        for &(_, i) in champs.iter().take(CONTRACT_CHAMPIONS) {
-            crate::abilities::add_ability(&mut world.progression[i], aid);
+        cands.sort_by(|a, b| {
+            b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal).then(a.1.cmp(&b.1))
+        });
+        let mut made = 0usize;
+        for (fit, i) in cands {
+            if made >= cap {
+                break;
+            }
+            let power = (fit * POWER_PER_FIT).clamp(10.0, u16::MAX as f32) as u16;
+            let alignment = (fit / FIT_MAX).min(1.0);
+            let cost = power as f32 * (g.greed as f32 / 255.0) * (1.0 - alignment);
+            if openness(world, i) >= cost {
+                world.contract_god[i] = gid;
+                world.contract_power[i] = power;
+                world.faith[i] = gid as u8;
+                if let Some(aid) = pool_ability(g.domain, world, i) {
+                    crate::abilities::add_ability(&mut world.progression[i], aid);
+                }
+                world.chronicle.push(crate::components::Beat {
+                    t: world.tick,
+                    kind: BEAT_CONTRACT,
+                    subject: i as u32,
+                    magnitude: gid as i32,
+                });
+                made += 1;
+            }
+        }
+    }
+}
+
+/// Contracted followers pay an ongoing TITHE to their god (gold → shrine_fund, conserved), scaled by the
+/// boon's strength and the god's greed. A generous god (greed 0) takes nothing. If the god has DIED, the
+/// bargain lapses (the boon is kept). Serial ⇒ deterministic.
+pub fn collect_tithes(world: &mut World) {
+    if world.tick % TITHE_EVERY != 0 {
+        return;
+    }
+    for i in 0..world.n {
+        let cg = world.contract_god[i] as usize;
+        if cg == 0 || cg > world.gods.len() {
+            continue;
+        }
+        if !world.gods[cg - 1].active {
+            world.contract_god[i] = 0;
+            continue;
+        }
+        let greed = world.gods[cg - 1].greed as i64;
+        let tithe = (world.contract_power[i] as i64 * greed) / TITHE_DIVISOR;
+        let pay = tithe.min(world.econ[i].gold);
+        if pay > 0 {
+            world.econ[i].gold -= pay;
+            world.shrine_fund += pay;
         }
     }
 }
@@ -418,17 +536,20 @@ pub fn birth_and_death(world: &mut World) {
         }
         let has = world.gods.iter().any(|g| g.active && g.domain == DOMAIN_SETTLEMENT && g.home_town == t as i16);
         if !has {
+            let greed = (world.faith_rng.next_f32() * world.faith_rng.next_f32() * 200.0) as u8;
+            let seat = Some(world.town_centers[t]);
             birth_god(
                 world,
                 God {
                     domain: DOMAIN_SETTLEMENT,
                     breadth: pop[t].min(u16::MAX as usize) as u16,
                     depth: 2,
-                    seat: Some(world.town_centers[t]),
+                    seat,
                     home_town: t as i16,
                     domain_param: 0,
                     believers: 0,
                     active: true,
+                    greed,
                 },
             );
         }
@@ -445,11 +566,12 @@ pub fn birth_and_death(world: &mut World) {
         if world.gods.iter().any(|g| g.active && g.domain == domain) {
             continue; // already served
         }
-        let probe = God { domain, breadth: 0, depth: 1, seat: None, home_town: -1, domain_param: param, believers: 0, active: true };
+        let mut probe = God { domain, breadth: 0, depth: 1, seat: None, home_town: -1, domain_param: param, believers: 0, active: true, greed: 0 };
         let n_in: usize = (0..world.n)
             .filter(|&i| is_faithful_candidate(world, i) && world.faith[i] == NO_GOD && in_domain(world, i, &probe))
             .count();
         if n_in >= BIRTH_IN_DOMAIN {
+            probe.greed = (world.faith_rng.next_f32() * world.faith_rng.next_f32() * 200.0) as u8;
             birth_god(world, probe);
         }
     }

@@ -54,6 +54,8 @@ pub fn world_hash(w: &World) -> u64 {
         }
         // Wave-3 society columns
         h = fold(h, &[w.faith[i]]);
+        h = fold(h, &w.contract_god[i].to_le_bytes());
+        h = fold(h, &w.contract_power[i].to_le_bytes());
         h = fold(h, &w.band_leader[i].to_le_bytes());
         h = fold(h, &w.house[i].to_le_bytes());
         // Wave-H society columns
@@ -215,6 +217,10 @@ pub fn world_hash(w: &World) -> u64 {
     h = fold(h, &w.bounty_target.to_le_bytes());
     h = fold(h, &w.bounty_fund.to_le_bytes());
     h = fold(h, &w.caravan_treasury.to_le_bytes());
+    h = fold(h, &w.shrine_fund.to_le_bytes());
+    for g in &w.gods {
+        h = fold(h, &[g.greed]);
+    }
     h = fold(h, &w.player.to_le_bytes());
     for r in &w.player_rep {
         h = fold(h, &r.to_le_bytes());
