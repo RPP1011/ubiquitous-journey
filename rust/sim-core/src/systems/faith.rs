@@ -234,6 +234,9 @@ const POWER_PER_FIT: f32 = 14.0; // boon strength per fitness point.
 pub const TITHE_EVERY: u32 = 30;
 const TITHE_DIVISOR: i64 = 4000;
 const BEAT_CONTRACT: u8 = 72;
+const BOON_SECOND_AT: u16 = 160; // a contract this strong invests a SECOND domain ability.
+const BOON_BESPOKE_AT: u16 = 130; // ...and at least this strong + a shared grand goal earns a bespoke boon.
+const BESPOKE_MASTERY: f32 = 0.85; // a craft god firms an aspiring smith's recipe to (at least) this.
 
 /// A catalog ability the god of `domain` can grant, picked to fit the candidate (a small per-domain pool).
 fn pool_ability(domain: u8, w: &World, i: usize) -> Option<u16> {
@@ -257,6 +260,66 @@ fn pool_ability(domain: u8, w: &World, i: usize) -> Option<u16> {
         DOMAIN_COMFORT | DOMAIN_SETTLEMENT => ID_SECOND_WIND,
         _ => return None,
     })
+}
+
+/// A SECOND ability a god of `domain` invests in a strong recruit (distinct from the primary pool).
+fn secondary_ability(domain: u8) -> Option<u16> {
+    use crate::abilities::*;
+    Some(match domain {
+        DOMAIN_WAR => ID_SECOND_WIND,     // a holy warrior who endures
+        DOMAIN_WILD_SITE => ID_WHIRLWIND, // a fanatic who flails
+        DOMAIN_DEATH => ID_EXPOSE_WEAKNESS,
+        DOMAIN_DREAD => ID_READ_MIND,
+        DOMAIN_FORTUNE => ID_SILVER_TONGUE,
+        DOMAIN_CRAFT => ID_SECOND_WIND, // endurance to keep at the forge
+        DOMAIN_COMFORT | DOMAIN_SETTLEMENT => ID_SILVER_TONGUE,
+        _ => return None,
+    })
+}
+
+/// Does god `domain` share candidate `i`'s GRAND GOAL (its ambition)? Such a soul gets a bespoke boon —
+/// the god directly advances the very thing it already wants.
+fn shares_grand_goal(domain: u8, ambition: u8) -> bool {
+    use crate::components::{AMB_MASTERY, AMB_RENOWN, AMB_WANDERLUST, AMB_WEALTH};
+    matches!(
+        (domain, ambition),
+        (DOMAIN_CRAFT, AMB_MASTERY)
+            | (DOMAIN_WAR, AMB_RENOWN)
+            | (DOMAIN_WILD_SITE, AMB_WANDERLUST)
+            | (DOMAIN_FORTUNE, AMB_WEALTH)
+    )
+}
+
+/// Grant candidate `i` the BOONS of a contract with god `g` at the given `power` — a signing bonus the
+/// follower keeps. A bigger contract (a god that wants the soul more) grants more: the primary domain
+/// ability always; a SECOND ability for a strong boon; and a BESPOKE boon when the follower's grand goal is
+/// one the god shares — directly advancing it (a craft god firms an aspiring smith's mastery; a war god
+/// grants its apex strike). Conserved: abilities + recipe skill only, never minted gold. Deterministic.
+fn grant_boons(w: &mut World, i: usize, g: &God, power: u16) {
+    use crate::abilities::*;
+    if let Some(a) = pool_ability(g.domain, w, i) {
+        add_ability(&mut w.progression[i], a);
+    }
+    if power >= BOON_SECOND_AT {
+        if let Some(a) = secondary_ability(g.domain) {
+            add_ability(&mut w.progression[i], a);
+        }
+    }
+    if power >= BOON_BESPOKE_AT && shares_grand_goal(g.domain, w.ambition[i]) {
+        match g.domain {
+            // The smith's grand goal IS mastery; the god simply grants it (firms the recipe to master).
+            DOMAIN_CRAFT => {
+                if let Some(good) = crate::world::prof_good(w.profession[i]) {
+                    w.recipe[i][good] = w.recipe[i][good].max(BESPOKE_MASTERY);
+                }
+            }
+            // A renown-seeking warrior, a wanderer, a wealth-seeker get the apex tool for their road.
+            DOMAIN_WAR => add_ability(&mut w.progression[i], ID_POWER_STRIKE),
+            DOMAIN_WILD_SITE => add_ability(&mut w.progression[i], ID_FROST_BOLT),
+            DOMAIN_FORTUNE => add_ability(&mut w.progression[i], ID_EXPOSE_WEAKNESS),
+            _ => {}
+        }
+    }
 }
 
 /// How much god `g` WANTS candidate `i` — how well its nature (behaviour profile), goal (ambition), and
@@ -349,9 +412,7 @@ pub fn recruit(world: &mut World) {
                 world.contract_god[i] = gid;
                 world.contract_power[i] = power;
                 world.faith[i] = gid as u8;
-                if let Some(aid) = pool_ability(g.domain, world, i) {
-                    crate::abilities::add_ability(&mut world.progression[i], aid);
-                }
+                grant_boons(world, i, &g, power);
                 world.chronicle.push(crate::components::Beat {
                     t: world.tick,
                     kind: BEAT_CONTRACT,
