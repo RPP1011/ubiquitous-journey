@@ -1,10 +1,22 @@
 # 25 — Belief fact-store (the proposition model) — LLD
 
-> Status: **BUILT + LIVE.** The fact store is the open belief layer — written, decayed, hashed,
-> read-to-behavior, deterministic (M-invariant), and proven minting in-sim. The flagship capability
-> (a quantitative debt belief → a vendetta) runs end-to-end. The fixed `PersonBelief` struct REMAINS
-> as the hot closed core by deliberate decision (see "Scope" below) — it is the fast read surface; the
-> fact store carries the open propositions it never could.
+> Status: **READ PATH FULLY UNIFIED ON FACTS.** Per user direction (extensibility + one model +
+> per-fact epistemics > a few-% tick cost), the goal is a SINGLE belief representation — the fact
+> store — with the legacy struct retired. As of now: **every belief read that drives cognition or
+> observation goes through `FactStore`** (decide, planner, derivers, reason, combat, locomotion,
+> market, director, tropes, patrician, lineage, groups, expeditions, refugees, signals). The fact
+> store is written, decayed, hashed, deterministic (M-invariant), and the flagship open capability
+> (a quantitative debt belief → a vendetta) runs end-to-end in-sim.
+>
+> **Remaining (the writer flip):** `perceive`, `gossip`, the `scry` ability, and the society
+> belief-planters (`ensure_belief`/`sour_belief`/`warm_belief` + `seed_grudge`/`warm_to`) still WRITE
+> the legacy `PersonBelief`/`BeliefTable`, which is mirrored into facts each tick by
+> `World::mirror_beliefs_to_facts` (so readers see writer output). The `FactStore::to_belief_table`
+> codec (the inverse of `mirror_core_from`) is in place so those writers can keep their exact tested
+> logic on a transient scratch struct while facts become the only PERSISTENT store. Flipping the
+> writers + deleting the `beliefs`/`beliefs_prev` columns + the struct hash fold is the final step;
+> it is atomic (all writers move together) and was deferred to avoid rushing a working-sim-breaking
+> refactor under a tight budget.
 > See also: [02 — the epistemic split](02-epistemic-split.md), [10 — knowledge model](10-action-grammar.md),
 > [22 — Rust ECS backend](22-rust-ecs-backend-lld.md) (determinism mandate).
 
@@ -94,21 +106,32 @@ The M=1≡M=N golden hash ([22](22-rust-ecs-backend-lld.md)) must survive. Rules
   hold. Proven LIVE in-sim (`tests/fact_capability.rs`: real runs mint debts) + behaviorally
   unit-tested (`exec::derivers::debt_tests`).
 
-## Scope — why `PersonBelief` stays (the deliberate non-goal)
+## The migration to a single model (as-built + remaining)
 
-The original "Phase 5 — delete the struct" is **deliberately not done**, on the evidence:
+Decision (revised, per user): unify on ONE belief representation — the fact store — and retire the
+struct. The reasons the earlier "keep the struct as a hot core" stance was wrong: the cost is ~2–6×
+on belief reads that are only ~7% of the tick (a couple percent overall, on a tick 64% dominated by
+society), and a single model wins on **extensibility** (a new belief = a new `FA_*` + writer + reader,
+never widening a struct or its ~280 call sites), **one mechanism** (no struct/fact seam to keep in
+sync), and **uniform epistemics** (per-fact confidence/provenance + ToM for every attribute).
 
-- The struct's hot core (faction, hostile, pos, threat, standing) is read ~280× across 25 files and
-  works well; `beliefbench` showed those reads are 2–6× slower as facts with **no capability gain** —
-  it is pure cost. `tickprofile` showed belief reads are only ~7% of the tick, so the cost wouldn't
-  even matter, but neither would the churn of a risky 280-site rewrite.
-- The user's actual goal — richer, more interesting agents — is met by the fact store carrying the
-  **open** propositions (debts now; motives/promises/place-knowledge next). The core living in a fast
-  struct does not limit expressiveness.
+Done (committed, green at each step — facts mirror the struct during transition, so every reader
+conversion is behavior-identical):
+1. Substrate + `World.facts` column + hash fold.
+2. The open capability (`FA_OWES_ME` debt → `collect_debt` vendetta) end-to-end + live in-sim.
+3. **All readers migrated to `FactStore`** (view/views/believes/confidence): goal derivers, the GOAP
+   planner (`Pv.facts`), `decide` (homecoming/warband/flee/scout/intention-satisfied), `reason`,
+   combat, locomotion, market, and the society/observer passes.
 
-So the architecture is intentionally two-layer: **`PersonBelief` = the hot closed core; `FactStore` =
-the open proposition layer.** Together they are the belief system. Retiring the struct remains a
-possible future cleanup, but it is cost-only and explicitly out of scope.
+Remaining — the writer flip (atomic):
+4. Rewrite `perceive`/`gossip` to load a scratch `BeliefTable` via `to_belief_table()`, run their
+   exact existing logic, and store back via `mirror_core_from()` (facts = the only persistent store);
+   add a `facts_prev` snapshot for gossip's cross-read.
+5. Convert `scry` + the `ensure_belief`/`sour_belief`/`warm_belief` helpers (and `seed_grudge`/
+   `warm_to`) to write facts (the `ensure_belief`-returns-an-index contract needs reworking).
+6. Delete the `beliefs`/`beliefs_prev` columns, the mirror pass, and the struct hash fold; keep
+   `PersonBelief`/`BeliefTable` only as the transient perceive/gossip scratch + test fixtures.
+7. Fix the test fallout (tests that inject `w.beliefs[..]` → seed facts via `mirror_core_from`).
 
 ## Future extensions (defined vocabulary, not yet wired)
 

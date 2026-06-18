@@ -702,6 +702,39 @@ impl FactStore {
         }
         self.facts.sort_unstable_by(|a, b| Self::key(a).cmp(&Self::key(b)));
     }
+    /// CODEC (doc 25): reconstruct a transient `BeliefTable` (the perceive/gossip working format) from
+    /// the persisted facts — the inverse of `mirror_core_from`. Lets perceive/gossip keep their exact
+    /// tested logic operating on a scratch struct, with the fact store as the only PERSISTENT belief
+    /// storage. Open-tail facts (debts/motives) are not part of the struct and are left untouched in
+    /// `self` (a later `mirror_core_from(&scratch)` preserves them). ≤ BELIEF_CAP subjects.
+    pub fn to_belief_table(&self) -> BeliefTable {
+        let mut bt = BeliefTable::default();
+        for v in self.views() {
+            let i = bt.len as usize;
+            if i >= BELIEF_CAP {
+                break;
+            }
+            bt.subjects[i] = v.subject;
+            bt.bodies[i] = PersonBelief {
+                subject: v.subject,
+                last_x: v.last_x,
+                last_z: v.last_z,
+                confidence: v.confidence,
+                faction: v.faction,
+                level: v.level,
+                notoriety: v.notoriety,
+                threat: v.threat,
+                wealth: v.wealth,
+                last_tick: v.last_tick,
+                standing: v.standing,
+                flags: v.flags,
+                hops: v.hops,
+                assoc: v.assoc,
+            };
+            bt.len += 1;
+        }
+        bt
+    }
     #[inline]
     pub fn len(&self) -> usize {
         self.facts.len()

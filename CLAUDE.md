@@ -122,21 +122,23 @@ it is what keeps M=1≡M=N.
 
 ### Beliefs: struct today, fact-store next
 
-Beliefs are **two layers** (see [`25-belief-fact-store-lld`](docs/architecture/25-belief-fact-store-lld.md)):
+Beliefs are migrating to a **single unified model — the `FactStore`** (see
+[`25-belief-fact-store-lld`](docs/architecture/25-belief-fact-store-lld.md)). A belief is a set of
+interned int **propositions** `{subject, attr, value, conf, provenance, observed_at}` where `attr`
+implies the value-kind (`FA_FACTION`, `FA_HOSTILE`, `FA_STANDING`, … and the open tail `FA_OWES_ME`,
+`FA_INTENT`, …). Sorted `Vec` per agent (deterministic — **no HashMap in the hash surface**), folded
+into `world_hash`. Adding a new kind of belief = a new `FA_*` + a writer + a reader; no struct surgery.
 
-- **`PersonBelief` / `BeliefTable`** (`components.rs`, `World.beliefs`) — the hot **closed core**
-  (faction, hostile, pos, threat, standing, …): a cap-25 per-agent table, `find(subject)` → field
-  access. The fast read surface the cognition phases hit.
-- **`FactStore`** (`components.rs`, `World.facts`) — the **open proposition layer**: interned int
-  facts `{subject, attr, value, conf, provenance, observed_at}` where `attr` implies the value-kind.
-  Holds what the struct can't — e.g. `FA_OWES_ME`, a quantitative debt minted when an agent is robbed
-  (`Intent::Owe` → the merge), read by the `collect_debt` deriver to seed a vendetta. Sorted `Vec`
-  (deterministic, **no HashMap in the hash surface**), lazy decay, folded into `world_hash`.
-
-Adding a new kind of belief = a new `FA_*` attribute + a writer (event/inference) + a reader
-(deriver/predicate); no struct surgery. The perf cost is accepted deliberately (richness per agent >
-agent count; belief reads are only ~7% of the tick). Retiring the struct into facts is a possible
-future cleanup but is cost-only and out of scope.
+- **All cognition/observer READS go through `FactStore`** (`World.facts`): `view(subject)` →
+  `BeliefView` (the materialized projection), `views()`, `believes()`, `confidence()`.
+- The flagship open capability: `FA_OWES_ME`, a quantitative debt minted when an agent is robbed
+  (`Intent::Owe` → the merge), read by the `collect_debt` deriver to seed a vendetta — a belief the
+  old fixed struct could never hold.
+- **In transition:** the legacy `PersonBelief`/`BeliefTable` (`World.beliefs`) is still WRITTEN by
+  `perceive`/`gossip`/`scry`/the society planters and mirrored into facts each tick
+  (`mirror_beliefs_to_facts`). The remaining step is to flip those writers onto facts (via the
+  `to_belief_table` codec) and delete the struct columns. Until then, **write beliefs via the existing
+  paths** (perceive, `warm_belief`/`sour_belief`/`ensure_belief`) and **read via `facts`**.
 
 ## Conventions & gotchas
 
