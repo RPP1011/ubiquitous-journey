@@ -5,7 +5,7 @@
 //! intents), so the whole tick stays deterministic (M=1 ≡ M=N).
 
 use crate::components::{
-    BeliefTable, Beat, CombatBody, Commodity, DirectorState, Economy, Episode, EpisodeKind, Experience,
+    Beat, CombatBody, Commodity, DirectorState, Economy, Episode, EpisodeKind, Experience,
     Faction, Goal, GoalStack, Memory, Mood, Needs, Perceivable, Personality, Plan, Profession,
     Progression, DefenseState, ExpeditionState, Quest, Signals, TropeState, WatchState, NO_BAND, NO_GOD,
 };

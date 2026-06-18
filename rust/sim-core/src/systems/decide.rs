@@ -27,8 +27,8 @@
 use rayon::prelude::*;
 
 use crate::components::{
-    BeliefTable, Commodity, EpisodeKind, Experience, Faction, Goal, GoalStack, Intention,
-    IntentionKind, PersonBelief, Plan, Profession, BELIEF_CAP,
+    Commodity, EpisodeKind, Experience, Faction, Goal, GoalStack, Intention, IntentionKind, Plan,
+    Profession,
 };
 use crate::exec::registry::{run_derivers, DeriveCtx};
 use crate::planner::{compile_current, solve_plan, step_effect_holds, Atom, Pv, VERB_ROB};

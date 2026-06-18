@@ -19,7 +19,7 @@
 //! `world.rng[i]`). The actual gold/good movement is the deterministic serial merge — this pass only
 //! PROPOSES transfers + writes its own rows. No HashMap / no float-reduce on the behaviour path.
 
-use crate::components::{BeliefTable, Commodity, Economy, Faction, Goal, GoalKind, N_COMMODITIES};
+use crate::components::{Commodity, Economy, Faction, Goal, GoalKind, N_COMMODITIES};
 use crate::intent::Intent;
 use crate::tags::{motive, outcome, Tag};
 use crate::world::World;
@@ -346,7 +346,7 @@ mod tests {
     /// discount (< 1), a despised buyer a markup (> 1), a stranger the neutral midpoint (1.0).
     #[test]
     fn standing_skews_the_clearing_price() {
-        use crate::components::{FactStore, PersonBelief};
+        use crate::components::{BeliefTable, FactStore, PersonBelief};
         let mk = |standing: i16| {
             let mut bt = BeliefTable::default();
             bt.subjects[0] = 9;

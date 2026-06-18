@@ -15,7 +15,7 @@
 //! staleness entirely — robustly deterministic, no persistent Plan column needed.
 
 use crate::components::{
-    BeliefTable, EpisodeKind, Experience, Goal, InteractVerb, Memory, Plan, PlanStep, N_COMMODITIES,
+    EpisodeKind, Experience, Goal, InteractVerb, Memory, Plan, PlanStep, N_COMMODITIES,
     NONE_ID, PLAN_CAP,
 };
 use crate::experience::felt_surcharge;

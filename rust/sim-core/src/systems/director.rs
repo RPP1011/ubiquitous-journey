@@ -23,7 +23,7 @@
 //! (never per-entity rng). CONSERVATION: spawned raiders carry 0 gold; no trope mints money.
 
 use crate::components::{
-    Beat, BeliefTable, Episode, EpisodeKind, Faction, Goal, PersonBelief, Profession, BELIEF_CAP,
+    Beat, Episode, EpisodeKind, Faction, Goal, Profession,
 };
 use crate::world::World;
 

@@ -713,8 +713,8 @@ impl FactStore {
             }
         }
     }
-    /// Refresh a believed position (a witness fold relocating the subject), bumping confidence.
-    pub fn set_pos(&mut self, subject: u32, x: f32, z: f32, tick: u32) {
+    /// Refresh a believed position (a witness fold relocating the subject).
+    pub fn set_pos(&mut self, subject: u32, x: f32, z: f32, _tick: u32) {
         if let Ok(i) = self.pos(subject, FA_LASTX) {
             self.facts[i].value = x.to_bits();
         }
