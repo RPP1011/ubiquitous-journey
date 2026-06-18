@@ -66,7 +66,11 @@ enum Verb {
     Attack,
     Rob,  // take coin from a believed mark by force (→ Goal::Interact{Rob})
     Give, // hand a good to a benefactor (→ Goal::Interact{Give})
-    Pay,  // hand coin to a benefactor (→ Goal::Interact{Pay})
+    // DORMANT by design (like the dormant `wreck`/`hold` vocabulary): the Pay verb + its executor exist
+    // end-to-end, but no `primitives_raw` arm emits a Pay step — repay/alms discharge in GOODS via `Give`
+    // (`Atom::Gave`), not coin. Kept as ready vocabulary for a future coin-repayment atom; never reached
+    // through the planner today.
+    Pay,
     Loot, // strip a fallen target (→ Goal::Interact{Loot})
     Free, // cut a captive's bonds (→ Goal::Interact{Free})
 }

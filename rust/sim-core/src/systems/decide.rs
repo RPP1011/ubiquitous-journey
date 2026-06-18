@@ -52,9 +52,6 @@ const SCOUT_CONF_LO: u16 = 8_000; // firm enough to be a hunch (not perceptual n
 const SCOUT_CONF_HI: u16 = 45_000; // below the act-on-it firm bar (still worth resolving)
 const SCOUT_WEALTH: u16 = 20_000; // a believed-rich subject worth a closer look
 
-/// Per-tick chance a profession-holder takes a market trip instead of working (rng-gated).
-const MARKET_CHANCE: f32 = 0.08;
-
 /// A believed-hostile within this distance of where I believe it is sends me fleeing.
 const FLEE_RANGE: f32 = 40.0;
 const FLEE_RANGE2: f32 = FLEE_RANGE * FLEE_RANGE;
@@ -81,8 +78,6 @@ fn nearest_forage(nodes: &[[f32; 2]], from: [f32; 2]) -> [f32; 2] {
 const WANDERLUST_PULL: f32 = 0.18;
 /// Base per-tick chance a wild-god's faithful answers the call to the wild (scaled by the god's depth).
 const FAITH_CALL: f32 = 0.07;
-/// How near a believed monster/raider a RENOWN-seeker will charge it for glory (instead of fleeing).
-const GLORY_RANGE: f32 = 45.0;
 /// Anger past this (0..1) makes a provoked agent turn and fight a believed-hostile rather than flee.
 const ANGER_FIGHT: f32 = 0.5;
 
@@ -236,6 +231,7 @@ pub fn decide(world: &mut World) {
                 let dctx = DeriveCtx {
                     faction: faction[i],
                     profession: profession[i],
+                    ambition: ambition[i],
                     gold: econ[i].gold,
                     inventory: econ[i].inventory,
                     pos: pos[i],
@@ -286,31 +282,10 @@ pub fn decide(world: &mut World) {
                 }
             }
 
-            // 2b. SEEK GLORY: a RENOWN-seeker hunts a believed monster/raider for glory — it stands and
-            //     fights an attacker-faction foe instead of fleeing (the renown ambition's teeth).
-            if townsfolk && ambition[i] == crate::components::AMB_RENOWN {
-                let bt = &beliefs[i];
-                let mut foe: Option<(u32, [f32; 2])> = None;
-                let mut best = (GLORY_RANGE * GLORY_RANGE, u32::MAX);
-                for b in 0..(bt.len as usize).min(BELIEF_CAP) {
-                    let cell = &bt.bodies[b];
-                    let attacker = cell.faction == Faction::Monster as u8 || cell.faction == Faction::Raider as u8;
-                    if cell.flags & 0x01 == 0 || !attacker {
-                        continue;
-                    }
-                    let dx = pos[i][0] - cell.last_x;
-                    let dz = pos[i][1] - cell.last_z;
-                    let d2 = dx * dx + dz * dz;
-                    if d2 < best.0 || (d2 == best.0 && cell.subject < best.1) {
-                        best = (d2, cell.subject);
-                        foe = Some((cell.subject, infer_pursuit(cell, map, now)));
-                    }
-                }
-                if let Some((target, to)) = foe {
-                    *g = Goal::Fight { target, to };
-                    return;
-                }
-            }
+            // 2b. SEEK GLORY is now a DERIVED intention (`seek_glory` deriver → IntentionKind::Glory →
+            //     Atom::Dead), served by the aggressive arbitration at step 2 above like Avenge/Defend —
+            //     so renown-hunting is priority-arbitrated, plan-routed, and caution-pruned like every
+            //     other aggressive goal, instead of a hardcoded out-of-band belief scan.
 
             // 3. THREAT: flee the NEAREST believed-hostile near where I believe it is (no grudge).
             let bt = &beliefs[i];
@@ -403,18 +378,12 @@ pub fn decide(world: &mut World) {
                     *g = Goal::Wander { to: [town_center[0] + r * a.cos(), town_center[1] + r * a.sin()] };
                     return;
                 }
-                let mut market_chance = MARKET_CHANCE * (0.5 + personality[i].ambition);
-                if amb == crate::components::AMB_WEALTH {
-                    market_chance *= 1.8;
-                } else if amb == crate::components::AMB_MASTERY {
-                    market_chance *= 0.4;
-                }
-                if my_rng.next_f32() < market_chance {
-                    *g = Goal::Market { site: market };
-                } else {
-                    let site_idx = (prof as usize - 1).min(work_sites.len() - 1);
-                    *g = Goal::Work { site: work_sites[site_idx] };
-                }
+                // WORK the craft. Going to MARKET is no longer a blind coin-flip here — deliberate trade is
+                // goal-driven: the `vend` deriver (sell surplus) and `provision` deriver (buy/forage food)
+                // pose market goals served above this branch, so an agent only visits the stalls when it
+                // actually has something to sell or needs to buy. With no such goal, it works its trade.
+                let site_idx = (prof as usize - 1).min(work_sites.len() - 1);
+                *g = Goal::Work { site: work_sites[site_idx] };
                 return;
             }
 
@@ -600,13 +569,23 @@ fn prune_goals(gstack: &mut GoalStack, pv: &Pv, now: u32) {
 #[inline]
 fn intention_atom(it: &Intention) -> Option<Atom> {
     match it.kind {
-        x if x == IntentionKind::Avenge as u8 || x == IntentionKind::Defend as u8 => {
+        x if x == IntentionKind::Avenge as u8
+            || x == IntentionKind::Defend as u8
+            || x == IntentionKind::Glory as u8 =>
+        {
             Some(Atom::Dead(it.subject))
         }
         x if x == IntentionKind::SeekFortune as u8 => Some(Atom::GoldGe(it.amt)),
+        // vend: raise gold by selling surplus — same planner mechanism as seek-fortune (goto market +
+        // sell best good), but triggered by holding surplus and pruned by its surplus-offloaded predicate.
+        x if x == IntentionKind::Vend as u8 => Some(Atom::GoldGe(it.amt)),
         // sate: obtain a single unit of Food (the planner routes forage vs buy by cost); needs.rs
         // then eats it. One unit is enough to break the starvation stall.
         x if x == IntentionKind::Sate as u8 => Some(Atom::Have(Commodity::Food as u8, 1)),
+        // provision: hold a standing FOOD buffer (buy at market, or forage if it can't pay).
+        x if x == IntentionKind::Provision as u8 => {
+            Some(Atom::Have(Commodity::Food as u8, it.amt.clamp(1, u16::MAX as i64) as u16))
+        }
         x if x == IntentionKind::Steal as u8 => Some(Atom::Took(it.subject)),
         x if x == IntentionKind::Donate as u8 || x == IntentionKind::Repay as u8 => {
             Some(Atom::Gave(it.subject))
@@ -624,18 +603,30 @@ fn is_aggressive(kind: u8) -> bool {
     kind == IntentionKind::Avenge as u8
         || kind == IntentionKind::Defend as u8
         || kind == IntentionKind::Rescue as u8
+        || kind == IntentionKind::Glory as u8 // renown-hunting stands and fights, overriding flee
 }
 
 /// Is an intention's predicate satisfied (so it should pop)? Belief/own-state only.
 fn intention_satisfied(it: &Intention, pv: &Pv) -> bool {
     match it.kind {
         // believed-dead: I struck it down (Slew memory) OR I hold no belief about it any more.
-        x if x == IntentionKind::Avenge as u8 || x == IntentionKind::Defend as u8 => {
+        x if x == IntentionKind::Avenge as u8
+            || x == IntentionKind::Defend as u8
+            || x == IntentionKind::Glory as u8 =>
+        {
             pv.memory.has(EpisodeKind::Slew, it.subject) || pv.beliefs.find(it.subject).is_none()
         }
         x if x == IntentionKind::SeekFortune as u8 => pv.gold >= it.amt,
+        // vended: the surplus has been offloaded (sold down to/under the keep) — the trip did its work.
+        x if x == IntentionKind::Vend as u8 => {
+            crate::exec::derivers::sellable_surplus(&pv.inventory) <= 0
+        }
         // sated: a meal is in the larder (needs.rs will eat it) — the foraging worked.
         x if x == IntentionKind::Sate as u8 => pv.inventory[Commodity::Food as usize] >= 1,
+        // provisioned: the standing food buffer is stocked.
+        x if x == IntentionKind::Provision as u8 => {
+            pv.inventory[Commodity::Food as usize] >= it.amt as i32
+        }
         // robbed the mark (the marker) or already met the heist's gold target.
         x if x == IntentionKind::Steal as u8 => {
             pv.memory.has(EpisodeKind::Robbed, it.subject) || pv.gold >= it.amt
@@ -1302,6 +1293,7 @@ mod tests {
         let (victor, corpse) = (0usize, 1usize);
         w.faction[victor] = Faction::Townsfolk as u8;
         w.needs[victor] = Needs::default();
+        w.econ[victor].inventory[Commodity::Food as usize] = 5; // food-secure ⇒ loot isn't preempted by provisioning
         w.pos[victor] = [0.0, 0.0];
         w.pos[corpse] = [1.5, 0.0];
         w.alive[corpse] = false; // already fallen
@@ -1337,6 +1329,43 @@ mod tests {
             "the victor remembers stripping the corpse (the settling marker)"
         );
         assert_eq!(w.total_gold(), total, "gold conserved (moved off the corpse, not minted)");
+    }
+
+    /// SEEK GLORY (now a derived intention, not a hardcoded branch): a RENOWN-ambition townsperson who
+    /// believes a hostile monster is near hunts it — deriving a Glory intention and standing to FIGHT it
+    /// (overriding the flee reflex), with the foe routed by the planner.
+    #[test]
+    fn a_renown_seeker_hunts_a_believed_monster() {
+        let mut w = World::spawn(0x6107, 8);
+        let i = (0..w.n).find(|&i| w.faction[i] == Faction::Townsfolk as u8).expect("a townsperson");
+        w.ambition[i] = crate::components::AMB_RENOWN;
+        w.needs[i] = Needs::default(); // content (no survival pull)
+        w.econ[i].inventory[Commodity::Food as usize] = 5; // fed (no provision pull)
+        w.goals[i] = GoalStack::default();
+        w.memory[i] = Memory::default();
+        // believe a hostile monster (id 7) is 20m away.
+        let bt = &mut w.beliefs[i];
+        bt.clear();
+        bt.subjects[0] = 7;
+        bt.bodies[0] = PersonBelief {
+            subject: 7,
+            last_x: w.pos[i][0] + 20.0,
+            last_z: w.pos[i][1],
+            confidence: 60000,
+            faction: Faction::Monster as u8,
+            flags: 0x01, // believed hostile
+            ..Default::default()
+        };
+        bt.len = 1;
+        decide(&mut w);
+        assert!(
+            (0..w.goals[i].len as usize).any(|k| w.goals[i].items[k].kind == IntentionKind::Glory as u8),
+            "a renown-seeker derives a Glory intention"
+        );
+        match w.goal[i] {
+            Goal::Fight { target, .. } => assert_eq!(target, 7, "and stands to fight the believed monster"),
+            other => panic!("expected a Fight for glory, got {other:?}"),
+        }
     }
 
     /// The intention pops once the foe is believed slain (a Slew memory satisfies the predicate).

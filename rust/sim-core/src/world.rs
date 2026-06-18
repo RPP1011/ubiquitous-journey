@@ -365,7 +365,7 @@ const BUILD_AT: u32 = 40;
 /// Run the resettlement (migrate) pass on this cadence — a slow trickle, gated + capped.
 const CONSTRUCT_EVERY: u32 = 60;
 /// Tend the communal granary (deposit surplus / withdraw a meal) on this cadence.
-const GRANARY_EVERY: u32 = 30;
+const GRANARY_EVERY: u32 = 20;
 /// Re-tend home discovery/loss on this cadence (sight-gated; slow — a home is a settled thing).
 const HOME_TEND_EVERY: u32 = 50;
 
@@ -1470,38 +1470,65 @@ impl World {
         }
     }
 
-    /// TEND GRANARY (`construction.js` granary benefit): the communal larder redistributes Food. A
-    /// surplus-bearing FARMER near the granary deposits one spare unit; a HUNGRY, foodless soul near it
-    /// withdraws a meal. CONSERVED — food only moves between inventories and `granary_stock`, never minted
-    /// — so it can only SMOOTH the marginal economy (surplus → the desperate), never destabilise it.
-    /// Serial id-order ⇒ deterministic. Only townsfolk within reach of the core granary participate.
+    /// TEND GRANARY (`construction.js` granary benefit): a FAMINE BACKSTOP, not the primary food channel.
+    /// The everyday food economy now runs through the planner — farmers VEND their harvest at the market,
+    /// other townsfolk PROVISION by buying it (or foraging when broke). The granary is the safety net
+    /// UNDER that: farmers stock whatever surplus they aren't selling into the town silo, and only a
+    /// soul at death's door (near-starving) draws an emergency meal back out. CONSERVED — food only moves
+    /// between inventories and `granary_stock`, never minted. Town-wide (keyed by `town[i]`, no distance
+    /// gate — the producers are out at the fields). Two serial id-order passes ⇒ deterministic.
     fn tend_granary(&mut self) {
-        const REACH2: f32 = 90.0 * 90.0; // within this of the granary to use it (a town-wide larder)
-        const DEPOSIT_BAR: i32 = 3; // a farmer keeps this many Food for itself; only the EXCESS is shared
-        const HUNGRY_BAR: f32 = 0.55; // feed a soul BEFORE it's at death's door (the safety net widens)
-        const CAP: i32 = 800; // the granary holds at most this much (a silo, not a black hole)
+        const DEPOSIT_BAR: i32 = 4; // a farmer keeps a little for itself; spare harvest backstops the town
+        const REFILL: i32 = 2; // an emergency meal or two — enough to step back from starvation, no more
+        const FAMINE_BAR: f32 = 0.25; // ONLY the near-starving draw on the reserve (the last resort)
+        const PER_CAPITA: i32 = 8; // a modest reserve (it is a backstop, not the larder the town lives on)
+        const MIN_CAP: i32 = 400;
         let food = Commodity::Food as usize;
+        let nt = self.granary_stock.len();
+
+        // per-town living population (drives the silo cap — recomputed each pass; tend is infrequent).
+        let mut pop = vec![0i32; nt];
+        for i in 0..self.n {
+            if self.alive[i] && self.faction[i] == Faction::Townsfolk as u8 {
+                pop[(self.town[i] as usize).min(nt - 1)] += 1;
+            }
+        }
+
+        // 1) DEPOSIT — a farmer's spare harvest (above its own keep) backstops its town's silo, up to the
+        //    silo's population-scaled cap. Conserved: inventory → stock.
+        for i in 0..self.n {
+            if !self.alive[i]
+                || self.faction[i] != Faction::Townsfolk as u8
+                || self.profession[i] != 1
+            {
+                continue;
+            }
+            let t = (self.town[i] as usize).min(nt - 1);
+            let cap = (pop[t] * PER_CAPITA).max(MIN_CAP);
+            let surplus = self.econ[i].inventory[food] - DEPOSIT_BAR;
+            let room = cap - self.granary_stock[t];
+            let give = surplus.min(room).max(0);
+            if give > 0 {
+                self.econ[i].inventory[food] -= give;
+                self.granary_stock[t] += give;
+            }
+        }
+
+        // 2) WITHDRAW — ONLY a near-starving soul (hunger < FAMINE_BAR) draws an emergency meal from its
+        //    town's reserve. Conserved: stock → inventory. Everyone else is fed by the market/forage.
         for i in 0..self.n {
             if !self.alive[i] || self.faction[i] != Faction::Townsfolk as u8 {
                 continue;
             }
-            // each agent uses ITS OWN town's granary (multi-town).
-            let t = (self.town[i] as usize).min(self.granary_pos.len() - 1);
-            let g = self.granary_pos[t];
-            let dx = self.pos[i][0] - g[0];
-            let dz = self.pos[i][1] - g[1];
-            if dx * dx + dz * dz > REACH2 {
+            if self.needs[i].hunger >= FAMINE_BAR {
                 continue;
             }
-            let inv = self.econ[i].inventory[food];
-            // a FARMER with real surplus tops up its town's silo (conserved: inventory → stock).
-            if self.profession[i] == 1 && inv > DEPOSIT_BAR && self.granary_stock[t] < CAP {
-                self.econ[i].inventory[food] -= 1;
-                self.granary_stock[t] += 1;
-            } else if inv == 0 && self.needs[i].hunger < HUNGRY_BAR && self.granary_stock[t] > 0 {
-                // a hungry, foodless soul draws a meal from its town's store (conserved: stock → inventory).
-                self.granary_stock[t] -= 1;
-                self.econ[i].inventory[food] += 1;
+            let t = (self.town[i] as usize).min(nt - 1);
+            let want = REFILL - self.econ[i].inventory[food];
+            let take = want.min(self.granary_stock[t]).max(0);
+            if take > 0 {
+                self.granary_stock[t] -= take;
+                self.econ[i].inventory[food] += take;
             }
         }
     }
@@ -1910,6 +1937,7 @@ impl World {
         crate::reason::reason(self);
         systems::decide::decide(self);
         systems::locomotion::step(self);
+        self.refresh_cues(); // keep the perceivable wealth/notoriety/level cues tracking real state
         self.build_surface();
         let t0 = std::time::Instant::now();
         perceive(self);
@@ -1930,6 +1958,46 @@ impl World {
         dt
     }
 
+    /// Per-phase wall-clock for one tick (the `beliefbench`/`tickprofile` instrument). Mirrors
+    /// `step_timing` exactly but times every phase, returning seconds in a fixed order:
+    /// [needs, reason, decide, locomotion, refresh_cues, build_surface, perceive, snapshot, gossip,
+    ///  combat, abilities, newsread, market, act, rest]. Phases marked in tickprofile as belief-READ
+    /// (reason/decide/gossip) are the ones a belief-layout change would inflate.
+    pub fn step_profiled(&mut self) -> [f64; 15] {
+        use std::time::Instant;
+        let mut t = [0.0f64; 15];
+        macro_rules! ph {
+            ($i:literal, $body:expr) => {{
+                let t0 = Instant::now();
+                $body;
+                t[$i] += t0.elapsed().as_secs_f64();
+            }};
+        }
+        ph!(0, systems::needs::drain(self));
+        ph!(1, crate::reason::reason(self));
+        ph!(2, systems::decide::decide(self));
+        ph!(3, systems::locomotion::step(self));
+        ph!(4, self.refresh_cues());
+        ph!(5, self.build_surface());
+        ph!(6, perceive(self));
+        ph!(7, self.snapshot_beliefs());
+        ph!(8, systems::gossip::gossip(self));
+        ph!(9, systems::combat::resolve(self));
+        ph!(10, crate::abilities::cast(self));
+        ph!(11, self.newsread());
+        ph!(12, systems::market::clear(self));
+        ph!(13, systems::act::act(self));
+        let t0 = Instant::now();
+        self.drain_intents();
+        self.release_freed_captives();
+        self.sagas.sweep(self.tick);
+        systems::progression::tick(self);
+        self.society_phase();
+        self.tick += 1;
+        t[14] += t0.elapsed().as_secs_f64();
+        t
+    }
+
     /// Total gold across the roster (purse + stash) PLUS any gold held in the town bounty fund — the
     /// conservation invariant. A bounty levy moves gold from purses INTO the fund and a claim moves it
     /// back out, so the fund must count or the invariant would spuriously break mid-bounty.
@@ -1938,6 +2006,41 @@ impl World {
             + self.bounty_fund
             + self.caravan_treasury
             + self.shrine_fund
+    }
+
+    /// Refresh the perceivable CUE COLUMNS from each agent's ACTUAL state, so perception (which copies
+    /// these into beliefs) and every consumer that reasons over them (alms/steal/loot mark-picking, the
+    /// fortune-god domain, the director's rankings, the watch's captaincy) sees REAL prosperity / infamy /
+    /// standing — not a frozen random number. Each of `wealth`, `notoriety`, `level` was set ONCE at spawn
+    /// to a random value (newborns to 0) and NEVER updated, so e.g. an unlucky/newborn agent read as
+    /// perpetually destitute and became a permanent alms magnet. Own-write per agent ⇒ deterministic; runs
+    /// at the top of the tick, before `build_surface` snapshots the cues for perception.
+    fn refresh_cues(&mut self) {
+        use crate::components::{Faction, N_COMMODITIES};
+        // the KILL behaviour-tally index (progression folds violent deeds here) — infamy's real source.
+        const KILL_TAG: usize = crate::systems::progression::TAG_KILL as usize;
+        for i in 0..self.n {
+            if !self.alive[i] {
+                continue;
+            }
+            // WEALTH ← real assets: purse + stash + the value of goods on hand (so a hoard reads as
+            // prosperity, not poverty). Clamped to the u16 cue.
+            let mut assets = self.econ[i].gold + self.econ[i].stash;
+            for g in 0..N_COMMODITIES {
+                assets += self.econ[i].inventory[g] as i64 * self.base_price[g];
+            }
+            self.wealth[i] = assets.clamp(0, u16::MAX as i64) as u16;
+            // NOTORIETY ← violent renown: the accumulated KILL behaviour weight, so infamy reflects real
+            // deeds rather than a spawn lottery.
+            let infamy = (self.progression[i].behavior_profile[KILL_TAG] * 40.0) as i64;
+            self.notoriety[i] = infamy.clamp(0, u16::MAX as i64) as u16;
+            // LEVEL ← the agent's real emergent level — but only for TOWNSFOLK. Monsters/raiders/horrors
+            // carry the THREAT-TIER level their spawner stamped (a danger rating, not an earned level), so
+            // leave theirs untouched.
+            if self.faction[i] == Faction::Townsfolk as u8 {
+                self.level[i] = self.progression[i].total_level.min(u8::MAX as u16) as u8;
+            }
+        }
     }
 
     /// RUN A CARAVAN (`arbitrage.ts` / caravans — the REAL inter-town form): find the non-food good with
@@ -2472,6 +2575,11 @@ mod tests {
     fn the_granary_redistributes_surplus_food() {
         let mut w = World::spawn(0x6A11, 4);
         w.granary_pos[0] = [0.0, 0.0];
+        // isolate the pair so only these two participate in the town larder (the withdraw pass is
+        // town-wide now, so any other living townsperson would also draw).
+        for i in 0..w.n {
+            w.alive[i] = false;
+        }
         let (farmer, pauper) = (0usize, 1usize);
         let food = Commodity::Food as usize;
         for &i in &[farmer, pauper] {
@@ -2482,23 +2590,49 @@ mod tests {
         }
         w.profession[farmer] = 1; // a farmer
         w.econ[farmer].inventory[food] = 8; // with real surplus
-        w.econ[pauper].inventory[food] = 0; // and a foodless neighbour
+        w.needs[farmer].hunger = 0.9; // and content (won't raid its own deposit)
+        w.econ[pauper].inventory[food] = 0; // a foodless neighbour
         w.needs[pauper].hunger = 0.1; // who is hungry
 
-        let total_before = w.econ[farmer].inventory[food] + w.econ[pauper].inventory[food] + w.granary_stock[0];
-        // one pass (id order): the farmer deposits a surplus unit, the foodless pauper draws one out.
+        let food_total = |w: &World| -> i32 {
+            (0..w.n).map(|i| w.econ[i].inventory[food]).sum::<i32>() + w.granary_stock.iter().sum::<i32>()
+        };
+        let total_before = food_total(&w);
+        // one pass (id order): the farmer deposits its spare harvest (down to its keep) into the reserve;
+        // the near-starving pauper draws an emergency meal back out.
         w.tend_granary();
-        assert_eq!(w.econ[farmer].inventory[food], 7, "one unit left the surplus farmer's store");
-        assert!(w.econ[pauper].inventory[food] > 0, "the hungry pauper drew a meal from the common store");
-        let total_after = w.econ[farmer].inventory[food] + w.econ[pauper].inventory[food] + w.granary_stock[0];
-        assert_eq!(total_before, total_after, "food is conserved — only moved (farmer→silo→pauper), never minted");
+        assert_eq!(w.econ[farmer].inventory[food], 4, "the farmer's surplus above its keep went to the silo");
+        assert!(w.econ[pauper].inventory[food] > 0, "the near-starving pauper drew an emergency meal from the reserve");
+        assert_eq!(total_before, food_total(&w), "food is conserved — only moved (farmer→silo→pauper), never minted");
         // a WELL-FED soul does not raid the silo: nothing flows to one that isn't hungry.
-        let stock = w.granary_stock[0];
         w.econ[pauper].inventory[food] = 0;
         w.needs[pauper].hunger = 0.9; // content
+        let stock_before = w.granary_stock[0];
         w.tend_granary();
         assert_eq!(w.econ[pauper].inventory[food], 0, "a content soul takes nothing from the store");
-        let _ = stock;
+        assert_eq!(w.granary_stock[0], stock_before, "the silo is untouched when no one is hungry");
+    }
+
+    /// The perceivable cues track REAL state (assets / emergent level), not the spawn lottery they used
+    /// to be frozen at — so alms/steal/faith/director reason over genuine prosperity and progression.
+    #[test]
+    fn cues_track_real_state_not_a_spawn_lottery() {
+        let mut w = World::spawn(0x0C0E, 4);
+        let (rich, poor) = (0usize, 1usize);
+        for &i in &[rich, poor] {
+            w.alive[i] = true;
+            w.faction[i] = Faction::Townsfolk as u8;
+            w.econ[i].inventory = [0; crate::components::N_COMMODITIES];
+        }
+        w.econ[rich].gold = 50_000;
+        w.econ[poor].gold = 100;
+        w.refresh_cues();
+        assert!(w.wealth[rich] > w.wealth[poor], "the wealth cue ranks the gold-rich above the destitute");
+        assert!(w.wealth[poor] <= 200, "a near-penniless soul reads poor regardless of its spawn lottery");
+        // the level cue tracks emergent progression (for townsfolk).
+        w.progression[rich].total_level = 7;
+        w.refresh_cues();
+        assert_eq!(w.level[rich], 7, "the level cue reflects the real emergent level");
     }
 
     /// ABILITY CONTROL OPS: an Afflict applies the debuff ops — Expose AMPLIFIES the next blow, Stun

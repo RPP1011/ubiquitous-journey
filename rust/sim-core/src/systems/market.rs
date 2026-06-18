@@ -60,6 +60,15 @@ const FORAGE_CAP: i32 = 4;
 const MASTER_BAR: f32 = 0.8;
 const RECIPE_LEARN: f32 = 0.05;
 
+/// FARMER harvest per tick. Food is provisioned far harder than the other trades (which yield 1) so a
+/// SMALL SQUAD of farmers can feed a whole settlement — the design goal. Paired with the granary
+/// redistribution (world.rs `tend_granary`), which hauls this surplus from the field to every mouth.
+const FARM_YIELD: i32 = 3;
+/// A MASTER farmer's extra harvest on top of the baseline (a master yields FARM_YIELD + this).
+const FARM_MASTER_BONUS: i32 = 3;
+/// A non-farm master's extra unit (unchanged from the original +1 mastery bonus).
+const CRAFT_MASTER_BONUS: i32 = 1;
+
 /// The belief→price drift toward an observed clear, as a 1/256 fraction (own-write learning rate).
 const PRICE_LEARN_NUM: i64 = 64; // 64/256 = 0.25
 
@@ -165,14 +174,18 @@ pub fn clear(world: &mut World) {
             let ti = (world.town[i] as usize).min(world.work_sites.len() - 1);
             let site = world.work_sites[ti][(prof as usize - 1).min(crate::world::N_WORK_SITES - 1)];
             if within(world.pos[i], site, WORK_RANGE) && world.econ[i].inventory[g] < PRODUCE_CAP {
-                world.econ[i].inventory[g] += 1;
                 // GRADED RECIPE (recipeKnow.ts): a MASTER of the craft yields an EXTRA unit — a bonus on
                 // top of the baseline, so a rusty/half-learned recipe never produces LESS than before
-                // (economy-safe by construction: the marginal food supply is never reduced). And working
-                // the craft sharpens the recipe (learn-by-doing); it fades unpractised (the forget pass).
-                if world.recipe[i][g] >= MASTER_BAR && world.econ[i].inventory[g] < PRODUCE_CAP {
-                    world.econ[i].inventory[g] += 1;
-                }
+                // (economy-safe by construction: the marginal food supply is never reduced). FARMERS
+                // harvest FARM_YIELD (others 1) so a small squad feeds the town. And working the craft
+                // sharpens the recipe (learn-by-doing); it fades unpractised (the forget pass).
+                let master = world.recipe[i][g] >= MASTER_BAR;
+                let yield_n = if prof == 1 {
+                    FARM_YIELD + if master { FARM_MASTER_BONUS } else { 0 }
+                } else {
+                    1 + if master { CRAFT_MASTER_BONUS } else { 0 }
+                };
+                world.econ[i].inventory[g] = (world.econ[i].inventory[g] + yield_n).min(PRODUCE_CAP);
                 world.recipe[i][g] = (world.recipe[i][g] + RECIPE_LEARN).min(1.0);
                 deeds.push(Intent::deed(i as u32, i as u32, 1, good_tag(g), motive::HABIT, outcome::GAINED | outcome::SUCCESS));
             }
@@ -378,8 +391,16 @@ mod tests {
         }
         let master_skill = w.recipe[master][0];
         clear(&mut w);
-        assert_eq!(w.econ[master].inventory[0], 2, "a master yields baseline + mastery bonus");
-        assert_eq!(w.econ[rusty].inventory[0], 1, "a half-learned recipe yields only the baseline");
+        assert_eq!(
+            w.econ[master].inventory[0],
+            FARM_YIELD + FARM_MASTER_BONUS,
+            "a master farmer yields the full harvest + mastery bonus"
+        );
+        assert_eq!(
+            w.econ[rusty].inventory[0],
+            FARM_YIELD,
+            "a half-learned recipe yields only the baseline harvest"
+        );
         assert!(w.recipe[rusty][0] > 0.5, "practising sharpened the rusty recipe (learn-by-doing)");
         assert!((w.recipe[master][0] - master_skill).abs() < 0.06, "a master's recipe stays at the cap");
     }

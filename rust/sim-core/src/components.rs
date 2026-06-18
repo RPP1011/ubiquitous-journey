@@ -714,17 +714,16 @@ pub enum IntentionKind {
     SeekFortune = 1, // raise gold to a target (from a `windfall` memory) — predicate: gold ≥ target
     Repay = 2,       // discharge a debt to a benefactor (from `succoured`) — predicate: delivered
     Grieve = 3,      // plan-less mourning (from `witnessed_death`) — pops on expiry only
-    Wary = 4,        // plan-less wariness disposition (from `survived`) — pops on expiry
-    Glory = 5,       // plan-less return-to-glory pull (from `triumph`) — pops on expiry
-    Shun = 6,        // plan-less shame-avoidance (from `forsworn`) — pops on expiry
-    Delve = 7,       // venture to a place (from `relic`) — pops on expiry/relic flag
-    Steal = 8,       // rob a believed-rich mark (the urchin heist) — predicate: robbed/gold target
-    Defend = 9,      // a brave soul fights a believed-hostile threatening a believed-friend (Dead pred)
-    Donate = 10,     // a wealthy altruist gives to a believed-poor neighbour (alms) — pred: gave marker
-    Sate = 11,       // a hungry, foodless soul forages/buys a meal (subsistence) — pred: holds food
-    Loot = 12,       // strip a slain foe's purse (from a `slew` memory) — pred: looted marker
-    Rescue = 13,     // free a believed-captive friend (cut their bonds) — pred: freed marker
-    Know = 14,       // LEARN a topic (firm an own-craft recipe) — the `goalLearn` goal-stack abstraction
+    Glory = 4,       // a RENOWN-seeker hunts a believed monster/raider for glory — predicate: believed-dead
+    Steal = 5,       // rob a believed-rich mark (the urchin heist) — predicate: robbed/gold target
+    Defend = 6,      // a brave soul fights a believed-hostile threatening a believed-friend (Dead pred)
+    Donate = 7,      // a wealthy altruist gives to a believed-poor neighbour (alms) — pred: gave marker
+    Sate = 8,        // a hungry, foodless soul forages/buys a meal (subsistence) — pred: holds food
+    Loot = 9,        // strip a slain foe's purse (from a `slew` memory) — pred: looted marker
+    Rescue = 10,     // free a believed-captive friend (cut their bonds) — pred: freed marker
+    Know = 11,       // LEARN a topic (firm an own-craft recipe) — the `goalLearn` goal-stack abstraction
+    Vend = 12,       // sell accumulated surplus at the believed market (GoldGe) — pred: surplus offloaded
+    Provision = 13,  // keep a standing FOOD buffer (buy at market / forage) — pred: holds the buffer
 }
 
 pub const NONE_ID: u32 = u32::MAX;

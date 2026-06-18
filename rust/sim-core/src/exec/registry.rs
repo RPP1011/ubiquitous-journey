@@ -9,6 +9,8 @@ use crate::components::{BeliefTable, Experience, GoalStack, Memory, Personality,
 pub struct DeriveCtx<'a> {
     pub faction: u8,
     pub profession: u8,
+    /// The agent's AMBITION drive (the `AMB_*` tag) — read by `seek_glory` (renown-hunting).
+    pub ambition: u8,
     pub gold: i64,
     pub inventory: [i32; N_COMMODITIES],
     pub pos: [f32; 2],
@@ -43,6 +45,10 @@ pub static DERIVERS: &[Deriver] = &[
     super::derivers::loot,
     super::derivers::rescue,
     super::derivers::apprentice,
+    // the routine market economy: sell surplus, keep a food buffer (GOAP-driven trade, not a dice roll).
+    super::derivers::vend,
+    super::derivers::provision,
+    super::derivers::seek_glory,
 ];
 
 /// Run every registered deriver over the agent's goal stack (own-state only ⇒ deterministic).

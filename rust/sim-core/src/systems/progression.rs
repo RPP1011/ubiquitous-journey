@@ -64,7 +64,6 @@ const PROFILE_DECAY: f32 = 0.999; // slow per-tick forgetting (RPG.profileDecayP
 const MATCH_INTERVAL: u32 = 8; // run the heavy matcher every N ticks (RPG.matchIntervalSec analogue).
 const BEHAVIOR_SUM_GATE: f32 = 4.0; // need this much total behaviour before matching (RPG.behaviorSumGate).
 const TOTAL_LEVEL_CAP: u16 = 140; // RPG.totalLevelCap.
-const XP_PER_LEVEL: u32 = 1000; // banked-XP (×1000 fixed-point) needed per level.
 
 /// A class template: a representative requirement tag+threshold (ALL-of in JS; we keep the single
 /// dominant one — the Wave-1 core subset) and a small score profile used both to gate the grant and
@@ -204,11 +203,24 @@ fn run_matcher(prog: &mut Progression) {
             }
         }
     }
-    // XP gain ∝ best match strength (×100 → integer ⇒ deterministic, no float banking).
-    let gain = (best * 100.0) as u32;
-    prog.xp += gain;
-    while prog.xp >= XP_PER_LEVEL && prog.total_level < TOTAL_LEVEL_CAP {
-        prog.xp -= XP_PER_LEVEL;
+    // XP gain: the best class-match strength through the score scalar (rpgxp::xp_from_event ≈
+    // best × xpScoreScalar), NOT the old flat ×100 shovel. Banked as integer "score points" (gains
+    // are ~tens; the cost curve below spans 30..millions, so ×1000 fixed-point would overflow u32 —
+    // integer points lose only sub-unit precision, which is immaterial here).
+    let gain = crate::rpgxp::xp_from_event(best, 1.0).round().max(0.0) as u32;
+    prog.xp = prog.xp.saturating_add(gain);
+    // Spend against the ESCALATING cost curve (rpgxp::xp_for_level): each level costs exponentially
+    // more in the agent's level AND the more total levels it already holds (polymaths grind). This is
+    // the designed economy — flat-cost levelling is gone, which is what makes the cap practically
+    // unreachable within a normal lifespan (cheap early levels, prohibitive ones past the mid-tier).
+    while prog.total_level < TOTAL_LEVEL_CAP {
+        let need = crate::rpgxp::xp_for_level(prog.total_level as f32, prog.total_level as f32)
+            .round()
+            .max(1.0) as u32;
+        if prog.xp < need {
+            break;
+        }
+        prog.xp -= need;
         prog.total_level += 1;
     }
     if prog.total_level >= TOTAL_LEVEL_CAP {

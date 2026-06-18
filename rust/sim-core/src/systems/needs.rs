@@ -17,7 +17,7 @@
 
 use rayon::prelude::*;
 
-use crate::components::{Commodity, FighterState, GoalKind};
+use crate::components::{Commodity, Faction, FighterState, GoalKind};
 use crate::world::World;
 
 // Per-tick drains (the "needs fade toward 0" half of `drainNeeds`). Tuned for the fixed tick, not
@@ -41,8 +41,32 @@ const NOVELTY_RATE: f32 = 0.04; // fresh ground (wandering / at the fields) rest
 const FEAR_DECAY: f32 = 0.030;
 const ANGER_DECAY: f32 = 0.022;
 
-/// Ticks hunger may sit empty before starvation flags the agent dead (Wave-1 kill).
-const STARVE_TICKS: u16 = 600;
+// ── starvation as a graduated physiological decline (the realistic hunger lifecycle) ──
+/// Hunger at/below which the body begins to consume itself — starvation damage to health begins,
+/// ramping (by `depth`) as hunger approaches absolute zero. (A soul weakens BEFORE it is wholly empty.)
+const STARVE_BAR: f32 = 0.05;
+/// Peak starvation damage per tick (at hunger 0). Tuned so a starving agent at full health takes ~590
+/// ticks to die — the same survivability window as the old binary clock, but now a VISIBLE decline:
+/// the starving weaken, can be finished off, and die when health reaches 0 like any other death.
+const STARVE_DMG_MAX: f32 = 0.17;
+/// Below this hunger an agent is FAMISHED and tires faster — the fatigue of want (energy drains harder).
+const FAMISHED_BAR: f32 = 0.15;
+/// Extra energy-drain multiplier added at the depth of famine (so up to ~3× faster at hunger 0).
+const FAMINE_FATIGUE: f32 = 2.0;
+/// Above this hunger a townsperson is WELL-FED and slowly mends — convalescence (nourishment heals).
+const WELLFED_BAR: f32 = 0.6;
+/// Health regained per tick while well-fed (slow: negligible mid-combat, but a fed town heals between raids).
+const CONVALESCE: f32 = 0.05;
+/// Full health (mirrors `CombatBody::default`) — the convalescence cap.
+const MAX_HEALTH: f32 = 100.0;
+
+// ── food perishes (no unbounded hoards) ──
+/// Food beyond a full larder (this many units) PERISHES each tick — so no one can stockpile food
+/// without bound. Set at the production cap: a normal/working larder keeps fine; only an anomalous
+/// pile (e.g. one heaped up by repeated alms) rots. Keeps the everyday food economy untouched.
+const FRESH_LARDER: i32 = 64;
+/// Each tick, 1/this of the supra-larder excess rots away (a steep perishability that bounds hoards).
+const SPOIL_DIVISOR: i32 = 5;
 
 #[inline]
 fn clamp01(v: f32) -> f32 {
@@ -71,6 +95,7 @@ pub fn drain(world: &mut World) {
         ref mut combat,
         ref goal,
         ref pos,
+        ref faction,
         ref captive_of,
         ..
     } = *world;
@@ -100,7 +125,10 @@ pub fn drain(world: &mut World) {
 
             // 1. DECAY — every need fades toward 0 this tick.
             n.hunger = clamp01(n.hunger - HUNGER_DRAIN);
-            n.energy = clamp01(n.energy - ENERGY_DRAIN);
+            // FATIGUE OF WANT: a famished body tires faster — energy drains harder the deeper the hunger
+            // (so a starving soul also grows weary, resting more and working less — a knock-on of want).
+            let famine = if n.hunger < FAMISHED_BAR { 1.0 - n.hunger / FAMISHED_BAR } else { 0.0 };
+            n.energy = clamp01(n.energy - ENERGY_DRAIN * (1.0 + FAMINE_FATIGUE * famine));
             n.social = clamp01(n.social - SOCIAL_DRAIN);
             n.comfort = clamp01(n.comfort - COMFORT_DRAIN);
             n.novelty = clamp01(n.novelty - NOVELTY_DRAIN);
@@ -158,19 +186,44 @@ pub fn drain(world: &mut World) {
             m.fear = (m.fear - FEAR_DECAY).max(0.0);
             m.anger = (m.anger - ANGER_DECAY).max(0.0);
 
-            // 4. STARVATION — hunger at empty is a clock; long enough and the agent dies. The clock
-            //    is the NEEDS-owned `n.starve` (integration fix: NOT `combat.stagger`, which the
-            //    combat swing machine owns and would overwrite each tick). Reset the moment food
-            //    returns. Death flips `alive` + the fighter state, mirroring the Strike merge.
-            if n.hunger <= 0.0 {
+            // 3b. FOOD PERISHES — a larder beyond what stays fresh rots, so food can't be hoarded without
+            //     bound (the alms economy could otherwise heap thousands of uneaten meals on a few souls,
+            //     and drive endless over-production to replace what was given away). Surgical: only the
+            //     supra-larder excess spoils, so a normal/working larder (≤ FRESH_LARDER) is untouched and
+            //     the everyday food economy is unaffected. A SINK (like eating), not a transfer.
+            {
+                let food = &mut e.inventory[Commodity::Food as usize];
+                if *food > FRESH_LARDER {
+                    *food -= ((*food - FRESH_LARDER) / SPOIL_DIVISOR).max(1);
+                }
+            }
+
+            // 4. STARVATION — a GRADUATED physiological decline, not a binary timer. Once hunger falls
+            //    into the starvation band the body consumes itself: health bleeds away each tick, faster
+            //    the closer to empty (`depth`). The agent visibly weakens (a starving soul is easy prey)
+            //    and DIES when health reaches 0 — the same death path as a killing blow (alive + fighter
+            //    state). `n.starve` accumulates the ticks spent starving (NEEDS-owned, not combat.stagger
+            //    which the swing machine would overwrite) — telemetry, reset the moment food restores it.
+            //    CONVALESCENCE is the other end of the lifecycle: a well-fed townsperson slowly mends.
+            if n.hunger < STARVE_BAR {
                 n.starve += 1.0;
-                if n.starve >= STARVE_TICKS as f32 {
+                let depth = 1.0 - n.hunger / STARVE_BAR; // 0 at the band edge → 1 at empty
+                body.health -= STARVE_DMG_MAX * depth;
+                if body.health <= 0.0 {
+                    body.health = 0.0;
                     *live = false;
                     body.state = FighterState::Dead as u8;
-                    body.health = 0.0;
                 }
             } else {
                 n.starve = 0.0;
+                // nourishment heals: a well-fed townsperson slowly recovers its wounds (slow enough to
+                // be negligible mid-combat, but over peacetime a fed town mends the hurts of a raid).
+                if faction[i] == Faction::Townsfolk as u8
+                    && n.hunger > WELLFED_BAR
+                    && body.health < MAX_HEALTH
+                {
+                    body.health = (body.health + CONVALESCE).min(MAX_HEALTH);
+                }
             }
         });
 }
@@ -263,16 +316,64 @@ mod tests {
     }
 
     #[test]
-    fn starvation_eventually_kills() {
+    fn starvation_is_a_graduated_decline_then_kills() {
         let mut w = World::spawn(14, 2);
         let i = 0;
         w.alive[i] = true;
         w.goal[i] = Goal::Idle;
         w.needs[i].hunger = 0.0;
+        w.combat[i].health = MAX_HEALTH;
         w.econ[i].inventory[Commodity::Food as usize] = 0;
-        for _ in 0..(STARVE_TICKS as usize + 2) {
+        // a starving agent WEAKENS first (health bleeds away) rather than dying instantly at full health.
+        for _ in 0..100 {
             super::drain(&mut w);
         }
-        assert!(!w.alive[i], "an agent that never eats eventually starves");
+        assert!(w.alive[i], "still alive early in the famine");
+        assert!(
+            w.combat[i].health < MAX_HEALTH && w.combat[i].health > 0.0,
+            "but visibly weakening — starvation bleeds health"
+        );
+        // and long enough without food, the decline reaches 0 health and the agent dies (~590 ticks).
+        for _ in 0..700 {
+            super::drain(&mut w);
+        }
+        assert!(!w.alive[i], "an agent that never eats eventually starves to death");
+    }
+
+    #[test]
+    fn a_food_hoard_beyond_the_larder_spoils() {
+        let mut w = World::spawn(21, 2);
+        let i = 0;
+        w.alive[i] = true;
+        w.goal[i] = Goal::Idle;
+        w.needs[i].hunger = 1.0; // well fed — no eating/starvation to muddy the food count
+        w.econ[i].inventory[Commodity::Food as usize] = 1000; // an unnatural hoard
+        super::drain(&mut w);
+        assert!(
+            w.econ[i].inventory[Commodity::Food as usize] < 1000,
+            "a hoard beyond the fresh larder rots away"
+        );
+        // a normal/working larder keeps fresh — the everyday economy is untouched.
+        w.econ[i].inventory[Commodity::Food as usize] = FRESH_LARDER;
+        super::drain(&mut w);
+        assert_eq!(
+            w.econ[i].inventory[Commodity::Food as usize],
+            FRESH_LARDER,
+            "food within the larder does not spoil"
+        );
+    }
+
+    #[test]
+    fn a_well_fed_townsperson_convalesces() {
+        let mut w = World::spawn(20, 2);
+        let i = 0;
+        w.alive[i] = true;
+        w.faction[i] = crate::components::Faction::Townsfolk as u8;
+        w.goal[i] = Goal::Idle;
+        w.needs[i].hunger = 1.0; // well fed
+        w.combat[i].health = 50.0; // wounded
+        super::drain(&mut w);
+        assert!(w.combat[i].health > 50.0, "a well-fed townsperson slowly mends its wounds");
+        assert!(w.combat[i].health <= MAX_HEALTH, "convalescence never exceeds full health");
     }
 }

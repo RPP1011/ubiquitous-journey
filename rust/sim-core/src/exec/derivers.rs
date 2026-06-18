@@ -3,7 +3,9 @@
 //! + refreshes, so re-running every tick is idempotent. Feature derivers live in their own files and
 //! append to `registry::DERIVERS`.
 
-use crate::components::{Commodity, EpisodeKind, Faction, GoalStack, Intention, IntentionKind, NONE_ID};
+use crate::components::{
+    Commodity, EpisodeKind, Faction, GoalStack, Intention, IntentionKind, AMB_RENOWN, NONE_ID,
+};
 use crate::exec::registry::DeriveCtx;
 
 /// How long a grudge stays live (ticks) before it cools out (mirrors `MOTIVE.avengeExpiry`).
@@ -67,6 +69,90 @@ const DEFEND_FRIEND_STANDING: i16 = 4_000;
 const DEFEND_NEAR: f32 = 16.0;
 /// How long a defend intention stays live before re-evaluating.
 const DEFEND_EXPIRY: u32 = 90;
+
+// ── the routine market economy (VEND surplus / PROVISION a food buffer) — the GOAP-driven trade loop ──
+// Routine production→sale→provisioning is expressed as planner GOALS (not the old flat `market_chance`
+// dice roll in decide.rs): an agent with real surplus poses a VEND goal that routes it to the market to
+// sell, and an agent short of food poses a PROVISION goal the planner satisfies by buying (chaining a
+// sale to afford it) or, as a fallback, foraging. So who sells, who buys, and who forages all EMERGE
+// from each agent's own state through the planner — the market becomes surplus/need-driven, not random.
+
+const PRI_VEND: u16 = 480; // low: offloading surplus yields to almost everything (eat/fight/repay first)
+const PRI_PROVISION: u16 = 620; // keep fed: above seek-fortune, below the true starvation crisis (Sate)
+/// Per-good "keep" floor the VEND surplus is measured ABOVE — at/under this, stock is working/eating
+/// reserve, not for sale. Food is kept a little deeper (it is also the meal). Mirrors the market KEEP
+/// shape but a touch higher, so a vend can always sell DOWN to the market's own floor and then satisfy.
+pub const VEND_KEEP: [i32; 6] = [4, 2, 2, 2, 2, 2];
+/// Total surplus (summed over goods, above VEND_KEEP) that makes selling worth a trip — the trigger.
+const VEND_TRIGGER: i32 = 5;
+const VEND_EXPIRY: u32 = 200; // a vend that can't clear (no buyers) gives up after this and works again
+/// PROVISION hysteresis: a townsperson restocks once its larder drops BELOW `PROVISION_LOW`, and tops
+/// up to `PROVISION_BUFFER`. The gap (≈ several meals) means provisioning fires occasionally — not after
+/// every bite — so agents spend most of their time working/living, not perpetually chasing food.
+pub const PROVISION_LOW: i32 = 2;
+pub const PROVISION_BUFFER: i32 = 5;
+const PROVISION_EXPIRY: u32 = 150;
+
+/// Sellable surplus: units held ABOVE the per-good VEND_KEEP, summed over all goods. The shared measure
+/// the VEND deriver triggers on and `decide`'s satisfied-predicate prunes on (own inventory only).
+#[inline]
+pub fn sellable_surplus(inventory: &[i32; 6]) -> i32 {
+    let mut s = 0;
+    for g in 0..6 {
+        s += (inventory[g] - VEND_KEEP[g]).max(0);
+    }
+    s
+}
+
+/// VEND — a townsperson sitting on real surplus poses "raise gold" (Atom::GoldGe), which the planner
+/// solves as goto(market)+sell of its best good. Replaces the routine half of the old random market
+/// roll: an agent goes to the stalls BECAUSE it has something to sell, so sellers and (provisioning)
+/// buyers actually converge there. Own-state only. The high gold target is notional — the intention is
+/// pruned by its surplus-offloaded predicate (decide), or by expiry if no buyer ever clears it.
+pub fn vend(gstack: &mut GoalStack, ctx: &DeriveCtx) {
+    if ctx.faction != Faction::Townsfolk as u8 {
+        return; // monsters/raiders have no market
+    }
+    if sellable_surplus(&ctx.inventory) < VEND_TRIGGER {
+        return; // nothing worth hauling to market
+    }
+    gstack.push(Intention {
+        kind: IntentionKind::Vend as u8,
+        flags: 0,
+        priority: PRI_VEND,
+        subject: NONE_ID,
+        place: 0,
+        _pad: [0; 3],
+        amt: ctx.gold.saturating_add(100_000), // notional target: keep selling while surplus remains
+        born: ctx.now,
+        expire: ctx.now + VEND_EXPIRY,
+    });
+}
+
+/// PROVISION — a townsperson whose larder has run below a standing buffer poses "hold N Food"
+/// (Atom::Have(Food, buffer)) PROACTIVELY (before the starvation crisis that triggers `subsistence`).
+/// The planner satisfies it by BUYING at the believed market (chaining a sale of its own surplus to
+/// afford it, if needed) or — when it can't pay — FORAGING. So food reaches non-farmers through the
+/// market by default, with foraging as the survival fallback. Own-state only.
+pub fn provision(gstack: &mut GoalStack, ctx: &DeriveCtx) {
+    if ctx.faction != Faction::Townsfolk as u8 {
+        return;
+    }
+    if ctx.inventory[Commodity::Food as usize] >= PROVISION_LOW {
+        return; // larder not yet run low (hysteresis — don't restock after every bite)
+    }
+    gstack.push(Intention {
+        kind: IntentionKind::Provision as u8,
+        flags: 0,
+        priority: PRI_PROVISION,
+        subject: NONE_ID,
+        place: 0,
+        _pad: [0; 3],
+        amt: PROVISION_BUFFER as i64,
+        born: ctx.now,
+        expire: ctx.now + PROVISION_EXPIRY,
+    });
+}
 
 /// AVENGE — an `assaulted` memory whose culprit I have NOT slain ⇒ a standing grudge (the flagship
 /// vendetta). Locatability is checked at plan time (an un-locatable culprit yields no plan ⇒ pruned).
@@ -465,6 +551,60 @@ pub fn apprentice(gstack: &mut GoalStack, ctx: &DeriveCtx) {
         born: ctx.now,
         expire: ctx.now + KNOW_EXPIRY,
     });
+}
+
+// ── seek glory (renown-hunting as a proper derived intention, not a hardcoded decide branch) ──
+const PRI_GLORY: u16 = 760; // aggressive; below avenge(900)/defend(850), above the flee reflex
+/// How far afield a renown-seeker will spot a monster/raider worth slaying for glory.
+const GLORY_RANGE: f32 = 60.0;
+const GLORY_EXPIRY: u32 = 600;
+
+/// SEEK GLORY — a RENOWN-ambition townsperson hunts a believed monster/raider for renown. Pushes an
+/// aggressive `Glory` intention toward the nearest such believed-hostile foe; the planner routes the
+/// kill (`Atom::Dead` → goto/approach/attack) and `serve`'s aggressive arbitration stands it over the
+/// flee reflex — exactly like Avenge/Defend, so renown-hunting is now priority-arbitrated and
+/// caution-pruned instead of a hardcoded out-of-band belief scan. Belief-only (the foe is believed).
+pub fn seek_glory(gstack: &mut GoalStack, ctx: &DeriveCtx) {
+    if ctx.faction != Faction::Townsfolk as u8 || ctx.ambition != AMB_RENOWN {
+        return;
+    }
+    let bt = ctx.beliefs;
+    let r2 = GLORY_RANGE * GLORY_RANGE;
+    // nearest believed-hostile of an attacker faction (monster/raider), deterministic tie-break by id.
+    let mut best: Option<(f32, u32)> = None;
+    for k in 0..bt.len as usize {
+        let b = &bt.bodies[k];
+        let attacker = b.faction == Faction::Monster as u8 || b.faction == Faction::Raider as u8;
+        if b.flags & 0x01 == 0 || !attacker {
+            continue; // not a believed-hostile attacker-faction foe
+        }
+        let dx = ctx.pos[0] - b.last_x;
+        let dz = ctx.pos[1] - b.last_z;
+        let d2 = dx * dx + dz * dz;
+        if d2 > r2 {
+            continue;
+        }
+        let better = match best {
+            None => true,
+            Some((bd, bs)) => d2 < bd || (d2 == bd && b.subject < bs),
+        };
+        if better {
+            best = Some((d2, b.subject));
+        }
+    }
+    if let Some((_, foe)) = best {
+        gstack.push(Intention {
+            kind: IntentionKind::Glory as u8,
+            flags: 0,
+            priority: PRI_GLORY,
+            subject: foe,
+            place: 0,
+            _pad: [0; 3],
+            amt: 0,
+            born: ctx.now,
+            expire: ctx.now + GLORY_EXPIRY,
+        });
+    }
 }
 
 /// GRIEVE — a `witnessed_death` memory ⇒ a plan-less mourning disposition (biases, decays — no plan).
