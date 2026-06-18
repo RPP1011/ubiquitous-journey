@@ -2,7 +2,9 @@
 //! beliefs/memory into standing intentions pushed onto its persistent goal stack. Adding a feature =
 //! appending a row to `DERIVERS` + its fn (additive, fan-out-friendly). Order is fixed ⇒ deterministic.
 
-use crate::components::{BeliefTable, Experience, GoalStack, Memory, Personality, N_COMMODITIES};
+use crate::components::{
+    BeliefTable, Experience, FactStore, GoalStack, Memory, Personality, N_COMMODITIES,
+};
 
 /// The read-only OWN-state view a deriver reasons over (the epistemic split: own row + static world,
 /// never the live roster). Mirrors the believed slice the planner's `Pv` exposes, for derivation.
@@ -23,6 +25,9 @@ pub struct DeriveCtx<'a> {
     /// Own-craft recipe skill (0..1) — read by the apprentice deriver to pose a Know(recipe) goal.
     pub recipe_own: f32,
     pub beliefs: &'a BeliefTable,
+    /// Own OPEN belief store (doc 25): the proposition layer the struct can't carry (debts, motives,
+    /// promises). Read by `collect_debt` (an `FA_OWES_ME` debt → a vendetta).
+    pub facts: &'a FactStore,
     pub memory: &'a Memory,
     pub now: u32,
 }
@@ -49,6 +54,8 @@ pub static DERIVERS: &[Deriver] = &[
     super::derivers::vend,
     super::derivers::provision,
     super::derivers::seek_glory,
+    // doc 25: an open-fact debt belief (FA_OWES_ME) → a vendetta to collect it.
+    super::derivers::collect_debt,
 ];
 
 /// Run every registered deriver over the agent's goal stack (own-state only ⇒ deterministic).

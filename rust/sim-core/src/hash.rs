@@ -158,6 +158,18 @@ pub fn world_hash(w: &World) -> u64 {
             h = fold(h, &b.assoc.to_le_bytes());
             h = fold(h, &b.last_tick.to_le_bytes());
         }
+        // open fact-store beliefs (doc 25) — the proposition layer (debts, motives, …). Sorted by
+        // (subject, attr) ⇒ stable order; covered so any non-determinism in the serial mint or the
+        // own-write reads is caught by the M-invariance gate. Empty until a capability writes one.
+        let fs = &w.facts[i];
+        h = fold(h, &(fs.facts.len() as u64).to_le_bytes());
+        for f in &fs.facts {
+            h = fold(h, &f.subject.to_le_bytes());
+            h = fold(h, &f.value.to_le_bytes());
+            h = fold(h, &f.observed_at.to_le_bytes());
+            h = fold(h, &f.base_conf.to_le_bytes());
+            h = fold(h, &[f.attr, f.src, f.hops]);
+        }
     }
     // Wave-3 world-level observer state: the chronicle feed + the quest board.
     h = fold(h, &(w.chronicle.len() as u64).to_le_bytes());

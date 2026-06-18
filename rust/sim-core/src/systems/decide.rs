@@ -96,6 +96,7 @@ pub fn decide(world: &mut World) {
         ref needs,
         ref mood,
         ref beliefs,
+        ref facts,
         ref memory,
         ref econ,
         ref personality,
@@ -242,6 +243,7 @@ pub fn decide(world: &mut World) {
                         .map(|g| recipe[i][g])
                         .unwrap_or(1.0),
                     beliefs: &beliefs[i],
+                    facts: &facts[i],
                     memory: &memory[i],
                     now,
                 };

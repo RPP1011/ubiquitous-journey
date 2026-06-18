@@ -29,6 +29,11 @@ pub enum Intent {
     /// `EffectOp` code (Stun=2/Slow=3/Knockback=4/Expose=7), `amount` the magnitude (knockback distance),
     /// `dur` the timer seconds. Sets a CombatBody timer (stun/slow/expose) or shoves position (knockback).
     Afflict { from: u32, to: u32, op: u8, amount: f32, dur: f32 },
+    /// A minted OBLIGATION (doc 25 fact-store capability): `creditor` comes to believe `debtor` owes it
+    /// `amount` (minor units). Resolved serially into the creditor's open fact store as an `FA_OWES_ME`
+    /// fact — a QUANTITATIVE, conserved belief the fixed `PersonBelief` struct could never hold. Emitted
+    /// by a robbery (the victim is owed what was taken); read by the `collect_debt` deriver.
+    Owe { creditor: u32, debtor: u32, amount: i64 },
 }
 
 impl Intent {
@@ -50,6 +55,7 @@ impl Intent {
             Intent::Hand { from, to, .. } => (to, from, 3),
             Intent::Influence { from, to, .. } => (to, from, 4),
             Intent::Afflict { from, to, .. } => (to, from, 5),
+            Intent::Owe { creditor, debtor, .. } => (creditor, debtor, 6),
         }
     }
 }

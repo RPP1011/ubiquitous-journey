@@ -122,13 +122,21 @@ it is what keeps M=1≡M=N.
 
 ### Beliefs: struct today, fact-store next
 
-Beliefs today are a fixed `PersonBelief` struct in a cap-25 `BeliefTable` per agent
-(`find(subject)` → field access). This is being migrated to an **open fact-store** (interned int
-propositions `{subject, attr, value, conf, provenance, observed_at}`) — see
-[`25-belief-fact-store-lld`](docs/architecture/25-belief-fact-store-lld.md). The substrate
-(`Fact`/`FactStore`/`ATTR_*` in `components.rs`, the `World.facts` column) has **landed (Phase 1)**
-but is unwired; phases 2–5 mirror, hash, read, then retire the struct. The perf cost is accepted
-deliberately (richness per agent > agent count; beliefs are only ~7% of the tick).
+Beliefs are **two layers** (see [`25-belief-fact-store-lld`](docs/architecture/25-belief-fact-store-lld.md)):
+
+- **`PersonBelief` / `BeliefTable`** (`components.rs`, `World.beliefs`) — the hot **closed core**
+  (faction, hostile, pos, threat, standing, …): a cap-25 per-agent table, `find(subject)` → field
+  access. The fast read surface the cognition phases hit.
+- **`FactStore`** (`components.rs`, `World.facts`) — the **open proposition layer**: interned int
+  facts `{subject, attr, value, conf, provenance, observed_at}` where `attr` implies the value-kind.
+  Holds what the struct can't — e.g. `FA_OWES_ME`, a quantitative debt minted when an agent is robbed
+  (`Intent::Owe` → the merge), read by the `collect_debt` deriver to seed a vendetta. Sorted `Vec`
+  (deterministic, **no HashMap in the hash surface**), lazy decay, folded into `world_hash`.
+
+Adding a new kind of belief = a new `FA_*` attribute + a writer (event/inference) + a reader
+(deriver/predicate); no struct surgery. The perf cost is accepted deliberately (richness per agent >
+agent count; belief reads are only ~7% of the tick). Retiring the struct into facts is a possible
+future cleanup but is cost-only and out of scope.
 
 ## Conventions & gotchas
 

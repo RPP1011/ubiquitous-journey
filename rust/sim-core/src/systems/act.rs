@@ -77,6 +77,9 @@ pub fn act(world: &mut World) {
                         // take coin from the target by force (Hand clamps to the victim's purse).
                         emit.push(Intent::Hand { from: target, to: me, gold: ROB_AMOUNT, good: 0, qty: 0 });
                         emit.push(Intent::deed(me, target, 1, Tag::Rob.bit() | Tag::Steal.bit() | Tag::Stealth.bit() | Tag::Risk.bit(), motive::GREED, outcome::ROBBED | outcome::GAINED | outcome::SUCCESS));
+                        // doc 25: the victim now BELIEVES the robber owes it what was taken — a quantitative
+                        // open-fact debt the struct could never carry (drives the collect_debt vendetta).
+                        emit.push(Intent::Owe { creditor: target, debtor: me, amount: ROB_AMOUNT });
                     }
                     v if v == InteractVerb::Loot as u8 => {
                         // strip a fallen target's whole purse.

@@ -1188,6 +1188,32 @@ impl World {
                         _ => {}
                     }
                 }
+                Intent::Owe { creditor, debtor, amount } => {
+                    // doc 25 fact-store capability: the creditor records a quantitative open belief that
+                    // `debtor` owes it `amount`. Repeated obligations ACCUMULATE (a debt grows). Not gold
+                    // (no conservation concern — it is a belief), src=LEDGER, never decays (ATTR_DECAY 0).
+                    let c = creditor as usize;
+                    if c < self.n && creditor != debtor && amount > 0 {
+                        let now = self.tick;
+                        let prev = self.facts[c]
+                            .get(debtor, crate::components::FA_OWES_ME)
+                            .unwrap_or(0) as i64;
+                        let total = (prev + amount).min(u32::MAX as i64) as u32;
+                        self.facts[c].upsert(
+                            crate::components::Fact {
+                                subject: debtor,
+                                value: total,
+                                observed_at: now,
+                                base_conf: 65535,
+                                attr: crate::components::FA_OWES_ME,
+                                src: crate::components::SOURCE_LEDGER,
+                                hops: 0,
+                                _pad: 0,
+                            },
+                            now,
+                        );
+                    }
+                }
                 Intent::Deed { actor, target, magnitude, truth, .. } => {
                     use crate::tags::Tag;
                     let actor = actor as usize;

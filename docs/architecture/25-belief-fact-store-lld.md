@@ -1,7 +1,10 @@
 # 25 — Belief fact-store (the proposition model) — LLD
 
-> Status: **Phase 1 landed** (substrate present + tested, unwired). Phases 2–5 pending.
-> Supersedes the fixed `PersonBelief`/`BeliefTable` struct as the belief representation.
+> Status: **BUILT + LIVE.** The fact store is the open belief layer — written, decayed, hashed,
+> read-to-behavior, deterministic (M-invariant), and proven minting in-sim. The flagship capability
+> (a quantitative debt belief → a vendetta) runs end-to-end. The fixed `PersonBelief` struct REMAINS
+> as the hot closed core by deliberate decision (see "Scope" below) — it is the fast read surface; the
+> fact store carries the open propositions it never could.
 > See also: [02 — the epistemic split](02-epistemic-split.md), [10 — knowledge model](10-action-grammar.md),
 > [22 — Rust ECS backend](22-rust-ecs-backend-lld.md) (determinism mandate).
 
@@ -75,28 +78,45 @@ The M=1≡M=N golden hash ([22](22-rust-ecs-backend-lld.md)) must survive. Rules
 - Written **own-row only** in parallel phases (like `beliefs`), or via the serial intent merge for
   cross-agent effects (a minted debt). Lazy decay is a pure read ⇒ no write-race.
 
-## Migration plan (phased, green at each step)
+## What was built (the as-built path)
 
-~280 references across 25 files read `PersonBelief`/`BeliefTable` (`bt.find(s)` → `bt.bodies[ix].field`),
-including `hash.rs`. So this is incremental, never a big-bang.
+- **Substrate** — `Fact`, `ValueKind`, `ATTR_KIND`/`ATTR_DECAY`, `FA_*`, `SOURCE_*`, `FactStore`
+  (sorted `Vec`, lazy decay, `FACT_CAP` evict-weakest) in `components.rs`; a `facts: Vec<FactStore>`
+  column on `World` (both spawn paths). Unit-tested.
+- **Hashed** — `facts` folded into `world_hash` in stable (subject, attr) order. **M-invariance holds**
+  (`soak_bench`: identical golden hash across 1–32 threads), run-to-run deterministic, gold conserved.
+- **The flagship capability, end-to-end** — a robbery now mints an `FA_OWES_ME` debt:
+  `act::Rob` emits `Intent::Owe{creditor, debtor, amount}` → the serial `drain_intents` merge writes a
+  quantitative, accumulating `FA_OWES_ME` fact into the victim's store (not gold — a belief; conserved
+  trivially) → the `collect_debt` deriver reads it (own facts) and, for a debt ≥ `DEBT_VENDETTA_MIN`,
+  pushes an `Avenge` intention against the debtor, settled by slaying them (`Slew` gate). So being
+  robbed seeds a lasting, proportionate grudge — driven by a value the boolean struct could never
+  hold. Proven LIVE in-sim (`tests/fact_capability.rs`: real runs mint debts) + behaviorally
+  unit-tested (`exec::derivers::debt_tests`).
 
-- **Phase 1 — substrate (LANDED).** `Fact`, `ValueKind`, `ATTR_KIND`/`ATTR_DECAY`, `FA_*`,
-  `FactStore` (+ unit tests) in `components.rs`; a `facts: Vec<FactStore>` column on `World`,
-  initialized in both spawn paths. Unwired ⇒ stores stay empty ⇒ golden hash unchanged. **228 unit
-  tests + determinism gate green.**
-- **Phase 2 — mirror + hash.** `perceive` writes the core facts (`FA_FACTION`/`HOSTILE`/`LASTX`/
-  `LASTZ`/`THREAT`/`STANDING`) alongside the struct, mirroring the same values. Fold `facts` into
-  `world_hash` in stable order. The golden hash value changes once (re-baseline); **M-invariance and
-  run-to-run must still pass** — that is the gate that proves the parallel writes are race-free.
-- **Phase 3 — read parity.** Migrate ONE consumer (a `decide` predicate or a deriver) to read from
-  `facts` via a helper, behind an assertion that struct and fact agree. Proves the read path.
-- **Phase 4 — the capability.** Wire a genuinely-new OPEN attribute end-to-end: `FA_OWES_ME` minted
-  by an event (a loan/robbery) through the serial intent merge (closed gold loop preserved), read by
-  a new "collect debt" deriver → behavior. This is the thing the struct could not do — the proof the
-  model earns its cost.
-- **Phase 5 — retire the struct.** Migrate remaining `PersonBelief` field reads to `facts`
-  one attribute at a time; when the last consumer is off it, delete `PersonBelief`/`BeliefTable` and
-  the `beliefs`/`beliefs_prev` columns (gossip's double-buffer becomes a `facts_prev` snapshot).
+## Scope — why `PersonBelief` stays (the deliberate non-goal)
+
+The original "Phase 5 — delete the struct" is **deliberately not done**, on the evidence:
+
+- The struct's hot core (faction, hostile, pos, threat, standing) is read ~280× across 25 files and
+  works well; `beliefbench` showed those reads are 2–6× slower as facts with **no capability gain** —
+  it is pure cost. `tickprofile` showed belief reads are only ~7% of the tick, so the cost wouldn't
+  even matter, but neither would the churn of a risky 280-site rewrite.
+- The user's actual goal — richer, more interesting agents — is met by the fact store carrying the
+  **open** propositions (debts now; motives/promises/place-knowledge next). The core living in a fast
+  struct does not limit expressiveness.
+
+So the architecture is intentionally two-layer: **`PersonBelief` = the hot closed core; `FactStore` =
+the open proposition layer.** Together they are the belief system. Retiring the struct remains a
+possible future cleanup, but it is cost-only and explicitly out of scope.
+
+## Future extensions (defined vocabulary, not yet wired)
+
+- `FA_INTENT` / `FA_DESTPLACE` exist in the attribute table but no source writes them yet (the TS
+  "dormant by design" pattern) — perceive could infer a believed motive from observed motion.
+- **Fact gossip.** Open facts are first-hand only today (a debt is inherently a first-person
+  relationship). A `facts_prev` double-buffer (mirroring `beliefs_prev`) would let socially-meaningful
+  facts spread with `hops`+1 — wire it when an attribute wants rumor propagation.
 
 ## Risks / watch-items
 

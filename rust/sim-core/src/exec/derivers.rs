@@ -4,7 +4,8 @@
 //! append to `registry::DERIVERS`.
 
 use crate::components::{
-    Commodity, EpisodeKind, Faction, GoalStack, Intention, IntentionKind, AMB_RENOWN, NONE_ID,
+    Commodity, EpisodeKind, Faction, GoalStack, Intention, IntentionKind, AMB_RENOWN, FA_OWES_ME,
+    NONE_ID,
 };
 use crate::exec::registry::DeriveCtx;
 
@@ -607,6 +608,46 @@ pub fn seek_glory(gstack: &mut GoalStack, ctx: &DeriveCtx) {
     }
 }
 
+// ── collect debt (doc 25 — the open fact-store capability, read end-to-end) ──
+/// A believed debt at/above this many minor units is worth a vendetta (one robbery = ROB_AMOUNT 2000;
+/// petty losses are shrugged off). Quantitative — a threshold the boolean struct belief could never set.
+const DEBT_VENDETTA_MIN: i64 = 1_500;
+
+/// COLLECT_DEBT — the flagship read of the open fact store (doc 25): an agent that BELIEVES someone
+/// owes it a significant sum (an `FA_OWES_ME` fact, minted when it was robbed) resolves to hunt the
+/// debtor down. Routes through the existing Avenge machinery (Atom::Dead → goto/approach/attack), so a
+/// robbery now seeds a lasting grudge — driven by a QUANTITATIVE belief the fixed struct could not
+/// represent. Settled by slaying the debtor (the `Slew` gate, like Avenge); belief-gated on still being
+/// able to locate them. Own-state only (own facts + own beliefs) ⇒ deterministic.
+pub fn collect_debt(gstack: &mut GoalStack, ctx: &DeriveCtx) {
+    if ctx.faction != Faction::Townsfolk as u8 {
+        return; // the goal stack runs for townsfolk
+    }
+    for f in ctx.facts.facts.iter() {
+        if f.attr != FA_OWES_ME || (f.value as i64) < DEBT_VENDETTA_MIN {
+            continue;
+        }
+        let debtor = f.subject;
+        if debtor == NONE_ID || ctx.memory.has(EpisodeKind::Slew, debtor) {
+            continue; // settled by having slain them
+        }
+        if ctx.beliefs.find(debtor).is_none() {
+            continue; // can't locate them — no actionable plan (pruned anyway)
+        }
+        gstack.push(Intention {
+            kind: IntentionKind::Avenge as u8,
+            flags: 0,
+            priority: PRI_AVENGE,
+            subject: debtor,
+            place: 0,
+            _pad: [0; 3],
+            amt: 0,
+            born: ctx.now,
+            expire: ctx.now + AVENGE_EXPIRY,
+        });
+    }
+}
+
 /// GRIEVE — a `witnessed_death` memory ⇒ a plan-less mourning disposition (biases, decays — no plan).
 pub fn grieve(gstack: &mut GoalStack, ctx: &DeriveCtx) {
     let m = ctx.memory;
@@ -625,5 +666,95 @@ pub fn grieve(gstack: &mut GoalStack, ctx: &DeriveCtx) {
                 expire: ep.t + GRIEVE_EXPIRY,
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod debt_tests {
+    use super::*;
+    use crate::components::{
+        BeliefTable, Experience, Fact, FactStore, Memory, Personality, PersonBelief, FA_OWES_ME,
+        SOURCE_LEDGER,
+    };
+    use crate::exec::registry::DeriveCtx;
+
+    fn locatable(bt: &mut BeliefTable, subject: u32) {
+        bt.subjects[bt.len as usize] = subject;
+        bt.bodies[bt.len as usize] = PersonBelief { subject, confidence: 50000, ..Default::default() };
+        bt.len += 1;
+    }
+
+    fn ctx<'a>(
+        beliefs: &'a BeliefTable,
+        facts: &'a FactStore,
+        memory: &'a Memory,
+    ) -> DeriveCtx<'a> {
+        DeriveCtx {
+            faction: Faction::Townsfolk as u8,
+            profession: 1,
+            ambition: 0,
+            gold: 0,
+            inventory: [0; 6],
+            pos: [0.0, 0.0],
+            personality: Personality::default(),
+            hunger: 1.0,
+            experience: Experience::default(),
+            recipe_own: 1.0,
+            beliefs,
+            facts,
+            memory,
+            now: 100,
+        }
+    }
+
+    fn debt(store: &mut FactStore, debtor: u32, amount: u32) {
+        store.upsert(
+            Fact { subject: debtor, value: amount, observed_at: 0, base_conf: 65535,
+                   attr: FA_OWES_ME, src: SOURCE_LEDGER, hops: 0, _pad: 0 },
+            0,
+        );
+    }
+
+    #[test]
+    fn a_large_believed_debt_drives_a_vendetta() {
+        let mut bt = BeliefTable::default();
+        locatable(&mut bt, 42); // I can still see the robber
+        let mut fs = FactStore::default();
+        debt(&mut fs, 42, 2_000); // one robbery's worth — above DEBT_VENDETTA_MIN
+        let mem = Memory::default();
+        let mut gs = GoalStack::default();
+        collect_debt(&mut gs, &ctx(&bt, &fs, &mem));
+        assert!(
+            (0..gs.len as usize).any(|k| gs.items[k].kind == IntentionKind::Avenge as u8
+                && gs.items[k].subject == 42),
+            "a believed debt should push an Avenge against the debtor"
+        );
+    }
+
+    #[test]
+    fn a_petty_debt_is_shrugged_off() {
+        let mut bt = BeliefTable::default();
+        locatable(&mut bt, 42);
+        let mut fs = FactStore::default();
+        debt(&mut fs, 42, 500); // below the vendetta threshold
+        let mem = Memory::default();
+        let mut gs = GoalStack::default();
+        collect_debt(&mut gs, &ctx(&bt, &fs, &mem));
+        assert_eq!(gs.len, 0, "a petty debt is not worth a grudge");
+    }
+
+    #[test]
+    fn a_settled_debtor_is_not_hunted_again() {
+        let mut bt = BeliefTable::default();
+        locatable(&mut bt, 42);
+        let mut fs = FactStore::default();
+        debt(&mut fs, 42, 2_000);
+        let mut mem = Memory::default();
+        mem.record(crate::components::Episode {
+            kind: EpisodeKind::Slew as u8, with: 42, t: 50, salience: 100, ..Default::default()
+        });
+        let mut gs = GoalStack::default();
+        collect_debt(&mut gs, &ctx(&bt, &fs, &mem));
+        assert_eq!(gs.len, 0, "slaying the debtor settles the grudge");
     }
 }
