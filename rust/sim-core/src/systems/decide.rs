@@ -190,9 +190,7 @@ pub fn decide(world: &mut World) {
                     // it, go to where I believe it stands — not its ground truth (a razed/forgotten home
                     // can't pull me; the split). Else the nearest believed hearth, else my home anchor.
                     let believed_home = if home_belief_id[i] != u32::MAX {
-                        beliefs[i]
-                            .find(home_belief_id[i])
-                            .map(|ix| [beliefs[i].bodies[ix].last_x, beliefs[i].bodies[ix].last_z])
+                        facts[i].view(home_belief_id[i]).map(|v| [v.last_x, v.last_z])
                     } else {
                         None
                     };
@@ -214,7 +212,7 @@ pub fn decide(world: &mut World) {
                 inventory: econ[i].inventory,
                 price_belief: econ[i].price_belief,
                 profession: profession[i],
-                beliefs: &beliefs[i],
+                facts: &facts[i],
                 memory: &memory[i],
                 market,
                 work_sites,
@@ -274,9 +272,8 @@ pub fn decide(world: &mut World) {
                 if lid != crate::components::NO_BAND {
                     if let Some(Some(foe)) = leader_foe.get(lid as usize).copied() {
                         if foe != i as u32 {
-                            if let Some(bi) = beliefs[i].find(foe) {
-                                let b = &beliefs[i].bodies[bi];
-                                *g = Goal::Fight { target: foe, to: infer_pursuit(b, map, now) };
+                            if let Some(b) = facts[i].view(foe) {
+                                *g = Goal::Fight { target: foe, to: infer_pursuit(&b, map, now) };
                                 return;
                             }
                         }
@@ -290,12 +287,10 @@ pub fn decide(world: &mut World) {
             //     other aggressive goal, instead of a hardcoded out-of-band belief scan.
 
             // 3. THREAT: flee the NEAREST believed-hostile near where I believe it is (no grudge).
-            let bt = &beliefs[i];
             let (mx, mz) = (pos[i][0], pos[i][1]);
             let mut flee_from: Option<(u32, [f32; 2])> = None;
             let mut best_d2 = FLEE_RANGE2;
-            for b in 0..(bt.len as usize).min(BELIEF_CAP) {
-                let cell = &bt.bodies[b];
+            for cell in facts[i].views() {
                 if cell.flags & 0x01 == 0 {
                     continue; // not believed hostile
                 }
@@ -399,10 +394,8 @@ pub fn decide(world: &mut World) {
                 // SCOUT first: a curious soul resolves an uncertain-but-valuable hunch (observe to firm
                 // it — perceive raises the belief's confidence on arrival). The proactive knowledge model.
                 if personality[i].curiosity >= SCOUT_CURIOUS {
-                    let bt = &beliefs[i];
                     let mut best: Option<([f32; 2], u16, u32)> = None; // (pos, conf, subject) — vaguest
-                    for b in 0..(bt.len as usize).min(BELIEF_CAP) {
-                        let cell = &bt.bodies[b];
+                    for cell in facts[i].views() {
                         if cell.confidence < SCOUT_CONF_LO || cell.confidence >= SCOUT_CONF_HI {
                             continue; // not in the worth-resolving uncertainty window
                         }
@@ -616,7 +609,7 @@ fn intention_satisfied(it: &Intention, pv: &Pv) -> bool {
             || x == IntentionKind::Defend as u8
             || x == IntentionKind::Glory as u8 =>
         {
-            pv.memory.has(EpisodeKind::Slew, it.subject) || pv.beliefs.find(it.subject).is_none()
+            pv.memory.has(EpisodeKind::Slew, it.subject) || !pv.facts.believes(it.subject)
         }
         x if x == IntentionKind::SeekFortune as u8 => pv.gold >= it.amt,
         // vended: the surplus has been offloaded (sold down to/under the keep) — the trip did its work.
@@ -640,7 +633,7 @@ fn intention_satisfied(it: &Intention, pv: &Pv) -> bool {
         // freed the captive (the marker), or I no longer believe them held (someone else freed them).
         x if x == IntentionKind::Rescue as u8 => {
             pv.memory.has(EpisodeKind::Freed, it.subject)
-                || pv.beliefs.find(it.subject).map_or(true, |ix| pv.beliefs.bodies[ix].flags & 0x02 == 0)
+                || pv.facts.view(it.subject).map_or(true, |v| v.flags & 0x02 == 0)
         }
         // plan-less dispositions pop on expiry only (handled in prune_goals).
         _ => false,
@@ -702,7 +695,7 @@ fn score_idle_activity(need: &crate::components::Needs, pers: &crate::components
 /// or hiding place from its last-known spot — and pursues THERE rather than freezing on a cold trail.
 /// Belief-only + static mental-map (the epistemic split holds): no peeking at the quarry's true position.
 #[inline]
-fn infer_pursuit(b: &PersonBelief, map: &crate::mentalmap::MentalMap, now: u32) -> [f32; 2] {
+fn infer_pursuit(b: &crate::components::BeliefView, map: &crate::mentalmap::MentalMap, now: u32) -> [f32; 2] {
     const STALE_TICKS: u32 = 30; // unseen this long ⇒ reason about its FLIGHT, not its last sighting
     let last = [b.last_x, b.last_z];
     // ANIMACY: a mind-less prop (belief flag bit2) doesn't FLEE — it stays where it was last seen.
@@ -907,7 +900,7 @@ mod tests {
             .nearest(crate::mentalmap::AFF_EXIT | crate::mentalmap::AFF_CONCEAL, [200.0, 0.0], 1000.0)
             .expect("the arena has an exit/conceal place");
         // a belief about a foe last seen out near that exit.
-        let mut b = PersonBelief { subject: 7, last_x: 180.0, last_z: 0.0, last_tick: 1000, ..Default::default() };
+        let mut b = crate::components::BeliefView { subject: 7, last_x: 180.0, last_z: 0.0, last_tick: 1000, ..Default::default() };
 
         // FRESH (just seen): pursue the last-seen spot exactly.
         let fresh = infer_pursuit(&b, &map, 1000);

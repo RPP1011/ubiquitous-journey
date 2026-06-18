@@ -105,7 +105,7 @@ pub struct Pv<'a> {
     pub inventory: [i32; N_COMMODITIES],
     pub price_belief: [u16; N_COMMODITIES],
     pub profession: u8,
-    pub beliefs: &'a BeliefTable,
+    pub facts: &'a crate::components::FactStore,
     pub memory: &'a Memory,
     pub market: [f32; 2],
     pub work_sites: &'a [[f32; 2]; N_WORK_SITES],
@@ -162,10 +162,7 @@ fn believed_pos(pv: &Pv, place: Place) -> Option<[f32; 2]> {
     match place {
         Place::Market => Some(pv.market),
         Place::Node(g) => good_site_index(g).map(|i| pv.work_sites[i]),
-        Place::Subject(s) => pv.beliefs.find(s).map(|i| {
-            let b = &pv.beliefs.bodies[i];
-            [b.last_x, b.last_z]
-        }),
+        Place::Subject(s) => pv.facts.view(s).map(|b| [b.last_x, b.last_z]),
     }
 }
 
@@ -225,7 +222,7 @@ fn atom_holds(atom: &Atom, pv: &Pv) -> bool {
         Atom::GoldGe(amt) => pv.gold >= amt,
         // "believed dead": I struck the killing blow (a Slew memory) OR I hold no belief about it at
         // all (lost all track — never confused with a faded sighting, which keeps a belief entry).
-        Atom::Dead(s) => pv.memory.has(EpisodeKind::Slew, s) || pv.beliefs.find(s).is_none(),
+        Atom::Dead(s) => pv.memory.has(EpisodeKind::Slew, s) || !pv.facts.believes(s),
         Atom::InReach(s) => match believed_pos(pv, Place::Subject(s)) {
             Some(t) => {
                 let dx = t[0] - pv.pos[0];
@@ -607,14 +604,14 @@ pub fn compile_current(plan: &Plan, pv: &Pv) -> Option<Goal> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::components::{BeliefTable, Memory, PersonBelief};
+    use crate::components::{BeliefTable, FactStore, Memory, PersonBelief};
     use crate::world::{World, N_WORK_SITES};
 
     /// Build a Pv borrowing agent `i`'s own state from a world (the same wiring `decide` uses).
     fn pv_of<'a>(
         w: &'a World,
         i: usize,
-        beliefs: &'a BeliefTable,
+        facts: &'a FactStore,
         memory: &'a Memory,
         work_sites: &'a [[f32; 2]; N_WORK_SITES],
         base_price: &'a [i64; N_COMMODITIES],
@@ -625,7 +622,7 @@ mod tests {
             inventory: w.econ[i].inventory,
             price_belief: w.econ[i].price_belief,
             profession: w.profession[i],
-            beliefs,
+            facts,
             memory,
             market: w.markets[0],
             work_sites,
@@ -652,10 +649,12 @@ mod tests {
             ..Default::default()
         };
         beliefs.len = 1;
+        let mut facts = FactStore::default();
+        facts.mirror_core_from(&beliefs);
         let memory = Memory::default();
         let ws = w.work_sites[0];
         let bp = w.base_price;
-        let pv = pv_of(&w, 0, &beliefs, &memory, &ws, &bp);
+        let pv = pv_of(&w, 0, &facts, &memory, &ws, &bp);
         match plan(Atom::Dead(7), &pv) {
             Some(Goal::Fight { target, to }) => {
                 assert_eq!(target, 7, "should hunt the believed foe");
@@ -672,6 +671,8 @@ mod tests {
         beliefs.subjects[0] = 7;
         beliefs.bodies[0] = PersonBelief { subject: 7, confidence: 60000, ..Default::default() };
         beliefs.len = 1;
+        let mut facts = FactStore::default();
+        facts.mirror_core_from(&beliefs);
         // a Slew memory about 7 ⇒ Dead(7) already holds ⇒ no plan (the grudge is settled).
         let mut memory = Memory::default();
         memory.record(crate::components::Episode {
@@ -682,7 +683,7 @@ mod tests {
         });
         let ws = w.work_sites[0];
         let bp = w.base_price;
-        let pv = pv_of(&w, 0, &beliefs, &memory, &ws, &bp);
+        let pv = pv_of(&w, 0, &facts, &memory, &ws, &bp);
         assert!(plan(Atom::Dead(7), &pv).is_none(), "a slain foe yields no avenge plan");
     }
 
@@ -694,11 +695,11 @@ mod tests {
         w.econ[0].inventory = [9, 0, 0, 0, 0, 0]; // surplus Food
         w.econ[0].gold = 0;
         w.pos[0] = [w.markets[0][0] + 80.0, w.markets[0][1] + 80.0];
-        let beliefs = BeliefTable::default();
+        let facts = FactStore::default();
         let memory = Memory::default();
         let ws = w.work_sites[0];
         let bp = w.base_price;
-        let pv = pv_of(&w, 0, &beliefs, &memory, &ws, &bp);
+        let pv = pv_of(&w, 0, &facts, &memory, &ws, &bp);
         match plan(Atom::GoldGe(5000), &pv) {
             Some(Goal::Market { .. }) => {}
             other => panic!("seek-fortune should route to market, got {other:?}"),
@@ -709,11 +710,11 @@ mod tests {
     fn already_rich_no_fortune_plan() {
         let mut w = World::spawn(0xA3, 4);
         w.econ[0].gold = 999_999;
-        let beliefs = BeliefTable::default();
+        let facts = FactStore::default();
         let memory = Memory::default();
         let ws = w.work_sites[0];
         let bp = w.base_price;
-        let pv = pv_of(&w, 0, &beliefs, &memory, &ws, &bp);
+        let pv = pv_of(&w, 0, &facts, &memory, &ws, &bp);
         assert!(plan(Atom::GoldGe(5000), &pv).is_none(), "an already-rich agent needs no plan");
     }
 }
