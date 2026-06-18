@@ -421,9 +421,7 @@ mod tests {
             run_spies(&mut w);
             // scan: did any townsperson observer gain a hostile belief about another townsperson?
             let hit = folk.iter().any(|&o| {
-                let bt = &w.beliefs[o];
-                (0..bt.len as usize).any(|ix| {
-                    let b = &bt.bodies[ix];
+                w.facts[o].views().any(|b| {
                     let subj = b.subject as usize;
                     b.flags & 0x01 != 0
                         && subj < w.n

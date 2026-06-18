@@ -3,7 +3,7 @@
 //! appending a row to `DERIVERS` + its fn (additive, fan-out-friendly). Order is fixed ⇒ deterministic.
 
 use crate::components::{
-    BeliefTable, Experience, FactStore, GoalStack, Memory, Personality, N_COMMODITIES,
+    Experience, FactStore, GoalStack, Memory, Personality, N_COMMODITIES,
 };
 
 /// The read-only OWN-state view a deriver reasons over (the epistemic split: own row + static world,
@@ -24,9 +24,7 @@ pub struct DeriveCtx<'a> {
     pub experience: Experience,
     /// Own-craft recipe skill (0..1) — read by the apprentice deriver to pose a Know(recipe) goal.
     pub recipe_own: f32,
-    pub beliefs: &'a BeliefTable,
-    /// Own OPEN belief store (doc 25): the proposition layer the struct can't carry (debts, motives,
-    /// promises). Read by `collect_debt` (an `FA_OWES_ME` debt → a vendetta).
+    /// Own belief store (doc 25, the unified model). Read via view()/views()/believes()/confidence().
     pub facts: &'a FactStore,
     pub memory: &'a Memory,
     pub now: u32,

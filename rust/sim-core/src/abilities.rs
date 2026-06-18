@@ -602,7 +602,7 @@ pub fn cast(world: &mut World) {
         ref alive,
         ref profession,
         ref progression,
-        ref mut beliefs,
+        ref mut facts,
         ref mut combat,
         ref mut ability_cd,
         ref mut econ,
@@ -615,7 +615,7 @@ pub fn cast(world: &mut World) {
     let out: Vec<Intent> = combat
         .par_iter_mut()
         .zip(ability_cd.par_iter_mut())
-        .zip(beliefs.par_iter_mut())
+        .zip(facts.par_iter_mut())
         .zip(econ.par_iter_mut())
         .zip(trade_buff.par_iter_mut())
         .enumerate()
@@ -633,6 +633,9 @@ pub fn cast(world: &mut World) {
             }
 
             let known = &progression[i].abilities;
+            // doc 25: a scratch belief table loaded from facts for the ability reads below (scry does
+            // its own load/store when it writes). Codec round-trip == old struct behaviour.
+            let belbt = bel.to_belief_table();
 
             // ── 1) self-support: hurt + holds a ready self-heal/shield → own-write + cast deed ──
             if cb.health < SELF_CAST_HP_FRAC * MAX_HEALTH {
@@ -646,7 +649,7 @@ pub fn cast(world: &mut World) {
 
             // ── 2) offensive: holds a ready damage ability + a believed-hostile in range → Strike ──
             if let Some(off) = first_known(known, |s| s.is_offensive()) {
-                if let Some((to, _)) = nearest_hostile_in_range(bel, pos[i], off.header.range)
+                if let Some((to, _)) = nearest_hostile_in_range(&belbt, pos[i], off.header.range)
                 {
                     // level-scaled damage on the ability's base (offence-only, like combat.js).
                     let mult = (1.0 + level[i] as f32 * LVL_DMG_PER_LEVEL).min(LVL_DMG_CAP);
@@ -668,7 +671,7 @@ pub fn cast(world: &mut World) {
             //        — cast at a believed hostile in range to SET UP the kill (expose ⇒ amplified blows).
             if emit.n == 0 {
                 if let Some(db) = first_known(known, |s| s.is_debuff()) {
-                    if let Some((to, _)) = nearest_hostile_in_range(bel, pos[i], db.header.range) {
+                    if let Some((to, _)) = nearest_hostile_in_range(&belbt, pos[i], db.header.range) {
                         *cd = db.header.cooldown;
                         for e in db.effects() {
                             if let Some(a) = afflict_intent(e, i as u32, to) {
@@ -685,7 +688,7 @@ pub fn cast(world: &mut World) {
             //       The ability DSL's reach into the epistemic layer — a speaker/trickster shapes belief.
             if emit.n == 0 {
                 if let Some(soc) = first_known(known, |s| s.is_social()) {
-                    if let Some(to) = nearest_believed_in_range(bel, pos[i], soc.header.range, i as u32)
+                    if let Some(to) = nearest_believed_in_range(&belbt, pos[i], soc.header.range, i as u32)
                     {
                         // amount sign: negative = charm (warm), positive = deceit (sour). Scaled into
                         // the i16 standing units the belief table uses.
@@ -708,17 +711,20 @@ pub fn cast(world: &mut World) {
             //       like perceive. No cross-agent intent (the scryer learns; the target is untouched).
             if emit.n == 0 {
                 if let Some(scry) = first_known(known, |s| s.is_scry()) {
-                    if let Some(bix) = vaguest_belief_in_range(bel, pos[i], scry.header.range, i as u32) {
-                        let subj = bel.bodies[bix].subject as usize;
+                    // doc 25: load scratch from facts, firm the vaguest belief, store back.
+                    let mut bt = bel.to_belief_table();
+                    if let Some(bix) = vaguest_belief_in_range(&bt, pos[i], scry.header.range, i as u32) {
+                        let subj = bt.bodies[bix].subject as usize;
                         if subj < pos.len() {
-                            let b = &mut bel.bodies[bix];
+                            let b = &mut bt.bodies[bix];
                             b.last_x = pos[subj][0];
                             b.last_z = pos[subj][1];
                             b.faction = faction[subj];
                             b.confidence = b.confidence.max(58_000); // now KNOWN, first-hand-firm
                         }
                         *cd = scry.header.cooldown;
-                        emit.push(cast_deed(i as u32, bel.bodies[bix].subject, 1, scry.grants_tag as u8));
+                        emit.push(cast_deed(i as u32, bt.bodies[bix].subject, 1, scry.grants_tag as u8));
+                        bel.mirror_core_from(&bt);
                     }
                 }
             }
@@ -993,13 +999,14 @@ mod tests {
         w.ability_cd[0] = 0.0;
         w.combat[0].state = FighterState::Idle as u8;
         // believes agent 1 hostile at (3,0).
-        let bt = &mut w.beliefs[0];
+        let mut bt = crate::components::BeliefTable::default();
         bt.len = 1;
         bt.subjects[0] = 1;
         bt.bodies[0].subject = 1;
         bt.bodies[0].last_x = 3.0;
         bt.bodies[0].last_z = 0.0;
         bt.bodies[0].flags = 1;
+        w.facts[0].mirror_core_from(&bt);
         let hp_before = w.combat[1].health;
 
         cast(&mut w);
@@ -1028,14 +1035,15 @@ mod tests {
         w.ability_cd[speaker] = 0.0;
         w.combat[speaker].state = FighterState::Idle as u8;
         // the speaker believes a (non-hostile) agent is nearby.
-        let bt = &mut w.beliefs[speaker];
+        let mut bt = crate::components::BeliefTable::default();
         bt.len = 1;
         bt.subjects[0] = mark as u32;
         bt.bodies[0].subject = mark as u32;
         bt.bodies[0].last_x = 3.0;
         bt.bodies[0].last_z = 0.0;
         bt.bodies[0].flags = 0; // not hostile
-        w.beliefs[mark].clear();
+        w.facts[speaker].mirror_core_from(&bt);
+        w.facts[mark] = crate::components::FactStore::default();
 
         cast(&mut w);
         assert!(
@@ -1048,9 +1056,8 @@ mod tests {
             "a charm is not a strike"
         );
         w.drain_intents();
-        let b = w.beliefs[mark].find(speaker as u32).expect("the mark now regards the charmer");
         assert!(
-            w.beliefs[mark].bodies[b].standing > 0,
+            w.facts[mark].view(speaker as u32).expect("the mark now regards the charmer").standing > 0,
             "the charm warmed how the mark regards the speaker"
         );
     }
@@ -1086,16 +1093,17 @@ mod tests {
         w.ability_cd[seer] = 0.0;
         w.combat[seer].state = FighterState::Idle as u8;
         // a vague, stale belief about the mark (low confidence, wrong position) within read_mind range.
-        let bt = &mut w.beliefs[seer];
+        let mut bt = crate::components::BeliefTable::default();
         bt.len = 1;
         bt.subjects[0] = mark as u32;
         bt.bodies[0].subject = mark as u32;
         bt.bodies[0].last_x = 5.0;
         bt.bodies[0].last_z = 0.0; // stale (true is z=2.0)
         bt.bodies[0].confidence = 1_000; // vague
+        w.facts[seer].mirror_core_from(&bt);
 
         cast(&mut w);
-        let b = &w.beliefs[seer].bodies[0];
+        let b = w.facts[seer].view(mark as u32).unwrap();
         assert!(b.confidence > 1_000, "scry firmed the belief's confidence");
         assert!((b.last_z - 2.0).abs() < 1e-3, "scry refreshed the position from the truth");
         assert!(w.ability_cd[seer] > 0.0, "the scry went on cooldown");
@@ -1114,11 +1122,12 @@ mod tests {
         w.combat[merchant].state = FighterState::Idle as u8; // full health (no self-heal)
         w.pos[merchant] = [0.0, 0.0];
         // a believed agent in haggle range (the charm's target).
-        let bt = &mut w.beliefs[merchant];
+        let mut bt = crate::components::BeliefTable::default();
         bt.len = 1;
         bt.subjects[0] = 1;
         bt.bodies[0].subject = 1;
         bt.bodies[0].last_x = 2.0;
+        w.facts[merchant].mirror_core_from(&bt);
         assert_eq!(w.trade_buff[merchant], 0, "no buff before the haggle");
         cast(&mut w);
         assert!(w.trade_buff[merchant] > w.tick, "haggle arms a trade_edge price-buff window");
@@ -1152,12 +1161,13 @@ mod tests {
         add_ability(&mut w.progression[0], ID_FROST_BOLT);
         w.ability_cd[0] = 0.0;
         // a far-away hostile, beyond frost_bolt's 10m range.
-        let bt = &mut w.beliefs[0];
+        let mut bt = crate::components::BeliefTable::default();
         bt.len = 1;
         bt.subjects[0] = 1;
         bt.bodies[0].subject = 1;
         bt.bodies[0].last_x = 50.0;
         bt.bodies[0].flags = 1;
+        w.facts[0].mirror_core_from(&bt);
         cast(&mut w);
         assert!(!w.intents.items.iter().any(|i| matches!(i, Intent::Strike { .. })));
     }
@@ -1188,13 +1198,14 @@ mod tests {
                 w.combat[i].state = FighterState::Idle as u8;
                 if i > 0 {
                     let p = w.pos[i - 1];
-                    let bt = &mut w.beliefs[i];
+                    let mut bt = crate::components::BeliefTable::default();
                     bt.len = 1;
                     bt.subjects[0] = (i - 1) as u32;
                     bt.bodies[0].subject = (i - 1) as u32;
                     bt.bodies[0].last_x = p[0];
                     bt.bodies[0].last_z = p[1];
                     bt.bodies[0].flags = 1;
+                    w.facts[i].mirror_core_from(&bt);
                 }
             }
             for _ in 0..8 {

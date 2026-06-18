@@ -114,12 +114,11 @@ pub struct World {
     pub disguise: Vec<u8>,      // apparent faction override (0xFF = none) — intrigue/percept (the spy mask)
     pub role: Vec<u8>,          // institutional role: 0 none, 1 watch, 2 spy, 3 asset, 4 bodyguard, 5 duelist
 
-    // ── belief layer (double-buffered: gossip reads `beliefs_prev`, writes `beliefs`, §4) ──
-    pub beliefs: Vec<BeliefTable>,
-    pub beliefs_prev: Vec<BeliefTable>,
-    /// Open fact-store beliefs (doc 25) — the proposition-model successor to `beliefs`. Phase 1:
-    /// present but unwired (empty ⇒ golden hash unchanged). Migrated to in later phases.
+    // ── belief layer (doc 25): the unified fact store, double-buffered (gossip reads `facts_prev`,
+    //    writes `facts`, §4). The legacy PersonBelief/BeliefTable struct is gone — `BeliefTable` now
+    //    survives only as the transient perceive/gossip scratch codec (FactStore::to_belief_table).
     pub facts: Vec<crate::components::FactStore>,
+    pub facts_prev: Vec<crate::components::FactStore>,
 
     // ── HOT per-tick projection + index ──
     pub surface: Vec<Perceivable>,
@@ -617,9 +616,8 @@ impl World {
             epithet: Vec::with_capacity(n),
             disguise: Vec::with_capacity(n),
             role: Vec::with_capacity(n),
-            beliefs: Vec::with_capacity(n),
-            beliefs_prev: Vec::with_capacity(n),
             facts: Vec::with_capacity(n),
+            facts_prev: Vec::with_capacity(n),
             surface: Vec::with_capacity(n),
             grid: Grid::new(),
             intents: IntentQueue::new(),
@@ -741,9 +739,8 @@ impl World {
             w.captive_of.push(CAPTIVE_NONE);
             w.trade_buff.push(0);
             w.recipe.push([1.0; crate::components::N_COMMODITIES]); // trained across the crafts; the unpractised fade (specialisation emerges)
-            w.beliefs.push(BeliefTable::default());
-            w.beliefs_prev.push(BeliefTable::default());
             w.facts.push(crate::components::FactStore::default());
+            w.facts_prev.push(crate::components::FactStore::default());
             w.faith.push(NO_GOD);
             w.contract_god.push(0);
             w.contract_power.push(0);
@@ -879,9 +876,8 @@ impl World {
         self.epithet.push(0);
         self.disguise.push(NO_DISGUISE);
         self.role.push(0);
-        self.beliefs.push(BeliefTable::default());
-        self.beliefs_prev.push(BeliefTable::default());
         self.facts.push(crate::components::FactStore::default());
+        self.facts_prev.push(crate::components::FactStore::default());
         self.n += 1;
         i
     }
@@ -963,7 +959,7 @@ impl World {
     /// Snapshot the belief column so gossip can cross-READ neighbours' beliefs (`beliefs_prev`)
     /// while writing its own (`beliefs`) in parallel without a race (the §4 double-buffer).
     pub fn snapshot_beliefs(&mut self) {
-        self.beliefs_prev.clone_from(&self.beliefs);
+        self.facts_prev.clone_from(&self.facts);
     }
 
     /// Apply queued cross-agent intents to the world in a FIXED deterministic order (§4). The only
@@ -1296,9 +1292,8 @@ impl World {
                             salience: 45000,
                             _pad2: 0,
                         });
-                        if let Some(ix) = self.beliefs[actor].find(target) {
-                            self.beliefs[actor].bodies[ix].flags &= !0x02; // no longer believed captive
-                        }
+                        // no longer believed captive (the FA_BUILDING bit doubles as captive here)
+                        self.facts[actor].set_bool(target, crate::components::FA_BUILDING, false, self.tick);
                         // OBSERVER: a rescue is its own (closed, one-beat) saga.
                         self.sagas.record(crate::sagas::SagaKind::Rescue, actor as u32, target, self.tick);
                     }
@@ -1365,7 +1360,6 @@ impl World {
         perceive(self); // parallel: own beliefs
         self.snapshot_beliefs(); // serial: freeze the read set for gossip
         systems::gossip::gossip(self); // parallel: read prev beliefs, write own
-        self.mirror_beliefs_to_facts(); // doc 25 transition: facts mirror the struct (readers migrate)
         systems::combat::resolve(self); // parallel decide → Strike intents
         crate::abilities::cast(self); // parallel NPC autocast → extra Strike intents / self-buff own-writes
         self.newsread(); // parallel: fold the gazette's published prices into own price beliefs
@@ -1596,10 +1590,8 @@ impl World {
                 continue;
             }
             // count believed hostiles near me (the felt danger — beliefs only, the epistemic split).
-            let bt = &self.beliefs[i];
             let mut threats = 0usize;
-            for b in 0..bt.len as usize {
-                let cell = &bt.bodies[b];
+            for cell in self.facts[i].views() {
                 if cell.flags & 0x01 == 0 {
                     continue;
                 }
@@ -1628,15 +1620,13 @@ impl World {
                 continue;
             }
             const HOME_FORGET_CONF: u16 = 6_000; // a home faded below this is no longer believed-in
-            let bt = &self.beliefs[i];
             // forget a home no longer believed: the percept fell out of the table (razed long ago) OR the
             // belief has DECAYED past the threshold (razed/unvisited — its memory has faded). Either way
             // the homecoming can't route to it — no telepathy (the epistemic gate).
             if self.home_belief_id[i] != u32::MAX {
-                let lost = match bt.find(self.home_belief_id[i]) {
-                    None => true,
-                    Some(ix) => bt.bodies[ix].confidence < HOME_FORGET_CONF,
-                };
+                let lost = self.facts[i]
+                    .view(self.home_belief_id[i])
+                    .map_or(true, |v| v.confidence < HOME_FORGET_CONF);
                 if lost {
                     self.home_belief_id[i] = u32::MAX;
                 }
@@ -1645,8 +1635,7 @@ impl World {
             if self.home_belief_id[i] == u32::MAX {
                 let (mx, mz) = (self.pos[i][0], self.pos[i][1]);
                 let mut best: Option<(u32, f32)> = None;
-                for b in 0..bt.len as usize {
-                    let cell = &bt.bodies[b];
+                for cell in self.facts[i].views() {
                     if cell.flags & 0x02 == 0 || cell.confidence < HOME_FORGET_CONF {
                         continue; // not a believed building, or too faint to settle on
                     }
@@ -1976,7 +1965,6 @@ impl World {
         let dt = t0.elapsed().as_secs_f64();
         self.snapshot_beliefs();
         systems::gossip::gossip(self);
-        self.mirror_beliefs_to_facts(); // doc 25 transition
         systems::combat::resolve(self);
         crate::abilities::cast(self);
         self.newsread();
@@ -2015,7 +2003,6 @@ impl World {
         ph!(6, perceive(self));
         ph!(7, self.snapshot_beliefs());
         ph!(8, systems::gossip::gossip(self));
-        self.mirror_beliefs_to_facts(); // doc 25 transition (timed within gossip's phase budget)
         ph!(9, systems::combat::resolve(self));
         ph!(10, crate::abilities::cast(self));
         ph!(11, self.newsread());
@@ -2035,17 +2022,6 @@ impl World {
     /// Total gold across the roster (purse + stash) PLUS any gold held in the town bounty fund — the
     /// conservation invariant. A bounty levy moves gold from purses INTO the fund and a claim moves it
     /// back out, so the fund must count or the invariant would spuriously break mid-bounty.
-    /// TRANSITION (doc 25): mirror each agent's legacy `BeliefTable` into its `FactStore` (core facts,
-    /// preserving the open tail). Parallel own-write ⇒ deterministic. Runs after gossip so the facts
-    /// reflect the final belief state for the tick. Removed once perceive/gossip write facts directly.
-    pub fn mirror_beliefs_to_facts(&mut self) {
-        use rayon::prelude::*;
-        let World { ref beliefs, ref mut facts, .. } = *self;
-        facts.par_iter_mut().enumerate().for_each(|(i, fs)| {
-            fs.mirror_core_from(&beliefs[i]);
-        });
-    }
-
     pub fn total_gold(&self) -> i64 {
         self.econ.iter().map(|e| e.gold + e.stash).sum::<i64>()
             + self.bounty_fund
@@ -2230,53 +2206,29 @@ impl World {
 
     /// Find or insert `observer`'s belief cell about `subject`, seeding a fresh one from the subject's
     /// current cues. Returns the index, or `None` if the table is full (perception beliefs aren't evicted).
-    pub fn ensure_belief(&mut self, observer: usize, subject: u32) -> Option<usize> {
+    pub fn ensure_belief(&mut self, observer: usize, subject: u32) -> bool {
         let s = subject as usize;
         if observer >= self.n || s >= self.n || s == observer {
-            return None;
+            return false;
         }
-        let (spos, sfac, slvl, now) = (self.pos[s], self.faction[s], self.level[s], self.tick);
-        let bt = &mut self.beliefs[observer];
-        if let Some(ix) = bt.find(subject) {
-            return Some(ix);
-        }
-        let len = bt.len as usize;
-        if len < crate::components::BELIEF_CAP {
-            bt.subjects[len] = subject;
-            bt.bodies[len] = crate::components::PersonBelief {
-                subject,
-                last_x: spos[0],
-                last_z: spos[1],
-                confidence: 40_000,
-                faction: sfac,
-                level: slvl,
-                notoriety: 0,
-                threat: 0,
-                wealth: 0,
-                last_tick: now,
-                standing: 0,
-                flags: 0,
-                hops: 0,
-                assoc: 0,
-            };
-            bt.len += 1;
-            return Some(len);
-        }
-        None
+        let (spos, sfac, now) = (self.pos[s], self.faction[s], self.tick);
+        self.facts[observer].ensure(subject, sfac, spos[0], spos[1], now);
+        true
     }
 
     /// Sour `observer`'s belief-standing toward `subject` (a grievance seed); optionally latch hostility.
     pub fn sour_belief(&mut self, observer: usize, subject: u32, drop: i16, hostile: bool) {
-        if let Some(ix) = self.ensure_belief(observer, subject) {
-            let b = &mut self.beliefs[observer].bodies[ix];
-            b.standing = b.standing.saturating_sub(drop);
-            if hostile {
-                b.flags |= 0x01;
-            }
-            if b.confidence < 26_000 {
-                b.confidence = 26_000;
-            }
+        if !self.ensure_belief(observer, subject) {
+            return;
         }
+        let now = self.tick;
+        let fs = &mut self.facts[observer];
+        let st = fs.standing(subject).saturating_sub(drop);
+        fs.set_standing(subject, st, now);
+        if hostile {
+            fs.set_bool(subject, crate::components::FA_HOSTILE, true, now);
+        }
+        fs.raise_conf(subject, 26_000);
     }
 
     /// COMBAT-EVENTS WITNESS FOLD (the master `onCombatEvents` bystander half, `js/sim/combatEvents.ts`):
@@ -2349,14 +2301,12 @@ impl World {
             if dx * dx + dz * dz > WITNESS_RANGE2 {
                 continue;
             }
-            if let Some(ix) = self.ensure_belief(w, captive as u32) {
-                let b = &mut self.beliefs[w].bodies[ix];
-                b.flags |= 0x02; // believed captive
-                b.last_x = cpos[0];
-                b.last_z = cpos[1];
-                if b.confidence < 40_000 {
-                    b.confidence = 40_000;
-                }
+            if self.ensure_belief(w, captive as u32) {
+                let now = self.tick;
+                let fs = &mut self.facts[w];
+                fs.set_bool(captive as u32, crate::components::FA_BUILDING, true, now); // believed captive (bit1)
+                fs.set_pos(captive as u32, cpos[0], cpos[1], now);
+                fs.raise_conf(captive as u32, 40_000);
             }
         }
     }
@@ -2386,9 +2336,7 @@ impl World {
                 if h == killer || h == victim || !self.alive[h] || self.faction[h] != tf {
                     continue;
                 }
-                if self.beliefs[h].find(victim as u32).map_or(false, |ix| {
-                    self.beliefs[h].bodies[ix].standing > AVENGER_FRIEND_BAR
-                }) {
+                if self.facts[h].view(victim as u32).map_or(false, |v| v.standing > AVENGER_FRIEND_BAR) {
                     avenger = Some(h);
                     break;
                 }
@@ -2412,16 +2360,17 @@ impl World {
 
     /// Warm `observer`'s belief-standing toward `subject` (a real warming un-latches hostility).
     pub fn warm_belief(&mut self, observer: usize, subject: u32, amt: i16) {
-        if let Some(ix) = self.ensure_belief(observer, subject) {
-            let b = &mut self.beliefs[observer].bodies[ix];
-            b.standing = b.standing.saturating_add(amt);
-            if amt > 0 {
-                b.flags &= !0x01;
-            }
-            if b.confidence < 26_000 {
-                b.confidence = 26_000;
-            }
+        if !self.ensure_belief(observer, subject) {
+            return;
         }
+        let now = self.tick;
+        let fs = &mut self.facts[observer];
+        let st = fs.standing(subject).saturating_add(amt);
+        fs.set_standing(subject, st, now);
+        if amt > 0 {
+            fs.set_bool(subject, crate::components::FA_HOSTILE, false, now); // a real warming un-latches hostility
+        }
+        fs.raise_conf(subject, 26_000);
     }
 
     /// RECIPROCITY witness fold (the generosity mirror of `fold_kill_witnesses`): nearby living
@@ -2461,7 +2410,7 @@ mod tests {
         for &i in &[killer, victim, near, far] {
             w.faction[i] = Faction::Townsfolk as u8;
             w.alive[i] = true;
-            w.beliefs[i].clear();
+            w.facts[i] = crate::components::FactStore::default();
             w.memory[i] = crate::components::Memory::default();
         }
         w.pos[victim] = [0.0, 0.0];
@@ -2477,13 +2426,12 @@ mod tests {
             w.memory[near].has(EpisodeKind::WitnessedDeath, victim as u32),
             "the near witness grieves the fallen neighbour"
         );
-        let b = w.beliefs[near].find(killer as u32).expect("the witness now holds a belief about the killer");
         assert!(
-            w.beliefs[near].bodies[b].flags & 0x01 != 0,
+            w.facts[near].view(killer as u32).expect("the witness now holds a belief about the killer").flags & 0x01 != 0,
             "the witness believes the killer is a hostile murderer"
         );
         assert!(
-            w.beliefs[far].find(killer as u32).is_none(),
+            !w.facts[far].believes(killer as u32),
             "a far-off townsperson out of sight learns nothing"
         );
     }
@@ -2499,7 +2447,7 @@ mod tests {
         w.faction[near] = Faction::Townsfolk as u8;
         for &i in &[hero, beast, near] {
             w.alive[i] = true;
-            w.beliefs[i].clear();
+            w.facts[i] = crate::components::FactStore::default();
         }
         w.pos[beast] = [0.0, 0.0];
         w.pos[hero] = [1.0, 0.0];
@@ -2508,9 +2456,9 @@ mod tests {
         w.intents.push(Intent::Strike { from: hero as u32, to: beast as u32, dmg: 10.0 });
         w.drain_intents();
 
-        let b = w.beliefs[near].find(hero as u32).expect("the witness forms a belief about the hero");
-        assert!(w.beliefs[near].bodies[b].standing > 0, "the monster-slayer is admired");
-        assert!(w.beliefs[near].bodies[b].flags & 0x01 == 0, "a hero is not believed hostile");
+        let v = w.facts[near].view(hero as u32).expect("the witness forms a belief about the hero");
+        assert!(v.standing > 0, "the monster-slayer is admired");
+        assert!(v.flags & 0x01 == 0, "a hero is not believed hostile");
     }
 
     /// PLAYER + PARTY + REPUTATION: a player is designated with a starting party (companions banded to
@@ -2709,11 +2657,13 @@ mod tests {
         let foe = 2usize; // give the victim a believed hostile so it WOULD swing if not stunned
         w.alive[foe] = true;
         w.pos[foe] = [3.5, 0.0];
-        w.beliefs[victim].subjects[0] = foe as u32;
-        w.beliefs[victim].bodies[0] = crate::components::PersonBelief {
+        let mut bt = crate::components::BeliefTable::default();
+        bt.subjects[0] = foe as u32;
+        bt.bodies[0] = crate::components::PersonBelief {
             subject: foe as u32, last_x: 3.5, last_z: 0.0, confidence: 60_000, flags: 0x01, ..Default::default()
         };
-        w.beliefs[victim].len = 1;
+        bt.len = 1;
+        w.facts[victim].mirror_core_from(&bt);
         let foe_hp = w.combat[foe].health;
         crate::systems::combat::resolve(&mut w);
         w.drain_intents();
@@ -2741,8 +2691,8 @@ mod tests {
         w.home[refugee] = [150.0, 0.0]; // its hearth, far out on the dangerous edge
         w.home_belief_id[refugee] = u32::MAX; // homeless (its home was razed)
         // it believes a press of raiders is right on top of it (the felt danger).
+        let mut bt = crate::components::BeliefTable::default();
         for (k, id) in [101u32, 102, 103].iter().enumerate() {
-            let bt = &mut w.beliefs[refugee];
             bt.subjects[k] = *id;
             bt.bodies[k] = crate::components::PersonBelief {
                 subject: *id,
@@ -2754,6 +2704,7 @@ mod tests {
             };
             bt.len += 1;
         }
+        w.facts[refugee].mirror_core_from(&bt);
         let before = w.home[refugee][0];
         w.migrate_homeless();
         assert!(
@@ -2794,7 +2745,6 @@ mod tests {
         for _ in 0..50 {
             w.build_surface();
             crate::perceive::perceive(&mut w);
-            w.mirror_beliefs_to_facts();
             crate::systems::combat::resolve(&mut w);
             w.drain_intents();
             if w.percept_flags[0] & 0x01 == 0 {
@@ -2828,8 +2778,7 @@ mod tests {
         // see it: the resident forms a believed-building belief, then claims it as home by sight.
         w.build_surface();
         crate::perceive::perceive(&mut w);
-        let b = w.beliefs[resident].find(home).expect("the resident perceives the building");
-        assert!(w.beliefs[resident].bodies[b].flags & 0x02 != 0, "it is believed a building/place");
+        assert!(w.facts[resident].view(home).expect("the resident perceives the building").flags & 0x02 != 0, "it is believed a building/place");
         w.tend_homes();
         assert_eq!(w.home_belief_id[resident], home, "the resident discovered its home by sight");
 
@@ -2838,7 +2787,7 @@ mod tests {
         for _ in 0..400 {
             w.build_surface();
             crate::perceive::perceive(&mut w);
-            if w.beliefs[resident].find(home).is_none() {
+            if !w.facts[resident].believes(home) {
                 break; // the belief has decayed out of the table
             }
         }
@@ -2872,11 +2821,11 @@ mod tests {
         // build the surface + perceive: the guard should now hold a (hostile) belief about the prop.
         w.build_surface();
         crate::perceive::perceive(&mut w);
-        let b = w.beliefs[guard]
-            .find(scare)
-            .expect("the guard perceives the scarecrow as if it were a person");
         assert!(
-            w.beliefs[guard].bodies[b].flags & 0x01 != 0,
+            w.facts[guard]
+                .view(scare)
+                .expect("the guard perceives the scarecrow as if it were a person")
+                .flags & 0x01 != 0,
             "a menacing prop is believed hostile (the guard will engage it)"
         );
 
@@ -2953,7 +2902,7 @@ mod tests {
         for &i in &[giver, recip, near, far] {
             w.faction[i] = Faction::Townsfolk as u8;
             w.alive[i] = true;
-            w.beliefs[i].clear();
+            w.facts[i] = crate::components::FactStore::default();
             w.memory[i] = crate::components::Memory::default();
         }
         w.pos[giver] = [0.0, 0.0];
@@ -2963,19 +2912,20 @@ mod tests {
         w.intents.push(Intent::deed(giver as u32, recip as u32, 1, crate::tags::Tag::Give.bit(), 0, 0));
         w.drain_intents();
 
-        let rb = w.beliefs[recip].find(giver as u32).expect("the beneficiary holds a belief about the giver");
         assert!(
-            w.beliefs[recip].bodies[rb].standing >= RECIPROCITY_WARMTH,
+            w.facts[recip].view(giver as u32).expect("the beneficiary holds a belief about the giver").standing >= RECIPROCITY_WARMTH,
             "the beneficiary warms toward its benefactor"
         );
         assert!(
             w.memory[recip].has(EpisodeKind::Succoured, giver as u32),
             "the beneficiary remembers being succoured (drives later repayment)"
         );
-        let nb = w.beliefs[near].find(giver as u32).expect("the bystander forms a belief about the giver");
-        assert!(w.beliefs[near].bodies[nb].standing > 0, "a bystander admires the generosity");
         assert!(
-            w.beliefs[far].find(giver as u32).is_none(),
+            w.facts[near].view(giver as u32).expect("the bystander forms a belief about the giver").standing > 0,
+            "a bystander admires the generosity"
+        );
+        assert!(
+            !w.facts[far].believes(giver as u32),
             "a far-off townsperson out of sight takes nothing from the gift"
         );
     }
@@ -3050,8 +3000,10 @@ mod tests {
             w.memory[kinsman].has(EpisodeKind::Assaulted, killer as u32),
             "the avenger holds the grudge (the avenge-loop seed)"
         );
-        let ix = w.beliefs[kinsman].find(killer as u32).expect("the avenger now tracks the killer");
-        assert!(w.beliefs[kinsman].bodies[ix].flags & 0x01 != 0, "the avenger believes the killer hostile");
+        assert!(
+            w.facts[kinsman].view(killer as u32).expect("the avenger now tracks the killer").flags & 0x01 != 0,
+            "the avenger believes the killer hostile"
+        );
     }
 
     /// ESCHEAT: a dead agent's stranded purse passes to a living KINSMAN (same house) — conserved, so

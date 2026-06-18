@@ -247,20 +247,20 @@ mod tests {
         w.pos[0] = [0.0, 0.0];
         w.pos[1] = [1.0, 0.0];
         // agent 0 believes agent 1 is hostile (the only thing combat needs to decide to swing).
-        let bt = &mut w.beliefs[0];
+        let mut bt = crate::components::BeliefTable::default();
         bt.len = 1;
         bt.subjects[0] = 1;
         bt.bodies[0].subject = 1;
         bt.bodies[0].last_x = 1.0;
         bt.bodies[0].last_z = 0.0;
         bt.bodies[0].flags = 1; // bit0 hostile
+        w.facts[0].mirror_core_from(&bt);
         // make sure the attacker is free to swing.
         w.combat[0].attack_cd = 0.0;
         w.combat[0].state = FighterState::Idle as u8;
         let hp_before = w.combat[1].health;
 
         // run JUST the combat decision, then the deterministic merge.
-        w.mirror_beliefs_to_facts();
         resolve(&mut w);
         let n_strikes = w
             .intents
@@ -283,12 +283,13 @@ mod tests {
         w.pos[0] = [0.0, 0.0];
         w.pos[1] = [1.0, 0.0];
         // a belief that is NOT flagged hostile must not trigger a swing.
-        let bt = &mut w.beliefs[0];
+        let mut bt = crate::components::BeliefTable::default();
         bt.len = 1;
         bt.subjects[0] = 1;
         bt.bodies[0].subject = 1;
         bt.bodies[0].last_x = 1.0;
         bt.bodies[0].flags = 0;
+        w.facts[0].mirror_core_from(&bt);
         resolve(&mut w);
         assert!(
             !w.intents.items.iter().any(|i| matches!(i, Intent::Strike { .. })),
@@ -310,17 +311,17 @@ mod tests {
                 if i > 0 {
                     let p = &w.pos[i - 1];
                     let (px, pz) = (p[0], p[1]);
-                    let bt = &mut w.beliefs[i];
+                    let mut bt = crate::components::BeliefTable::default();
                     bt.len = 1;
                     bt.subjects[0] = (i - 1) as u32;
                     bt.bodies[0].subject = (i - 1) as u32;
                     bt.bodies[0].last_x = px;
                     bt.bodies[0].last_z = pz;
                     bt.bodies[0].flags = 1;
+                    w.facts[i].mirror_core_from(&bt);
                 }
             }
             // a few ticks of pure combat + the deterministic merge.
-            w.mirror_beliefs_to_facts();
             for _ in 0..6 {
                 resolve(&mut w);
                 w.drain_intents();
@@ -344,13 +345,14 @@ mod tests {
     fn out_of_reach_no_strike() {
         let mut w = World::spawn(0xBEEF, 2);
         w.pos[0] = [0.0, 0.0];
-        let bt = &mut w.beliefs[0];
+        let mut bt = crate::components::BeliefTable::default();
         bt.len = 1;
         bt.subjects[0] = 1;
         bt.bodies[0].subject = 1;
         bt.bodies[0].last_x = 50.0; // far away
         bt.bodies[0].last_z = 0.0;
         bt.bodies[0].flags = 1;
+        w.facts[0].mirror_core_from(&bt);
         resolve(&mut w);
         assert!(
             !w.intents.items.iter().any(|i| matches!(i, Intent::Strike { .. })),

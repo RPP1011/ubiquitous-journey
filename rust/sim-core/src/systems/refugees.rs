@@ -123,8 +123,8 @@ mod tests {
         let s = survivor.expect("the town had dwellers");
         // place the survivor under a believed press of hostiles (the felt danger that drives flight).
         w.pos[s] = w.town_centers[victim_town];
+        let mut bt = crate::components::BeliefTable::default();
         for k in 0..3 {
-            let bt = &mut w.beliefs[s];
             bt.subjects[k] = 900 + k as u32;
             bt.bodies[k] = crate::components::PersonBelief {
                 subject: 900 + k as u32,
@@ -136,9 +136,9 @@ mod tests {
             };
             bt.len += 1;
         }
+        w.facts[s].mirror_core_from(&bt);
         // align the pass cadence and run it.
         w.tick = REFUGEE_EVERY;
-        w.mirror_beliefs_to_facts();
         tick(&mut w);
         assert_ne!(
             w.town[s] as usize, victim_town,

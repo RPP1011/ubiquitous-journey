@@ -115,16 +115,16 @@ fn truce(world: &mut World, observer: u32, subject: u32, resisted: bool) {
 /// warm floor, not a relative nudge). Seeds the belief if absent, raises a lower standing to `target`,
 /// and un-latches hostility. Leaves an already-warmer bond untouched.
 fn warm_to(world: &mut World, observer: usize, subject: u32, target: i16) {
-    if let Some(ix) = world.ensure_belief(observer, subject) {
-        let b = &mut world.beliefs[observer].bodies[ix];
-        if b.standing < target {
-            b.standing = target;
-        }
-        b.flags &= !0x01; // un-latch hostile (a lasting peace)
-        if b.confidence < 26_000 {
-            b.confidence = 26_000;
-        }
+    if !world.ensure_belief(observer, subject) {
+        return;
     }
+    let now = world.tick;
+    let fs = &mut world.facts[observer];
+    if fs.standing(subject) < target {
+        fs.set_standing(subject, target, now);
+    }
+    fs.set_bool(subject, crate::components::FA_HOSTILE, false, now); // un-latch hostile (a lasting peace)
+    fs.raise_conf(subject, 26_000);
 }
 
 /// The most mutually-hostile pair of living townsfolk, or `None`. A pair qualifies iff `a` holds a
@@ -178,8 +178,9 @@ mod tests {
     /// Seed a one-sided LATCHED-hostile belief: `observer` holds `standing` toward `subject`, hostile.
     fn seed_hostile(w: &mut World, observer: usize, subject: u32, standing: i16) {
         w.sour_belief(observer, subject, 0, true);
-        if let Some(ix) = w.beliefs[observer].find(subject) {
-            w.beliefs[observer].bodies[ix].standing = standing;
+        let now = w.tick;
+        if w.facts[observer].believes(subject) {
+            w.facts[observer].set_standing(subject, standing, now);
         }
     }
 
@@ -187,7 +188,7 @@ mod tests {
         for i in 0..w.n {
             w.faction[i] = Faction::Townsfolk as u8;
             w.alive[i] = true;
-            w.beliefs[i].len = 0;
+            w.facts[i] = crate::components::FactStore::default();
             w.memory[i].len = 0;
         }
     }
@@ -203,17 +204,16 @@ mod tests {
         seed_hostile(&mut w, 1, 0, -20_000);
 
         // run brokering directly (deterministic) — repeat so even a truce path lifts standings.
-        w.mirror_beliefs_to_facts();
         for _ in 0..8 {
             broker(&mut w);
         }
 
-        let s01 = w.beliefs[0].find(1).map(|ix| w.beliefs[0].bodies[ix].standing).unwrap();
-        let s10 = w.beliefs[1].find(0).map(|ix| w.beliefs[1].bodies[ix].standing).unwrap();
+        let s01 = w.facts[0].view(1).map(|v| v.standing).unwrap();
+        let s10 = w.facts[1].view(0).map(|v| v.standing).unwrap();
         assert!(s01 > -20_000, "0's standing toward 1 should warm toward neutral, got {s01}");
         assert!(s10 > -20_000, "1's standing toward 0 should warm toward neutral, got {s10}");
-        let h01 = w.beliefs[0].find(1).map(|ix| w.beliefs[0].bodies[ix].flags & 0x01).unwrap();
-        let h10 = w.beliefs[1].find(0).map(|ix| w.beliefs[1].bodies[ix].flags & 0x01).unwrap();
+        let h01 = w.facts[0].view(1).map(|v| v.flags & 0x01).unwrap();
+        let h10 = w.facts[1].view(0).map(|v| v.flags & 0x01).unwrap();
         assert_eq!(h01, 0, "0 should no longer be latched-hostile to 1");
         assert_eq!(h10, 0, "1 should no longer be latched-hostile to 0");
     }
@@ -243,8 +243,8 @@ mod tests {
         }
 
         // 0 holds the grudge ⇒ its standing toward 1 is unmoved and still latched hostile.
-        let s01 = w.beliefs[0].find(1).map(|ix| w.beliefs[0].bodies[ix].standing).unwrap();
-        let h01 = w.beliefs[0].find(1).map(|ix| w.beliefs[0].bodies[ix].flags & 0x01).unwrap();
+        let s01 = w.facts[0].view(1).map(|v| v.standing).unwrap();
+        let h01 = w.facts[0].view(1).map(|v| v.flags & 0x01).unwrap();
         assert_eq!(s01, -20_000, "the wounded side resists the truce (standing unchanged)");
         assert_eq!(h01, 0x01, "the wounded side stays latched-hostile (no forced forgiveness)");
         // and no reconcile beat was ever logged (a deep grudge blocks the lasting peace).

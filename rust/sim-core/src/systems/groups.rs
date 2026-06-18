@@ -174,12 +174,14 @@ mod tests {
 
     /// Give `observer` a belief of `standing` toward `subject` (so we can wire mutual liking).
     fn make_like(w: &mut World, observer: usize, subject: u32, standing: i16) {
-        let bt = &mut w.beliefs[observer];
+        // accumulate into the observer's existing core beliefs (it may already hold others).
+        let mut bt = w.facts[observer].to_belief_table();
         let idx = bt.len as usize;
         bt.subjects[idx] = subject;
         bt.bodies[idx].subject = subject;
         bt.bodies[idx].standing = standing;
         bt.len += 1;
+        w.facts[observer].mirror_core_from(&bt);
     }
 
     fn reset_townsfolk(w: &mut World) {
@@ -188,7 +190,7 @@ mod tests {
             w.alive[i] = true;
             w.level[i] = 1;
             w.band_leader[i] = NO_BAND;
-            w.beliefs[i].len = 0;
+            w.facts[i] = crate::components::FactStore::default();
         }
     }
 
@@ -203,7 +205,6 @@ mod tests {
         w.pos[1] = [2.0, 0.0];
         make_like(&mut w, 0, 1, 20000);
         make_like(&mut w, 1, 0, 20000);
-        w.mirror_beliefs_to_facts();
         w.build_surface(); // recruit_for reads the grid
 
         // run formation directly (deterministic; the roll uses sim_rng) until it fires.
@@ -253,7 +254,6 @@ mod tests {
         }
         // agent 7 likes the leader but the leader does NOT like it back (one-sided ⇒ rejected).
         make_like(&mut w, 7, 0, 20000);
-        w.mirror_beliefs_to_facts();
         w.build_surface();
 
         // force recruitment (bypass the roll) repeatedly so the cap is the only limiter.

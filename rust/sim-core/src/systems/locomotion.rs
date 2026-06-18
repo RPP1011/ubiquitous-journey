@@ -233,13 +233,13 @@ mod tests {
         w.pos[i] = [0.0, 0.0];
         // plant a believed threat (subject id 99) to the +x side.
         let threat_id = 99u32;
-        let bt = &mut w.beliefs[i];
+        let mut bt = crate::components::BeliefTable::default();
         bt.subjects[0] = threat_id;
         bt.bodies[0] =
             PersonBelief { subject: threat_id, last_x: 10.0, last_z: 0.0, ..Default::default() };
         bt.len = 1;
+        w.facts[i].mirror_core_from(&bt);
         w.goal[i] = Goal::Flee { from: threat_id };
-        w.mirror_beliefs_to_facts();
         step(&mut w);
         // should move in -x (away from the threat at +x).
         assert!(w.pos[i][0] < 0.0, "flee should move away from threat (-x), got {:?}", w.pos[i]);

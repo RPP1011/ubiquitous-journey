@@ -560,44 +560,18 @@ fn do_crisis(world: &mut World, dir: &mut crate::components::DirectorState, now:
 /// Seed a one-sided grudge in `observer` toward `subject`: a hostile, located belief AND an
 /// `assaulted` memory — so the observer's GOAP derives an avenge goal and hunts the subject down.
 fn seed_grudge(world: &mut World, observer: u32, subject: u32, now: u32) {
-    // read the subject's cues into locals first (no overlapping borrow with &mut beliefs below).
+    // doc 25: a believed hostile grudge as facts — ensure the belief, drop standing, latch hostile,
+    // refresh position, firm confidence. (ensure_belief seeds faction+pos; sour_belief does the rest.)
     let spos = world.pos[subject as usize];
-    let sfac = world.faction[subject as usize];
-    let slvl = world.level[subject as usize];
-
-    let bt: &mut BeliefTable = &mut world.beliefs[observer as usize];
-    if let Some(idx) = bt.find(subject) {
-        let b = &mut bt.bodies[idx];
-        b.flags |= 0x01; // hostile
-        b.standing = b.standing.saturating_sub(16_000);
-        if b.confidence < SEED_CONF {
-            b.confidence = SEED_CONF;
-        }
-        b.last_x = spos[0];
-        b.last_z = spos[1];
-        b.last_tick = now;
-    } else if (bt.len as usize) < BELIEF_CAP {
-        let len = bt.len as usize;
-        bt.subjects[len] = subject;
-        bt.bodies[len] = PersonBelief {
-            subject,
-            last_x: spos[0],
-            last_z: spos[1],
-            confidence: SEED_CONF,
-            faction: sfac,
-            level: slvl,
-            notoriety: 0,
-            threat: 0,
-            wealth: 0,
-            last_tick: now,
-            standing: -16_000,
-            flags: 0x01,
-            hops: 0,
-            assoc: 0,
-        };
-        bt.len += 1;
+    if world.ensure_belief(observer as usize, subject) {
+        let fs = &mut world.facts[observer as usize];
+        let st = fs.standing(subject).saturating_sub(16_000);
+        fs.set_standing(subject, st, now);
+        fs.set_bool(subject, crate::components::FA_HOSTILE, true, now);
+        fs.set_pos(subject, spos[0], spos[1], now);
+        fs.raise_conf(subject, SEED_CONF);
     }
-    // (table full ⇒ skip the belief seed; the memory grudge below still arms the intention.)
+    // (the memory grudge below still arms the intention regardless.)
 
     world.memory[observer as usize].record(Episode {
         kind: EpisodeKind::Assaulted as u8,
@@ -681,14 +655,13 @@ mod tests {
         for i in 0..w.n {
             w.faction[i] = Faction::Townsfolk as u8;
             w.alive[i] = true;
-            w.beliefs[i].clear();
+            w.facts[i] = crate::components::FactStore::default();
         }
         // a MUTUAL deep regard between 1 and 2.
         w.warm_belief(1, 2, 16_000);
         w.warm_belief(2, 1, 16_000);
         // a ONE-SIDED crush: 3 adores 4, unrequited.
         w.warm_belief(3, 4, 16_000);
-        w.mirror_beliefs_to_facts();
         open_emergent_sagas(&mut w);
         assert_eq!(w.sagas.open_count(SagaKind::Romance), 1, "the mutual bond opens one romance");
         assert!(
@@ -706,13 +679,12 @@ mod tests {
         for i in 0..w.n {
             w.faction[i] = Faction::Townsfolk as u8;
             w.alive[i] = true;
-            w.beliefs[i].clear();
+            w.facts[i] = crate::components::FactStore::default();
         }
         w.econ[tyrant].gold = 100_000; // a tyrant of means
         for r in 1..5 {
             w.sour_belief(r, tyrant as u32, 9_000, false); // resented by four souls
         }
-        w.mirror_beliefs_to_facts();
         open_emergent_sagas(&mut w);
         assert_eq!(w.sagas.open_count(SagaKind::TyrantFall), 1, "the resented tyrant opens the arc");
         // the tyrant falls (dies) — the arc closes.
@@ -728,14 +700,13 @@ mod tests {
         for i in 0..w.n {
             w.faction[i] = Faction::Townsfolk as u8;
             w.alive[i] = true;
-            w.beliefs[i].clear();
+            w.facts[i] = crate::components::FactStore::default();
         }
         w.role[1] = 2; // a planted spy (ROLE_SPY)
         // a pariah: agents 3,4,5,6 all believe agent 2 a hostile foe.
         for h in 3..7 {
             w.sour_belief(h, 2, 12_000, true);
         }
-        w.mirror_beliefs_to_facts();
         open_emergent_sagas(&mut w);
         assert_eq!(w.sagas.open_count(SagaKind::SpyWeb), 1, "the spy opens a spy-web arc");
         assert!(
@@ -758,14 +729,13 @@ mod tests {
             w.faction[i] = Faction::Townsfolk as u8;
             w.alive[i] = true;
             w.role[i] = 0;
-            w.beliefs[i].clear();
+            w.facts[i] = crate::components::FactStore::default();
         }
         w.profession[apprentice] = 4; // both blacksmiths
         w.level[apprentice] = 2; // still learning
         w.profession[master] = 4;
         w.level[master] = 9; // a master
         w.warm_belief(apprentice, master as u32, 9_000); // looks up to them
-        w.mirror_beliefs_to_facts();
         enlist_proteges(&mut w);
         assert_eq!(w.role[apprentice], ROLE_PROTEGE, "the apprentice is the master's protégé");
         assert_eq!(w.role[master], 0, "the master is not a protégé");
@@ -816,14 +786,13 @@ mod tests {
             w.faction[i] = Faction::Townsfolk as u8;
             w.alive[i] = true;
             w.role[i] = 0;
-            w.beliefs[i].clear();
+            w.facts[i] = crate::components::FactStore::default();
         }
         // a MUTUAL sworn enmity between 0 and 1.
         w.sour_belief(0, 1, 20_000, true);
         w.sour_belief(1, 0, 20_000, true);
         // a ONE-SIDED grievance: 2 hates 3, but 3 is indifferent.
         w.sour_belief(2, 3, 20_000, true);
-        w.mirror_beliefs_to_facts();
         enlist_duellists(&mut w);
         assert_eq!(w.role[0], ROLE_DUELIST, "the mutual foe 0 is a duellist");
         assert_eq!(w.role[1], ROLE_DUELIST, "the mutual foe 1 is a duellist");

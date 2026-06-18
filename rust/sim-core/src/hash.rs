@@ -141,24 +141,7 @@ pub fn world_hash(w: &World) -> u64 {
             h = fold(h, &e.t.to_le_bytes());
             h = fold(h, &e.n.to_le_bytes());
         }
-        // belief table (the dominant state)
-        let bt = &w.beliefs[i];
-        h = fold(h, &[bt.len]);
-        for j in 0..bt.len as usize {
-            let b = &bt.bodies[j];
-            h = fold(h, &b.subject.to_le_bytes());
-            h = fold(h, &b.last_x.to_bits().to_le_bytes());
-            h = fold(h, &b.last_z.to_bits().to_le_bytes());
-            h = fold(h, &b.confidence.to_le_bytes());
-            h = fold(h, &b.standing.to_le_bytes());
-            h = fold(h, &b.notoriety.to_le_bytes());
-            h = fold(h, &b.threat.to_le_bytes());
-            h = fold(h, &b.wealth.to_le_bytes());
-            h = fold(h, &[b.faction, b.level, b.flags, b.hops]);
-            h = fold(h, &b.assoc.to_le_bytes());
-            h = fold(h, &b.last_tick.to_le_bytes());
-        }
-        // open fact-store beliefs (doc 25) — the proposition layer (debts, motives, …). Sorted by
+        // belief layer (doc 25): the unified fact store — the dominant state. Sorted by
         // (subject, attr) ⇒ stable order; covered so any non-determinism in the serial mint or the
         // own-write reads is caught by the M-invariance gate. Empty until a capability writes one.
         let fs = &w.facts[i];

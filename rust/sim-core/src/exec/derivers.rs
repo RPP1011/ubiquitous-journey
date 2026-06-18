@@ -665,20 +665,12 @@ pub fn grieve(gstack: &mut GoalStack, ctx: &DeriveCtx) {
 mod debt_tests {
     use super::*;
     use crate::components::{
-        BeliefTable, Experience, Fact, FactStore, Memory, Personality, FA_FACTION, FA_OWES_ME,
-        SOURCE_LEDGER, SOURCE_WITNESSED,
+        Experience, Fact, FactStore, Memory, Personality, FA_FACTION, FA_OWES_ME, SOURCE_LEDGER,
+        SOURCE_WITNESSED,
     };
     use crate::exec::registry::DeriveCtx;
 
-    fn locatable(_bt: &mut BeliefTable, _subject: u32) {
-        // (no-op now — collect_debt reads facts; the debt() helper makes the debtor locatable there)
-    }
-
-    fn ctx<'a>(
-        beliefs: &'a BeliefTable,
-        facts: &'a FactStore,
-        memory: &'a Memory,
-    ) -> DeriveCtx<'a> {
+    fn ctx<'a>(facts: &'a FactStore, memory: &'a Memory) -> DeriveCtx<'a> {
         DeriveCtx {
             faction: Faction::Townsfolk as u8,
             profession: 1,
@@ -690,7 +682,6 @@ mod debt_tests {
             hunger: 1.0,
             experience: Experience::default(),
             recipe_own: 1.0,
-            beliefs,
             facts,
             memory,
             now: 100,
@@ -711,13 +702,11 @@ mod debt_tests {
 
     #[test]
     fn a_large_believed_debt_drives_a_vendetta() {
-        let mut bt = BeliefTable::default();
-        locatable(&mut bt, 42); // I can still see the robber
         let mut fs = FactStore::default();
         debt(&mut fs, 42, 2_000); // one robbery's worth — above DEBT_VENDETTA_MIN
         let mem = Memory::default();
         let mut gs = GoalStack::default();
-        collect_debt(&mut gs, &ctx(&bt, &fs, &mem));
+        collect_debt(&mut gs, &ctx(&fs, &mem));
         assert!(
             (0..gs.len as usize).any(|k| gs.items[k].kind == IntentionKind::Avenge as u8
                 && gs.items[k].subject == 42),
@@ -727,20 +716,16 @@ mod debt_tests {
 
     #[test]
     fn a_petty_debt_is_shrugged_off() {
-        let mut bt = BeliefTable::default();
-        locatable(&mut bt, 42);
         let mut fs = FactStore::default();
         debt(&mut fs, 42, 500); // below the vendetta threshold
         let mem = Memory::default();
         let mut gs = GoalStack::default();
-        collect_debt(&mut gs, &ctx(&bt, &fs, &mem));
+        collect_debt(&mut gs, &ctx(&fs, &mem));
         assert_eq!(gs.len, 0, "a petty debt is not worth a grudge");
     }
 
     #[test]
     fn a_settled_debtor_is_not_hunted_again() {
-        let mut bt = BeliefTable::default();
-        locatable(&mut bt, 42);
         let mut fs = FactStore::default();
         debt(&mut fs, 42, 2_000);
         let mut mem = Memory::default();
@@ -748,7 +733,7 @@ mod debt_tests {
             kind: EpisodeKind::Slew as u8, with: 42, t: 50, salience: 100, ..Default::default()
         });
         let mut gs = GoalStack::default();
-        collect_debt(&mut gs, &ctx(&bt, &fs, &mem));
+        collect_debt(&mut gs, &ctx(&fs, &mem));
         assert_eq!(gs.len, 0, "slaying the debtor settles the grudge");
     }
 }

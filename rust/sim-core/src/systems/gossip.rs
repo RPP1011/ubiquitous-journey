@@ -35,14 +35,17 @@ pub fn gossip(world: &mut World) {
     let World {
         ref pos,
         ref grid,
-        ref beliefs_prev,
-        ref mut beliefs,
+        ref facts_prev,
+        ref mut facts,
         ..
     } = *world;
 
     let r2 = TALK_RANGE * TALK_RANGE;
 
-    beliefs.par_iter_mut().enumerate().for_each(|(i, bt)| {
+    // doc 25: load my beliefs + the partner's frozen snapshot as scratch tables (the codec), run the
+    // EXACT merge+affinity logic, store mine back. Reads only `facts_prev` (frozen) + own `facts[i]`.
+    facts.par_iter_mut().enumerate().for_each(|(i, fs)| {
+        let mut bt = fs.to_belief_table();
         let my_id = i as u32;
         let x = pos[i][0];
         let z = pos[i][1];
@@ -69,7 +72,7 @@ pub fn gossip(world: &mut World) {
             None => return, // nobody to chat with this tick.
         };
 
-        let src = &beliefs_prev[partner as usize];
+        let src = facts_prev[partner as usize].to_belief_table();
 
         // 2. adopt the partner's better-sourced third-party beliefs (never about me or the partner).
         for k in 0..src.len as usize {
@@ -83,7 +86,7 @@ pub fn gossip(world: &mut World) {
             if sb.flags & 0x04 != 0 {
                 continue;
             }
-            merge_belief(bt, sb);
+            merge_belief(&mut bt, sb);
         }
 
         // 3. relationship EMA: a peaceful chat builds a little familiarity toward the partner, but
@@ -95,6 +98,7 @@ pub fn gossip(world: &mut World) {
                 b.standing = (b.standing.saturating_add(AFFINITY_GAIN)).min(AFFINITY_CAP);
             }
         }
+        fs.mirror_core_from(&bt);
     });
 }
 

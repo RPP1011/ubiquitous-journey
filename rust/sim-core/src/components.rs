@@ -665,6 +665,63 @@ impl FactStore {
     pub fn forget(&mut self, subject: u32) {
         self.facts.retain(|f| f.subject != subject);
     }
+
+    // ── targeted writers (the planter API: ensure_belief / sour_belief / warm_belief etc.) ──
+
+    /// Ensure a believed-subject row exists (the `ensure_belief` seed): create the canonical
+    /// `FA_FACTION` (+ believed position) facts at confidence 40000 if not already believed.
+    pub fn ensure(&mut self, subject: u32, faction: u8, x: f32, z: f32, tick: u32) {
+        if self.believes(subject) {
+            return;
+        }
+        let mk = |attr: u8, value: u32| Fact {
+            subject, value, observed_at: tick, base_conf: 40_000, attr,
+            src: SOURCE_INFERRED, hops: 0, _pad: 0,
+        };
+        self.upsert(mk(FA_FACTION, faction as u32));
+        self.upsert(mk(FA_LASTX, x.to_bits()));
+        self.upsert(mk(FA_LASTZ, z.to_bits()));
+    }
+    /// Believed standing toward `subject` (i16), 0 if none held.
+    #[inline]
+    pub fn standing(&self, subject: u32) -> i16 {
+        self.get(subject, FA_STANDING).map_or(0, |v| v as i32 as i16)
+    }
+    /// Set the believed standing toward `subject`.
+    pub fn set_standing(&mut self, subject: u32, st: i16, tick: u32) {
+        self.upsert(Fact {
+            subject, value: (st as i32) as u32, observed_at: tick, base_conf: 65535,
+            attr: FA_STANDING, src: SOURCE_INFERRED, hops: 0, _pad: 0,
+        });
+    }
+    /// Set or clear a boolean proposition (hostile / building / inanimate) about `subject`.
+    pub fn set_bool(&mut self, subject: u32, attr: u8, on: bool, tick: u32) {
+        if on {
+            self.upsert(Fact {
+                subject, value: 1, observed_at: tick, base_conf: 65535, attr,
+                src: SOURCE_INFERRED, hops: 0, _pad: 0,
+            });
+        } else {
+            self.facts.retain(|f| !(f.subject == subject && f.attr == attr));
+        }
+    }
+    /// Raise the per-subject sighting confidence (the `FA_FACTION` base_conf) to at least `min`.
+    pub fn raise_conf(&mut self, subject: u32, min: u16) {
+        if let Ok(i) = self.pos(subject, FA_FACTION) {
+            if self.facts[i].base_conf < min {
+                self.facts[i].base_conf = min;
+            }
+        }
+    }
+    /// Refresh a believed position (a witness fold relocating the subject), bumping confidence.
+    pub fn set_pos(&mut self, subject: u32, x: f32, z: f32, tick: u32) {
+        if let Ok(i) = self.pos(subject, FA_LASTX) {
+            self.facts[i].value = x.to_bits();
+        }
+        if let Ok(i) = self.pos(subject, FA_LASTZ) {
+            self.facts[i].value = z.to_bits();
+        }
+    }
     /// TRANSITION (doc 25): rebuild the core (perceived + relationship) facts from a legacy
     /// `BeliefTable`, PRESERVING the open tail (debts/motives). Lets readers migrate to facts while the
     /// struct still drives the writers — the fact view then equals the struct exactly. Removed once the

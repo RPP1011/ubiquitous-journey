@@ -173,8 +173,7 @@ mod tests {
         // place me at the town centre (a SAFE place exists there in the map) and a hostile 4m away.
         w.pos[i] = w.town_center;
         let (px, pz) = (w.pos[i][0], w.pos[i][1]);
-        let bt = &mut w.beliefs[i];
-        bt.clear();
+        let mut bt = crate::components::BeliefTable::default();
         bt.subjects[0] = 7;
         bt.bodies[0] = PersonBelief {
             subject: 7,
@@ -186,10 +185,10 @@ mod tests {
             ..Default::default()
         };
         bt.len = 1;
+        w.facts[i].mirror_core_from(&bt);
         // a level-2 civilian (not outmatched by the level-1 hostile) → flee-to-safety / brawl band.
         w.level[i] = 2;
         w.goal[i] = Goal::Idle;
-        w.mirror_beliefs_to_facts();
         reason(&mut w);
         let k = w.goal[i].kind();
         assert!(
@@ -217,8 +216,7 @@ mod tests {
         w.personality[i].aggression = 0.1;
         w.pos[i] = [0.0, 0.0];
         w.level[i] = 1;
-        let bt = &mut w.beliefs[i];
-        bt.clear();
+        let mut bt = crate::components::BeliefTable::default();
         bt.subjects[0] = 9;
         bt.bodies[0] = PersonBelief {
             subject: 9,
@@ -230,8 +228,8 @@ mod tests {
             ..Default::default()
         };
         bt.len = 1;
+        w.facts[i].mirror_core_from(&bt);
         w.goal[i] = Goal::Idle;
-        w.mirror_beliefs_to_facts();
         reason(&mut w);
         // a conceal/exit place exists on the rim → Wander toward it; else pure repulsor.
         let k = w.goal[i].kind();
@@ -250,8 +248,7 @@ mod tests {
             .expect("a townsperson exists");
         w.personality[i].aggression = 0.95; // a brave fighter
         w.pos[i] = [0.0, 0.0];
-        let bt = &mut w.beliefs[i];
-        bt.clear();
+        let mut bt = crate::components::BeliefTable::default();
         bt.subjects[0] = 7;
         bt.bodies[0] = PersonBelief {
             subject: 7,
@@ -262,6 +259,7 @@ mod tests {
             ..Default::default()
         };
         bt.len = 1;
+        w.facts[i].mirror_core_from(&bt);
         w.goal[i] = Goal::Idle;
         reason(&mut w);
         assert_eq!(
@@ -279,8 +277,7 @@ mod tests {
         w.faction[0] = Faction::Monster as u8;
         w.personality[0].aggression = 0.1;
         w.pos[0] = [0.0, 0.0];
-        let bt = &mut w.beliefs[0];
-        bt.clear();
+        let mut bt = crate::components::BeliefTable::default();
         bt.subjects[0] = 7;
         bt.bodies[0] = PersonBelief {
             subject: 7,
@@ -291,6 +288,7 @@ mod tests {
             ..Default::default()
         };
         bt.len = 1;
+        w.facts[0].mirror_core_from(&bt);
         w.goal[0] = Goal::Idle;
         reason(&mut w);
         assert_eq!(w.goal[0].kind(), GoalKind::Idle, "a monster must not run the civilian flee reflex");
@@ -303,7 +301,7 @@ mod tests {
         let i = 0usize;
         w.faction[i] = Faction::Townsfolk as u8;
         w.personality[i].aggression = 0.1;
-        w.beliefs[i].clear(); // no beliefs at all
+        w.facts[i] = crate::components::FactStore::default(); // no beliefs at all
         w.goal[i] = Goal::Idle;
         reason(&mut w);
         assert_eq!(w.goal[i].kind(), GoalKind::Idle, "with no hostile, reason must not pre-empt");

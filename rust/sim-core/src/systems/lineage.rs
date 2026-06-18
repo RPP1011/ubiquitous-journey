@@ -234,11 +234,11 @@ mod tests {
     }
 
     fn set_fond(w: &mut World, a: usize, b: usize) {
-        let bt = &mut w.beliefs[a];
-        let slot = bt.len as usize;
-        bt.subjects[slot] = b as u32;
-        bt.bodies[slot] = PersonBelief { subject: b as u32, standing: 30000, ..Default::default() };
-        bt.len += 1;
+        let mut bt = crate::components::BeliefTable::default();
+        bt.subjects[0] = b as u32;
+        bt.bodies[0] = PersonBelief { subject: b as u32, standing: 30000, ..Default::default() };
+        bt.len = 1;
+        w.facts[a].mirror_core_from(&bt);
     }
 
     /// Births grow the population under the cap, and the child is a 0-gold townsperson.
@@ -255,7 +255,6 @@ mod tests {
         let n0 = w.n;
         // run the births pass directly on a throttle tick.
         w.tick = TICK_EVERY;
-        w.mirror_beliefs_to_facts();
         tick(&mut w);
         assert_eq!(w.n, n0 + 1, "a fit, fond, co-located couple should bear one child");
         let child = w.n - 1;
@@ -278,7 +277,6 @@ mod tests {
         make_couple(&mut w, 0, 1);
         let total_before = w.total_gold();
         w.tick = TICK_EVERY;
-        w.mirror_beliefs_to_facts();
         tick(&mut w);
         let child = w.n - 1;
         assert_eq!(w.total_gold(), total_before, "dowry must conserve total gold");
@@ -313,7 +311,6 @@ mod tests {
         w.progression[0].behavior_profile[5] = 10.0; // parent 0 is strong in tag 5
         make_couple(&mut w, 0, 1);
         w.tick = TICK_EVERY;
-        w.mirror_beliefs_to_facts();
         tick(&mut w);
         let child = w.n - 1;
         let inherited = w.progression[child].behavior_profile[5];

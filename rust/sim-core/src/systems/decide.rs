@@ -95,7 +95,6 @@ pub fn decide(world: &mut World) {
         ref faith,
         ref needs,
         ref mood,
-        ref beliefs,
         ref facts,
         ref memory,
         ref econ,
@@ -240,7 +239,6 @@ pub fn decide(world: &mut World) {
                     recipe_own: crate::world::prof_good(profession[i])
                         .map(|g| recipe[i][g])
                         .unwrap_or(1.0),
-                    beliefs: &beliefs[i],
                     facts: &facts[i],
                     memory: &memory[i],
                     now,
@@ -249,7 +247,7 @@ pub fn decide(world: &mut World) {
                 // CAUTION burn-on-failure (doc 11): an intention the planner flagged UNREACHABLE last
                 // tick is a WASTED watched venture — burn its strategy before prune drops it, so the
                 // surcharge accrues (a thief whose marks keep slipping learns robbing isn't worth it).
-                burn_failed_ventures(gstack, my_exp, my_sig, &beliefs[i], now);
+                burn_failed_ventures(gstack, my_exp, my_sig, &facts[i], now);
                 prune_goals(gstack, &pv, now);
 
                 // 2. STAND AND FIGHT: the top AGGRESSIVE intention (a locatable grudge to avenge, or a
@@ -522,16 +520,13 @@ fn burn_failed_ventures(
     gstack: &GoalStack,
     exp: &mut Experience,
     sig: &mut crate::components::Signals,
-    bt: &BeliefTable,
+    fs: &crate::components::FactStore,
     now: u32,
 ) {
     for k in 0..gstack.len as usize {
         let it = gstack.items[k];
         if it.flags & Intention::F_UNREACHABLE != 0 && it.kind == IntentionKind::Steal as u8 {
-            let conf = bt
-                .find(it.subject)
-                .map(|ix| bt.bodies[ix].confidence as f32 / 65535.0)
-                .unwrap_or(0.0);
+            let conf = fs.confidence(it.subject) as f32 / 65535.0;
             crate::experience::record_waste(&mut exp.e[VERB_ROB as usize], conf, now);
             // signalsFold (doc 13): the wasted heist folds a Fail onto the Heist streak — the same
             // PLAN_OUTCOME the windfall folds Ok onto (world.rs). Own-row write (disjoint via zip).
@@ -727,8 +722,7 @@ mod tests {
         w.needs[0].energy = 1.0;
         w.needs[0].comfort = 1.0;
         w.econ[0].inventory[Commodity::Food as usize] = 3; // carrying a meal ⇒ the reactive eat reflex
-        w.beliefs[0].clear();
-        w.mirror_beliefs_to_facts();
+        w.facts[0] = crate::components::FactStore::default();
         decide(&mut w);
         assert_eq!(w.goal[0].kind(), GoalKind::Eat, "a hungry agent with food must choose Eat");
     }
@@ -758,8 +752,7 @@ mod tests {
         w.alive[captor] = true;
         w.pos[captor] = [300.0, 0.0]; // far away — won't be freed by captor-death, won't interfere
         // the rescuer BELIEVES its friend is held captive right there.
-        let bt = &mut w.beliefs[rescuer];
-        bt.clear();
+        let mut bt = crate::components::BeliefTable::default();
         bt.subjects[0] = captive as u32;
         bt.bodies[0] = PersonBelief {
             subject: captive as u32,
@@ -771,6 +764,7 @@ mod tests {
             ..Default::default()
         };
         bt.len = 1;
+        w.facts[rescuer].mirror_core_from(&bt);
 
         for _ in 0..12 {
             w.tick();
@@ -801,12 +795,11 @@ mod tests {
         // the leader is currently fighting the foe (the snapshot reads this last-tick goal).
         w.goal[leader] = Goal::Fight { target: foe, to: [40.0, 0.0] };
         // the follower ALSO perceives the foe (a shared, commonly-seen threat).
-        let bt = &mut w.beliefs[follower];
-        bt.clear();
+        let mut bt = crate::components::BeliefTable::default();
         bt.subjects[0] = foe;
         bt.bodies[0] = PersonBelief { subject: foe, last_x: 38.0, last_z: 1.0, confidence: 60000, flags: 0x01, ..Default::default() };
         bt.len = 1;
-        w.mirror_beliefs_to_facts();
+        w.facts[follower].mirror_core_from(&bt);
         decide(&mut w);
         match w.goal[follower] {
             Goal::Fight { target, .. } => assert_eq!(target, foe, "the follower rallies to the leader's foe"),
@@ -826,8 +819,7 @@ mod tests {
         w.econ[follower].inventory[Commodity::Food as usize] = 3;
         w.band_leader[follower] = leader as i32;
         w.goal[leader] = Goal::Fight { target: 7, to: [40.0, 0.0] };
-        w.beliefs[follower].clear(); // the follower perceives NOTHING — no shared threat
-        w.mirror_beliefs_to_facts();
+        w.facts[follower] = crate::components::FactStore::default(); // the follower perceives NOTHING — no shared threat
         decide(&mut w);
         assert_ne!(
             w.goal[follower].kind(),
@@ -848,11 +840,10 @@ mod tests {
         w.profession[i] = Profession::None as u8; // idle: no craft ⇒ reaches the idle-time step
         w.needs[i] = Needs::default();
         w.needs[i].social = 0.0; // starved for company
-        w.beliefs[i].clear();
+        w.facts[i] = crate::components::FactStore::default();
         w.memory[i] = crate::components::Memory::default();
         w.goals[i] = GoalStack::default();
         w.econ[i].inventory[Commodity::Food as usize] = 3; // not hungry (no forage override)
-        w.mirror_beliefs_to_facts();
         decide(&mut w);
         assert_eq!(
             w.goal[i].kind(),
@@ -877,11 +868,10 @@ mod tests {
             .unwrap();
         w.needs[i] = Needs::default();
         w.econ[i].inventory[Commodity::Food as usize] = 3;
-        w.beliefs[i].clear();
+        w.facts[i] = crate::components::FactStore::default();
         w.memory[i] = crate::components::Memory::default();
         w.goals[i] = GoalStack::default();
         w.recipe[i][3] = 0.3; // rusty at the Tool craft → wants to master it
-        w.mirror_beliefs_to_facts();
         decide(&mut w);
         assert!(
             (0..w.goals[i].len as usize).any(|k| w.goals[i].items[k].kind == IntentionKind::Know as u8),
@@ -928,8 +918,7 @@ mod tests {
         w.memory[i] = crate::components::Memory::default();
         w.goals[i] = GoalStack::default();
         // a vague (mid-confidence) belief about a believed-RICH subject — worth resolving.
-        let bt = &mut w.beliefs[i];
-        bt.clear();
+        let mut bt = crate::components::BeliefTable::default();
         bt.subjects[0] = 42;
         bt.bodies[0] = PersonBelief {
             subject: 42,
@@ -940,7 +929,7 @@ mod tests {
             ..Default::default()
         };
         bt.len = 1;
-        w.mirror_beliefs_to_facts();
+        w.facts[i].mirror_core_from(&bt);
         decide(&mut w);
         assert_eq!(w.goal[i].kind(), GoalKind::Observe, "a curious idle soul should scout its hunch");
     }
@@ -957,10 +946,9 @@ mod tests {
         w.needs[i].energy = 1.0;
         w.needs[i].comfort = 1.0;
         w.econ[i].inventory = [0; crate::components::N_COMMODITIES]; // empty larder
-        w.beliefs[i].clear();
+        w.facts[i] = crate::components::FactStore::default();
         w.memory[i] = crate::components::Memory::default();
         w.goals[i] = GoalStack::default();
-        w.mirror_beliefs_to_facts();
         decide(&mut w);
         let k = w.goal[i].kind();
         assert!(
@@ -980,7 +968,7 @@ mod tests {
         for i in 0..w.n {
             if w.profession[i] != Profession::None as u8 && w.faction[i] == Faction::Townsfolk as u8 {
                 w.needs[i] = Needs::default();
-                w.beliefs[i].clear();
+                w.facts[i] = crate::components::FactStore::default();
                 w.memory[i] = Memory::default();
                 w.goals[i] = GoalStack::default();
                 w.ambition[i] = crate::components::AMB_MASTERY; // pin non-wanderlust so it works/trades
@@ -988,7 +976,6 @@ mod tests {
             }
         }
         assert!(found, "spawn should produce working townsfolk");
-        w.mirror_beliefs_to_facts();
         decide(&mut w);
         for i in 0..w.n {
             if w.profession[i] != Profession::None as u8 && w.faction[i] == Faction::Townsfolk as u8 {
@@ -1009,15 +996,14 @@ mod tests {
         w.goals[0] = GoalStack::default();
         let px = w.pos[0][0];
         let pz = w.pos[0][1];
-        let bt = &mut w.beliefs[0];
-        bt.clear();
+        let mut bt = crate::components::BeliefTable::default();
         bt.subjects[0] = 7;
         bt.bodies[0].subject = 7;
         bt.bodies[0].last_x = px + 2.0;
         bt.bodies[0].last_z = pz + 2.0;
         bt.bodies[0].flags = 0x01;
         bt.len = 1;
-        w.mirror_beliefs_to_facts();
+        w.facts[0].mirror_core_from(&bt);
         decide(&mut w);
         match w.goal[0] {
             Goal::Flee { from } => assert_eq!(from, 7, "should flee the planted hostile"),
@@ -1035,8 +1021,7 @@ mod tests {
             .expect("a townsperson exists");
         w.needs[i] = Needs::default();
         let (px, pz) = (w.pos[i][0], w.pos[i][1]);
-        let bt = &mut w.beliefs[i];
-        bt.clear();
+        let mut bt = crate::components::BeliefTable::default();
         bt.subjects[0] = 7;
         bt.bodies[0] = PersonBelief {
             subject: 7,
@@ -1047,6 +1032,7 @@ mod tests {
             ..Default::default()
         };
         bt.len = 1;
+        w.facts[i].mirror_core_from(&bt);
         w.memory[i] = Memory::default();
         w.memory[i].record(Episode {
             kind: EpisodeKind::Assaulted as u8,
@@ -1056,7 +1042,6 @@ mod tests {
             ..Default::default()
         });
         w.goals[i] = GoalStack::default();
-        w.mirror_beliefs_to_facts();
         decide(&mut w);
         // the intention persisted on the stack…
         assert!(
@@ -1090,9 +1075,9 @@ mod tests {
         w.econ[mark].gold = 50_000;
         w.wealth[mark] = 60_000; // the perceivable wealth cue (perceive copies this into the belief)
         // the thief BELIEVES the mark is rich + right here.
-        w.beliefs[thief].clear();
-        w.beliefs[thief].subjects[0] = mark as u32;
-        w.beliefs[thief].bodies[0] = PersonBelief {
+        let mut bt = crate::components::BeliefTable::default();
+        bt.subjects[0] = mark as u32;
+        bt.bodies[0] = PersonBelief {
             subject: mark as u32,
             last_x: 1.5,
             last_z: 0.0,
@@ -1100,7 +1085,8 @@ mod tests {
             wealth: 60000,
             ..Default::default()
         };
-        w.beliefs[thief].len = 1;
+        bt.len = 1;
+        w.facts[thief].mirror_core_from(&bt);
         w.goals[thief] = GoalStack::default();
         w.memory[thief] = Memory::default();
 
@@ -1130,9 +1116,9 @@ mod tests {
         w.personality[thief].altruism = 0.05;
         w.pos[thief] = [0.0, 0.0];
         w.pos[mark] = [1.5, 0.0];
-        w.beliefs[thief].clear();
-        w.beliefs[thief].subjects[0] = mark as u32;
-        w.beliefs[thief].bodies[0] = PersonBelief {
+        let mut bt = crate::components::BeliefTable::default();
+        bt.subjects[0] = mark as u32;
+        bt.bodies[0] = PersonBelief {
             subject: mark as u32,
             last_x: 1.5,
             last_z: 0.0,
@@ -1140,7 +1126,8 @@ mod tests {
             wealth: 60000,
             ..Default::default()
         };
-        w.beliefs[thief].len = 1;
+        bt.len = 1;
+        w.facts[thief].mirror_core_from(&bt);
         w.goals[thief] = GoalStack::default();
         w.memory[thief] = Memory::default();
         // BURN the rob strategy hard (several wasted heists' worth) so the felt surcharge clears the bar.
@@ -1151,7 +1138,6 @@ mod tests {
                 w.tick,
             );
         }
-        w.mirror_beliefs_to_facts();
         decide(&mut w);
         assert!(
             !(0..w.goals[thief].len as usize)
@@ -1172,8 +1158,7 @@ mod tests {
         w.personality[i].aggression = 0.9;
         w.memory[i] = Memory::default();
         w.goals[i] = GoalStack::default();
-        let bt = &mut w.beliefs[i];
-        bt.clear();
+        let mut bt = crate::components::BeliefTable::default();
         // a believed FRIEND at (20,0)…
         bt.subjects[0] = 5;
         bt.bodies[0] = PersonBelief { subject: 5, last_x: 20.0, last_z: 0.0, confidence: 60000, standing: 8000, ..Default::default() };
@@ -1181,7 +1166,7 @@ mod tests {
         bt.subjects[1] = 9;
         bt.bodies[1] = PersonBelief { subject: 9, last_x: 22.0, last_z: 0.0, confidence: 60000, flags: 0x01, ..Default::default() };
         bt.len = 2;
-        w.mirror_beliefs_to_facts();
+        w.facts[i].mirror_core_from(&bt);
         decide(&mut w);
         match w.goal[i] {
             Goal::Fight { target, .. } => assert_eq!(target, 9, "should fight the foe menacing the friend"),
@@ -1209,9 +1194,9 @@ mod tests {
         w.pos[poor] = [1.5, 0.0];
         w.wealth[poor] = 0; // the perceivable "poor" cue
         w.econ[poor].inventory[Commodity::Food as usize] = 0;
-        w.beliefs[donor].clear();
-        w.beliefs[donor].subjects[0] = poor as u32;
-        w.beliefs[donor].bodies[0] = PersonBelief {
+        let mut bt = crate::components::BeliefTable::default();
+        bt.subjects[0] = poor as u32;
+        bt.bodies[0] = PersonBelief {
             subject: poor as u32,
             last_x: 1.5,
             last_z: 0.0,
@@ -1219,7 +1204,8 @@ mod tests {
             wealth: 0,
             ..Default::default()
         };
-        w.beliefs[donor].len = 1;
+        bt.len = 1;
+        w.facts[donor].mirror_core_from(&bt);
         w.goals[donor] = GoalStack::default();
         w.memory[donor] = Memory::default();
         w.memory[poor] = Memory::default();
@@ -1257,16 +1243,17 @@ mod tests {
         w.econ[debtor].inventory[Commodity::Food as usize] = 4;
         w.pos[debtor] = [0.0, 0.0];
         w.pos[benefactor] = [1.5, 0.0];
-        w.beliefs[debtor].clear();
-        w.beliefs[debtor].subjects[0] = benefactor as u32;
-        w.beliefs[debtor].bodies[0] = PersonBelief {
+        let mut bt = crate::components::BeliefTable::default();
+        bt.subjects[0] = benefactor as u32;
+        bt.bodies[0] = PersonBelief {
             subject: benefactor as u32,
             last_x: 1.5,
             last_z: 0.0,
             confidence: 60000,
             ..Default::default()
         };
-        w.beliefs[debtor].len = 1;
+        bt.len = 1;
+        w.facts[debtor].mirror_core_from(&bt);
         w.goals[debtor] = GoalStack::default();
         // I remember being succoured by the benefactor while desperate.
         w.memory[debtor] = Memory::default();
@@ -1305,9 +1292,9 @@ mod tests {
         w.pos[corpse] = [1.5, 0.0];
         w.alive[corpse] = false; // already fallen
         w.econ[corpse].gold = 7_000; // a purse worth taking
-        w.beliefs[victor].clear();
-        w.beliefs[victor].subjects[0] = corpse as u32;
-        w.beliefs[victor].bodies[0] = PersonBelief {
+        let mut bt = crate::components::BeliefTable::default();
+        bt.subjects[0] = corpse as u32;
+        bt.bodies[0] = PersonBelief {
             subject: corpse as u32,
             last_x: 1.5,
             last_z: 0.0,
@@ -1315,7 +1302,8 @@ mod tests {
             wealth: 60000, // believed to carry coin
             ..Default::default()
         };
-        w.beliefs[victor].len = 1;
+        bt.len = 1;
+        w.facts[victor].mirror_core_from(&bt);
         w.goals[victor] = GoalStack::default();
         w.memory[victor] = Memory::default();
         w.memory[victor].record(Episode {
@@ -1326,7 +1314,6 @@ mod tests {
             ..Default::default()
         });
         let total = w.total_gold();
-        w.mirror_beliefs_to_facts(); // sync facts with the injected belief (a tick would, mid-loop)
         for _ in 0..6 {
             w.tick();
         }
@@ -1352,8 +1339,7 @@ mod tests {
         w.goals[i] = GoalStack::default();
         w.memory[i] = Memory::default();
         // believe a hostile monster (id 7) is 20m away.
-        let bt = &mut w.beliefs[i];
-        bt.clear();
+        let mut bt = crate::components::BeliefTable::default();
         bt.subjects[0] = 7;
         bt.bodies[0] = PersonBelief {
             subject: 7,
@@ -1365,7 +1351,7 @@ mod tests {
             ..Default::default()
         };
         bt.len = 1;
-        w.mirror_beliefs_to_facts();
+        w.facts[i].mirror_core_from(&bt);
         decide(&mut w);
         assert!(
             (0..w.goals[i].len as usize).any(|k| w.goals[i].items[k].kind == IntentionKind::Glory as u8),
@@ -1385,7 +1371,7 @@ mod tests {
             .find(|&i| w.faction[i] == Faction::Townsfolk as u8)
             .expect("a townsperson exists");
         w.needs[i] = Needs::default();
-        w.beliefs[i].clear();
+        w.facts[i] = crate::components::FactStore::default();
         w.memory[i] = Memory::default();
         w.memory[i].record(Episode {
             kind: EpisodeKind::Assaulted as u8,
@@ -1395,7 +1381,6 @@ mod tests {
             ..Default::default()
         });
         w.goals[i] = GoalStack::default();
-        w.mirror_beliefs_to_facts();
         decide(&mut w); // derives the avenge intention
         // now record that I slew the foe → next decide must prune it.
         w.memory[i].record(Episode {
@@ -1405,7 +1390,6 @@ mod tests {
             salience: 60000,
             ..Default::default()
         });
-        w.mirror_beliefs_to_facts();
         decide(&mut w);
         assert!(
             !(0..w.goals[i].len as usize)

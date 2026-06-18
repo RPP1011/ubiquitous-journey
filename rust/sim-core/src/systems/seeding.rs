@@ -296,15 +296,15 @@ mod tests {
         let w = World::spawn(0x5EED2, 12);
         let (_, a, b) = trio_ids(&w);
         // belief standing soured each way …
-        let bel_ab = w.beliefs[a].find(b as u32).map(|ix| w.beliefs[a].bodies[ix].standing);
-        let bel_ba = w.beliefs[b].find(a as u32).map(|ix| w.beliefs[b].bodies[ix].standing);
+        let bel_ab = w.facts[a].view(b as u32).map(|v| v.standing);
+        let bel_ba = w.facts[b].view(a as u32).map(|v| v.standing);
         assert!(bel_ab.is_some_and(|s| s < 0), "a resents b (soured standing)");
         assert!(bel_ba.is_some_and(|s| s < 0), "b resents a (soured standing)");
         // … and a durable grudge MEMORY each way.
         assert!(w.memory[a].has(EpisodeKind::Assaulted, b as u32), "a holds a rivalry grudge of b");
         assert!(w.memory[b].has(EpisodeKind::Assaulted, a as u32), "b holds a rivalry grudge of a");
         // the rivalry is NOT latched-hostile (a rivalry is competition, not a vendetta).
-        let hostile = w.beliefs[a].find(b as u32).is_some_and(|ix| w.beliefs[a].bodies[ix].flags & 0x01 != 0);
+        let hostile = w.facts[a].view(b as u32).is_some_and(|v| v.flags & 0x01 != 0);
         assert!(!hostile, "a rivalry is not a latched-hostile vendetta");
     }
 
@@ -314,8 +314,8 @@ mod tests {
         let w = World::spawn(0x5EED3, 12);
         let (master, a, b) = trio_ids(&w);
         for &ap in &[a, b] {
-            let m2a = w.beliefs[master].find(ap as u32).map(|ix| w.beliefs[master].bodies[ix].standing);
-            let a2m = w.beliefs[ap].find(master as u32).map(|ix| w.beliefs[ap].bodies[ix].standing);
+            let m2a = w.facts[master].view(ap as u32).map(|v| v.standing);
+            let a2m = w.facts[ap].view(master as u32).map(|v| v.standing);
             assert!(m2a.is_some_and(|s| s > 0), "the master is fond of the apprentice");
             assert!(a2m.is_some_and(|s| s > 0), "the apprentice is fond of the master");
         }
@@ -341,9 +341,9 @@ mod tests {
     fn force_betrayal_plants_the_avenge_seed() {
         let mut w = World::spawn(0xB17A, 8);
         assert!(force_betrayal(&mut w, 0, 1), "a valid betrayal applies");
-        let bel = w.beliefs[0].find(1).expect("a now holds a belief of b");
-        assert!(w.beliefs[0].bodies[bel].standing < 0, "a's opinion of b craters");
-        assert!(w.beliefs[0].bodies[bel].flags & 0x01 != 0, "the betrayal latches hostility");
+        let bel = w.facts[0].view(1).expect("a now holds a belief of b");
+        assert!(bel.standing < 0, "a's opinion of b craters");
+        assert!(bel.flags & 0x01 != 0, "the betrayal latches hostility");
         assert!(w.memory[0].has(EpisodeKind::Assaulted, 1), "a remembers the wrong (the avenge seed)");
         // invalid ids are rejected.
         assert!(!force_betrayal(&mut w, 0, 0), "self-betrayal is rejected");
@@ -365,13 +365,13 @@ mod tests {
         w.pos[2] = [500.0, 500.0]; // far
         let poisoned = false_witness(&mut w, 0, Some(3));
         assert!(poisoned >= 1, "at least the near witness is poisoned");
-        let near = w.beliefs[1].find(0).map(|ix| w.beliefs[1].bodies[ix].standing);
+        let near = w.facts[1].view(0).map(|v| v.standing);
         assert!(near.is_some_and(|s| s < 0), "the near witness now suspects the victim");
         // suspicion is NOT latched-hostile (a rumour, not a declared feud).
-        let near_hostile = w.beliefs[1].find(0).is_some_and(|ix| w.beliefs[1].bodies[ix].flags & 0x01 != 0);
+        let near_hostile = w.facts[1].view(0).is_some_and(|v| v.flags & 0x01 != 0);
         assert!(!near_hostile, "false witness plants suspicion, not declared hostility");
         // the far witness is untouched.
-        assert!(w.beliefs[2].find(0).is_none(), "the far witness heard no rumour");
+        assert!(!w.facts[2].believes(0), "the far witness heard no rumour");
     }
 
     /// Determinism: a seeded world is M-invariant (M=1 ≡ M=4) — seeding runs at worldgen, before any

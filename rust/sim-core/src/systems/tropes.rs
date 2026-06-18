@@ -895,7 +895,7 @@ mod tests {
         for i in 0..w.n {
             w.faction[i] = Faction::Townsfolk as u8;
             w.alive[i] = true;
-            w.beliefs[i].len = 0;
+            w.facts[i] = crate::components::FactStore::default();
             w.memory[i].len = 0;
             w.house[i] = 0;
         }
@@ -909,13 +909,11 @@ mod tests {
         all_townsfolk(&mut w);
         // agent 0 warmly TRUSTS agent 1 (a durable, betrayable bond).
         w.warm_belief(0, 1, 20_000);
-        w.mirror_beliefs_to_facts();
         let folk = living_townsfolk(&w);
         assert!(do_betrayal(&mut w, &folk, 0, 100), "a durable bond should be betrayable");
 
         // the betrayer (1) is now latched-hostile to the victim (0), with a soured standing.
-        let ix = w.beliefs[1].find(0).expect("the betrayer now holds a belief about the victim");
-        let body = w.beliefs[1].bodies[ix];
+        let body = w.facts[1].view(0).expect("the betrayer now holds a belief about the victim");
         assert_eq!(body.flags & HOSTILE_BIT, HOSTILE_BIT, "the betrayer latches hostile to the victim");
         assert!(body.standing < 0, "the betrayer's standing toward the victim is soured, got {}", body.standing);
         // the victim (0) carries the `Assaulted` grudge the avenge loop grows.
@@ -930,11 +928,10 @@ mod tests {
         let mut w = World::spawn(0x9EA1, 6);
         all_townsfolk(&mut w);
         w.warm_belief(0, 1, 18_000); // agent 0 dearly trusts agent 1
-        let before = w.beliefs[0].bodies[w.beliefs[0].find(1).unwrap()].standing;
-        w.mirror_beliefs_to_facts();
+        let before = w.facts[0].view(1).unwrap().standing;
         let folk = living_townsfolk(&w);
         assert!(do_mistaken_jealousy(&mut w, &folk, 0, 100), "a dear friendship can be strained");
-        let body = w.beliefs[0].bodies[w.beliefs[0].find(1).unwrap()];
+        let body = w.facts[0].view(1).unwrap();
         assert!(body.standing < before, "the warmth cooled, got {} (was {before})", body.standing);
         assert_eq!(body.flags & HOSTILE_BIT, 0, "a misunderstanding does NOT latch hostile");
         assert!(w.chronicle.iter().any(|b| b.kind == BEAT_JEALOUSY), "a jealousy beat is logged");
@@ -956,8 +953,8 @@ mod tests {
         }
         let folk = living_townsfolk(&w);
         assert!(do_rival_apprentices(&mut w, &folk, 0, 100), "two same-craft apprentices become rivals");
-        let a = w.beliefs[0].bodies[w.beliefs[0].find(1).expect("0 now regards 1")];
-        let b = w.beliefs[1].bodies[w.beliefs[1].find(0).expect("1 now regards 0")];
+        let a = w.facts[0].view(1).expect("0 now regards 1");
+        let b = w.facts[1].view(0).expect("1 now regards 0");
         assert!(a.standing < 0 && b.standing < 0, "a MUTUAL chill");
         assert_eq!(a.flags & HOSTILE_BIT, 0, "a rivalry is a chill, not open enmity");
         assert!(w.chronicle.iter().any(|b| b.kind == BEAT_RIVALRY), "a rivalry beat is logged");
@@ -977,8 +974,8 @@ mod tests {
         }
         let folk = living_townsfolk(&w);
         assert!(do_mentor_pride(&mut w, &folk, 0, 100), "a master mentors a same-craft apprentice");
-        let a = w.beliefs[0].bodies[w.beliefs[0].find(1).expect("the mentor regards the protégé")];
-        let b = w.beliefs[1].bodies[w.beliefs[1].find(0).expect("the protégé regards the mentor")];
+        let a = w.facts[0].view(1).expect("the mentor regards the protégé");
+        let b = w.facts[1].view(0).expect("the protégé regards the mentor");
         assert!(a.standing > 0 && b.standing > 0, "a warm bond both ways");
         assert!(w.chronicle.iter().any(|b| b.kind == BEAT_MENTOR), "a mentor beat is logged");
     }
@@ -993,8 +990,8 @@ mod tests {
         set_house_feud(&mut w, 5, 9); // the feud their love must cross
         let folk = living_townsfolk(&w);
         assert!(do_star_crossed(&mut w, &folk, 0, 100), "love crosses a house feud");
-        let a = w.beliefs[0].bodies[w.beliefs[0].find(1).expect("0 cares for 1")];
-        let b = w.beliefs[1].bodies[w.beliefs[1].find(0).expect("1 cares for 0")];
+        let a = w.facts[0].view(1).expect("0 cares for 1");
+        let b = w.facts[1].view(0).expect("1 cares for 0");
         assert!(a.standing > 0 && b.standing > 0, "a warm, forbidden bond both ways");
         assert!(w.chronicle.iter().any(|b| b.kind == BEAT_STARCROSS), "a star-crossed beat is logged");
 
@@ -1017,9 +1014,9 @@ mod tests {
         assert!(do_boast_backfires(&mut w, &folk, 0, 100), "a high-level boaster grates on someone");
         // some neighbour now holds a soured (but not hostile) belief about the boaster.
         let soured = (1..w.n).any(|b| {
-            w.beliefs[b]
-                .find(0)
-                .map(|ix| w.beliefs[b].bodies[ix].standing < 0 && w.beliefs[b].bodies[ix].flags & HOSTILE_BIT == 0)
+            w.facts[b]
+                .view(0)
+                .map(|v| v.standing < 0 && v.flags & HOSTILE_BIT == 0)
                 .unwrap_or(false)
         });
         assert!(soured, "a neighbour is unimpressed by the boast (soured, not hostile)");
@@ -1040,9 +1037,9 @@ mod tests {
         let folk = living_townsfolk(&w);
         assert!(do_spy_unmasked(&mut w, &folk, 0, 100), "a nearby spy is unmasked");
         let turned = (1..w.n).filter(|&b| {
-            w.beliefs[b]
-                .find(spy as u32)
-                .map(|ix| w.beliefs[b].bodies[ix].flags & HOSTILE_BIT != 0)
+            w.facts[b]
+                .view(spy as u32)
+                .map(|v| v.flags & HOSTILE_BIT != 0)
                 .unwrap_or(false)
         }).count();
         assert!(turned > 0, "nearby townsfolk turn on the exposed spy (latched hostile)");
@@ -1061,7 +1058,7 @@ mod tests {
         let folk = living_townsfolk(&w);
         assert!(do_favored_rise(&mut w, &folk, 0, 100), "a poor soul is favoured by fortune");
         let warmed = (1..w.n).any(|b| {
-            w.beliefs[b].find(0).map(|ix| w.beliefs[b].bodies[ix].standing > 0).unwrap_or(false)
+            w.facts[b].view(0).map(|v| v.standing > 0).unwrap_or(false)
         });
         assert!(warmed, "a patron warms toward the favoured soul");
         assert!(w.chronicle.iter().any(|b| b.kind == BEAT_FAVORED), "a favoured beat is logged");
@@ -1080,8 +1077,7 @@ mod tests {
         assert!(do_prophet(&mut w, &folk, 0, 100), "a faith-holder prophesies");
         let convert = (1..w.n).find(|&b| w.faith[b] == 3).expect("someone joined the flock");
         assert_eq!(w.faith[convert], 3, "the convert adopts the prophet's god");
-        let ix = w.beliefs[convert].find(0).expect("the convert regards the prophet");
-        assert!(w.beliefs[convert].bodies[ix].standing > 0, "the convert feels devotion");
+        assert!(w.facts[convert].view(0).expect("the convert regards the prophet").standing > 0, "the convert feels devotion");
         assert!(w.chronicle.iter().any(|b| b.kind == BEAT_PROPHET), "a prophet beat is logged");
     }
 
@@ -1097,9 +1093,8 @@ mod tests {
         let folk = living_townsfolk(&w);
         assert!(do_tyrant_market(&mut w, &folk, 0, 100), "wealth breeds resentment");
         let resentful = (1..w.n).any(|b| {
-            w.beliefs[b].find(0).map(|ix| {
-                let body = w.beliefs[b].bodies[ix];
-                body.standing < 0 && body.flags & HOSTILE_BIT == 0
+            w.facts[b].view(0).map(|v| {
+                v.standing < 0 && v.flags & HOSTILE_BIT == 0
             }).unwrap_or(false)
         });
         assert!(resentful, "a poor soul resents the rich (soured, not hostile)");
@@ -1130,10 +1125,8 @@ mod tests {
         all_townsfolk(&mut w);
         w.house[0] = 4;
         w.house[1] = 4; // same house, not yet bonded
-        w.mirror_beliefs_to_facts();
         let folk = living_townsfolk(&w);
         assert!(do_reunion(&mut w, &folk, 0, 100), "two same-house souls should reunite");
-        w.mirror_beliefs_to_facts();
         assert!(standing(&w, 0, 1) >= WARM_AMT, "0 warms toward 1");
         assert!(standing(&w, 1, 0) >= WARM_AMT, "1 warms toward 0");
         assert!(w.memory[0].has(EpisodeKind::Succoured, 1) && w.memory[1].has(EpisodeKind::Succoured, 0));
@@ -1167,8 +1160,8 @@ mod tests {
         w.sour_belief(0, 1, 5_000, false);
         let folk = living_townsfolk(&w);
         assert!(do_feud(&mut w, &folk, 0, 100), "a simmering pair should erupt into a feud");
-        let h01 = w.beliefs[0].find(1).map(|ix| w.beliefs[0].bodies[ix].flags & HOSTILE_BIT).unwrap();
-        let h10 = w.beliefs[1].find(0).map(|ix| w.beliefs[1].bodies[ix].flags & HOSTILE_BIT).unwrap();
+        let h01 = w.facts[0].view(1).map(|v| v.flags & HOSTILE_BIT).unwrap();
+        let h10 = w.facts[1].view(0).map(|v| v.flags & HOSTILE_BIT).unwrap();
         assert_eq!(h01, HOSTILE_BIT, "0 latches hostile to 1");
         assert_eq!(h10, HOSTILE_BIT, "1 latches hostile to 0");
     }
@@ -1183,10 +1176,8 @@ mod tests {
         assert!(!do_vendetta(&mut w, &folk, 0, 100), "a vendetta is never manufactured from nothing");
         // a real soured (un-latched) grievance 0→1 ⇒ it latches hostile.
         w.sour_belief(0, 1, 15_000, false);
-        w.mirror_beliefs_to_facts();
         assert!(do_vendetta(&mut w, &folk, 0, 100), "a real grievance is sworn into a vendetta");
-        let ix = w.beliefs[0].find(1).unwrap();
-        assert_eq!(w.beliefs[0].bodies[ix].flags & HOSTILE_BIT, HOSTILE_BIT, "the grievance is latched hostile");
+        assert_eq!(w.facts[0].view(1).unwrap().flags & HOSTILE_BIT, HOSTILE_BIT, "the grievance is latched hostile");
     }
 
     /// DEBT REPAID moves a token back to the saviour (conserved) and clears the Succoured marker.
@@ -1198,12 +1189,10 @@ mod tests {
         remember(&mut w, 0, EpisodeKind::Succoured, 2, 0);
         w.econ[0].gold = 20;
         let before = w.total_gold();
-        w.mirror_beliefs_to_facts();
         let folk = living_townsfolk(&w);
         assert!(do_debt_repaid(&mut w, &folk, 0, 100), "a Succoured holder should repay its saviour");
         assert_eq!(w.total_gold(), before, "the repayment is a transfer — gold is conserved");
         assert!(!w.memory[0].has(EpisodeKind::Succoured, 2), "the settled debt's marker is cleared");
-        w.mirror_beliefs_to_facts();
         assert!(standing(&w, 2, 0) > 0, "the saviour warms toward the one who repaid");
     }
 

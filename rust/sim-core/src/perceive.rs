@@ -19,13 +19,17 @@ pub fn perceive(world: &mut World) {
     let World {
         ref pos,
         ref grid,
-        ref mut beliefs,
+        ref mut facts,
         ..
     } = *world;
 
     let r2 = VISION * VISION;
 
-    beliefs.par_iter_mut().enumerate().for_each(|(i, bt)| {
+    // doc 25: facts is the persistent store. Each agent loads its beliefs into a scratch `BeliefTable`
+    // (the codec), runs the EXACT existing decay+upsert logic, then stores back (preserving the open
+    // tail — debts/motives). Own-row only ⇒ M=1≡M=N. Behaviour-identical to the old struct path.
+    facts.par_iter_mut().enumerate().for_each(|(i, fs)| {
+        let mut bt = fs.to_belief_table();
         let my_id = i as u32;
         let x = pos[i][0];
         let z = pos[i][1];
@@ -46,8 +50,9 @@ pub fn perceive(world: &mut World) {
                 return;
             }
             let conf = ((1.0 - (d2.sqrt() / VISION)).clamp(0.0, 1.0) * 65535.0) as u16;
-            upsert(bt, p, conf, tick);
+            upsert(&mut bt, p, conf, tick);
         });
+        fs.mirror_core_from(&bt);
     });
 }
 
