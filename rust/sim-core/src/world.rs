@@ -117,6 +117,9 @@ pub struct World {
     // ── belief layer (double-buffered: gossip reads `beliefs_prev`, writes `beliefs`, §4) ──
     pub beliefs: Vec<BeliefTable>,
     pub beliefs_prev: Vec<BeliefTable>,
+    /// Open fact-store beliefs (doc 25) — the proposition-model successor to `beliefs`. Phase 1:
+    /// present but unwired (empty ⇒ golden hash unchanged). Migrated to in later phases.
+    pub facts: Vec<crate::components::FactStore>,
 
     // ── HOT per-tick projection + index ──
     pub surface: Vec<Perceivable>,
@@ -616,6 +619,7 @@ impl World {
             role: Vec::with_capacity(n),
             beliefs: Vec::with_capacity(n),
             beliefs_prev: Vec::with_capacity(n),
+            facts: Vec::with_capacity(n),
             surface: Vec::with_capacity(n),
             grid: Grid::new(),
             intents: IntentQueue::new(),
@@ -739,6 +743,7 @@ impl World {
             w.recipe.push([1.0; crate::components::N_COMMODITIES]); // trained across the crafts; the unpractised fade (specialisation emerges)
             w.beliefs.push(BeliefTable::default());
             w.beliefs_prev.push(BeliefTable::default());
+            w.facts.push(crate::components::FactStore::default());
             w.faith.push(NO_GOD);
             w.contract_god.push(0);
             w.contract_power.push(0);
@@ -876,6 +881,7 @@ impl World {
         self.role.push(0);
         self.beliefs.push(BeliefTable::default());
         self.beliefs_prev.push(BeliefTable::default());
+        self.facts.push(crate::components::FactStore::default());
         self.n += 1;
         i
     }

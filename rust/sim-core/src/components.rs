@@ -437,6 +437,192 @@ impl BeliefTable {
     }
 }
 
+// ───────────────────────────── the fact-store belief model (doc 25) ─────────────────────────────
+//
+// Beliefs as interned int PROPOSITIONS — the open-ontology successor to the fixed `PersonBelief`
+// struct above. A `Fact` is `{subject, attr, value, conf, provenance(src,hops), observed_at}`, all
+// ints. The `attr` IMPLIES the value-kind (ATTR_KIND table) so a Fact needs NO per-fact type tag.
+// Topics span agents, places, motives, items — anything an agent can hold a confidence-weighted,
+// decaying, provenance-tagged opinion about (the N×M-over-topics model, doc 25).
+//
+// Why: `PersonBelief` is lossy (can only believe what has a column — "Korg owes me 5 gold" is
+// unrepresentable) and coarse (per-RECORD confidence/provenance). The fact model is open, per-fact,
+// lazy-decayable, and unlocks higher-order/ToM beliefs (a subject can be a fact handle).
+//
+// DETERMINISM: the store is a `Vec<Fact>` kept SORTED by (subject, attr) — stable iteration, NO
+// HashMap in the read/hash surface (the M=1≡M=N mandate). Lazy decay (base_conf + observed_at,
+// computed on read) keeps decay off the hot tick. Perf penalty is ACCEPTED by design (richness per
+// agent > agent count). MIGRATION IS PHASED (doc 25): in Phase 1 this substrate is present but
+// UNWIRED (stores stay empty ⇒ the golden hash is unchanged); later phases write/read/hash it.
+
+/// What a `Fact.value: u32` means — selected by its `attr` via ATTR_KIND (no per-fact tag).
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ValueKind {
+    Bool = 0,   // 0 / 1
+    Symbol = 1, // an interned enum (Faction, intent code, …)
+    Quant = 2,  // a small-integer magnitude / fixed-point
+    Entity = 3, // an EntityId
+    FBits = 4,  // f32::to_bits (believed positions)
+    Place = 5,  // a POI / place id
+}
+
+// Attribute ids — index ATTR_KIND / ATTR_DECAY. Core (0..=5) mirror `PersonBelief`'s hot fields so
+// Phase 2 can mirror them; the rest are the OPEN tail the struct could never carry.
+pub const FA_FACTION: u8 = 0; // Symbol  (Faction)
+pub const FA_HOSTILE: u8 = 1; // Bool
+pub const FA_LASTX: u8 = 2; // FBits
+pub const FA_LASTZ: u8 = 3; // FBits
+pub const FA_THREAT: u8 = 4; // Quant
+pub const FA_STANDING: u8 = 5; // Quant (i16 reinterpreted)
+pub const FA_WEALTH: u8 = 6; // Quant
+pub const FA_NOTORIETY: u8 = 7; // Quant
+pub const FA_LEVEL: u8 = 8; // Quant
+pub const FA_ASSOC: u8 = 9; // Entity (believed house/group)
+pub const FA_INTENT: u8 = 10; // Symbol  — believed MOTIVE (flee/raid/home/…) — open, new capability
+pub const FA_DESTPLACE: u8 = 11; // Place — believed destination place id — new
+pub const FA_OWES_ME: u8 = 12; // Quant — gold the subject owes the observer (closed-loop ledger) — new
+pub const N_FACT_ATTR: usize = 13;
+
+/// Value-kind per attr (readers interpret `Fact.value` through this).
+pub const ATTR_KIND: [ValueKind; N_FACT_ATTR] = [
+    ValueKind::Symbol, // faction
+    ValueKind::Bool,   // hostile
+    ValueKind::FBits,  // last_x
+    ValueKind::FBits,  // last_z
+    ValueKind::Quant,  // threat
+    ValueKind::Quant,  // standing
+    ValueKind::Quant,  // wealth
+    ValueKind::Quant,  // notoriety
+    ValueKind::Quant,  // level
+    ValueKind::Entity, // assoc
+    ValueKind::Symbol, // intent
+    ValueKind::Place,  // dest_place
+    ValueKind::Quant,  // owes_me
+];
+
+/// Confidence lost per tick (fixed-point, units of 1/65535). 0 = never decays — a ledger fact like a
+/// debt or a sworn oath is not forgotten by mere time (it is SETTLED by an event). Positions and
+/// hostility fade; faction/assoc fade slowly.
+pub const ATTR_DECAY: [u16; N_FACT_ATTR] = [
+    4,  // faction (slow)
+    18, // hostile
+    40, // last_x (positions stale fast)
+    40, // last_z
+    18, // threat
+    8,  // standing
+    12, // wealth
+    8,  // notoriety
+    4,  // level
+    4,  // assoc
+    30, // intent (a motive is fleeting)
+    24, // dest_place
+    0,  // owes_me — a debt does not decay; it is repaid
+];
+
+/// One interned belief proposition. 20 bytes, all ints. `value` is interpreted by `ATTR_KIND[attr]`.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Fact {
+    pub subject: u32,     // the topic this is about (EntityId, or a place/percept id)
+    pub value: u32,       // interpreted by ATTR_KIND[attr]
+    pub observed_at: u32, // sim-tick last written (recency; lazy-decay input)
+    pub base_conf: u16,   // confidence at observed_at, fixed-point 0..65535
+    pub attr: u8,         // FA_* — implies the value-kind
+    pub src: u8,          // provenance source (SOURCE_* — witnessed/talked/rumor/inferred/ledger)
+    pub hops: u8,         // gossip provenance depth (0 = first-hand)
+    pub _pad: u8,
+}
+impl Fact {
+    /// Confidence NOW, with lazy decay applied (base − decay·age, clamped to 0). 0-decay attrs (a
+    /// debt) return base unchanged.
+    #[inline]
+    pub fn conf_now(&self, now: u32) -> u16 {
+        let d = ATTR_DECAY[self.attr as usize] as u32;
+        let age = now.saturating_sub(self.observed_at);
+        (self.base_conf as u32).saturating_sub(d.saturating_mul(age)).min(65535) as u16
+    }
+}
+
+/// Soft cap on facts per agent — richer than `BELIEF_CAP` (25) since the whole point is per-agent
+/// richness. Over cap, the lowest current-confidence fact is evicted (deterministic: ties by key).
+pub const FACT_CAP: usize = 96;
+
+/// One agent's open belief store: facts kept SORTED by (subject, attr) for deterministic iteration
+/// and O(log n) lookup. The deliberate departure from the inline-`Copy` column rule (a `Vec` per
+/// agent) — perf accepted per doc 25. NOT a HashMap (that would break the M=1≡M=N golden hash).
+#[derive(Clone, Default)]
+pub struct FactStore {
+    pub facts: Vec<Fact>,
+}
+impl FactStore {
+    #[inline]
+    fn key(f: &Fact) -> (u32, u8) {
+        (f.subject, f.attr)
+    }
+    #[inline]
+    fn pos(&self, subject: u32, attr: u8) -> Result<usize, usize> {
+        self.facts.binary_search_by(|f| Self::key(f).cmp(&(subject, attr)))
+    }
+    /// The raw stored value for (subject, attr), if held (no confidence gate).
+    #[inline]
+    pub fn get(&self, subject: u32, attr: u8) -> Option<u32> {
+        self.pos(subject, attr).ok().map(|i| self.facts[i].value)
+    }
+    /// Current (lazily-decayed) confidence for (subject, attr); 0 if not held.
+    #[inline]
+    pub fn conf(&self, subject: u32, attr: u8, now: u32) -> u16 {
+        match self.pos(subject, attr) {
+            Ok(i) => self.facts[i].conf_now(now),
+            Err(_) => 0,
+        }
+    }
+    /// Upsert a fact, dedup by (subject, attr): an existing fact is refreshed (newer wins, keeping the
+    /// SHORTER provenance hops). Over `FACT_CAP`, evict the lowest current-confidence fact (ties by
+    /// key ⇒ order-independent / deterministic).
+    pub fn upsert(&mut self, f: Fact, now: u32) {
+        match self.pos(f.subject, f.attr) {
+            Ok(i) => {
+                let cur = &mut self.facts[i];
+                cur.value = f.value;
+                cur.observed_at = f.observed_at;
+                cur.base_conf = f.base_conf;
+                cur.src = f.src;
+                cur.hops = cur.hops.min(f.hops);
+            }
+            Err(i) => self.facts.insert(i, f),
+        }
+        if self.facts.len() > FACT_CAP {
+            // evict the weakest (lowest current conf; tie-break by key for determinism)
+            let mut lo = 0usize;
+            for k in 1..self.facts.len() {
+                let (a, b) = (&self.facts[k], &self.facts[lo]);
+                if a.conf_now(now) < b.conf_now(now)
+                    || (a.conf_now(now) == b.conf_now(now) && Self::key(a) < Self::key(b))
+                {
+                    lo = k;
+                }
+            }
+            self.facts.remove(lo);
+        }
+    }
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.facts.len()
+    }
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.facts.is_empty()
+    }
+}
+
+// Provenance sources (mirrors the TS SOURCE.* tags + a ledger source for minted obligations).
+pub const SOURCE_WITNESSED: u8 = 0;
+pub const SOURCE_TALKED: u8 = 1;
+pub const SOURCE_RUMOR: u8 = 2;
+pub const SOURCE_INFERRED: u8 = 3;
+pub const SOURCE_LEDGER: u8 = 4;
+
 // ───────────────────────────── Wave-3 society / observer value types ─────────────────────────────
 
 /// One world-history beat (the chronicle observer — `types/news.ts` Beat, numeric Wave-3 form; the
@@ -1216,4 +1402,63 @@ pub struct Biography {
     pub deed_total: u16,   // cumulative count of notable deeds (peak over the life)
     pub defining_moment: u8, // the EpisodeKind of the agent's most SALIENT memory (its defining event)
     pub stm: u8,           // how many memories sit in the short-term tier right now (recency texture)
+}
+
+#[cfg(test)]
+mod fact_store_tests {
+    use super::*;
+
+    fn fact(subject: u32, attr: u8, value: u32, conf: u16, at: u32) -> Fact {
+        Fact { subject, value, observed_at: at, base_conf: conf, attr, src: SOURCE_WITNESSED, hops: 0, _pad: 0 }
+    }
+
+    #[test]
+    fn upsert_get_and_sorted_order() {
+        let mut s = FactStore::default();
+        // insert out of order; the store must stay sorted by (subject, attr)
+        s.upsert(fact(7, FA_HOSTILE, 1, 60000, 0), 0);
+        s.upsert(fact(3, FA_FACTION, 2, 60000, 0), 0);
+        s.upsert(fact(7, FA_FACTION, 4, 60000, 0), 0);
+        assert_eq!(s.get(7, FA_HOSTILE), Some(1));
+        assert_eq!(s.get(3, FA_FACTION), Some(2));
+        assert_eq!(s.get(7, FA_FACTION), Some(4));
+        assert_eq!(s.get(99, FA_HOSTILE), None);
+        let keys: Vec<(u32, u8)> = s.facts.iter().map(|f| (f.subject, f.attr)).collect();
+        let mut sorted = keys.clone();
+        sorted.sort();
+        assert_eq!(keys, sorted, "facts must stay sorted (deterministic iteration)");
+    }
+
+    #[test]
+    fn upsert_dedups_and_keeps_shorter_hops() {
+        let mut s = FactStore::default();
+        let mut far = fact(5, FA_FACTION, 1, 50000, 0);
+        far.hops = 3;
+        s.upsert(far, 0);
+        let mut near = fact(5, FA_FACTION, 1, 55000, 1);
+        near.hops = 1;
+        s.upsert(near, 1);
+        assert_eq!(s.len(), 1, "same (subject,attr) refreshes, not duplicates");
+        assert_eq!(s.facts[0].hops, 1, "refresh keeps the shorter provenance");
+    }
+
+    #[test]
+    fn lazy_decay_fades_positions_but_not_debts() {
+        let mut s = FactStore::default();
+        s.upsert(fact(5, FA_LASTX, 0, 65535, 0), 0); // decays (rate 40)
+        s.upsert(fact(5, FA_OWES_ME, 500, 65535, 0), 0); // rate 0 — never decays
+        let later = 1000u32;
+        assert!(s.conf(5, FA_LASTX, later) < 65535, "position should fade with age");
+        assert_eq!(s.conf(5, FA_OWES_ME, later), 65535, "a debt does not decay with time");
+    }
+
+    #[test]
+    fn eviction_drops_weakest_at_cap() {
+        let mut s = FactStore::default();
+        // fill past cap with increasing confidence; the weakest must be evicted
+        for k in 0..(FACT_CAP as u32 + 5) {
+            s.upsert(fact(k, FA_THREAT, k, (k % 100 + 1) as u16 * 600, 0), 0);
+        }
+        assert_eq!(s.len(), FACT_CAP, "store is bounded at FACT_CAP");
+    }
 }
