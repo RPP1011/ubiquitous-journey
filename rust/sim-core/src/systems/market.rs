@@ -138,10 +138,9 @@ const KIN_FAVOR: f32 = 0.1;
 /// friend (a deal), ≈1.2 for a despised buyer (gouged), 1.0 for a stranger. Clamped so trade never
 /// becomes impossible. The relationship-aware clearing that makes reputation MATTER in the market.
 #[inline]
-fn standing_skew(bt: &BeliefTable, buyer: u32, seller_house: u16) -> f32 {
-    match bt.find(buyer) {
-        Some(ix) => {
-            let b = &bt.bodies[ix];
+fn standing_skew(fs: &crate::components::FactStore, buyer: u32, seller_house: u16) -> f32 {
+    match fs.view(buyer) {
+        Some(b) => {
             let st = (b.standing as f32 / 32767.0).clamp(-1.0, 1.0); // −1..1
             let mut skew = (1.0 - st * FAVOR).clamp(1.0 - FAVOR, 1.0 + FAVOR);
             // ASSOCIATION (kinship): a seller gives a believed HOUSEMATE (assoc == own house) a small
@@ -298,7 +297,7 @@ fn run_auction(world: &mut World, participants: &[usize], base: &[i64; N_COMMODI
                 1.0
             };
             let clear =
-                ((mid as f32) * standing_skew(&world.beliefs[s], b as u32, world.house[s] as u16) * edge * rep_skew).round() as i64;
+                ((mid as f32) * standing_skew(&world.facts[s], b as u32, world.house[s] as u16) * edge * rep_skew).round() as i64;
             let clear = clear.max(1);
             let price_minor = clear * 100; // gold is fixed-point ×100
 
@@ -347,16 +346,19 @@ mod tests {
     /// discount (< 1), a despised buyer a markup (> 1), a stranger the neutral midpoint (1.0).
     #[test]
     fn standing_skews_the_clearing_price() {
-        use crate::components::PersonBelief;
-        let mut friendly = BeliefTable::default();
-        friendly.subjects[0] = 9;
-        friendly.bodies[0] = PersonBelief { subject: 9, standing: 30000, ..Default::default() };
-        friendly.len = 1;
-        let mut hostile = BeliefTable::default();
-        hostile.subjects[0] = 9;
-        hostile.bodies[0] = PersonBelief { subject: 9, standing: -30000, ..Default::default() };
-        hostile.len = 1;
-        let empty = BeliefTable::default();
+        use crate::components::{FactStore, PersonBelief};
+        let mk = |standing: i16| {
+            let mut bt = BeliefTable::default();
+            bt.subjects[0] = 9;
+            bt.bodies[0] = PersonBelief { subject: 9, standing, ..Default::default() };
+            bt.len = 1;
+            let mut fs = FactStore::default();
+            fs.mirror_core_from(&bt);
+            fs
+        };
+        let friendly = mk(30000);
+        let hostile = mk(-30000);
+        let empty = FactStore::default();
 
         let deal = standing_skew(&friendly, 9, 0);
         let gouge = standing_skew(&hostile, 9, 0);
