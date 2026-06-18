@@ -64,9 +64,8 @@ fn fed(w: &World, i: usize) -> bool {
 /// Does `a` hold a fond (high-standing) belief about `b`? Belief-only read (the epistemic split).
 #[inline]
 fn fond_toward(w: &World, a: usize, b: usize) -> bool {
-    let bt = &w.beliefs[a];
-    if let Some(idx) = bt.find(b as u32) {
-        bt.bodies[idx].standing >= PAIR_STANDING
+    if let Some(v) = w.facts[a].view(b as u32) {
+        v.standing >= PAIR_STANDING
     } else {
         false
     }
@@ -256,6 +255,7 @@ mod tests {
         let n0 = w.n;
         // run the births pass directly on a throttle tick.
         w.tick = TICK_EVERY;
+        w.mirror_beliefs_to_facts();
         tick(&mut w);
         assert_eq!(w.n, n0 + 1, "a fit, fond, co-located couple should bear one child");
         let child = w.n - 1;
@@ -278,6 +278,7 @@ mod tests {
         make_couple(&mut w, 0, 1);
         let total_before = w.total_gold();
         w.tick = TICK_EVERY;
+        w.mirror_beliefs_to_facts();
         tick(&mut w);
         let child = w.n - 1;
         assert_eq!(w.total_gold(), total_before, "dowry must conserve total gold");
@@ -312,6 +313,7 @@ mod tests {
         w.progression[0].behavior_profile[5] = 10.0; // parent 0 is strong in tag 5
         make_couple(&mut w, 0, 1);
         w.tick = TICK_EVERY;
+        w.mirror_beliefs_to_facts();
         tick(&mut w);
         let child = w.n - 1;
         let inherited = w.progression[child].behavior_profile[5];

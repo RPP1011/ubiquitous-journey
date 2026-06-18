@@ -21,7 +21,7 @@
 
 use rayon::prelude::*;
 
-use crate::components::{BeliefTable, Faction, FighterState, Goal};
+use crate::components::{BeliefView, Faction, FactStore, FighterState, Goal};
 use crate::intent::Intent;
 use crate::world::World;
 
@@ -50,7 +50,7 @@ pub fn resolve(world: &mut World) {
         ref level,
         ref alive,
         ref faction,
-        ref beliefs,
+        facts: ref beliefs_facts,
         ref mut combat,
         ref mut rng,
         ..
@@ -100,25 +100,25 @@ pub fn resolve(world: &mut World) {
             }
 
             // ── pick a believed-hostile target from OWN beliefs ──
-            let bt = &beliefs[i];
+            let fs = &beliefs_facts[i];
             let target = match goal[i] {
                 // an explicit fight goal: act on it ONLY while the belief about it survives.
-                Goal::Fight { target, .. } => bt.find(target).map(|idx| (target, idx)),
+                Goal::Fight { target, .. } => fs.view(target),
                 // no fight goal: the nearest in-range belief flagged hostile (bit0) is fair game. A
                 // RAIDER with no one to fight PILLAGES — it wrecks the nearest building it believes it
                 // sees (affect:wreck, reaching the percept's health). Townsfolk never wreck (no fallback).
-                _ => nearest_hostile(bt, pos[i]).or_else(|| {
+                _ => nearest_hostile(fs, pos[i]).or_else(|| {
                     if faction[i] == Faction::Raider as u8 {
-                        nearest_building(bt, pos[i])
+                        nearest_building(fs, pos[i])
                     } else {
                         None
                     }
                 }),
             };
-            let (to, bidx) = target?;
+            let b = target?;
+            let to = b.subject;
 
             // believed position of the foe (NOT its live pos — the split): swing where I think it is.
-            let b = &bt.bodies[bidx];
             let dx = pos[i][0] - b.last_x;
             let dz = pos[i][1] - b.last_z;
             let dist2 = dx * dx + dz * dz;
@@ -185,12 +185,11 @@ struct StrikePair {
 }
 
 /// Nearest believed-hostile (belief `flags` bit0) to `from`, by believed position. Reads only the
-/// agent's OWN belief table — no roster access. Returns `(subject_id, belief_index)`.
+/// agent's OWN fact store — no roster access. Returns the chosen target's `BeliefView`.
 #[inline]
-fn nearest_hostile(bt: &BeliefTable, from: [f32; 2]) -> Option<(u32, usize)> {
-    let mut best: Option<(u32, usize, f32)> = None;
-    for idx in 0..bt.len as usize {
-        let b = &bt.bodies[idx];
+fn nearest_hostile(fs: &FactStore, from: [f32; 2]) -> Option<BeliefView> {
+    let mut best: Option<(BeliefView, f32)> = None;
+    for b in fs.views() {
         if b.flags & 1 == 0 {
             continue; // not believed hostile
         }
@@ -200,23 +199,22 @@ fn nearest_hostile(bt: &BeliefTable, from: [f32; 2]) -> Option<(u32, usize)> {
         let better = match best {
             None => true,
             // closer wins; ties break on lowest subject id (order-independent / deterministic).
-            Some((bid, _, bd)) => d2 < bd || (d2 == bd && b.subject < bid),
+            Some((bb, bd)) => d2 < bd || (d2 == bd && b.subject < bb.subject),
         };
         if better {
-            best = Some((b.subject, idx, d2));
+            best = Some((b, d2));
         }
     }
-    best.map(|(id, idx, _)| (id, idx))
+    best.map(|(b, _)| b)
 }
 
 /// Nearest believed BUILDING (belief `flags` bit1) to `from` — the raider's pillage target (affect:wreck).
 /// Reads only the agent's OWN beliefs; the wreck resolves on the building percept's health. Deterministic
-/// tie-break on lowest subject id. Returns `(subject_id, belief_index)`.
+/// tie-break on lowest subject id. Returns the chosen target's `BeliefView`.
 #[inline]
-fn nearest_building(bt: &BeliefTable, from: [f32; 2]) -> Option<(u32, usize)> {
-    let mut best: Option<(u32, usize, f32)> = None;
-    for idx in 0..bt.len as usize {
-        let b = &bt.bodies[idx];
+fn nearest_building(fs: &FactStore, from: [f32; 2]) -> Option<BeliefView> {
+    let mut best: Option<(BeliefView, f32)> = None;
+    for b in fs.views() {
         if b.flags & 0x02 == 0 {
             continue; // not a believed building
         }
@@ -225,13 +223,13 @@ fn nearest_building(bt: &BeliefTable, from: [f32; 2]) -> Option<(u32, usize)> {
         let d2 = dx * dx + dz * dz;
         let better = match best {
             None => true,
-            Some((bid, _, bd)) => d2 < bd || (d2 == bd && b.subject < bid),
+            Some((bb, bd)) => d2 < bd || (d2 == bd && b.subject < bb.subject),
         };
         if better {
-            best = Some((b.subject, idx, d2));
+            best = Some((b, d2));
         }
     }
-    best.map(|(id, idx, _)| (id, idx))
+    best.map(|(b, _)| b)
 }
 
 #[cfg(test)]
@@ -262,6 +260,7 @@ mod tests {
         let hp_before = w.combat[1].health;
 
         // run JUST the combat decision, then the deterministic merge.
+        w.mirror_beliefs_to_facts();
         resolve(&mut w);
         let n_strikes = w
             .intents
@@ -321,6 +320,7 @@ mod tests {
                 }
             }
             // a few ticks of pure combat + the deterministic merge.
+            w.mirror_beliefs_to_facts();
             for _ in 0..6 {
                 resolve(&mut w);
                 w.drain_intents();

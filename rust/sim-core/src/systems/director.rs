@@ -159,9 +159,7 @@ pub fn enlist_proteges(world: &mut World) {
             continue;
         }
         let prof = world.profession[p];
-        let bt = &world.beliefs[p];
-        for k in 0..bt.len as usize {
-            let body = &bt.bodies[k];
+        for body in world.facts[p].views() {
             let m = body.subject as usize;
             if m < world.n
                 && world.level[m] >= MENTOR_LEVEL
@@ -223,10 +221,8 @@ pub fn enlist_duellists(world: &mut World) {
             continue;
         }
         // a sworn foe `b` that A latches hostile…
-        let bt = &world.beliefs[a];
         let mut foe: Option<usize> = None;
-        for k in 0..bt.len as usize {
-            let body = &bt.bodies[k];
+        for body in world.facts[a].views() {
             let b = body.subject as usize;
             if b >= world.n || b == a {
                 continue;
@@ -241,9 +237,7 @@ pub fn enlist_duellists(world: &mut World) {
             if world.alive[b]
                 && world.faction[b] == Faction::Townsfolk as u8
                 && world.role[b] == 0
-                && world.beliefs[b].find(a as u32).map_or(false, |ix| {
-                    world.beliefs[b].bodies[ix].flags & 0x01 != 0
-                })
+                && world.facts[b].view(a as u32).map_or(false, |v| v.flags & 0x01 != 0)
             {
                 world.role[a] = ROLE_DUELIST;
                 world.role[b] = ROLE_DUELIST;
@@ -304,17 +298,13 @@ pub fn open_emergent_sagas(world: &mut World) {
         if !world.alive[a] || world.faction[a] != Faction::Townsfolk as u8 {
             continue;
         }
-        let bt = &world.beliefs[a];
-        for k in 0..bt.len as usize {
-            let body = &bt.bodies[k];
+        for body in world.facts[a].views() {
             let b = body.subject as usize;
             if b <= a || b >= world.n || body.standing < ROMANCE_BAR {
                 continue; // canonical a<b; only a dear regard qualifies
             }
             // …and B holds A just as dear (a MUTUAL bond).
-            if world.beliefs[b].find(a as u32).map_or(false, |ix| {
-                world.beliefs[b].bodies[ix].standing >= ROMANCE_BAR
-            }) {
+            if world.facts[b].view(a as u32).map_or(false, |v| v.standing >= ROMANCE_BAR) {
                 world.sagas.open_or_touch(SagaKind::Romance, a as u32, b as u32, now);
                 break 'romance; // one fresh romance per pass
             }
@@ -331,8 +321,7 @@ pub fn open_emergent_sagas(world: &mut World) {
         let mut resenters = 0usize;
         for r in 0..world.n {
             if r != t
-                && world.beliefs[r].find(t as u32).map_or(false, |ix| {
-                    let body = &world.beliefs[r].bodies[ix];
+                && world.facts[r].view(t as u32).map_or(false, |body| {
                     body.standing < 0 || body.flags & 0x01 != 0
                 })
             {
@@ -362,9 +351,7 @@ pub fn open_emergent_sagas(world: &mut World) {
         let mut haters = 0usize;
         for h in 0..world.n {
             if h != v
-                && world.beliefs[h].find(v as u32).map_or(false, |ix| {
-                    world.beliefs[h].bodies[ix].flags & 0x01 != 0
-                })
+                && world.facts[h].view(v as u32).map_or(false, |v| v.flags & 0x01 != 0)
             {
                 haters += 1;
                 if haters >= ACCUSED_HATERS {
@@ -701,6 +688,7 @@ mod tests {
         w.warm_belief(2, 1, 16_000);
         // a ONE-SIDED crush: 3 adores 4, unrequited.
         w.warm_belief(3, 4, 16_000);
+        w.mirror_beliefs_to_facts();
         open_emergent_sagas(&mut w);
         assert_eq!(w.sagas.open_count(SagaKind::Romance), 1, "the mutual bond opens one romance");
         assert!(
@@ -724,6 +712,7 @@ mod tests {
         for r in 1..5 {
             w.sour_belief(r, tyrant as u32, 9_000, false); // resented by four souls
         }
+        w.mirror_beliefs_to_facts();
         open_emergent_sagas(&mut w);
         assert_eq!(w.sagas.open_count(SagaKind::TyrantFall), 1, "the resented tyrant opens the arc");
         // the tyrant falls (dies) — the arc closes.
@@ -746,6 +735,7 @@ mod tests {
         for h in 3..7 {
             w.sour_belief(h, 2, 12_000, true);
         }
+        w.mirror_beliefs_to_facts();
         open_emergent_sagas(&mut w);
         assert_eq!(w.sagas.open_count(SagaKind::SpyWeb), 1, "the spy opens a spy-web arc");
         assert!(
@@ -775,6 +765,7 @@ mod tests {
         w.profession[master] = 4;
         w.level[master] = 9; // a master
         w.warm_belief(apprentice, master as u32, 9_000); // looks up to them
+        w.mirror_beliefs_to_facts();
         enlist_proteges(&mut w);
         assert_eq!(w.role[apprentice], ROLE_PROTEGE, "the apprentice is the master's protégé");
         assert_eq!(w.role[master], 0, "the master is not a protégé");
@@ -832,6 +823,7 @@ mod tests {
         w.sour_belief(1, 0, 20_000, true);
         // a ONE-SIDED grievance: 2 hates 3, but 3 is indifferent.
         w.sour_belief(2, 3, 20_000, true);
+        w.mirror_beliefs_to_facts();
         enlist_duellists(&mut w);
         assert_eq!(w.role[0], ROLE_DUELIST, "the mutual foe 0 is a duellist");
         assert_eq!(w.role[1], ROLE_DUELIST, "the mutual foe 1 is a duellist");

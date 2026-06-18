@@ -490,9 +490,8 @@ fn pick_followers(world: &World, cap: usize) -> Vec<usize> {
 
 /// `observer`'s believed standing toward `subject` (i16 quant), or 0 if no belief is held.
 fn standing_toward(world: &World, observer: usize, subject: u32) -> i16 {
-    let bt = &world.beliefs[observer];
-    match bt.find(subject) {
-        Some(idx) => bt.bodies[idx].standing,
+    match world.facts[observer].view(subject) {
+        Some(v) => v.standing,
         None => 0,
     }
 }

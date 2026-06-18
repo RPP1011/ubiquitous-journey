@@ -21,7 +21,7 @@
 
 use rayon::prelude::*;
 
-use crate::components::{BeliefTable, Goal};
+use crate::components::{FactStore, Goal};
 use crate::rng::DeterministicRng;
 use crate::world::World;
 
@@ -45,7 +45,7 @@ pub fn step(world: &mut World) {
         ref mut pos,
         ref mut rng,
         ref goal,
-        ref beliefs,
+        facts: ref beliefs_facts,
         ref home,
         ref combat,
         ref walls,
@@ -62,7 +62,7 @@ pub fn step(world: &mut World) {
             // a SLOWED body (the ability `slow` op, e.g. frost_bolt) moves at half pace while it lasts.
             let mul = if combat[i].slow > 0.0 { SLOW_MUL } else { 1.0 };
             let old = *p;
-            step_one(p, r, &goal[i], &beliefs[i], home[i], STEP * mul);
+            step_one(p, r, &goal[i], &beliefs_facts[i], home[i], STEP * mul);
             // WALL collision (this agent's OWN town wall): a move crossing the ring anywhere but a gate
             // is blocked to our side.
             if let Some(w) = walls.get(town[i] as usize) {
@@ -78,7 +78,7 @@ fn step_one(
     p: &mut [f32; 2],
     r: &mut DeterministicRng,
     goal: &Goal,
-    beliefs: &BeliefTable,
+    beliefs: &FactStore,
     home: [f32; 2],
     step: f32,
 ) {
@@ -90,8 +90,7 @@ fn step_one(
         Goal::Flee { from } => {
             // own-state read: the belief cell about `from` in MY table (never the live roster).
             let threat = beliefs
-                .find(*from)
-                .map(|idx| &beliefs.bodies[idx])
+                .view(*from)
                 .filter(|b| b.last_x.is_finite() && b.last_z.is_finite())
                 .map(|b| [b.last_x, b.last_z]);
             // away-vector: from-threat-to-me when known, else radially-from-origin (== my pos).
@@ -240,6 +239,7 @@ mod tests {
             PersonBelief { subject: threat_id, last_x: 10.0, last_z: 0.0, ..Default::default() };
         bt.len = 1;
         w.goal[i] = Goal::Flee { from: threat_id };
+        w.mirror_beliefs_to_facts();
         step(&mut w);
         // should move in -x (away from the threat at +x).
         assert!(w.pos[i][0] < 0.0, "flee should move away from threat (-x), got {:?}", w.pos[i]);

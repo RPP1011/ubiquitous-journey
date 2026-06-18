@@ -138,17 +138,14 @@ fn worst_feud(world: &World) -> Option<(u32, u32)> {
         if !is_town(world, a) {
             continue;
         }
-        let bt = &world.beliefs[a];
-        for k in 0..bt.len as usize {
-            let body = &bt.bodies[k];
+        for body in world.facts[a].views() {
             let subj = body.subject;
             let b = subj as usize;
             if b >= n || b == a || !is_town(world, b) {
                 continue;
             }
             // the reciprocal belief (b about a), if held.
-            let bb = &world.beliefs[b];
-            let ba = bb.find(a as u32).map(|ix| &bb.bodies[ix]);
+            let ba = world.facts[b].view(a as u32);
             let a_host = body.flags & 0x01 != 0;
             let b_host = ba.map(|x| x.flags & 0x01 != 0).unwrap_or(false);
             if !(a_host || b_host) {
@@ -206,6 +203,7 @@ mod tests {
         seed_hostile(&mut w, 1, 0, -20_000);
 
         // run brokering directly (deterministic) — repeat so even a truce path lifts standings.
+        w.mirror_beliefs_to_facts();
         for _ in 0..8 {
             broker(&mut w);
         }

@@ -299,11 +299,9 @@ fn do_unlikely_friendship(world: &mut World, folk: &[u32], off: usize, _now: u32
     let len = folk.len();
     for i in 0..len {
         let a = folk[(off + i) % len];
-        let bt = &world.beliefs[a as usize];
         // collect a candidate B (an enmity belief) without holding the borrow across the mutate.
         let mut pick: Option<u32> = None;
-        for k in 0..bt.len as usize {
-            let body = &bt.bodies[k];
+        for body in world.facts[a as usize].views() {
             let b = body.subject;
             if b as usize >= world.n || b == a || !is_town(world, b as usize) {
                 continue;
@@ -332,10 +330,8 @@ fn do_betrayal(world: &mut World, folk: &[u32], off: usize, now: u32) -> bool {
     for i in 0..len {
         let a = folk[(off + i) % len];
         // find a partner B that A warmly TRUSTS (a betrayable bond) and who isn't already hostile to A.
-        let bt = &world.beliefs[a as usize];
         let mut pick: Option<u32> = None;
-        for k in 0..bt.len as usize {
-            let body = &bt.bodies[k];
+        for body in world.facts[a as usize].views() {
             let b = body.subject;
             if b as usize >= world.n || b == a || !is_town(world, b as usize) {
                 continue;
@@ -344,8 +340,8 @@ fn do_betrayal(world: &mut World, folk: &[u32], off: usize, now: u32) -> bool {
                 continue; // only a durable, trusting bond can be betrayed
             }
             // B must not already be latched-hostile to A (no trust left to betray).
-            if (world.beliefs[b as usize].find(a))
-                .map(|ix| world.beliefs[b as usize].bodies[ix].flags & HOSTILE_BIT != 0)
+            if (world.facts[b as usize].view(a))
+                .map(|v| v.flags & HOSTILE_BIT != 0)
                 .unwrap_or(false)
             {
                 continue;
@@ -501,9 +497,7 @@ fn do_feud(world: &mut World, folk: &[u32], off: usize, _now: u32) -> bool {
     let mut best: Option<(i32, u32, u32)> = None; // (standing, a, b)
     for i in 0..len {
         let a = folk[(off + i) % len];
-        let bt = &world.beliefs[a as usize];
-        for k in 0..bt.len as usize {
-            let body = &bt.bodies[k];
+        for body in world.facts[a as usize].views() {
             let b = body.subject;
             if b as usize >= world.n || b == a || !is_town(world, b as usize) {
                 continue;
@@ -546,10 +540,8 @@ fn do_vendetta(world: &mut World, folk: &[u32], off: usize, _now: u32) -> bool {
     let len = folk.len();
     for i in 0..len {
         let a = folk[(off + i) % len];
-        let bt = &world.beliefs[a as usize];
         let mut pick: Option<u32> = None;
-        for k in 0..bt.len as usize {
-            let body = &bt.bodies[k];
+        for body in world.facts[a as usize].views() {
             let b = body.subject;
             if b as usize >= world.n || b == a || !is_town(world, b as usize) {
                 continue;
@@ -577,10 +569,8 @@ fn do_mistaken_jealousy(world: &mut World, folk: &[u32], off: usize, _now: u32) 
     let len = folk.len();
     for i in 0..len {
         let a = folk[(off + i) % len];
-        let bt = &world.beliefs[a as usize];
         let mut pick: Option<u32> = None;
-        for k in 0..bt.len as usize {
-            let body = &bt.bodies[k];
+        for body in world.facts[a as usize].views() {
             let b = body.subject;
             if b as usize >= world.n || b == a || !is_town(world, b as usize) {
                 continue;
@@ -621,8 +611,8 @@ fn do_rival_apprentices(world: &mut World, folk: &[u32], off: usize, _now: u32) 
             if world.profession[b as usize] == pa
                 && world.level[b as usize] <= RIVAL_MAX_LEVEL
                 // don't manufacture a rivalry where a bond already exists either way.
-                && world.beliefs[a as usize].find(b).is_none()
-                && world.beliefs[b as usize].find(a).is_none()
+                && !world.facts[a as usize].believes(b)
+                && !world.facts[b as usize].believes(a)
             {
                 world.sour_belief(a as usize, b, RIVALRY_SOUR, false);
                 world.sour_belief(b as usize, a, RIVALRY_SOUR, false);
@@ -653,7 +643,7 @@ fn do_mentor_pride(world: &mut World, folk: &[u32], off: usize, _now: u32) -> bo
             // a still-learning soul of the SAME craft, not already bound to the master.
             if world.profession[b as usize] == pa
                 && world.level[b as usize] <= RIVAL_MAX_LEVEL
-                && world.beliefs[a as usize].find(b).is_none()
+                && !world.facts[a as usize].believes(b)
             {
                 world.warm_belief(a as usize, b, MENTOR_WARM);
                 world.warm_belief(b as usize, a, MENTOR_WARM);
@@ -689,7 +679,7 @@ fn do_star_crossed(world: &mut World, folk: &[u32], off: usize, _now: u32) -> bo
                 continue;
             }
             // not already bound either way (a fresh forbidden bond).
-            if world.beliefs[a as usize].find(b).is_none() && world.beliefs[b as usize].find(a).is_none() {
+            if !world.facts[a as usize].believes(b) && !world.facts[b as usize].believes(a) {
                 world.warm_belief(a as usize, b, STARCROSS_WARM);
                 world.warm_belief(b as usize, a, STARCROSS_WARM);
                 push_beat(world, BEAT_STARCROSS, a, b as i32);
@@ -713,7 +703,7 @@ fn do_boast_backfires(world: &mut World, folk: &[u32], off: usize, _now: u32) ->
         // the first OTHER townsperson who doesn't already hold a belief about the boaster is unimpressed.
         for j in 0..len {
             let b = folk[(off + j) % len];
-            if b == a || world.beliefs[b as usize].find(a).is_some() {
+            if b == a || world.facts[b as usize].believes(a) {
                 continue;
             }
             world.sour_belief(b as usize, a, BOAST_SOUR, false); // unimpressed, not hostile
@@ -772,7 +762,7 @@ fn do_favored_rise(world: &mut World, folk: &[u32], off: usize, _now: u32) -> bo
         }
         for j in 0..len {
             let b = folk[(off + j) % len];
-            if b != a && world.beliefs[b as usize].find(a).is_none() {
+            if b != a && !world.facts[b as usize].believes(a) {
                 world.warm_belief(b as usize, a, FAVORED_WARM); // a patron's regard
                 push_beat(world, BEAT_FAVORED, a, b as i32);
                 return true;
@@ -820,7 +810,7 @@ fn do_tyrant_market(world: &mut World, folk: &[u32], off: usize, _now: u32) -> b
             let poor = folk[(off + j) % len];
             if poor != rich
                 && world.econ[poor as usize].gold < TYRANT_POOR_GOLD
-                && world.beliefs[poor as usize].find(rich).is_none()
+                && !world.facts[poor as usize].believes(rich)
             {
                 world.sour_belief(poor as usize, rich, TYRANT_SOUR, false); // resentment, not enmity
                 push_beat(world, BEAT_TYRANT, rich, poor as i32);
@@ -849,8 +839,7 @@ fn is_town(world: &World, i: usize) -> bool {
 /// `observer`'s current believed standing toward `subject` (0 if no belief is held).
 #[inline]
 fn standing(world: &World, observer: u32, subject: u32) -> i16 {
-    let bt = &world.beliefs[observer as usize];
-    bt.find(subject).map(|ix| bt.bodies[ix].standing).unwrap_or(0)
+    world.facts[observer as usize].view(subject).map(|v| v.standing).unwrap_or(0)
 }
 
 /// Do `a` and `b`'s HOUSES feud? (false if either is houseless.)
@@ -920,6 +909,7 @@ mod tests {
         all_townsfolk(&mut w);
         // agent 0 warmly TRUSTS agent 1 (a durable, betrayable bond).
         w.warm_belief(0, 1, 20_000);
+        w.mirror_beliefs_to_facts();
         let folk = living_townsfolk(&w);
         assert!(do_betrayal(&mut w, &folk, 0, 100), "a durable bond should be betrayable");
 
@@ -941,6 +931,7 @@ mod tests {
         all_townsfolk(&mut w);
         w.warm_belief(0, 1, 18_000); // agent 0 dearly trusts agent 1
         let before = w.beliefs[0].bodies[w.beliefs[0].find(1).unwrap()].standing;
+        w.mirror_beliefs_to_facts();
         let folk = living_townsfolk(&w);
         assert!(do_mistaken_jealousy(&mut w, &folk, 0, 100), "a dear friendship can be strained");
         let body = w.beliefs[0].bodies[w.beliefs[0].find(1).unwrap()];
@@ -1139,8 +1130,10 @@ mod tests {
         all_townsfolk(&mut w);
         w.house[0] = 4;
         w.house[1] = 4; // same house, not yet bonded
+        w.mirror_beliefs_to_facts();
         let folk = living_townsfolk(&w);
         assert!(do_reunion(&mut w, &folk, 0, 100), "two same-house souls should reunite");
+        w.mirror_beliefs_to_facts();
         assert!(standing(&w, 0, 1) >= WARM_AMT, "0 warms toward 1");
         assert!(standing(&w, 1, 0) >= WARM_AMT, "1 warms toward 0");
         assert!(w.memory[0].has(EpisodeKind::Succoured, 1) && w.memory[1].has(EpisodeKind::Succoured, 0));
@@ -1190,6 +1183,7 @@ mod tests {
         assert!(!do_vendetta(&mut w, &folk, 0, 100), "a vendetta is never manufactured from nothing");
         // a real soured (un-latched) grievance 0→1 ⇒ it latches hostile.
         w.sour_belief(0, 1, 15_000, false);
+        w.mirror_beliefs_to_facts();
         assert!(do_vendetta(&mut w, &folk, 0, 100), "a real grievance is sworn into a vendetta");
         let ix = w.beliefs[0].find(1).unwrap();
         assert_eq!(w.beliefs[0].bodies[ix].flags & HOSTILE_BIT, HOSTILE_BIT, "the grievance is latched hostile");
@@ -1204,10 +1198,12 @@ mod tests {
         remember(&mut w, 0, EpisodeKind::Succoured, 2, 0);
         w.econ[0].gold = 20;
         let before = w.total_gold();
+        w.mirror_beliefs_to_facts();
         let folk = living_townsfolk(&w);
         assert!(do_debt_repaid(&mut w, &folk, 0, 100), "a Succoured holder should repay its saviour");
         assert_eq!(w.total_gold(), before, "the repayment is a transfer — gold is conserved");
         assert!(!w.memory[0].has(EpisodeKind::Succoured, 2), "the settled debt's marker is cleared");
+        w.mirror_beliefs_to_facts();
         assert!(standing(&w, 2, 0) > 0, "the saviour warms toward the one who repaid");
     }
 

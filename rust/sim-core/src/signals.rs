@@ -365,9 +365,7 @@ pub fn cohesion(w: &World) -> (f32, f32, f32) {
         if !w.alive[i] || w.faction[i] != Faction::Townsfolk as u8 {
             continue;
         }
-        let bt = &w.beliefs[i];
-        for k in 0..bt.len as usize {
-            let b = &bt.bodies[k];
+        for b in w.facts[i].views() {
             let subj = b.subject as usize;
             if subj >= w.n {
                 continue;

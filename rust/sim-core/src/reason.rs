@@ -40,7 +40,7 @@
 
 use rayon::prelude::*;
 
-use crate::components::{Faction, Goal, BELIEF_CAP};
+use crate::components::{Faction, Goal};
 use crate::mentalmap::{MentalMap, AFF_CONCEAL, AFF_EXIT, AFF_SAFE};
 use crate::world::World;
 
@@ -59,7 +59,7 @@ const AGGRESSION_FIGHT: f32 = 0.7;
 
 pub fn reason(world: &mut World) {
     let World {
-        ref beliefs,
+        ref facts,
         ref personality,
         ref faction,
         ref pos,
@@ -83,7 +83,7 @@ pub fn reason(world: &mut World) {
             return;
         }
 
-        if let Some(react) = react_one(&beliefs[i], pos[i], level[i], map) {
+        if let Some(react) = react_one(&facts[i], pos[i], level[i], map) {
             *g = react;
         }
     });
@@ -94,7 +94,7 @@ pub fn reason(world: &mut World) {
 /// (leave the goal for `decide`). No cross-agent reads.
 #[inline]
 fn react_one(
-    bt: &crate::components::BeliefTable,
+    fs: &crate::components::FactStore,
     me: [f32; 2],
     my_level: u8,
     map: &MentalMap,
@@ -103,8 +103,7 @@ fn react_one(
     // OUTMATCHED by (its believed level exceeds mine) — the go-to-ground gate. Deterministic
     // tie-break (closest, then lowest subject id) — own-row only.
     let mut nearest: Option<(u32, f32, bool)> = None; // (subject, dist², outmatched)
-    for b in 0..(bt.len as usize).min(BELIEF_CAP) {
-        let cell = &bt.bodies[b];
+    for cell in fs.views() {
         if cell.flags & 0x01 == 0 {
             continue; // not believed hostile
         }
@@ -190,6 +189,7 @@ mod tests {
         // a level-2 civilian (not outmatched by the level-1 hostile) → flee-to-safety / brawl band.
         w.level[i] = 2;
         w.goal[i] = Goal::Idle;
+        w.mirror_beliefs_to_facts();
         reason(&mut w);
         let k = w.goal[i].kind();
         assert!(
@@ -231,6 +231,7 @@ mod tests {
         };
         bt.len = 1;
         w.goal[i] = Goal::Idle;
+        w.mirror_beliefs_to_facts();
         reason(&mut w);
         // a conceal/exit place exists on the rim → Wander toward it; else pure repulsor.
         let k = w.goal[i].kind();

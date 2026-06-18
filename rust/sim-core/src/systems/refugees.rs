@@ -56,18 +56,14 @@ pub fn tick(world: &mut World) {
         }
         // only the endangered flee (a real press of BELIEVED hostiles nearby — the epistemic split).
         let mut threats = 0usize;
-        {
-            let bt = &world.beliefs[i];
-            for b in 0..bt.len as usize {
-                let cell = &bt.bodies[b];
-                if cell.flags & 0x01 == 0 {
-                    continue;
-                }
-                let dx = world.pos[i][0] - cell.last_x;
-                let dz = world.pos[i][1] - cell.last_z;
-                if dx * dx + dz * dz <= DANGER_RANGE2 {
-                    threats += 1;
-                }
+        for cell in world.facts[i].views() {
+            if cell.flags & 0x01 == 0 {
+                continue;
+            }
+            let dx = world.pos[i][0] - cell.last_x;
+            let dz = world.pos[i][1] - cell.last_z;
+            if dx * dx + dz * dz <= DANGER_RANGE2 {
+                threats += 1;
             }
         }
         if threats < DANGER_COUNT {
@@ -142,6 +138,7 @@ mod tests {
         }
         // align the pass cadence and run it.
         w.tick = REFUGEE_EVERY;
+        w.mirror_beliefs_to_facts();
         tick(&mut w);
         assert_ne!(
             w.town[s] as usize, victim_town,

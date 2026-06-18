@@ -2794,6 +2794,7 @@ mod tests {
         for _ in 0..50 {
             w.build_surface();
             crate::perceive::perceive(&mut w);
+            w.mirror_beliefs_to_facts();
             crate::systems::combat::resolve(&mut w);
             w.drain_intents();
             if w.percept_flags[0] & 0x01 == 0 {

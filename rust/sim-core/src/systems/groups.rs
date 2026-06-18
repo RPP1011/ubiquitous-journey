@@ -117,9 +117,8 @@ fn mutually_likes(world: &World, a: usize, b: usize) -> bool {
 /// `observer`'s believed standing toward `subject` (i16 quantization), or i16::MIN if no belief is
 /// held (no opinion ⇒ won't clear the positive gate ⇒ strangers don't band).
 fn standing_toward(world: &World, observer: usize, subject: u32) -> i16 {
-    let bt = &world.beliefs[observer];
-    match bt.find(subject) {
-        Some(idx) => bt.bodies[idx].standing,
+    match world.facts[observer].view(subject) {
+        Some(v) => v.standing,
         None => i16::MIN,
     }
 }
@@ -204,6 +203,7 @@ mod tests {
         w.pos[1] = [2.0, 0.0];
         make_like(&mut w, 0, 1, 20000);
         make_like(&mut w, 1, 0, 20000);
+        w.mirror_beliefs_to_facts();
         w.build_surface(); // recruit_for reads the grid
 
         // run formation directly (deterministic; the roll uses sim_rng) until it fires.
@@ -253,6 +253,7 @@ mod tests {
         }
         // agent 7 likes the leader but the leader does NOT like it back (one-sided ⇒ rejected).
         make_like(&mut w, 7, 0, 20000);
+        w.mirror_beliefs_to_facts();
         w.build_surface();
 
         // force recruitment (bypass the roll) repeatedly so the cap is the only limiter.
