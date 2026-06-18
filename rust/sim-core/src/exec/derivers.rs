@@ -225,11 +225,9 @@ pub fn steal(gstack: &mut GoalStack, ctx: &DeriveCtx) {
         return;
     }
     // pick the believed-richest mark within range (deterministic: wealth, then lowest id).
-    let bt = ctx.beliefs;
     let r2 = STEAL_MARK_RANGE * STEAL_MARK_RANGE;
     let mut best: Option<(u16, u32)> = None;
-    for k in 0..bt.len as usize {
-        let b = &bt.bodies[k];
+    for b in ctx.facts.views() {
         if b.wealth < STEAL_MARK_WEALTH {
             continue;
         }
@@ -276,7 +274,7 @@ pub fn repay(gstack: &mut GoalStack, ctx: &DeriveCtx) {
             continue;
         }
         let benefactor = ep.with;
-        if ctx.memory.has(EpisodeKind::Gave, benefactor) || ctx.beliefs.find(benefactor).is_none() {
+        if ctx.memory.has(EpisodeKind::Gave, benefactor) || !ctx.facts.believes(benefactor) {
             continue; // already repaid, or I've lost track of them
         }
         gstack.push(Intention {
@@ -305,13 +303,11 @@ pub fn donate(gstack: &mut GoalStack, ctx: &DeriveCtx) {
     {
         return; // not a wealthy generous soul with food to spare
     }
-    let bt = ctx.beliefs;
     let r2 = DONATE_RANGE * DONATE_RANGE;
     // the believed-POOREST neighbour in range (deterministic: lowest wealth, then lowest id), not
     // already given to.
     let mut best: Option<(u16, u32)> = None;
-    for k in 0..bt.len as usize {
-        let b = &bt.bodies[k];
+    for b in ctx.facts.views() {
         if b.wealth >= DONATE_POOR_CUE {
             continue;
         }
@@ -351,21 +347,21 @@ pub fn defend(gstack: &mut GoalStack, ctx: &DeriveCtx) {
     if ctx.faction != Faction::Townsfolk as u8 || ctx.personality.aggression < DEFEND_BRAVE {
         return;
     }
-    let bt = ctx.beliefs;
+    let views: Vec<_> = ctx.facts.views().collect();
     let near2 = DEFEND_NEAR * DEFEND_NEAR;
     // the nearest believed-hostile that sits near a believed-friend (deterministic: lowest id).
     let mut target: Option<u32> = None;
-    for h in 0..bt.len as usize {
-        let hb = &bt.bodies[h];
+    for h in 0..views.len() {
+        let hb = &views[h];
         if hb.flags & 0x01 == 0 {
             continue; // not believed hostile
         }
         let mut menacing = false;
-        for f in 0..bt.len as usize {
+        for f in 0..views.len() {
             if f == h {
                 continue;
             }
-            let fb = &bt.bodies[f];
+            let fb = &views[f];
             if fb.standing <= DEFEND_FRIEND_STANDING {
                 continue; // not a believed friend
             }
@@ -450,8 +446,8 @@ pub fn loot(gstack: &mut GoalStack, ctx: &DeriveCtx) {
             continue; // already stripped this corpse
         }
         // believed-locatable AND believed to carry coin (the wealth cue) — else not worth the trip.
-        match ctx.beliefs.find(victim) {
-            Some(ix) if ctx.beliefs.bodies[ix].wealth >= LOOT_WEALTH_CUE => {
+        match ctx.facts.view(victim) {
+            Some(v) if v.wealth >= LOOT_WEALTH_CUE => {
                 gstack.push(Intention {
                     kind: IntentionKind::Loot as u8,
                     flags: 0,
@@ -487,11 +483,9 @@ pub fn rescue(gstack: &mut GoalStack, ctx: &DeriveCtx) {
     if ctx.faction != Faction::Townsfolk as u8 || ctx.personality.aggression < RESCUE_BRAVE {
         return;
     }
-    let bt = ctx.beliefs;
     let r2 = RESCUE_RANGE * RESCUE_RANGE;
     let mut target: Option<u32> = None;
-    for k in 0..bt.len as usize {
-        let b = &bt.bodies[k];
+    for b in ctx.facts.views() {
         if b.flags & 0x02 == 0 || b.standing <= RESCUE_FRIEND_STANDING {
             continue; // not a believed-captive friend
         }
@@ -569,12 +563,10 @@ pub fn seek_glory(gstack: &mut GoalStack, ctx: &DeriveCtx) {
     if ctx.faction != Faction::Townsfolk as u8 || ctx.ambition != AMB_RENOWN {
         return;
     }
-    let bt = ctx.beliefs;
     let r2 = GLORY_RANGE * GLORY_RANGE;
     // nearest believed-hostile of an attacker faction (monster/raider), deterministic tie-break by id.
     let mut best: Option<(f32, u32)> = None;
-    for k in 0..bt.len as usize {
-        let b = &bt.bodies[k];
+    for b in ctx.facts.views() {
         let attacker = b.faction == Faction::Monster as u8 || b.faction == Faction::Raider as u8;
         if b.flags & 0x01 == 0 || !attacker {
             continue; // not a believed-hostile attacker-faction foe
@@ -631,7 +623,7 @@ pub fn collect_debt(gstack: &mut GoalStack, ctx: &DeriveCtx) {
         if debtor == NONE_ID || ctx.memory.has(EpisodeKind::Slew, debtor) {
             continue; // settled by having slain them
         }
-        if ctx.beliefs.find(debtor).is_none() {
+        if !ctx.facts.believes(debtor) {
             continue; // can't locate them — no actionable plan (pruned anyway)
         }
         gstack.push(Intention {
@@ -673,15 +665,13 @@ pub fn grieve(gstack: &mut GoalStack, ctx: &DeriveCtx) {
 mod debt_tests {
     use super::*;
     use crate::components::{
-        BeliefTable, Experience, Fact, FactStore, Memory, Personality, PersonBelief, FA_OWES_ME,
-        SOURCE_LEDGER,
+        BeliefTable, Experience, Fact, FactStore, Memory, Personality, FA_FACTION, FA_OWES_ME,
+        SOURCE_LEDGER, SOURCE_WITNESSED,
     };
     use crate::exec::registry::DeriveCtx;
 
-    fn locatable(bt: &mut BeliefTable, subject: u32) {
-        bt.subjects[bt.len as usize] = subject;
-        bt.bodies[bt.len as usize] = PersonBelief { subject, confidence: 50000, ..Default::default() };
-        bt.len += 1;
+    fn locatable(_bt: &mut BeliefTable, _subject: u32) {
+        // (no-op now — collect_debt reads facts; the debt() helper makes the debtor locatable there)
     }
 
     fn ctx<'a>(
@@ -708,6 +698,11 @@ mod debt_tests {
     }
 
     fn debt(store: &mut FactStore, debtor: u32, amount: u32) {
+        // a faction fact makes the debtor LOCATABLE (collect_debt gates on `believes`); + the debt.
+        store.upsert(Fact {
+            subject: debtor, value: 0, observed_at: 0, base_conf: 60000,
+            attr: FA_FACTION, src: SOURCE_WITNESSED, hops: 0, _pad: 0,
+        });
         store.upsert(Fact {
             subject: debtor, value: amount, observed_at: 0, base_conf: 65535,
             attr: FA_OWES_ME, src: SOURCE_LEDGER, hops: 0, _pad: 0,

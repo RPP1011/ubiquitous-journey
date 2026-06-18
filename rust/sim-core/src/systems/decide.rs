@@ -735,6 +735,7 @@ mod tests {
         w.needs[0].comfort = 1.0;
         w.econ[0].inventory[Commodity::Food as usize] = 3; // carrying a meal ⇒ the reactive eat reflex
         w.beliefs[0].clear();
+        w.mirror_beliefs_to_facts();
         decide(&mut w);
         assert_eq!(w.goal[0].kind(), GoalKind::Eat, "a hungry agent with food must choose Eat");
     }
@@ -812,6 +813,7 @@ mod tests {
         bt.subjects[0] = foe;
         bt.bodies[0] = PersonBelief { subject: foe, last_x: 38.0, last_z: 1.0, confidence: 60000, flags: 0x01, ..Default::default() };
         bt.len = 1;
+        w.mirror_beliefs_to_facts();
         decide(&mut w);
         match w.goal[follower] {
             Goal::Fight { target, .. } => assert_eq!(target, foe, "the follower rallies to the leader's foe"),
@@ -832,6 +834,7 @@ mod tests {
         w.band_leader[follower] = leader as i32;
         w.goal[leader] = Goal::Fight { target: 7, to: [40.0, 0.0] };
         w.beliefs[follower].clear(); // the follower perceives NOTHING — no shared threat
+        w.mirror_beliefs_to_facts();
         decide(&mut w);
         assert_ne!(
             w.goal[follower].kind(),
@@ -856,6 +859,7 @@ mod tests {
         w.memory[i] = crate::components::Memory::default();
         w.goals[i] = GoalStack::default();
         w.econ[i].inventory[Commodity::Food as usize] = 3; // not hungry (no forage override)
+        w.mirror_beliefs_to_facts();
         decide(&mut w);
         assert_eq!(
             w.goal[i].kind(),
@@ -884,6 +888,7 @@ mod tests {
         w.memory[i] = crate::components::Memory::default();
         w.goals[i] = GoalStack::default();
         w.recipe[i][3] = 0.3; // rusty at the Tool craft → wants to master it
+        w.mirror_beliefs_to_facts();
         decide(&mut w);
         assert!(
             (0..w.goals[i].len as usize).any(|k| w.goals[i].items[k].kind == IntentionKind::Know as u8),
@@ -942,6 +947,7 @@ mod tests {
             ..Default::default()
         };
         bt.len = 1;
+        w.mirror_beliefs_to_facts();
         decide(&mut w);
         assert_eq!(w.goal[i].kind(), GoalKind::Observe, "a curious idle soul should scout its hunch");
     }
@@ -961,6 +967,7 @@ mod tests {
         w.beliefs[i].clear();
         w.memory[i] = crate::components::Memory::default();
         w.goals[i] = GoalStack::default();
+        w.mirror_beliefs_to_facts();
         decide(&mut w);
         let k = w.goal[i].kind();
         assert!(
@@ -988,6 +995,7 @@ mod tests {
             }
         }
         assert!(found, "spawn should produce working townsfolk");
+        w.mirror_beliefs_to_facts();
         decide(&mut w);
         for i in 0..w.n {
             if w.profession[i] != Profession::None as u8 && w.faction[i] == Faction::Townsfolk as u8 {
@@ -1016,6 +1024,7 @@ mod tests {
         bt.bodies[0].last_z = pz + 2.0;
         bt.bodies[0].flags = 0x01;
         bt.len = 1;
+        w.mirror_beliefs_to_facts();
         decide(&mut w);
         match w.goal[0] {
             Goal::Flee { from } => assert_eq!(from, 7, "should flee the planted hostile"),
@@ -1054,6 +1063,7 @@ mod tests {
             ..Default::default()
         });
         w.goals[i] = GoalStack::default();
+        w.mirror_beliefs_to_facts();
         decide(&mut w);
         // the intention persisted on the stack…
         assert!(
@@ -1148,6 +1158,7 @@ mod tests {
                 w.tick,
             );
         }
+        w.mirror_beliefs_to_facts();
         decide(&mut w);
         assert!(
             !(0..w.goals[thief].len as usize)
@@ -1177,6 +1188,7 @@ mod tests {
         bt.subjects[1] = 9;
         bt.bodies[1] = PersonBelief { subject: 9, last_x: 22.0, last_z: 0.0, confidence: 60000, flags: 0x01, ..Default::default() };
         bt.len = 2;
+        w.mirror_beliefs_to_facts();
         decide(&mut w);
         match w.goal[i] {
             Goal::Fight { target, .. } => assert_eq!(target, 9, "should fight the foe menacing the friend"),
@@ -1321,6 +1333,7 @@ mod tests {
             ..Default::default()
         });
         let total = w.total_gold();
+        w.mirror_beliefs_to_facts(); // sync facts with the injected belief (a tick would, mid-loop)
         for _ in 0..6 {
             w.tick();
         }
@@ -1359,6 +1372,7 @@ mod tests {
             ..Default::default()
         };
         bt.len = 1;
+        w.mirror_beliefs_to_facts();
         decide(&mut w);
         assert!(
             (0..w.goals[i].len as usize).any(|k| w.goals[i].items[k].kind == IntentionKind::Glory as u8),
@@ -1388,6 +1402,7 @@ mod tests {
             ..Default::default()
         });
         w.goals[i] = GoalStack::default();
+        w.mirror_beliefs_to_facts();
         decide(&mut w); // derives the avenge intention
         // now record that I slew the foe → next decide must prune it.
         w.memory[i].record(Episode {
@@ -1397,6 +1412,7 @@ mod tests {
             salience: 60000,
             ..Default::default()
         });
+        w.mirror_beliefs_to_facts();
         decide(&mut w);
         assert!(
             !(0..w.goals[i].len as usize)
