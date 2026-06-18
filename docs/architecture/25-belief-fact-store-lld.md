@@ -1,22 +1,13 @@
 # 25 — Belief fact-store (the proposition model) — LLD
 
-> Status: **READ PATH FULLY UNIFIED ON FACTS.** Per user direction (extensibility + one model +
-> per-fact epistemics > a few-% tick cost), the goal is a SINGLE belief representation — the fact
-> store — with the legacy struct retired. As of now: **every belief read that drives cognition or
-> observation goes through `FactStore`** (decide, planner, derivers, reason, combat, locomotion,
-> market, director, tropes, patrician, lineage, groups, expeditions, refugees, signals). The fact
-> store is written, decayed, hashed, deterministic (M-invariant), and the flagship open capability
-> (a quantitative debt belief → a vendetta) runs end-to-end in-sim.
->
-> **Remaining (the writer flip):** `perceive`, `gossip`, the `scry` ability, and the society
-> belief-planters (`ensure_belief`/`sour_belief`/`warm_belief` + `seed_grudge`/`warm_to`) still WRITE
-> the legacy `PersonBelief`/`BeliefTable`, which is mirrored into facts each tick by
-> `World::mirror_beliefs_to_facts` (so readers see writer output). The `FactStore::to_belief_table`
-> codec (the inverse of `mirror_core_from`) is in place so those writers can keep their exact tested
-> logic on a transient scratch struct while facts become the only PERSISTENT store. Flipping the
-> writers + deleting the `beliefs`/`beliefs_prev` columns + the struct hash fold is the final step;
-> it is atomic (all writers move together) and was deferred to avoid rushing a working-sim-breaking
-> refactor under a tight budget.
+> Status: **DONE.** Beliefs are a single unified model — the `FactStore`. The legacy
+> `PersonBelief`/`BeliefTable` struct is retired: `World.facts` (+ `facts_prev`) is the only
+> PERSISTENT belief storage, and `BeliefTable`/`PersonBelief` survive solely as the transient
+> perceive/gossip scratch codec + test fixtures. Every read AND write goes through the fact store.
+> Verified: `soak_bench` M-invariance PASS (identical golden hash across 1–32 threads with the struct
+> gone), run-to-run deterministic, gold conserved; 232 unit + 4 determinism + 2 capability + 2
+> survival green. Accepted cost: perceive ~3.7× slower (the load/store codec rebuilds a scratch table
+> per agent per tick) — the deliberate richness-over-throughput trade.
 > See also: [02 — the epistemic split](02-epistemic-split.md), [10 — knowledge model](10-action-grammar.md),
 > [22 — Rust ECS backend](22-rust-ecs-backend-lld.md) (determinism mandate).
 
@@ -123,15 +114,21 @@ conversion is behavior-identical):
    planner (`Pv.facts`), `decide` (homecoming/warband/flee/scout/intention-satisfied), `reason`,
    combat, locomotion, market, and the society/observer passes.
 
-Remaining — the writer flip (atomic):
-4. Rewrite `perceive`/`gossip` to load a scratch `BeliefTable` via `to_belief_table()`, run their
-   exact existing logic, and store back via `mirror_core_from()` (facts = the only persistent store);
-   add a `facts_prev` snapshot for gossip's cross-read.
-5. Convert `scry` + the `ensure_belief`/`sour_belief`/`warm_belief` helpers (and `seed_grudge`/
-   `warm_to`) to write facts (the `ensure_belief`-returns-an-index contract needs reworking).
-6. Delete the `beliefs`/`beliefs_prev` columns, the mirror pass, and the struct hash fold; keep
-   `PersonBelief`/`BeliefTable` only as the transient perceive/gossip scratch + test fixtures.
-7. Fix the test fallout (tests that inject `w.beliefs[..]` → seed facts via `mirror_core_from`).
+The writer flip (DONE):
+4. `perceive`/`gossip` load a scratch `BeliefTable` via `to_belief_table()`, run their exact existing
+   logic, and store back via `mirror_core_from()` (facts = the only persistent store); `snapshot_beliefs`
+   snapshots `facts → facts_prev` for gossip's cross-read.
+5. `scry` + the `ensure_belief`/`sour_belief`/`warm_belief` helpers (and `seed_grudge`/`warm_to`/the
+   captive-witness fold) write facts via targeted mutators (`ensure`/`set_standing`/`set_bool`/
+   `raise_conf`/`set_pos`); `ensure_belief` returns a `bool` now, not an index.
+6. Deleted the `beliefs`/`beliefs_prev` columns, the mirror pass, and the struct hash fold.
+7. ~200 test sites converted (seed facts via `mirror_core_from`; read via `view`/`views`/`believes`).
+
+### Possible future optimization
+
+The load/store codec (rebuild a scratch `BeliefTable` from facts each tick in perceive/gossip) is the
+chief perf cost. If perceive becomes a bottleneck, rewrite it to decay/upsert facts in place (no
+scratch round-trip) — but that's a pure optimization; the model and behaviour are settled.
 
 ## Future extensions (defined vocabulary, not yet wired)
 

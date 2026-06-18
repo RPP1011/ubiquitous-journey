@@ -134,11 +134,13 @@ into `world_hash`. Adding a new kind of belief = a new `FA_*` + a writer + a rea
 - The flagship open capability: `FA_OWES_ME`, a quantitative debt minted when an agent is robbed
   (`Intent::Owe` → the merge), read by the `collect_debt` deriver to seed a vendetta — a belief the
   old fixed struct could never hold.
-- **In transition:** the legacy `PersonBelief`/`BeliefTable` (`World.beliefs`) is still WRITTEN by
-  `perceive`/`gossip`/`scry`/the society planters and mirrored into facts each tick
-  (`mirror_beliefs_to_facts`). The remaining step is to flip those writers onto facts (via the
-  `to_belief_table` codec) and delete the struct columns. Until then, **write beliefs via the existing
-  paths** (perceive, `warm_belief`/`sour_belief`/`ensure_belief`) and **read via `facts`**.
+- **Writes** also go through facts: `perceive`/`gossip` load a scratch `BeliefTable`
+  (`FactStore::to_belief_table`), run their logic, store back (`mirror_core_from`); the society
+  planters use targeted mutators (`ensure_belief`/`sour_belief`/`warm_belief`). `World.facts`
+  (+ `facts_prev` for gossip's snapshot) is the **only persistent belief store** — the legacy
+  `PersonBelief`/`BeliefTable` struct is retired (it survives only as that transient scratch codec +
+  test fixtures). Cost: perceive is ~3.7× slower from the codec round-trip — the accepted
+  richness-over-throughput trade.
 
 ## Conventions & gotchas
 
