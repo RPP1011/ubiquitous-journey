@@ -708,11 +708,10 @@ mod debt_tests {
     }
 
     fn debt(store: &mut FactStore, debtor: u32, amount: u32) {
-        store.upsert(
-            Fact { subject: debtor, value: amount, observed_at: 0, base_conf: 65535,
-                   attr: FA_OWES_ME, src: SOURCE_LEDGER, hops: 0, _pad: 0 },
-            0,
-        );
+        store.upsert(Fact {
+            subject: debtor, value: amount, observed_at: 0, base_conf: 65535,
+            attr: FA_OWES_ME, src: SOURCE_LEDGER, hops: 0, _pad: 0,
+        });
     }
 
     #[test]

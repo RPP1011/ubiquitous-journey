@@ -467,57 +467,51 @@ pub enum ValueKind {
     Place = 5,  // a POI / place id
 }
 
-// Attribute ids — index ATTR_KIND / ATTR_DECAY. Core (0..=5) mirror `PersonBelief`'s hot fields so
-// Phase 2 can mirror them; the rest are the OPEN tail the struct could never carry.
-pub const FA_FACTION: u8 = 0; // Symbol  (Faction)
-pub const FA_HOSTILE: u8 = 1; // Bool
-pub const FA_LASTX: u8 = 2; // FBits
-pub const FA_LASTZ: u8 = 3; // FBits
-pub const FA_THREAT: u8 = 4; // Quant
-pub const FA_STANDING: u8 = 5; // Quant (i16 reinterpreted)
-pub const FA_WEALTH: u8 = 6; // Quant
-pub const FA_NOTORIETY: u8 = 7; // Quant
-pub const FA_LEVEL: u8 = 8; // Quant
-pub const FA_ASSOC: u8 = 9; // Entity (believed house/group)
-pub const FA_INTENT: u8 = 10; // Symbol  — believed MOTIVE (flee/raid/home/…) — open, new capability
-pub const FA_DESTPLACE: u8 = 11; // Place — believed destination place id — new
-pub const FA_OWES_ME: u8 = 12; // Quant — gold the subject owes the observer (closed-loop ledger) — new
-pub const N_FACT_ATTR: usize = 13;
+// Attribute ids — index ATTR_KIND. A belief about a subject is the SET of facts keyed by it; each
+// fact's own `base_conf`/`observed_at` carry that proposition's confidence + recency (so there is no
+// separate confidence/last_tick attr — the fact fields ARE those). Core attrs (0..FIRST_OPEN_ATTR)
+// fully represent what `PersonBelief` held; the open tail is what the struct never could.
+//
+// PERCEIVED core (base_conf = the sighting confidence; refreshed/decayed by perceive):
+pub const FA_FACTION: u8 = 0; // Symbol  (Faction) — the canonical "I hold a belief about S" fact
+pub const FA_LASTX: u8 = 1; // FBits
+pub const FA_LASTZ: u8 = 2; // FBits
+pub const FA_THREAT: u8 = 3; // Quant
+pub const FA_WEALTH: u8 = 4; // Quant
+pub const FA_NOTORIETY: u8 = 5; // Quant
+pub const FA_LEVEL: u8 = 6; // Quant
+pub const FA_ASSOC: u8 = 7; // Entity (believed house/group)
+// RELATIONSHIP / flags (set by gossip/social/combat-fold; each a standalone proposition):
+pub const FA_STANDING: u8 = 8; // Quant (i16 reinterpreted) — my opinion of them
+pub const FA_HOSTILE: u8 = 9; // Bool — do I think them hostile?
+pub const FA_BUILDING: u8 = 10; // Bool — a believed building/place (the home-belief source)
+pub const FA_INANIMATE: u8 = 11; // Bool — a believed mind-less prop (animacy)
+// OPEN tail — propositions the fixed struct could never carry:
+pub const FA_INTENT: u8 = 12; // Symbol  — believed MOTIVE (flee/raid/home/…) (defined; not yet written)
+pub const FA_DESTPLACE: u8 = 13; // Place — believed destination place id (defined; not yet written)
+pub const FA_OWES_ME: u8 = 14; // Quant — gold the subject owes the observer (the debt ledger)
+pub const N_FACT_ATTR: usize = 15;
+/// The first OPEN-tail attr — facts at/above this are NOT rebuilt from perception (they persist:
+/// debts, motives), so a perceive/gossip refresh preserves them.
+pub const FIRST_OPEN_ATTR: u8 = FA_INTENT;
 
 /// Value-kind per attr (readers interpret `Fact.value` through this).
 pub const ATTR_KIND: [ValueKind; N_FACT_ATTR] = [
     ValueKind::Symbol, // faction
-    ValueKind::Bool,   // hostile
     ValueKind::FBits,  // last_x
     ValueKind::FBits,  // last_z
     ValueKind::Quant,  // threat
-    ValueKind::Quant,  // standing
     ValueKind::Quant,  // wealth
     ValueKind::Quant,  // notoriety
     ValueKind::Quant,  // level
     ValueKind::Entity, // assoc
+    ValueKind::Quant,  // standing
+    ValueKind::Bool,   // hostile
+    ValueKind::Bool,   // building
+    ValueKind::Bool,   // inanimate
     ValueKind::Symbol, // intent
     ValueKind::Place,  // dest_place
     ValueKind::Quant,  // owes_me
-];
-
-/// Confidence lost per tick (fixed-point, units of 1/65535). 0 = never decays — a ledger fact like a
-/// debt or a sworn oath is not forgotten by mere time (it is SETTLED by an event). Positions and
-/// hostility fade; faction/assoc fade slowly.
-pub const ATTR_DECAY: [u16; N_FACT_ATTR] = [
-    4,  // faction (slow)
-    18, // hostile
-    40, // last_x (positions stale fast)
-    40, // last_z
-    18, // threat
-    8,  // standing
-    12, // wealth
-    8,  // notoriety
-    4,  // level
-    4,  // assoc
-    30, // intent (a motive is fleeting)
-    24, // dest_place
-    0,  // owes_me — a debt does not decay; it is repaid
 ];
 
 /// One interned belief proposition. 20 bytes, all ints. `value` is interpreted by `ATTR_KIND[attr]`.
@@ -533,24 +527,42 @@ pub struct Fact {
     pub hops: u8,         // gossip provenance depth (0 = first-hand)
     pub _pad: u8,
 }
-impl Fact {
-    /// Confidence NOW, with lazy decay applied (base − decay·age, clamped to 0). 0-decay attrs (a
-    /// debt) return base unchanged.
-    #[inline]
-    pub fn conf_now(&self, now: u32) -> u16 {
-        let d = ATTR_DECAY[self.attr as usize] as u32;
-        let age = now.saturating_sub(self.observed_at);
-        (self.base_conf as u32).saturating_sub(d.saturating_mul(age)).min(65535) as u16
-    }
+/// True for the PERCEIVED snapshot attrs (faction..assoc) whose `base_conf` is the sighting confidence
+/// and which perceive refreshes/decays — as opposed to relationship/flag attrs (certain values) and
+/// the open tail (persist). `FA_FACTION` is the canonical "I hold a belief about S" fact.
+#[inline]
+pub fn is_perceived_attr(attr: u8) -> bool {
+    attr <= FA_ASSOC
 }
 
-/// Soft cap on facts per agent — richer than `BELIEF_CAP` (25) since the whole point is per-agent
-/// richness. Over cap, the lowest current-confidence fact is evicted (deterministic: ties by key).
-pub const FACT_CAP: usize = 96;
+/// Soft cap on facts per agent — must comfortably hold a full belief: up to `BELIEF_CAP` (25) subjects
+/// × ~12 core attrs + the open tail. Over cap, the lowest-confidence fact is evicted (deterministic).
+pub const FACT_CAP: usize = 512;
 
-/// One agent's open belief store: facts kept SORTED by (subject, attr) for deterministic iteration
-/// and O(log n) lookup. The deliberate departure from the inline-`Copy` column rule (a `Vec` per
-/// agent) — perf accepted per doc 25. NOT a HashMap (that would break the M=1≡M=N golden hash).
+/// A materialized belief about one subject — the read-side projection of the facts keyed by it. Same
+/// field names/shape as the legacy `PersonBelief` so consumers migrate mechanically (`find`→`view`,
+/// `bodies[ix].x`→`view.x`). The fact store is the source of truth; this is reconstructed on read.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct BeliefView {
+    pub subject: u32,
+    pub last_x: f32,
+    pub last_z: f32,
+    pub confidence: u16,
+    pub faction: u8,
+    pub level: u8,
+    pub notoriety: u16,
+    pub threat: u16,
+    pub wealth: u16,
+    pub last_tick: u32,
+    pub standing: i16,
+    pub flags: u8,
+    pub hops: u8,
+    pub assoc: u16,
+}
+
+/// One agent's belief store: facts kept SORTED by (subject, attr) for deterministic iteration and
+/// O(log n) lookup. The deliberate departure from the inline-`Copy` column rule (a `Vec` per agent) —
+/// perf accepted per doc 25. NOT a HashMap (that would break the M=1≡M=N golden hash).
 #[derive(Clone, Default)]
 pub struct FactStore {
     pub facts: Vec<Fact>,
@@ -564,23 +576,67 @@ impl FactStore {
     fn pos(&self, subject: u32, attr: u8) -> Result<usize, usize> {
         self.facts.binary_search_by(|f| Self::key(f).cmp(&(subject, attr)))
     }
-    /// The raw stored value for (subject, attr), if held (no confidence gate).
+    /// The raw stored value for (subject, attr), if held.
     #[inline]
     pub fn get(&self, subject: u32, attr: u8) -> Option<u32> {
         self.pos(subject, attr).ok().map(|i| self.facts[i].value)
     }
-    /// Current (lazily-decayed) confidence for (subject, attr); 0 if not held.
+    /// The full `Fact` for (subject, attr), if held (for callers that need conf/provenance/recency).
     #[inline]
-    pub fn conf(&self, subject: u32, attr: u8, now: u32) -> u16 {
-        match self.pos(subject, attr) {
-            Ok(i) => self.facts[i].conf_now(now),
-            Err(_) => 0,
-        }
+    pub fn fact(&self, subject: u32, attr: u8) -> Option<&Fact> {
+        self.pos(subject, attr).ok().map(|i| &self.facts[i])
     }
-    /// Upsert a fact, dedup by (subject, attr): an existing fact is refreshed (newer wins, keeping the
-    /// SHORTER provenance hops). Over `FACT_CAP`, evict the lowest current-confidence fact (ties by
-    /// key ⇒ order-independent / deterministic).
-    pub fn upsert(&mut self, f: Fact, now: u32) {
+    /// Per-subject sighting confidence (the `FA_FACTION` fact's base_conf) — the eviction/gossip
+    /// strength the legacy per-record `confidence` carried. 0 if no belief is held about the subject.
+    #[inline]
+    pub fn confidence(&self, subject: u32) -> u16 {
+        self.fact(subject, FA_FACTION).map_or(0, |f| f.base_conf)
+    }
+    /// Do I hold a belief about `subject`? (presence of the canonical faction fact) — the `find` check.
+    #[inline]
+    pub fn believes(&self, subject: u32) -> bool {
+        self.pos(subject, FA_FACTION).is_ok()
+    }
+    /// Materialize the belief about `subject` (the read-side `PersonBelief` projection), or None.
+    pub fn view(&self, subject: u32) -> Option<BeliefView> {
+        let ff = self.fact(subject, FA_FACTION)?;
+        Some(BeliefView {
+            subject,
+            last_x: f32::from_bits(self.get(subject, FA_LASTX).unwrap_or(0)),
+            last_z: f32::from_bits(self.get(subject, FA_LASTZ).unwrap_or(0)),
+            confidence: ff.base_conf,
+            faction: ff.value as u8,
+            level: self.get(subject, FA_LEVEL).unwrap_or(0) as u8,
+            notoriety: self.get(subject, FA_NOTORIETY).unwrap_or(0) as u16,
+            threat: self.get(subject, FA_THREAT).unwrap_or(0) as u16,
+            wealth: self.get(subject, FA_WEALTH).unwrap_or(0) as u16,
+            last_tick: ff.observed_at,
+            standing: self.get(subject, FA_STANDING).unwrap_or(0) as i32 as i16,
+            flags: u8::from(self.believes_attr(subject, FA_HOSTILE))
+                | (u8::from(self.believes_attr(subject, FA_BUILDING)) << 1)
+                | (u8::from(self.believes_attr(subject, FA_INANIMATE)) << 2),
+            hops: ff.hops,
+            assoc: self.get(subject, FA_ASSOC).unwrap_or(0) as u16,
+        })
+    }
+    #[inline]
+    fn believes_attr(&self, subject: u32, attr: u8) -> bool {
+        self.pos(subject, attr).is_ok()
+    }
+    /// Iterate the subjects an agent holds a belief about (those with a faction fact), in id order.
+    pub fn subjects(&self) -> impl Iterator<Item = u32> + '_ {
+        self.facts.iter().filter(|f| f.attr == FA_FACTION).map(|f| f.subject)
+    }
+    /// Iterate the materialized beliefs (one per subject), in subject-id order.
+    pub fn views(&self) -> impl Iterator<Item = BeliefView> + '_ {
+        self.facts
+            .iter()
+            .filter(|f| f.attr == FA_FACTION)
+            .map(move |f| self.view(f.subject).expect("faction fact ⇒ view"))
+    }
+    /// Upsert a fact, dedup by (subject, attr): an existing fact is refreshed (keeping the SHORTER
+    /// provenance hops). Over `FACT_CAP`, evict the lowest-confidence fact (ties by key ⇒ deterministic).
+    pub fn upsert(&mut self, f: Fact) {
         match self.pos(f.subject, f.attr) {
             Ok(i) => {
                 let cur = &mut self.facts[i];
@@ -593,18 +649,58 @@ impl FactStore {
             Err(i) => self.facts.insert(i, f),
         }
         if self.facts.len() > FACT_CAP {
-            // evict the weakest (lowest current conf; tie-break by key for determinism)
             let mut lo = 0usize;
             for k in 1..self.facts.len() {
                 let (a, b) = (&self.facts[k], &self.facts[lo]);
-                if a.conf_now(now) < b.conf_now(now)
-                    || (a.conf_now(now) == b.conf_now(now) && Self::key(a) < Self::key(b))
+                if a.base_conf < b.base_conf
+                    || (a.base_conf == b.base_conf && Self::key(a) < Self::key(b))
                 {
                     lo = k;
                 }
             }
             self.facts.remove(lo);
         }
+    }
+    /// Remove every fact about `subject` (the subject is forgotten / evicted wholesale).
+    pub fn forget(&mut self, subject: u32) {
+        self.facts.retain(|f| f.subject != subject);
+    }
+    /// TRANSITION (doc 25): rebuild the core (perceived + relationship) facts from a legacy
+    /// `BeliefTable`, PRESERVING the open tail (debts/motives). Lets readers migrate to facts while the
+    /// struct still drives the writers — the fact view then equals the struct exactly. Removed once the
+    /// writers (perceive/gossip) write facts directly.
+    pub fn mirror_core_from(&mut self, bt: &BeliefTable) {
+        self.facts.retain(|f| f.attr >= FIRST_OPEN_ATTR); // keep the open tail; drop core
+        for j in 0..bt.len as usize {
+            let b = &bt.bodies[j];
+            let s = b.subject;
+            let (c, t, h) = (b.confidence, b.last_tick, b.hops);
+            let mut core = |attr: u8, value: u32, conf: u16| {
+                self.facts.push(Fact {
+                    subject: s, value, observed_at: t, base_conf: conf, attr,
+                    src: SOURCE_WITNESSED, hops: h, _pad: 0,
+                });
+            };
+            core(FA_FACTION, b.faction as u32, c);
+            core(FA_LASTX, b.last_x.to_bits(), c);
+            core(FA_LASTZ, b.last_z.to_bits(), c);
+            core(FA_THREAT, b.threat as u32, c);
+            core(FA_WEALTH, b.wealth as u32, c);
+            core(FA_NOTORIETY, b.notoriety as u32, c);
+            core(FA_LEVEL, b.level as u32, c);
+            core(FA_ASSOC, b.assoc as u32, c);
+            core(FA_STANDING, (b.standing as i32) as u32, 65535);
+            if b.flags & 0x01 != 0 {
+                core(FA_HOSTILE, 1, 65535);
+            }
+            if b.flags & 0x02 != 0 {
+                core(FA_BUILDING, 1, 65535);
+            }
+            if b.flags & 0x04 != 0 {
+                core(FA_INANIMATE, 1, 65535);
+            }
+        }
+        self.facts.sort_unstable_by(|a, b| Self::key(a).cmp(&Self::key(b)));
     }
     #[inline]
     pub fn len(&self) -> usize {
@@ -1416,9 +1512,9 @@ mod fact_store_tests {
     fn upsert_get_and_sorted_order() {
         let mut s = FactStore::default();
         // insert out of order; the store must stay sorted by (subject, attr)
-        s.upsert(fact(7, FA_HOSTILE, 1, 60000, 0), 0);
-        s.upsert(fact(3, FA_FACTION, 2, 60000, 0), 0);
-        s.upsert(fact(7, FA_FACTION, 4, 60000, 0), 0);
+        s.upsert(fact(7, FA_HOSTILE, 1, 60000, 0));
+        s.upsert(fact(3, FA_FACTION, 2, 60000, 0));
+        s.upsert(fact(7, FA_FACTION, 4, 60000, 0));
         assert_eq!(s.get(7, FA_HOSTILE), Some(1));
         assert_eq!(s.get(3, FA_FACTION), Some(2));
         assert_eq!(s.get(7, FA_FACTION), Some(4));
@@ -1434,22 +1530,51 @@ mod fact_store_tests {
         let mut s = FactStore::default();
         let mut far = fact(5, FA_FACTION, 1, 50000, 0);
         far.hops = 3;
-        s.upsert(far, 0);
+        s.upsert(far);
         let mut near = fact(5, FA_FACTION, 1, 55000, 1);
         near.hops = 1;
-        s.upsert(near, 1);
+        s.upsert(near);
         assert_eq!(s.len(), 1, "same (subject,attr) refreshes, not duplicates");
         assert_eq!(s.facts[0].hops, 1, "refresh keeps the shorter provenance");
     }
 
     #[test]
-    fn lazy_decay_fades_positions_but_not_debts() {
+    fn view_round_trips_a_belief() {
+        // a belief stored as facts materializes back to the same fields (the read-side projection).
+        let mut bt = BeliefTable::default();
+        bt.subjects[0] = 7;
+        bt.bodies[0] = PersonBelief {
+            subject: 7, last_x: 3.5, last_z: -2.0, confidence: 40000, faction: 2, level: 5,
+            notoriety: 11, threat: 99, wealth: 1234, last_tick: 42, standing: -7000,
+            flags: 0x01 | 0x04, hops: 1, assoc: 88,
+        };
+        bt.len = 1;
         let mut s = FactStore::default();
-        s.upsert(fact(5, FA_LASTX, 0, 65535, 0), 0); // decays (rate 40)
-        s.upsert(fact(5, FA_OWES_ME, 500, 65535, 0), 0); // rate 0 — never decays
-        let later = 1000u32;
-        assert!(s.conf(5, FA_LASTX, later) < 65535, "position should fade with age");
-        assert_eq!(s.conf(5, FA_OWES_ME, later), 65535, "a debt does not decay with time");
+        s.mirror_core_from(&bt);
+        let v = s.view(7).expect("belief present");
+        assert_eq!(v.faction, 2);
+        assert_eq!(v.last_x, 3.5);
+        assert_eq!(v.confidence, 40000);
+        assert_eq!(v.threat, 99);
+        assert_eq!(v.standing, -7000);
+        assert_eq!(v.flags, 0x01 | 0x04, "hostile + inanimate, not building");
+        assert_eq!(v.assoc, 88);
+        assert_eq!(v.last_tick, 42);
+        assert!(s.view(99).is_none(), "no belief about an unseen subject");
+    }
+
+    #[test]
+    fn mirror_preserves_the_open_tail() {
+        // a debt (open fact) survives a core re-mirror — perception refresh must not wipe propositions.
+        let mut s = FactStore::default();
+        s.upsert(fact(5, FA_OWES_ME, 2000, 65535, 0));
+        let mut bt = BeliefTable::default();
+        bt.subjects[0] = 9;
+        bt.bodies[0] = PersonBelief { subject: 9, confidence: 50000, ..Default::default() };
+        bt.len = 1;
+        s.mirror_core_from(&bt);
+        assert_eq!(s.get(5, FA_OWES_ME), Some(2000), "the debt persists across a core re-mirror");
+        assert!(s.believes(9), "the mirrored belief is present");
     }
 
     #[test]
@@ -1457,7 +1582,7 @@ mod fact_store_tests {
         let mut s = FactStore::default();
         // fill past cap with increasing confidence; the weakest must be evicted
         for k in 0..(FACT_CAP as u32 + 5) {
-            s.upsert(fact(k, FA_THREAT, k, (k % 100 + 1) as u16 * 600, 0), 0);
+            s.upsert(fact(k, FA_THREAT, k, (k % 100 + 1) as u16 * 600, 0));
         }
         assert_eq!(s.len(), FACT_CAP, "store is bounded at FACT_CAP");
     }

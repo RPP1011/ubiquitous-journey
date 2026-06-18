@@ -1210,7 +1210,6 @@ impl World {
                                 hops: 0,
                                 _pad: 0,
                             },
-                            now,
                         );
                     }
                 }
@@ -1366,6 +1365,7 @@ impl World {
         perceive(self); // parallel: own beliefs
         self.snapshot_beliefs(); // serial: freeze the read set for gossip
         systems::gossip::gossip(self); // parallel: read prev beliefs, write own
+        self.mirror_beliefs_to_facts(); // doc 25 transition: facts mirror the struct (readers migrate)
         systems::combat::resolve(self); // parallel decide → Strike intents
         crate::abilities::cast(self); // parallel NPC autocast → extra Strike intents / self-buff own-writes
         self.newsread(); // parallel: fold the gazette's published prices into own price beliefs
@@ -1976,6 +1976,7 @@ impl World {
         let dt = t0.elapsed().as_secs_f64();
         self.snapshot_beliefs();
         systems::gossip::gossip(self);
+        self.mirror_beliefs_to_facts(); // doc 25 transition
         systems::combat::resolve(self);
         crate::abilities::cast(self);
         self.newsread();
@@ -2014,6 +2015,7 @@ impl World {
         ph!(6, perceive(self));
         ph!(7, self.snapshot_beliefs());
         ph!(8, systems::gossip::gossip(self));
+        self.mirror_beliefs_to_facts(); // doc 25 transition (timed within gossip's phase budget)
         ph!(9, systems::combat::resolve(self));
         ph!(10, crate::abilities::cast(self));
         ph!(11, self.newsread());
@@ -2033,6 +2035,17 @@ impl World {
     /// Total gold across the roster (purse + stash) PLUS any gold held in the town bounty fund — the
     /// conservation invariant. A bounty levy moves gold from purses INTO the fund and a claim moves it
     /// back out, so the fund must count or the invariant would spuriously break mid-bounty.
+    /// TRANSITION (doc 25): mirror each agent's legacy `BeliefTable` into its `FactStore` (core facts,
+    /// preserving the open tail). Parallel own-write ⇒ deterministic. Runs after gossip so the facts
+    /// reflect the final belief state for the tick. Removed once perceive/gossip write facts directly.
+    pub fn mirror_beliefs_to_facts(&mut self) {
+        use rayon::prelude::*;
+        let World { ref beliefs, ref mut facts, .. } = *self;
+        facts.par_iter_mut().enumerate().for_each(|(i, fs)| {
+            fs.mirror_core_from(&beliefs[i]);
+        });
+    }
+
     pub fn total_gold(&self) -> i64 {
         self.econ.iter().map(|e| e.gold + e.stash).sum::<i64>()
             + self.bounty_fund
