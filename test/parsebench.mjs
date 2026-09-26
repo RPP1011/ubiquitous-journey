@@ -20,7 +20,7 @@ import { plan } from '../js/app/run/autopilot.js';
 import { runTurn } from '../js/app/tactics/ai.js';
 import { judge, templateAtoms } from '../js/app/tactics/playtest.js';
 import { explainUnmet } from '../js/app/tactics/unmet.js';
-import { readWriteIn, resolveIntents, splitConditional, readTrigger, readyReadings, norm } from '../js/app/tactics/writein.js';
+import { readWriteIn, addressee, resolveIntents, splitConditional, readTrigger, readyReadings, norm } from '../js/app/tactics/writein.js';
 import { interpretLLM } from '../js/app/tactics/llmParse.js';
 import { QUESTS } from '../js/app/run/quests.js';
 
@@ -77,16 +77,17 @@ for (const [qi, quest] of Object.values(QUESTS).entries()) {
     });
     const atoms = [...fileAtoms, ...templateAtoms(b, u)];
     for (const atom of atoms) {
-      const rj = judge(atom, readWriteIn(b, u, atom.text), () => explainUnmet(b, u, atom.text), b, u);
+      const who = addressee(b, u, atom.text).who ?? u;
+      const rj = judge(atom, readWriteIn(b, who, atom.text), () => explainUnmet(b, who, atom.text), b, who);
       bump(tally.regex, rj.status);
       if (!llmUp) continue;
       const t0 = performance.now();
-      const lr = await llmReadings(b, u, atom.text);
+      const lr = await llmReadings(b, who, addressee(b, u, atom.text).text);
       times.push(performance.now() - t0);
       let lj;
       if (!lr) lj = { status: 'error', got: 'no answer' };
       else if (lr.unsupported) { lj = { status: 'unsupported', got: `unsupported: ${lr.unsupported}` }; gaps.push(`${atom.capability}: “${atom.text}” → ${lr.unsupported}`); }
-      else lj = judge(atom, lr.rs, () => 'model reading not legal here', b, u);
+      else lj = judge(atom, lr.rs, () => 'model reading not legal here', b, who);
       bump(tally.llm, lj.status);
       if (lj.status !== rj.status) diffs.push(`${quest.id}-${si} ${atom.capability.padEnd(18)} regex:${rj.status.padEnd(11)} model:${lj.status.padEnd(11)} “${atom.text}” ${lj.got ? `→ ${lj.got}` : ''}`);
     }

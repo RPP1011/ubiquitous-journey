@@ -1,110 +1,141 @@
 {
-  "persona": "trickster",
-  "plans": [
+ "persona": "trickster",
+ "plans": [
+  {
+   "goal": "Quickly take down the weakened scout Jory before he warns others",
+   "steps": [
+    "I focus attacks on Jory",
+    "Pip supports with strikes",
+    "Borin blocks Big Aud",
+    "Maud guards and readies aid"
+   ],
+   "atoms": [
     {
-      "goal": "Quickly take down the weakened scout Jory before he warns others",
-      "steps": [
-        "I focus attacks on Jory",
-        "Pip supports with strikes",
-        "Borin blocks Big Aud",
-        "Maud guards and readies aid"
-      ],
-      "atoms": [
-        {
-          "strategy": "I attack Jory directly",
-          "capability": "ready-strike",
-          "text": "I attack Jory Crowe",
-          "expect": ["attack"]
-        },
-        {
-          "strategy": "Pip hits Jory too",
-          "capability": "ready-strike",
-          "text": "Pip, attack Jory Crowe",
-          "expect": ["attack"]
-        },
-        {
-          "strategy": "Borin blocks the big guy",
-          "capability": "block-path",
-          "text": "Borin, defend against Big Aud",
-          "expect": ["defend", "guard"]
-        },
-        {
-          "strategy": "Maud readies support",
-          "capability": "guard-ally",
-          "text": "Maud, guard and aid if we're hit",
-          "expect": ["guard", "aid"]
-        }
-      ]
+     "strategy": "I attack Jory directly",
+     "capability": "ready-strike",
+     "text": "I attack Jory Crowe",
+     "expect": [
+      "attack"
+     ]
     },
     {
-      "goal": "Use Borin as a shield while Pip and I harry Jory from the flanks",
-      "steps": [
-        "Borin charges Big Aud",
-        "I attack Jory",
-        "Pip flanks Jory",
-        "Maud watches and heals"
-      ],
-      "atoms": [
-        {
-          "strategy": "Borin holds Big Aud",
-          "capability": "block-path",
-          "text": "Borin, engage Big Aud and hold him",
-          "expect": ["defend", "attack"]
-        },
-        {
-          "strategy": "I strike Jory",
-          "capability": "ready-strike",
-          "text": "I attack Jory while Borin blocks",
-          "expect": ["attack"]
-        },
-        {
-          "strategy": "Pip attacks Jory",
-          "capability": "ready-strike",
-          "text": "Pip, strike at Jory Crowe",
-          "expect": ["attack"]
-        },
-        {
-          "strategy": "Maud supports",
-          "capability": "guard-ally",
-          "text": "Maud, aid whoever is hurt",
-          "expect": ["aid", "guard"]
-        }
-      ]
+     "strategy": "Pip hits Jory too",
+     "capability": "ready-strike",
+     "text": "Pip, attack Jory Crowe",
+     "expect": [
+      "attack"
+     ]
     },
     {
-      "goal": "Coordinate with overwatch to prevent escape while moving in for the kill",
-      "steps": [
-        "Maud watches for runners",
-        "Borin pressures Big Aud",
-        "Pip and I focus fire on Jory",
-        "Everyone moves to close distance"
-      ],
-      "atoms": [
-        {
-          "strategy": "Maud watches for escape",
-          "capability": "guard-ally",
-          "text": "Maud, overwatch for anyone trying to run",
-          "expect": ["overwatch", "guard"]
-        },
-        {
-          "strategy": "Borin attacks Big Aud",
-          "capability": "ready-strike",
-          "text": "Borin, hit Big Aud and don't let up",
-          "expect": ["attack"]
-        },
-        {
-          "strategy": "I attack Jory",
-          "capability": "ready-strike",
-          "text": "I attack Jory Crowe hard",
-          "expect": ["attack"]
-        },
-        {
-          "strategy": "Pip attacks too",
-          "capability": "ready-strike",
-          "text": "Pip, keep striking Jory",
-          "expect": ["attack"]
-        }
-      ]
+     "strategy": "Borin blocks the big guy",
+     "capability": "block-path",
+     "text": "Borin, defend against Big Aud",
+     "expect": [
+      "defend",
+      "guard",
+      "block"
+     ]
+    },
+    {
+     "strategy": "Maud readies support",
+     "capability": "guard-ally",
+     "text": "Maud, guard and aid if we're hit",
+     "expect": [
+      "guard",
+      "aid"
+     ]
     }
-  ]
+   ]
+  },
+  {
+   "goal": "Use Borin as a shield while Pip and I harry Jory from the flanks",
+   "steps": [
+    "Borin charges Big Aud",
+    "I attack Jory",
+    "Pip flanks Jory",
+    "Maud watches and heals"
+   ],
+   "atoms": [
+    {
+     "strategy": "Borin holds Big Aud",
+     "capability": "block-path",
+     "text": "Borin, engage Big Aud and hold him",
+     "expect": [
+      "defend",
+      "attack",
+      "block"
+     ]
+    },
+    {
+     "strategy": "I strike Jory",
+     "capability": "ready-strike",
+     "text": "I attack Jory while Borin blocks",
+     "expect": [
+      "attack"
+     ]
+    },
+    {
+     "strategy": "Pip attacks Jory",
+     "capability": "ready-strike",
+     "text": "Pip, strike at Jory Crowe",
+     "expect": [
+      "attack"
+     ]
+    },
+    {
+     "strategy": "Maud supports",
+     "capability": "guard-ally",
+     "text": "Maud, aid whoever is hurt",
+     "expect": [
+      "aid",
+      "guard"
+     ]
+    }
+   ]
+  },
+  {
+   "goal": "Coordinate with overwatch to prevent escape while moving in for the kill",
+   "steps": [
+    "Maud watches for runners",
+    "Borin pressures Big Aud",
+    "Pip and I focus fire on Jory",
+    "Everyone moves to close distance"
+   ],
+   "atoms": [
+    {
+     "strategy": "Maud watches for escape",
+     "capability": "guard-ally",
+     "text": "Maud, overwatch for anyone trying to run",
+     "expect": [
+      "overwatch",
+      "guard"
+     ]
+    },
+    {
+     "strategy": "Borin attacks Big Aud",
+     "capability": "ready-strike",
+     "text": "Borin, hit Big Aud and don't let up",
+     "expect": [
+      "attack"
+     ]
+    },
+    {
+     "strategy": "I attack Jory",
+     "capability": "ready-strike",
+     "text": "I attack Jory Crowe hard",
+     "expect": [
+      "attack"
+     ]
+    },
+    {
+     "strategy": "Pip attacks too",
+     "capability": "ready-strike",
+     "text": "Pip, keep striking Jory",
+     "expect": [
+      "attack"
+     ]
+    }
+   ]
+  }
+ ]
 }

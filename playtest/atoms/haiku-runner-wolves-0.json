@@ -1,38 +1,171 @@
 {
-  "persona": "runner",
-  "plans": [
+ "persona": "runner",
+ "plans": [
+  {
+   "goal": "Scare the wolves away by setting the campfire ablaze and shouting",
+   "steps": [
+    "Light up the campfire",
+    "Make noise to frighten them",
+    "Drive them off the edge"
+   ],
+   "atoms": [
     {
-      "goal": "Scare the wolves away by setting the campfire ablaze and shouting",
-      "steps": ["Light up the campfire", "Make noise to frighten them", "Drive them off the edge"],
-      "atoms": [
-        { "strategy": "make fire bigger", "capability": "ignite-prop", "text": "Ignite the campfire to make it roar", "expect": ["ignite"] },
-        { "strategy": "terrify the beasts", "capability": "scare-with-fire", "text": "Throw burning hay at the Gaunt wolf to scare it away", "expect": ["throw", "ignite"] },
-        { "strategy": "chase them out", "capability": "distract-animals", "text": "Howl and slash at the Scarred wolf to drive it off", "expect": ["attack", "ability"] },
-        { "strategy": "force them out", "capability": "howl-down", "text": "Shout and charge at the wolves to push them off the map edge", "expect": ["attack", "dash"] }
-      ]
+     "strategy": "make fire bigger",
+     "capability": "ignite-prop",
+     "text": "Ignite the campfire to make it roar",
+     "expect": [
+      "ignite"
+     ]
     },
     {
-      "goal": "Chase the wolves aggressively off the edge of the sheepfold",
-      "steps": ["Close on the nearest wolf", "Attack aggressively", "Chase the other wolf off", "Secure the fold"],
-      "atoms": [
-        { "strategy": "tackle the Gaunt wolf", "capability": "dash", "text": "Sprint at the Gaunt wolf at 4,8", "expect": ["dash"] },
-        { "strategy": "strike it down", "capability": "ready-strike", "text": "Strike the Gaunt wolf hard", "expect": ["attack", "hew"] },
-        { "strategy": "finish and chase the other", "capability": "dash", "text": "Sprint to cut off the Scarred wolf's escape", "expect": ["dash", "escape"] },
-        { "strategy": "scare it into running", "capability": "scare-with-fire", "text": "Thrust burning branches at the Scarred wolf", "expect": ["throw", "ignite"] },
-        { "strategy": "force it off the map", "capability": "escape", "text": "Chase the Scarred wolf off the edge of the fold", "expect": ["attack", "dash"] }
-      ]
+     "strategy": "terrify the beasts",
+     "capability": "scare-with-fire",
+     "text": "Throw burning hay at the Gaunt wolf to scare it away",
+     "expect": [
+      "throw",
+      "ignite"
+     ]
     },
     {
-      "goal": "Use companions to herd the wolves away from the sheep",
-      "steps": ["Position guardians on flanks", "Drive wolves toward the edge", "Force them off together"],
-      "atoms": [
-        { "strategy": "block one escape route", "capability": "guard-ally", "text": "Borin, stand between the wolves and the sheep", "expect": ["guard", "defend"] },
-        { "strategy": "guard from the side", "capability": "block-path", "text": "Maud, hold the right flank so they can't circle back", "expect": ["guard", "defend"] },
-        { "strategy": "drive forward", "capability": "dash", "text": "Pip, flank left while I drive them from the front", "expect": ["dash"] },
-        { "strategy": "charge the Gaunt wolf", "capability": "ready-strike", "text": "Attack the Gaunt wolf to push it back", "expect": ["attack", "hew"] },
-        { "strategy": "pursue and scare", "capability": "scare-with-fire", "text": "Thrust the torch at the Scarred wolf to drive it off the edge", "expect": ["throw", "attack"] },
-        { "strategy": "confirm they're gone", "capability": "escape", "text": "Chase after them to make sure both wolves flee far away", "expect": ["dash", "escape"] }
-      ]
+     "strategy": "chase them out",
+     "capability": "distract-animals",
+     "text": "Howl and slash at the Scarred wolf to drive it off",
+     "expect": [
+      "attack",
+      "ability"
+     ]
+    },
+    {
+     "strategy": "force them out",
+     "capability": "howl-down",
+     "text": "Shout and charge at the wolves to push them off the map edge",
+     "expect": [
+      "attack",
+      "dash"
+     ]
     }
-  ]
+   ]
+  },
+  {
+   "goal": "Chase the wolves aggressively off the edge of the sheepfold",
+   "steps": [
+    "Close on the nearest wolf",
+    "Attack aggressively",
+    "Chase the other wolf off",
+    "Secure the fold"
+   ],
+   "atoms": [
+    {
+     "strategy": "tackle the Gaunt wolf",
+     "capability": "dash",
+     "text": "Sprint at the Gaunt wolf at 4,8",
+     "expect": [
+      "dash"
+     ]
+    },
+    {
+     "strategy": "strike it down",
+     "capability": "ready-strike",
+     "text": "Strike the Gaunt wolf hard",
+     "expect": [
+      "attack",
+      "hew"
+     ]
+    },
+    {
+     "strategy": "finish and chase the other",
+     "capability": "dash",
+     "text": "Sprint to cut off the Scarred wolf's escape",
+     "expect": [
+      "dash",
+      "escape",
+      "block"
+     ]
+    },
+    {
+     "strategy": "scare it into running",
+     "capability": "scare-with-fire",
+     "text": "Thrust burning branches at the Scarred wolf",
+     "expect": [
+      "throw",
+      "ignite"
+     ]
+    },
+    {
+     "strategy": "force it off the map",
+     "capability": "escape",
+     "text": "Chase the Scarred wolf off the edge of the fold",
+     "expect": [
+      "attack",
+      "dash"
+     ]
+    }
+   ]
+  },
+  {
+   "goal": "Use companions to herd the wolves away from the sheep",
+   "steps": [
+    "Position guardians on flanks",
+    "Drive wolves toward the edge",
+    "Force them off together"
+   ],
+   "atoms": [
+    {
+     "strategy": "block one escape route",
+     "capability": "guard-ally",
+     "text": "Borin, stand between the wolves and the sheep",
+     "expect": [
+      "guard",
+      "defend",
+      "block"
+     ]
+    },
+    {
+     "strategy": "guard from the side",
+     "capability": "block-path",
+     "text": "Maud, hold the right flank so they can't circle back",
+     "expect": [
+      "guard",
+      "defend",
+      "block"
+     ]
+    },
+    {
+     "strategy": "drive forward",
+     "capability": "dash",
+     "text": "Pip, flank left while I drive them from the front",
+     "expect": [
+      "dash"
+     ]
+    },
+    {
+     "strategy": "charge the Gaunt wolf",
+     "capability": "ready-strike",
+     "text": "Attack the Gaunt wolf to push it back",
+     "expect": [
+      "attack",
+      "hew"
+     ]
+    },
+    {
+     "strategy": "pursue and scare",
+     "capability": "scare-with-fire",
+     "text": "Thrust the torch at the Scarred wolf to drive it off the edge",
+     "expect": [
+      "throw",
+      "attack"
+     ]
+    },
+    {
+     "strategy": "confirm they're gone",
+     "capability": "escape",
+     "text": "Chase after them to make sure both wolves flee far away",
+     "expect": [
+      "dash",
+      "escape"
+     ]
+    }
+   ]
+  }
+ ]
 }

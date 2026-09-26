@@ -257,7 +257,7 @@ export class TacticsView {
     const u = b.current(), mine = this.mine();
     const hp = (x: Unit) => Math.max(0, Math.round(x.agent.fighter.health / TUNE.maxHealth * 100));
     const status = (x: Unit) => [x.out, x.burning ? 'burning' : '', x.prone ? 'prone' : '', x.exposed ? 'exposed' : '', x.defending ? 'braced' : '',
-      x.overwatch ? 'overwatch' : '', x.readied ? `ready: ${describeTrigger(b, x.readied.trigger)}` : '', x.morale !== 'steady' ? x.morale : '',
+      x.overwatch ? 'overwatch' : '', x.blocking ? 'blocking' : '', x.readied ? `ready: ${describeTrigger(b, x.readied.trigger)}` : '', x.morale !== 'steady' ? x.morale : '',
       x.carrying ? `holding ${x.carrying.name}` : ''].filter(Boolean).join(' · ');
 
     const order = b.order.map((x) => `<span class="${x.side} ${x === u ? 'cur' : ''} ${x.out && x.out !== 'downed' ? 'out' : ''}">${esc(b.nm(x, true))}</span>`).join('');

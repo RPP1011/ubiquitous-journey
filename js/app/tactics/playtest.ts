@@ -12,13 +12,13 @@
 //
 // Probing is read-only (the parser never mutates the battle), so it can run mid-fight.
 
-import { readWriteIn, type GridReading } from './writein.js';
+import { readWriteIn, addressee, type GridReading } from './writein.js';
 import { explainUnmet, isSituational } from './unmet.js';
 import type { Battle, Unit } from './battle.js';
 
 /** Action kinds a probe can expect. Kinds that don't exist yet (carry, trip…) mark wished-for verbs. */
 export const ACTION_KINDS = ['attack', 'ability', 'shove', 'kick', 'hew', 'throw', 'ignite', 'douse', 'pickup', 'grab', 'subdue',
-  'aid', 'free', 'guard', 'social', 'overwatch', 'defend', 'dash', 'escape', 'ready',
+  'aid', 'free', 'guard', 'social', 'overwatch', 'defend', 'block', 'dash', 'escape', 'ready',
   // not (yet) in the rules — expecting one of these always fails, which is the point
   'carry', 'trip', 'hide', 'dig', 'build', 'climb', 'give', 'disguise', 'trap', 'distract'] as const;
 
@@ -52,8 +52,10 @@ export function situation(b: Battle, u: Unit, stage: string, objective: string):
 
 /** Read each atom with the real parser from the unit's position. */
 export function probe(b: Battle, u: Unit, atoms: Atom[]): ProbeResult[] {
-  return atoms.map((atom) => {
-    return judge(atom, readWriteIn(b, u, atom.text), () => explainUnmet(b, u, atom.text), b, u);
+  // an atom must expect at least one real action kind, or it can't be judged (a planner's slip, not a gap)
+  return atoms.filter((atom) => atom.expect.some((k) => (ACTION_KINDS as readonly string[]).includes(k))).map((atom) => {
+    const who = addressee(b, u, atom.text).who ?? u;
+    return judge(atom, readWriteIn(b, who, atom.text), () => explainUnmet(b, who, atom.text), b, who);
   });
 }
 

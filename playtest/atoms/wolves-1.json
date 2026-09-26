@@ -1,15 +1,110 @@
 [
-{"strategy":"cull the weak","capability":"focus-fire","text":"kill the Old wolf, it's nearly dead","expect":["attack"]},
-{"strategy":"fire","capability":"scare-with-fire","text":"brandish the torch at the Black wolf","expect":["social","ability"]},
-{"strategy":"fire","capability":"throw-fire","text":"throw the torch at the Lean wolf","expect":["throw"]},
-{"strategy":"fire","capability":"shove-hazard","text":"shove the Lean wolf into the campfire","expect":["shove"]},
-{"strategy":"burning barrier","capability":"fire-barrier","text":"set the tent on fire to keep them back","expect":["ignite"]},
-{"strategy":"back to wall","capability":"take-cover","text":"put my back against the tree so they can't circle me","expect":["defend"]},
-{"strategy":"climb out of reach","capability":"climb-tree","text":"climb the nearest tree","expect":["climb"]},
-{"strategy":"protect healer","capability":"guard-ally","text":"Pip, keep the Grey wolf off Sister Maud","expect":["guard"]},
-{"strategy":"alpha-break","capability":"howl-down","text":"stare down the Black wolf and snarl","expect":["social"]},
-{"strategy":"trap","capability":"trap","text":"set a snare between the trees for the Grey wolf","expect":["trap"]},
-{"strategy":"close ranks","capability":"shield-wall","text":"form a ring around the campfire, weapons out","expect":["defend","guard"]},
-{"strategy":"barrel roll","capability":"roll-barrel","text":"roll the barrel into the Old wolf","expect":["kick","shove"]},
-{"strategy":"bait","capability":"distract-animals","text":"throw my rations toward the tent to draw the wolves","expect":["distract"]}
+ {
+  "strategy": "cull the weak",
+  "capability": "focus-fire",
+  "text": "kill the Old wolf, it's nearly dead",
+  "expect": [
+   "attack"
+  ]
+ },
+ {
+  "strategy": "fire",
+  "capability": "scare-with-fire",
+  "text": "brandish the torch at the Black wolf",
+  "expect": [
+   "social",
+   "ability"
+  ]
+ },
+ {
+  "strategy": "fire",
+  "capability": "throw-fire",
+  "text": "throw the torch at the Lean wolf",
+  "expect": [
+   "throw"
+  ]
+ },
+ {
+  "strategy": "fire",
+  "capability": "shove-hazard",
+  "text": "shove the Lean wolf into the campfire",
+  "expect": [
+   "shove"
+  ]
+ },
+ {
+  "strategy": "burning barrier",
+  "capability": "fire-barrier",
+  "text": "set the tent on fire to keep them back",
+  "expect": [
+   "ignite"
+  ]
+ },
+ {
+  "strategy": "back to wall",
+  "capability": "take-cover",
+  "text": "put my back against the tree so they can't circle me",
+  "expect": [
+   "defend"
+  ]
+ },
+ {
+  "strategy": "climb out of reach",
+  "capability": "climb-tree",
+  "text": "climb the nearest tree",
+  "expect": [
+   "climb"
+  ]
+ },
+ {
+  "strategy": "protect healer",
+  "capability": "guard-ally",
+  "text": "Pip, keep the Grey wolf off Sister Maud",
+  "expect": [
+   "guard",
+   "block"
+  ]
+ },
+ {
+  "strategy": "alpha-break",
+  "capability": "howl-down",
+  "text": "stare down the Black wolf and snarl",
+  "expect": [
+   "social"
+  ]
+ },
+ {
+  "strategy": "trap",
+  "capability": "trap",
+  "text": "set a snare between the trees for the Grey wolf",
+  "expect": [
+   "trap"
+  ]
+ },
+ {
+  "strategy": "close ranks",
+  "capability": "shield-wall",
+  "text": "form a ring around the campfire, weapons out",
+  "expect": [
+   "defend",
+   "guard"
+  ]
+ },
+ {
+  "strategy": "barrel roll",
+  "capability": "roll-barrel",
+  "text": "roll the barrel into the Old wolf",
+  "expect": [
+   "kick",
+   "shove"
+  ]
+ },
+ {
+  "strategy": "bait",
+  "capability": "distract-animals",
+  "text": "throw my rations toward the tent to draw the wolves",
+  "expect": [
+   "distract"
+  ]
+ }
 ]

@@ -21,7 +21,7 @@ const VERB_HELP: Record<Verb, string> = {
   throw: 'throw a light prop (prop) at a foe (target)', ignite: 'set a flammable prop (prop) on fire', douse: 'put out fire with water',
   pickup: 'pick up a light prop (prop)', grab: "steal a foe's purse (target)", subdue: 'beat a foe down to take them alive (target)',
   aid: 'heal/bandage/revive (ally, or "self")', free: 'cut a bound captive loose (ally)', guard: 'protect an ally (ally)',
-  defend: 'brace / hold ground', overwatch: 'wait and strike whoever comes into reach', escape: 'flee the fight',
+  defend: 'brace / hold ground', overwatch: 'wait and strike whoever comes into reach', block: 'stand in the way so a foe cannot get past (to an ally or place)', escape: 'flee the fight',
   intimidate: 'frighten a foe (target) — waving fire at beasts works well', taunt: 'provoke a foe into coming for you (target)',
   bluff: 'deceive a foe (target) with a claim: look_behind | reinforcements | turncoat (subject = the accused foe)',
   rally: 'call your side together', parley: 'talk the fight down / offer or demand surrender', move: 'reposition only (dest)',

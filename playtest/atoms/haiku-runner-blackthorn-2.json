@@ -1,38 +1,169 @@
 {
-  "persona": "runner",
-  "plans": [
+ "persona": "runner",
+ "plans": [
+  {
+   "goal": "Dash straight to Garrick and cut him down, ignoring his raiders",
+   "steps": [
+    "Sprint forward toward the high ground",
+    "Close on Garrick",
+    "Strike him down",
+    "Escape off the map edge"
+   ],
+   "atoms": [
     {
-      "goal": "Dash straight to Garrick and cut him down, ignoring his raiders",
-      "steps": ["Sprint forward toward the high ground", "Close on Garrick", "Strike him down", "Escape off the map edge"],
-      "atoms": [
-        { "strategy": "move straight to the chief", "capability": "dash", "text": "Dash toward Garrick the Red", "expect": ["dash"] },
-        { "strategy": "strike before he escapes", "capability": "ready-strike", "text": "Strike Garrick hard", "expect": ["attack", "hew"] },
-        { "strategy": "finish the fight", "capability": "fell-tree", "text": "Strike him down", "expect": ["attack", "ability"] },
-        { "strategy": "block the brutes chasing me", "capability": "block-path", "text": "If Brann or Hollis charge, shove them into the brazier", "expect": ["shove", "kick"] },
-        { "strategy": "run for freedom", "capability": "escape", "text": "Escape off the map edge", "expect": ["escape", "dash"] }
-      ]
+     "strategy": "move straight to the chief",
+     "capability": "dash",
+     "text": "Dash toward Garrick the Red",
+     "expect": [
+      "dash"
+     ]
     },
     {
-      "goal": "Set fire to scatter the camp, then strike Garrick in the chaos",
-      "steps": ["Ignite a tent near the brazier", "Use the fire to distract enemies", "Close on Garrick", "Strike and run"],
-      "atoms": [
-        { "strategy": "start a big fire", "capability": "ignite-prop", "text": "Ignite the tent at 4,3 with the brazier", "expect": ["ignite"] },
-        { "strategy": "spread the chaos", "capability": "throw-fire", "text": "Throw burning debris to scare the brutes away", "expect": ["throw", "ignite"] },
-        { "strategy": "move to Garrick while distracted", "capability": "dash", "text": "Dash up to Garrick while they're dealing with the fire", "expect": ["dash"] },
-        { "strategy": "take the chief", "capability": "ready-strike", "text": "Strike Garrick the Red", "expect": ["attack", "hew"] },
-        { "strategy": "escape the inferno", "capability": "escape", "text": "Run off the map edge before they regroup", "expect": ["escape", "dash"] }
-      ]
+     "strategy": "strike before he escapes",
+     "capability": "ready-strike",
+     "text": "Strike Garrick hard",
+     "expect": [
+      "attack",
+      "hew"
+     ]
     },
     {
-      "goal": "Use companions to block pursuers while I take Garrick",
-      "steps": ["Position Borin to block the middle", "Rush Garrick with Pip flanking", "Strike and get out"],
-      "atoms": [
-        { "strategy": "ready the guardian", "capability": "guard-ally", "text": "Borin, block the path to high ground", "expect": ["guard", "defend"] },
-        { "strategy": "move with the rogue", "capability": "flank", "text": "Pip, flank left while I rush Garrick", "expect": ["dash", "attack"] },
-        { "strategy": "close on the chief", "capability": "dash", "text": "Dash up the rise to Garrick", "expect": ["dash"] },
-        { "strategy": "strike him down", "capability": "ready-strike", "text": "Strike Garrick the Red with everything", "expect": ["attack", "ability"] },
-        { "strategy": "get out fast", "capability": "escape", "text": "Sprint off the map edge now", "expect": ["escape", "dash"] }
-      ]
+     "strategy": "finish the fight",
+     "capability": "fell-tree",
+     "text": "Strike him down",
+     "expect": [
+      "attack",
+      "ability"
+     ]
+    },
+    {
+     "strategy": "block the brutes chasing me",
+     "capability": "block-path",
+     "text": "If Brann or Hollis charge, shove them into the brazier",
+     "expect": [
+      "shove",
+      "kick",
+      "block"
+     ]
+    },
+    {
+     "strategy": "run for freedom",
+     "capability": "escape",
+     "text": "Escape off the map edge",
+     "expect": [
+      "escape",
+      "dash"
+     ]
     }
-  ]
+   ]
+  },
+  {
+   "goal": "Set fire to scatter the camp, then strike Garrick in the chaos",
+   "steps": [
+    "Ignite a tent near the brazier",
+    "Use the fire to distract enemies",
+    "Close on Garrick",
+    "Strike and run"
+   ],
+   "atoms": [
+    {
+     "strategy": "start a big fire",
+     "capability": "ignite-prop",
+     "text": "Ignite the tent at 4,3 with the brazier",
+     "expect": [
+      "ignite"
+     ]
+    },
+    {
+     "strategy": "spread the chaos",
+     "capability": "throw-fire",
+     "text": "Throw burning debris to scare the brutes away",
+     "expect": [
+      "throw",
+      "ignite"
+     ]
+    },
+    {
+     "strategy": "move to Garrick while distracted",
+     "capability": "dash",
+     "text": "Dash up to Garrick while they're dealing with the fire",
+     "expect": [
+      "dash"
+     ]
+    },
+    {
+     "strategy": "take the chief",
+     "capability": "ready-strike",
+     "text": "Strike Garrick the Red",
+     "expect": [
+      "attack",
+      "hew"
+     ]
+    },
+    {
+     "strategy": "escape the inferno",
+     "capability": "escape",
+     "text": "Run off the map edge before they regroup",
+     "expect": [
+      "escape",
+      "dash"
+     ]
+    }
+   ]
+  },
+  {
+   "goal": "Use companions to block pursuers while I take Garrick",
+   "steps": [
+    "Position Borin to block the middle",
+    "Rush Garrick with Pip flanking",
+    "Strike and get out"
+   ],
+   "atoms": [
+    {
+     "strategy": "ready the guardian",
+     "capability": "guard-ally",
+     "text": "Borin, block the path to high ground",
+     "expect": [
+      "guard",
+      "defend"
+     ]
+    },
+    {
+     "strategy": "move with the rogue",
+     "capability": "flank",
+     "text": "Pip, flank left while I rush Garrick",
+     "expect": [
+      "dash",
+      "attack"
+     ]
+    },
+    {
+     "strategy": "close on the chief",
+     "capability": "dash",
+     "text": "Dash up the rise to Garrick",
+     "expect": [
+      "dash"
+     ]
+    },
+    {
+     "strategy": "strike him down",
+     "capability": "ready-strike",
+     "text": "Strike Garrick the Red with everything",
+     "expect": [
+      "attack",
+      "ability"
+     ]
+    },
+    {
+     "strategy": "get out fast",
+     "capability": "escape",
+     "text": "Sprint off the map edge now",
+     "expect": [
+      "escape",
+      "dash"
+     ]
+    }
+   ]
+  }
+ ]
 }

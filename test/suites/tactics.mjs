@@ -170,11 +170,37 @@ export function tacticsTest(ok, { stubScene, makeFighter }) {
       ['when Garrick moves, hit him', (r) => r.action.kind === 'ready' && r.action.trigger.on === 'moves'],
       ['yell at Mira that Garrick is a traitor', (r) => r.action.kind === 'social' && r.action.claim === 'turncoat' && r.action.target === m.id && r.action.subject === g.id],
       ['bandage myself', (r) => r.action.kind === 'aid' && r.action.target === you.id],
+      // playtester phrasings: readiness words give way to the real verb; blocking; implicit triggers
+      ['stay ready and bandage myself', (r) => r.action.kind === 'aid'],
+      ['keep Garrick away from Borin', (r) => r.action.kind === 'block' && r.label.includes('Borin')],
+      ['hit the first bandit that comes close', (r) => r.action.kind === 'ready' && r.action.trigger.on === 'reach' && r.action.response.kind === 'attack'],
+      ['hit Garrick to push him back', (r) => r.action.kind === 'attack'],
     ];
     let pass = 0;
     for (const [t, pred] of cases) { const r = top(t); if (r && pred(r)) pass++; else console.log(`   write-in miss: "${t}" → ${JSON.stringify(r && { to: r.to, action: r.action })}`); }
     ok(pass === cases.length, `tactics: grid write-ins resolve with sensible positioning ${pass}/${cases.length}`);
     ok(readWriteIn(b, you, 'summon a dragon').length === 0, 'tactics: a write-in naming nothing on the field yields no reading');
+    // an order addressed to a companion is theirs: read from Borin, "me" is the one giving it
+    ok(readWriteIn(b, you, 'Borin, guard me').length === 0, 'tactics: "Borin, …" is not an order for you');
+    const bg = readWriteIn(b, borin, 'Borin, guard me')[0];
+    ok(bg && bg.action.kind === 'guard' && bg.action.target === you.id, `tactics: "Borin, guard me" read on Borin's turn guards you (${bg && bg.label})`);
+    const tm = readWriteIn(b, borin, 'tell Borin to cover you')[0];
+    ok(tm && tm.action.kind === 'guard' && tm.action.target === you.id, `tactics: "tell Borin to cover you" — "you" is the teller (${tm && tm.label})`);
+    ss.dispose();
+  }
+
+  // --- 10. block: a unit holding the ground pins foes who step next to it (zone of control) -----
+  {
+    const { s: ss, b, mk } = arena(stubScene, makeFighter);
+    const you = b.add(ss.player, 'player', { x: 5, z: 5 });
+    const g = b.add(mk('Garrick'), 'foe', { x: 7, z: 5 });
+    order(b, you, g); b.start();
+    const before = b.reachable(g, 4).has('4,4');
+    ok(!b.act(you, { kind: 'block' }) && you.blocking, 'tactics: block is a legal stance');
+    const after = b.reachable(g, 4);
+    ok(before && !after.has('4,4') && after.has('5,4'), `tactics: a blocker stops foes at its side — they can step next to it, not past (${before}/${after.has('4,4')}/${after.has('5,4')})`);
+    b.endTurn(you);
+    ok(b.current() === g, 'tactics: turn passes to the foe');
     ss.dispose();
   }
 

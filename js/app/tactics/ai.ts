@@ -177,6 +177,14 @@ export function planTurn(b: Battle, u: Unit): Plan {
           break;
         }
         case 'guard': g = t && frac(t) < 0.6 ? (o.kind === 'protect' && o.wardId === t.id ? 0.9 : 0.25 + tr.bravery * 0.3) * (u.tactic === 'guardian' ? 1.5 : 1) : 0; break;
+        case 'block': {
+          // worth it when a foe could reach someone soft behind me next turn, and I stand in the lane
+          const soft = friends.filter((w) => w !== u && (frac(w) < 0.6 || w.tactic === 'healer' || w.tactic === 'archer' || w.bound || w.carrying?.kind === 'relic') && dist(w, s) <= 2);
+          const lanes = foes.filter((f) => dist(f, s) > 1 && dist(f, s) <= f.move + 1 && soft.some((w) => dist(f, s) < dist(f, w)));
+          g = lanes.length && soft.length ? (0.22 + tr.bravery * 0.2) * (u.tactic === 'guardian' ? 1.6 : u.tactic === 'healer' || u.tactic === 'archer' ? 0.3 : u.tactic === 'beast' ? 0 : 1) * Math.min(2, lanes.length) : 0;
+          why = 'hold the lane';
+          break;
+        }
         case 'defend': g = 0.08 + foes.filter((f) => dist(f, s) <= 1).length * 0.1 * (1.2 - risk) * (1 - frac(u)); break;
         // overwatch only pays when a foe could actually come into reach next turn; otherwise advance
         case 'overwatch': g = foes.some((f) => dist(f, s) <= 1) ? 0 : foes.some((f) => dist(f, s) <= f.move + 1) ? (u.tactic === 'archer' || u.tactic === 'leader' ? 0.4 : 0.2) : 0.02; break;

@@ -1,16 +1,121 @@
 [
-{"strategy":"rescue first","capability":"free-captive","text":"cut Elsie's ropes","expect":["free"]},
-{"strategy":"rescue first","capability":"free-captive","text":"slice through the bonds holding Elsie Miller","expect":["free"]},
-{"strategy":"get her out","capability":"carry-person","text":"throw Elsie over my shoulder and run for the hill","expect":["carry"]},
-{"strategy":"get her out","capability":"escort","text":"take Elsie by the hand and lead her back to Sister Maud","expect":["escort","aid","carry"]},
-{"strategy":"blow the oil","capability":"ignite-prop","text":"set the lamp-oil barrels alight next to Moll","expect":["ignite"]},
-{"strategy":"fire trap","capability":"shove-hazard","text":"shove Wick into the campfire","expect":["shove"]},
-{"strategy":"combo: light hay then push foe in","capability":"kick-hazard","text":"kick the burning hay bale onto Dun Crake","expect":["kick"]},
-{"strategy":"shield the captive","capability":"guard-ally","text":"Borin, stand over Elsie and don't let anyone near her","expect":["guard"]},
-{"strategy":"put out fire near captive","capability":"douse","text":"grab the bucket of water and douse the hay next to Elsie","expect":["douse","pickup"]},
-{"strategy":"buy the captive","capability":"bribe","text":"tell Hob Tanner I'll pay double what they're getting for her","expect":["social"]},
-{"strategy":"cover the rescue","capability":"tip-furniture","text":"flip the trestle table on its side for cover","expect":["shove","build","defend"]},
-{"strategy":"arm the captive","capability":"give-item","text":"hand Elsie my knife so she can cut herself loose","expect":["give","free"]},
-{"strategy":"distract guards","capability":"distract","text":"Pip, bang on the crate to draw Hob away from Elsie","expect":["distract"]},
-{"strategy":"oil bomb the archer","capability":"shove-hazard","text":"shove Moll into the lamp-oil barrel","expect":["shove"]}
+ {
+  "strategy": "rescue first",
+  "capability": "free-captive",
+  "text": "cut Elsie's ropes",
+  "expect": [
+   "free"
+  ]
+ },
+ {
+  "strategy": "rescue first",
+  "capability": "free-captive",
+  "text": "slice through the bonds holding Elsie Miller",
+  "expect": [
+   "free"
+  ]
+ },
+ {
+  "strategy": "get her out",
+  "capability": "carry-person",
+  "text": "throw Elsie over my shoulder and run for the hill",
+  "expect": [
+   "carry"
+  ]
+ },
+ {
+  "strategy": "get her out",
+  "capability": "escort",
+  "text": "take Elsie by the hand and lead her back to Sister Maud",
+  "expect": [
+   "escort",
+   "aid",
+   "carry"
+  ]
+ },
+ {
+  "strategy": "blow the oil",
+  "capability": "ignite-prop",
+  "text": "set the lamp-oil barrels alight next to Moll",
+  "expect": [
+   "ignite"
+  ]
+ },
+ {
+  "strategy": "fire trap",
+  "capability": "shove-hazard",
+  "text": "shove Wick into the campfire",
+  "expect": [
+   "shove"
+  ]
+ },
+ {
+  "strategy": "combo: light hay then push foe in",
+  "capability": "kick-hazard",
+  "text": "kick the burning hay bale onto Dun Crake",
+  "expect": [
+   "kick"
+  ]
+ },
+ {
+  "strategy": "shield the captive",
+  "capability": "guard-ally",
+  "text": "Borin, stand over Elsie and don't let anyone near her",
+  "expect": [
+   "guard"
+  ]
+ },
+ {
+  "strategy": "put out fire near captive",
+  "capability": "douse",
+  "text": "grab the bucket of water and douse the hay next to Elsie",
+  "expect": [
+   "douse",
+   "pickup"
+  ]
+ },
+ {
+  "strategy": "buy the captive",
+  "capability": "bribe",
+  "text": "tell Hob Tanner I'll pay double what they're getting for her",
+  "expect": [
+   "social"
+  ]
+ },
+ {
+  "strategy": "cover the rescue",
+  "capability": "tip-furniture",
+  "text": "flip the trestle table on its side for cover",
+  "expect": [
+   "shove",
+   "build",
+   "defend",
+   "kick"
+  ]
+ },
+ {
+  "strategy": "arm the captive",
+  "capability": "give-item",
+  "text": "hand Elsie my knife so she can cut herself loose",
+  "expect": [
+   "give",
+   "free"
+  ]
+ },
+ {
+  "strategy": "distract guards",
+  "capability": "distract",
+  "text": "Pip, bang on the crate to draw Hob away from Elsie",
+  "expect": [
+   "distract"
+  ]
+ },
+ {
+  "strategy": "oil bomb the archer",
+  "capability": "shove-hazard",
+  "text": "shove Moll into the lamp-oil barrel",
+  "expect": [
+   "shove"
+  ]
+ }
 ]

@@ -1,16 +1,122 @@
 [
-{"strategy":"snatch the relic","capability":"grab-objective","text":"snatch up the silver reliquary","expect":["pickup"]},
-{"strategy":"carry it out","capability":"carry-objective","text":"run back toward our lines with the reliquary","expect":["dash","escape","carry"]},
-{"strategy":"relay the relic","capability":"pass-item","text":"toss the reliquary to Pip","expect":["give","throw"]},
-{"strategy":"brazier","capability":"kick-hazard","text":"kick the brazier into Marl","expect":["kick"]},
-{"strategy":"brazier","capability":"shove-hazard","text":"shove Silas Crowe into the brazier","expect":["shove"]},
-{"strategy":"bargain","capability":"bribe","text":"offer Silas Crowe safe passage if he hands over the reliquary","expect":["social"]},
-{"strategy":"holy fear","capability":"intimidate","text":"Sister Maud, curse them in the saint's name for defiling the chapel","expect":["social","ability"]},
-{"strategy":"cover","capability":"tip-furniture","text":"tip the trestle table over and crouch behind it","expect":["shove","defend"]},
-{"strategy":"reach the archer","capability":"flank","text":"work around the crate and strike Ivo from behind","expect":["attack"]},
-{"strategy":"lure","capability":"lure-foe","text":"taunt Dace into chasing me away from the relic","expect":["social","distract"]},
-{"strategy":"escape with relic","capability":"retreat","text":"everyone fall back with the relic","expect":["escape","dash"]},
-{"strategy":"protect carrier","capability":"guard-ally","text":"Borin, cover Pip while he carries the relic","expect":["guard"]},
-{"strategy":"wall of fire","capability":"fire-barrier","text":"light the fallen log to cut them off from us","expect":["ignite"]},
-{"strategy":"throw weapon","capability":"throw-weapon","text":"fling my dagger at Ivo","expect":["throw"]}
+ {
+  "strategy": "snatch the relic",
+  "capability": "grab-objective",
+  "text": "snatch up the silver reliquary",
+  "expect": [
+   "pickup"
+  ]
+ },
+ {
+  "strategy": "carry it out",
+  "capability": "carry-objective",
+  "text": "run back toward our lines with the reliquary",
+  "expect": [
+   "dash",
+   "escape",
+   "carry"
+  ]
+ },
+ {
+  "strategy": "relay the relic",
+  "capability": "pass-item",
+  "text": "toss the reliquary to Pip",
+  "expect": [
+   "give",
+   "throw"
+  ]
+ },
+ {
+  "strategy": "brazier",
+  "capability": "kick-hazard",
+  "text": "kick the brazier into Marl",
+  "expect": [
+   "kick"
+  ]
+ },
+ {
+  "strategy": "brazier",
+  "capability": "shove-hazard",
+  "text": "shove Silas Crowe into the brazier",
+  "expect": [
+   "shove"
+  ]
+ },
+ {
+  "strategy": "bargain",
+  "capability": "bribe",
+  "text": "offer Silas Crowe safe passage if he hands over the reliquary",
+  "expect": [
+   "social"
+  ]
+ },
+ {
+  "strategy": "holy fear",
+  "capability": "intimidate",
+  "text": "Sister Maud, curse them in the saint's name for defiling the chapel",
+  "expect": [
+   "social",
+   "ability"
+  ]
+ },
+ {
+  "strategy": "cover",
+  "capability": "tip-furniture",
+  "text": "tip the trestle table over and crouch behind it",
+  "expect": [
+   "shove",
+   "defend",
+   "kick"
+  ]
+ },
+ {
+  "strategy": "reach the archer",
+  "capability": "flank",
+  "text": "work around the crate and strike Ivo from behind",
+  "expect": [
+   "attack"
+  ]
+ },
+ {
+  "strategy": "lure",
+  "capability": "lure-foe",
+  "text": "taunt Dace into chasing me away from the relic",
+  "expect": [
+   "social",
+   "distract"
+  ]
+ },
+ {
+  "strategy": "escape with relic",
+  "capability": "retreat",
+  "text": "everyone fall back with the relic",
+  "expect": [
+   "escape",
+   "dash"
+  ]
+ },
+ {
+  "strategy": "protect carrier",
+  "capability": "guard-ally",
+  "text": "Borin, cover Pip while he carries the relic",
+  "expect": [
+   "guard"
+  ]
+ },
+ {
+  "strategy": "wall of fire",
+  "capability": "fire-barrier",
+  "text": "light the fallen log to cut them off from us",
+  "expect": [
+   "ignite"
+  ]
+ },
+ {
+  "strategy": "throw weapon",
+  "capability": "throw-weapon",
+  "text": "fling my dagger at Ivo",
+  "expect": [
+   "throw"
+  ]
+ }
 ]

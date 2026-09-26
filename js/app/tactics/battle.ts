@@ -95,6 +95,8 @@ export interface Unit {
   out: Out;
   moved: boolean; acted: boolean; reacted: boolean;
   burning: number; prone: boolean; exposed: boolean; defending: boolean; overwatch: boolean;
+  /** Holding ground: a foe that steps next to this unit must stop there (zone of control). */
+  blocking: boolean;
   stunned: boolean; slowed: number; shield: number;
   morale: 'steady' | 'shaken' | 'broken';
   guardedBy: Unit | null; tauntedBy: Unit | null; turnedOn: Unit | null; lastHitBy: Unit | null;
@@ -142,7 +144,7 @@ export type Action =
   | { kind: 'guard'; target: Unit['id'] }
   | { kind: 'social'; verb: SocialVerb; target?: Unit['id']; claim?: Claim; subject?: Unit['id'] }
   | { kind: 'ready'; trigger: Trigger; response: Action }
-  | { kind: 'overwatch' } | { kind: 'defend' } | { kind: 'dash' } | { kind: 'escape' } | { kind: 'wait' };
+  | { kind: 'overwatch' } | { kind: 'defend' } | { kind: 'block' } | { kind: 'dash' } | { kind: 'escape' } | { kind: 'wait' };
 
 export interface LogLine { round: number; text: string; kind: 'hit' | 'miss' | 'move' | 'env' | 'social' | 'join' | 'info' | 'end'; }
 
@@ -184,7 +186,7 @@ export class Battle {
       x: at.x, z: at.z, facing: [0, 1], init: check(sheet.finesse, 0).total,
       move: 4 + (sheet.finesse >= 3 ? 1 : 0), out: null,
       moved: false, acted: false, reacted: false,
-      burning: 0, prone: false, exposed: false, defending: false, overwatch: false, stunned: false, slowed: 0, shield: 0,
+      burning: 0, prone: false, exposed: false, defending: false, overwatch: false, blocking: false, stunned: false, slowed: 0, shield: 0,
       morale: 'steady', guardedBy: null, tauntedBy: null, turnedOn: null, lastHitBy: null, carrying: null, readied: null, surprised: false,
       tactic: extra.tactic ?? (agent.faction === 'monster' ? 'beast' : role === 'foe' ? 'brute' : 'guardian'),
       traits: extra.traits ?? null, tags: new Set(extra.tags ?? []), bound: !!extra.bound,
@@ -245,6 +247,7 @@ export class Battle {
   /**
    * Tiles the unit can reach this turn: Dijkstra over 4-neighbours; climbing ≤ JUMP levels per
    * step; mud/water cost double; friends can be passed through, foes block; can't stop on a unit.
+   * A foe who is BLOCKING pins you: you may step next to them, but not on past them this turn.
    */
   reachable(u: Unit, budget = this.moveBudget(u)): Map<string, { cost: number; path: Spot[] }> {
     const out = new Map<string, { cost: number; path: Spot[] }>();
@@ -271,9 +274,15 @@ export class Battle {
         const path = [...cur.path, { x: nx, z: nz }];
         q.push({ s: { x: nx, z: nz }, c, path });
         if (!occ) out.set(k, { cost: c, path });
+        if (this.pinnedAt(nx, nz, u)) q.pop();
       }
     }
     return out;
+  }
+
+  /** Is (x,z) next to a foe of u who is holding the ground (block)? */
+  pinnedAt(x: number, z: number, u: Unit): boolean {
+    return this.units.some((f) => f.blocking && f.out === null && f.side !== u.side && !f.stunned && dist(f, { x, z }) === 1);
   }
 
   moveBudget(u: Unit): number { return Math.max(1, u.move - u.slowed - (u.prone ? 2 : 0)); }
@@ -343,7 +352,7 @@ export class Battle {
   }
 
   private startTurn(u: Unit): void {
-    u.defending = false; u.overwatch = false; u.moved = false; u.acted = false;
+    u.defending = false; u.overwatch = false; u.blocking = false; u.moved = false; u.acted = false;
     if (u.readied) { u.readied = null; }
     if (u.bound) { u.moved = true; u.acted = true; return; }
     if (u.surprised) { this.cue({ k: 'icon', u: u.id, icon: '?' }); u.surprised = false; u.moved = true; u.acted = true; this.note('info', `${this.nm(u, true)} ${u.agent.controlled ? 'are' : 'is'} caught off guard!`); return; }
@@ -582,7 +591,7 @@ export class Battle {
     if (u.carrying) for (const f of foes) if (dist(from, f) <= 5) out.push({ kind: 'throw', prop: u.carrying.id, at: { x: f.x, z: f.z } });
     if (this.flameAt(u, from)) for (const [dx, dz] of DIRS) { const t = this.map.tile(from.x + dx, from.z + dz); if (t && this.flammable(t.x, t.z)) out.push({ kind: 'ignite', at: { x: t.x, z: t.z } }); }
     if (this.waterAt(u, from)) for (const [dx, dz] of [[0, 0], ...DIRS]) { const t = this.map.tile(from.x + dx, from.z + dz); if (t && (t.burning || this.unitAt(t.x, t.z)?.burning)) out.push({ kind: 'douse', at: { x: t.x, z: t.z } }); }
-    out.push({ kind: 'defend' }, { kind: 'overwatch' }, { kind: 'social', verb: 'rally' }, { kind: 'social', verb: 'parley' });
+    out.push({ kind: 'defend' }, { kind: 'overwatch' }, { kind: 'block' }, { kind: 'social', verb: 'rally' }, { kind: 'social', verb: 'parley' });
     if (this.map.edge(from.x, from.z)) out.push({ kind: 'escape' });
     return out;
   }
@@ -622,6 +631,7 @@ export class Battle {
         break;
       case 'guard': this.ev('guard', u, t); this.cue({ k: 'tether', u: u.id, t: t!.id }); t!.guardedBy = u; this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'cover' : 'covers'} ${this.nm(t!)}.`); break;
       case 'defend': this.cue({ k: 'stance', u: u.id, what: 'guard' }); u.defending = true; this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'brace' : 'braces'}.`); break;
+      case 'block': this.cue({ k: 'stance', u: u.id, what: 'guard' }); u.blocking = true; this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'dig in' : 'digs in'}, blocking the way — no one gets past${fl}.`); break;
       case 'overwatch': this.cue({ k: 'stance', u: u.id, what: 'aim' }); u.overwatch = true; this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'hold' : 'holds'}, watching.`); break;
       case 'escape':
         u.out = 'fled'; this.release(u); this.ev(u.tags.has('captive') ? 'rescued' : 'escape', u, undefined, u.carrying?.kind);

@@ -35,7 +35,7 @@ export interface GridReading {
 }
 
 export type Verb = 'attack' | 'shove' | 'kick' | 'hew' | 'throw' | 'ignite' | 'douse' | 'pickup' | 'grab' | 'subdue' | 'aid'
-  | 'free' | 'guard' | 'defend' | 'overwatch' | 'escape' | 'intimidate' | 'taunt' | 'bluff' | 'rally' | 'parley' | 'move';
+  | 'free' | 'guard' | 'defend' | 'block' | 'overwatch' | 'escape' | 'intimidate' | 'taunt' | 'bluff' | 'rally' | 'parley' | 'move';
 
 /** What the player meant, independent of how it gets done on this field. */
 export interface Intent {
@@ -55,7 +55,7 @@ export interface Intent {
 }
 
 export const VERBS: readonly Verb[] = ['attack', 'shove', 'kick', 'hew', 'throw', 'ignite', 'douse', 'pickup', 'grab', 'subdue', 'aid',
-  'free', 'guard', 'defend', 'overwatch', 'escape', 'intimidate', 'taunt', 'bluff', 'rally', 'parley', 'move'];
+  'free', 'guard', 'defend', 'block', 'overwatch', 'escape', 'intimidate', 'taunt', 'bluff', 'rally', 'parley', 'move'];
 
 const has = (t: string, ...ws: string[]) => ws.some((w) => new RegExp(`(^| )${w}( |$)`).test(t));
 export const norm = (s: string) => ` ${s.toLowerCase().replace(/[^a-z0-9' ]+/g, ' ').replace(/'s\b/g, '').replace(/\s+/g, ' ').trim()} `;
@@ -72,14 +72,21 @@ const V: Record<Exclude<Verb, 'move'>, string[]> = {
   douse: ['douse', 'splash', 'extinguish', 'put out', 'soak', 'drench'],
   pickup: ['pick up', 'grab the', 'take the', 'lift the', 'snatch the', 'take up'],
   grab: ['steal', 'rob', 'pickpocket', 'purse', 'cut his purse', 'cut her purse', 'gold'],
-  subdue: ['subdue', 'knock out', 'pin', 'wrestle', 'restrain', 'arrest', 'alive', 'choke', 'grapple', 'take him alive'],
+  subdue: ['subdue', 'knock out', 'pin', 'wrestle', 'restrain', 'arrest', 'alive', 'choke', 'grapple', 'take him alive',
+    'hold him', 'hold her', 'hold him down', 'hold her down', 'hold down', 'grab hold', 'hold on to', 'seize him', 'seize her'],
   aid: ['heal', 'bandage', 'potion', 'tend', 'patch', 'help up', 'revive', 'bind my', 'bind his', 'bind her'],
   free: ['free', 'cut free', 'cut loose', 'untie', 'ropes', 'bonds', 'release', 'unbind', 'cut the ropes', 'rescue'],
   guard: ['protect', 'guard', 'cover', 'shield', 'watch over', 'stand over'],
-  defend: ['defend', 'block', 'parry', 'brace', 'hold my ground', 'hold the line', 'dodge'],
-  overwatch: ['overwatch', 'watch', 'wait for', 'hold', 'ready', 'keep watch'],
+  defend: ['defend', 'parry', 'brace', 'hold my ground', 'hold your ground', 'dodge', 'take cover', 'block the blow', 'block his', 'block her'],
+  block: ['block', 'cut off', 'bar the way', 'hold the line', 'hold the center', 'hold the centre', 'hold the flank', 'hold the left',
+    'hold the right', 'hold the gap', 'hold the door', 'hold the pass', 'hold the bridge', 'stand between', 'get between', 'step between',
+    'body block', 'plug the gap', 'stand in the way', 'in his way', 'in her way', 'in their way', 'intercept', 'bottleneck',
+    'keep them away', 'keep them off', 'keep him away', 'keep her away', "can't get past", 'nobody gets past', 'no one gets past'],
+  // weak words ("ready", "watch") only win when no other verb is in the order: "ready to heal" heals
+  overwatch: ['overwatch', 'watch', 'wait for', 'hold position', 'hold here', 'hold fire', 'ready', 'keep watch', 'stand ready'],
   escape: ['flee', 'run away', 'escape', 'retreat', 'withdraw', 'get out'],
-  intimidate: ['threaten', 'intimidate', 'roar', 'snarl', 'menace', 'scare', 'frighten', 'glare', 'brandish', 'wave the torch', 'drive off'],
+  intimidate: ['threaten', 'intimidate', 'roar', 'snarl', 'menace', 'scare', 'frighten', 'glare', 'brandish', 'wave the torch', 'waving the torch', 'wave fire', 'waving fire', 'drive off', 'drive it away',
+    'drive them away', 'drive him away', 'drive the', 'scare it away', 'scare them away', 'shoo'],
   taunt: ['taunt', 'mock', 'insult', 'jeer', 'provoke', 'come at me', 'goad', 'challenge'],
   bluff: ['lie', 'bluff', 'trick', 'tell', 'shout that', 'claim', 'behind you', 'traitor', 'reinforcements', 'guards are coming'],
   rally: ['rally', 'to arms', 'help me', 'call for help', 'with me', 'inspire'],
@@ -130,11 +137,34 @@ function behind(thing: Spot, toward: Spot): Spot {
 
 /** Drop purpose clauses ("…so he can't escape", "…to block their line") before reading the verb. */
 function core(text: string): string {
-  const cut = text.search(/ (so that|so|to stop|to keep|in order to|to block|to make|before|while) /);
+  const cut = text.search(/ (so that|so|to stop|to keep|in order to|to block|to make|to scare|to drive|to push|to disrupt|to threaten|to shield|to cover|to protect|before|while) /);
   return cut > 4 ? `${text.slice(0, cut)} ` : text;
 }
 
-export function interpretRegex(b: Battle, u: Unit, raw: string): Intent[] {
+/**
+ * "Borin, block Fitch" / "Tell Sister Maud to heal you": who the order is for, and the order itself.
+ * A leading name only counts when it is the WHOLE lead-in (so "Col, the brute, charges" is not an order).
+ */
+export function addressee(b: Battle, u: Unit, raw: string): { who: Unit | null; text: string } {
+  const pool = [u, ...b.friendsOf(u)].filter((f) => !f.agent.controlled && (f.role === 'companion' || f === u));
+  const whoIs = (lead: string) => { const l = norm(lead).replace(/ (sister|brother|master|old) /g, ' ').trim(); return l ? pool.find((f) => nameForms(f).includes(l)) ?? null : null; };
+  // vocative: "Borin, block Fitch" / "Pip: stay low"
+  const v = /^\s*([^,:;]{2,30})[,:;]\s*(.+)$/.exec(raw);
+  if (v) { const who = whoIs(v[1]); if (who) return { who, text: v[2] }; }
+  // relayed: "tell Sister Maud to heal you" / "have Borin guard Maud"
+  const r = /^\s*(?:tell|order|have|get|ask)\s+(.+)$/i.exec(raw);
+  if (r) {
+    const ws = r[1].split(/\s+/);
+    for (let n = Math.min(3, ws.length - 1); n >= 1; n--) {
+      const who = whoIs(ws.slice(0, n).join(' '));
+      // relayed speech: "tell Maud to heal you" — "you" is the one telling (read as "me")
+      if (who) return { who, text: ws.slice(n).join(' ').replace(/^to\s+/i, '').replace(/\byou(rself)?\b/gi, 'me') };
+    }
+  }
+  return { who: null, text: raw };
+}
+
+export function interpretRegex(b: Battle, u: Unit, raw: string, speaker?: Unit): Intent[] {
   const text = norm(raw);
   if (text.trim().length < 2) return [];
   const c = core(text);
@@ -142,7 +172,9 @@ export function interpretRegex(b: Battle, u: Unit, raw: string): Intent[] {
   const namedFoes = namedUnits(text, foes), namedFriends = namedUnits(text, friends);
   const target = namedFoes[0]?.u ?? (has(text, 'him', 'her', 'them', 'it', 'the brute') || foes.length === 1 ? b.nearestFoe(u) : b.nearestFoe(u));
   const prop = b.map.propNamed(text, u, 14) ?? (u.carrying && u.carrying.nouns.some((n) => text.includes(` ${n} `)) ? u.carrying : undefined);
-  const selfRef = has(text, 'myself', 'me', 'my wounds', 'yourself');
+  // said TO a companion by the player: "me"/"you" (as object) is the player
+  const speakerRef = speaker && speaker !== u && has(text, 'me', 'us') ? speaker : undefined;
+  const selfRef = !speakerRef && has(text, 'myself', 'me', 'my wounds', 'yourself');
   const hazard = has(text, 'fire', 'flames', 'campfire', 'coals', 'brazier') ? 'fire' as const : has(text, 'ledge', 'edge', 'cliff', 'off') ? 'ledge' as const : undefined;
   const dest: Intent['dest'] = prop && / (climb|onto|on top of|up on|stand on|get on|hop up on) /.test(text) && prop.climbable ? 'onto'
     : prop && / (behind|duck) /.test(text) ? 'behind-prop'
@@ -153,6 +185,7 @@ export function interpretRegex(b: Battle, u: Unit, raw: string): Intent[] {
   for (const k of Object.keys(V) as Array<keyof typeof V>) {
     let score = 0, at = -1;
     for (const w of V[k]) { const i = c.indexOf(` ${w} `); if (i >= 0) { score += w.includes(' ') ? 2 : 1; at = Math.max(at, i); } }
+    if (k === 'block' && / keep .+ (away from|off|back from) /.test(c)) { score += 2; at = Math.max(at, 1); }
     if (!score) continue;
     score += at / 1000;
     const I: Intent = { verb: k, score, dest, destProp: prop?.id, destFoe: namedFoes[0]?.u.id };
@@ -178,9 +211,17 @@ export function interpretRegex(b: Battle, u: Unit, raw: string): Intent[] {
       case 'pickup': if (prop && prop.weight === 0) I.prop = prop.id; else continue; break;
       case 'grab': if (prop && prop.weight === 0 && !has(text, 'purse', 'gold')) continue; I.target = target?.id; break;
       case 'subdue': I.target = target?.id; break;
-      case 'aid': I.ally = namedFriends[0]?.u.id; I.self = !namedFriends.length; break;
+      case 'aid': I.ally = namedFriends[0]?.u.id ?? speakerRef?.id; I.self = I.ally == null; break;
       case 'free': I.ally = namedFriends.find((n) => n.u.bound)?.u.id ?? friends.find((f) => f.bound)?.id; if (I.ally == null) continue; I.score += 1; break;
-      case 'guard': I.ally = namedFriends[0]?.u.id; if (I.ally == null) continue; break;
+      case 'guard': I.ally = namedFriends[0]?.u.id ?? speakerRef?.id; if (I.ally == null) continue; break;
+      case 'block': {
+        // who or what is being kept out of reach: a named friend, else a named place/prop (the reliquary, the gate)
+        const ward = namedFriends.find((n) => n.u !== u)?.u ?? speakerRef;
+        I.target = namedFoes[0]?.u.id ?? b.nearestFoe(u)?.id;
+        if (ward) I.ally = ward.id; else if (prop && !/ with the /.test(text)) I.prop = prop.id;
+        if (namedFoes.length || ward || has(text, 'path', 'way', 'road', 'door', 'gap', 'gate', 'line', 'flank', 'center', 'centre', 'pass')) I.score += 0.5;
+        break;
+      }
       case 'intimidate': case 'taunt': I.target = target?.id; break;
       case 'bluff': {
         I.target = target?.id; I.claim = 'look_behind';
@@ -194,6 +235,8 @@ export function interpretRegex(b: Battle, u: Unit, raw: string): Intent[] {
     }
     out.push(I);
   }
+  // the weak readiness words give way to any real verb ("stay ready to heal" heals, "get ready to strike" strikes)
+  if (out.length > 1 && !has(text, 'overwatch', 'keep watch')) { const i = out.findIndex((I) => I.verb === 'overwatch'); if (i >= 0) out.splice(i, 1); }
   if (!out.length && dest) out.push({ verb: 'move', dest, destProp: prop?.id, destFoe: namedFoes[0]?.u.id, score: 1 });
   return out.sort((a, c2) => c2.score - a.score);
 }
@@ -301,6 +344,27 @@ export function resolveIntents(b: Battle, u: Unit, intents: Intent[], model = fa
       case 'guard': if (ally) anywhere({ kind: 'guard', target: ally.id }, `Guard ${b.nm(ally)}`, score, null, ally); break;
       case 'defend': push(dest, { kind: 'defend' }, 'Brace', score); break;
       case 'overwatch': push(dest, { kind: 'overwatch' }, 'Overwatch', score); break;
+      case 'block': {
+        const foe = t ?? b.nearestFoe(u);
+        if (!foe) break;
+        const ward: (Spot & { name?: string }) | null = ally ?? pr ?? null;
+        const wardName = ally ? b.nm(ally) : pr ? pr.name : '';
+        let spot: Spot | null = dest;
+        if (!spot && ward) {
+          // the tile in the lane: least detour on the foe's way to the ward, then nearest the ward
+          let best: Spot | null = null, bs = Infinity;
+          for (const s of [{ x: u.x, z: u.z }, ...[...reach.keys()].map((k) => { const [x, z] = k.split(',').map(Number); return { x, z }; })]) {
+            if (s.x === ward.x && s.z === ward.z) continue;
+            const detour = dist(foe, s) + dist(s, ward) - dist(foe, ward);
+            const sc = detour * 10 + dist(s, ward);
+            if (sc < bs) { bs = sc; best = s; }
+          }
+          if (best && dist(foe, best) + dist(best, ward) - dist(foe, ward) <= 2) spot = best;
+          else { closeIn({ x: Math.round((foe.x + ward.x) / 2), z: Math.round((foe.z + ward.z) / 2) }, `Block ${b.nm(foe)}`, score - 1); break; }
+        }
+        push(spot, { kind: 'block' }, `Block ${b.nm(foe)}${wardName ? ` from reaching ${wardName}` : ''}`, score);
+        break;
+      }
       case 'move': if (dest) push(dest, { kind: 'defend' }, 'Move and brace', score); break;
       case 'escape': {
         if (b.map.edge(u.x, u.z)) push(null, { kind: 'escape' }, 'Escape', score + 1);
@@ -331,12 +395,22 @@ export function resolveIntents(b: Battle, u: Unit, intents: Intent[], model = fa
 
 /** The instant path: regex interpretation, deterministic resolution. Conditionals become READY. */
 export function readWriteIn(b: Battle, u: Unit, raw: string): GridReading[] {
-  const cond = splitConditional(raw);
+  // "Borin, …" is only an order for Borin (read on his turn, when he's yours to command)
+  const addr = addressee(b, u, raw);
+  if (addr.who && addr.who !== u) return [];
+  const text = addr.text;
+  const speaker = addr.who ? b.units.find((x) => x.role === 'player') : undefined;
+  const cond = splitConditional(text);
   if (cond) {
     const trig = readTrigger(b, u, norm(cond.when));
-    if (trig) return readyReadings(b, u, trig, cond.then, interpretRegex(b, u, cond.then));
+    if (trig) return readyReadings(b, u, trig, cond.then, interpretRegex(b, u, cond.then, speaker));
   }
-  return resolveIntents(b, u, interpretRegex(b, u, raw));
+  // an implicit trigger: "stab the first wolf that lunges", "cut down whoever comes close"
+  if (/\b(first|whoever|anyone|any|the next)\b.{0,30}\b(lunges?|comes?|charges?|attacks?|steps?|gets? close|closes? in|moves?|rushes?|tries)\b/i.test(text)) {
+    const rs = readyReadings(b, u, { on: 'reach' }, text.replace(/\b(the first|first|the next)\b/gi, 'whoever'), interpretRegex(b, u, text, speaker));
+    if (rs.length) return rs;
+  }
+  return resolveIntents(b, u, interpretRegex(b, u, text, speaker));
 }
 
 export function splitConditional(raw: string): { when: string; then: string } | null {

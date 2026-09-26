@@ -1,140 +1,194 @@
 {
-  "persona": "tactician",
-  "plans": [
+ "persona": "tactician",
+ "plans": [
+  {
+   "goal": "Eliminate the Pale and Torn-ear wolves quickly, then focus overwhelming force on the Grey Mother",
+   "steps": [
+    "Move squad to strong positions using the logs for cover",
+    "Focus fire on the Pale wolf to eliminate it first",
+    "Then concentrate on Torn-ear wolf before engaging the Grey Mother",
+    "Save focus fire for the boss when adds are down"
+   ],
+   "atoms": [
     {
-      "goal": "Eliminate the Pale and Torn-ear wolves quickly, then focus overwhelming force on the Grey Mother",
-      "steps": [
-        "Move squad to strong positions using the logs for cover",
-        "Focus fire on the Pale wolf to eliminate it first",
-        "Then concentrate on Torn-ear wolf before engaging the Grey Mother",
-        "Save focus fire for the boss when adds are down"
-      ],
-      "atoms": [
-        {
-          "strategy": "establish-cover",
-          "capability": "take-cover",
-          "text": "Move to the fallen logs and establish firing positions",
-          "expect": ["dash", "defend"]
-        },
-        {
-          "strategy": "focus-add",
-          "capability": "focus-fire",
-          "text": "Focus fire on the Pale wolf to eliminate it quickly",
-          "expect": ["attack", "ability"]
-        },
-        {
-          "strategy": "suppress-second-add",
-          "capability": "suppress",
-          "text": "Keep the Torn-ear wolf suppressed while we deal with the Pale wolf",
-          "expect": ["attack", "distract"]
-        },
-        {
-          "strategy": "eliminate-second-add",
-          "capability": "focus-fire",
-          "text": "Shift to the Torn-ear wolf and take it down before facing the Grey Mother",
-          "expect": ["attack", "hew"]
-        },
-        {
-          "strategy": "support-anchor",
-          "capability": "guard-ally",
-          "text": "Sister Maud, stay covered and heal anyone who gets wounded",
-          "expect": ["dash", "ready", "aid"]
-        },
-        {
-          "strategy": "boss-focus",
-          "capability": "focus-fire",
-          "text": "With the wolves down, all units attack the Grey Mother together",
-          "expect": ["attack", "ability"]
-        }
-      ]
+     "strategy": "establish-cover",
+     "capability": "take-cover",
+     "text": "Move to the fallen logs and establish firing positions",
+     "expect": [
+      "dash",
+      "defend"
+     ]
     },
     {
-      "goal": "Suppress the wolves while hammering the Grey Mother with coordinated focus fire",
-      "steps": [
-        "Position for overlapping fire coverage on all three beasts",
-        "Keep wolves at bay with defensive overwatch",
-        "Concentrate overwhelming force on the boss",
-        "Eliminate the Grey Mother before wolves can flank"
-      ],
-      "atoms": [
-        {
-          "strategy": "defensive-spread",
-          "capability": "take-cover",
-          "text": "Spread out to cover positions on the logs, don't bunch up",
-          "expect": ["dash", "defend"]
-        },
-        {
-          "strategy": "wolf-suppression",
-          "capability": "suppress",
-          "text": "Pip and I hold the flanks and keep the wolves suppressed",
-          "expect": ["ready", "overwatch"]
-        },
-        {
-          "strategy": "boss-focus",
-          "capability": "focus-fire",
-          "text": "Borin and Maud, concentrate fire on the Grey Mother's head",
-          "expect": ["attack", "ability"]
-        },
-        {
-          "strategy": "maintain-discipline",
-          "capability": "guard-ally",
-          "text": "Hold positions and don't let the wolves get behind us",
-          "expect": ["ready", "defend"]
-        },
-        {
-          "strategy": "coordinated-assault",
-          "capability": "focus-fire",
-          "text": "When we have the opening, everyone attack the Grey Mother together",
-          "expect": ["attack", "hew"]
-        }
-      ]
+     "strategy": "focus-add",
+     "capability": "focus-fire",
+     "text": "Focus fire on the Pale wolf to eliminate it quickly",
+     "expect": [
+      "attack",
+      "ability"
+     ]
     },
     {
-      "goal": "Use controlled aggression to keep the Grey Mother pinned while Pip isolates and kills the wolves",
-      "steps": [
-        "You and Borin advance on the Grey Mother and engage directly",
-        "Pip moves to flank and attack the wolves from the sides",
-        "Maud stays back and provides healing support",
-        "Maintain focus on the boss while wolves are contained"
-      ],
-      "atoms": [
-        {
-          "strategy": "aggressive-engagement",
-          "capability": "flank",
-          "text": "Advance toward the Grey Mother and engage her directly to keep her attention",
-          "expect": ["dash", "attack"]
-        },
-        {
-          "strategy": "pin-boss",
-          "capability": "focus-fire",
-          "text": "Borin and I attack the Grey Mother together to pin her in place",
-          "expect": ["attack", "hew"]
-        },
-        {
-          "strategy": "flank-wolves",
-          "capability": "flank",
-          "text": "Pip, move around to the sides and strike the wolves to keep them off us",
-          "expect": ["dash", "attack"]
-        },
-        {
-          "strategy": "eliminate-threats",
-          "capability": "suppress",
-          "text": "If the wolves press in hard, hit them to make them hesitate",
-          "expect": ["attack", "trip"]
-        },
-        {
-          "strategy": "heal-ready",
-          "capability": "guard-ally",
-          "text": "Maud, stay at range and heal anyone who gets mauled",
-          "expect": ["dash", "aid", "ready"]
-        },
-        {
-          "strategy": "maintain-assault",
-          "capability": "focus-fire",
-          "text": "Keep pressuring the Grey Mother, don't give her time to break away",
-          "expect": ["attack", "ability"]
-        }
-      ]
+     "strategy": "suppress-second-add",
+     "capability": "suppress",
+     "text": "Keep the Torn-ear wolf suppressed while we deal with the Pale wolf",
+     "expect": [
+      "attack",
+      "distract"
+     ]
+    },
+    {
+     "strategy": "eliminate-second-add",
+     "capability": "focus-fire",
+     "text": "Shift to the Torn-ear wolf and take it down before facing the Grey Mother",
+     "expect": [
+      "attack",
+      "hew"
+     ]
+    },
+    {
+     "strategy": "support-anchor",
+     "capability": "guard-ally",
+     "text": "Sister Maud, stay covered and heal anyone who gets wounded",
+     "expect": [
+      "dash",
+      "ready",
+      "aid"
+     ]
+    },
+    {
+     "strategy": "boss-focus",
+     "capability": "focus-fire",
+     "text": "With the wolves down, all units attack the Grey Mother together",
+     "expect": [
+      "attack",
+      "ability"
+     ]
     }
-  ]
+   ]
+  },
+  {
+   "goal": "Suppress the wolves while hammering the Grey Mother with coordinated focus fire",
+   "steps": [
+    "Position for overlapping fire coverage on all three beasts",
+    "Keep wolves at bay with defensive overwatch",
+    "Concentrate overwhelming force on the boss",
+    "Eliminate the Grey Mother before wolves can flank"
+   ],
+   "atoms": [
+    {
+     "strategy": "defensive-spread",
+     "capability": "take-cover",
+     "text": "Spread out to cover positions on the logs, don't bunch up",
+     "expect": [
+      "dash",
+      "defend"
+     ]
+    },
+    {
+     "strategy": "wolf-suppression",
+     "capability": "suppress",
+     "text": "Pip and I hold the flanks and keep the wolves suppressed",
+     "expect": [
+      "ready",
+      "overwatch"
+     ]
+    },
+    {
+     "strategy": "boss-focus",
+     "capability": "focus-fire",
+     "text": "Borin and Maud, concentrate fire on the Grey Mother's head",
+     "expect": [
+      "attack",
+      "ability"
+     ]
+    },
+    {
+     "strategy": "maintain-discipline",
+     "capability": "guard-ally",
+     "text": "Hold positions and don't let the wolves get behind us",
+     "expect": [
+      "ready",
+      "defend"
+     ]
+    },
+    {
+     "strategy": "coordinated-assault",
+     "capability": "focus-fire",
+     "text": "When we have the opening, everyone attack the Grey Mother together",
+     "expect": [
+      "attack",
+      "hew"
+     ]
+    }
+   ]
+  },
+  {
+   "goal": "Use controlled aggression to keep the Grey Mother pinned while Pip isolates and kills the wolves",
+   "steps": [
+    "You and Borin advance on the Grey Mother and engage directly",
+    "Pip moves to flank and attack the wolves from the sides",
+    "Maud stays back and provides healing support",
+    "Maintain focus on the boss while wolves are contained"
+   ],
+   "atoms": [
+    {
+     "strategy": "aggressive-engagement",
+     "capability": "flank",
+     "text": "Advance toward the Grey Mother and engage her directly to keep her attention",
+     "expect": [
+      "dash",
+      "attack"
+     ]
+    },
+    {
+     "strategy": "pin-boss",
+     "capability": "focus-fire",
+     "text": "Borin and I attack the Grey Mother together to pin her in place",
+     "expect": [
+      "attack",
+      "hew"
+     ]
+    },
+    {
+     "strategy": "flank-wolves",
+     "capability": "flank",
+     "text": "Pip, move around to the sides and strike the wolves to keep them off us",
+     "expect": [
+      "dash",
+      "attack",
+      "block"
+     ]
+    },
+    {
+     "strategy": "eliminate-threats",
+     "capability": "suppress",
+     "text": "If the wolves press in hard, hit them to make them hesitate",
+     "expect": [
+      "attack",
+      "trip"
+     ]
+    },
+    {
+     "strategy": "heal-ready",
+     "capability": "guard-ally",
+     "text": "Maud, stay at range and heal anyone who gets mauled",
+     "expect": [
+      "dash",
+      "aid",
+      "ready"
+     ]
+    },
+    {
+     "strategy": "maintain-assault",
+     "capability": "focus-fire",
+     "text": "Keep pressuring the Grey Mother, don't give her time to break away",
+     "expect": [
+      "attack",
+      "ability"
+     ]
+    }
+   ]
+  }
+ ]
 }

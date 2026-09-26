@@ -40,7 +40,7 @@ export function hubStage(rc: RunController, talking: string | null): void {
 }
 
 function icons(u: Unit): string {
-  return [u.burning > 0 ? '🔥' : '', u.defending ? '🛡' : '', u.overwatch ? '👁' : '', u.readied ? '⏳' : '', u.exposed ? '✖' : '',
+  return [u.burning > 0 ? '🔥' : '', u.defending ? '🛡' : '', u.blocking ? '⛔' : '', u.overwatch ? '👁' : '', u.readied ? '⏳' : '', u.exposed ? '✖' : '',
     u.morale === 'shaken' ? '😰' : u.morale === 'broken' ? '😱' : '', u.tauntedBy ? '💢' : '', u.turnedOn ? '⚔' : '', u.carrying ? '✋' : ''].join('');
 }
 
