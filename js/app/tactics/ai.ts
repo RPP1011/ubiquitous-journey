@@ -57,8 +57,11 @@ export function planTurn(b: Battle, u: Unit): Plan {
     if (t.tags.has('captive')) w *= u.side === 'them' ? 1.4 : 0;                   // guards cut down an escaping captive
     return w;
   };
+  // the merciful take NAMED people alive (a chief, someone's son); others want the chief alive by order
+  const named = (t: Unit) => t.tags.has('chief') || [...t.tags].some((x) => x.startsWith('kin:'));
   const lethalOk = (t: Unit) => !((o.kind === 'rob' || o.kind === 'capture' || o.kind === 'enforce') && t.id === o.targetId)
-    && !(u.side === 'us' && goals.chief === t.id && goals.spareChief);
+    && !(u.side === 'us' && goals.chief === t.id && goals.spareChief)
+    && !(u.side === 'us' && tr.compassion > 0.8 && named(t) && t.agent.faction !== 'monster');
 
   const reach = u.moved ? new Map() : b.reachable(u);
   const spots: Spot[] = [{ x: u.x, z: u.z }, ...[...reach.keys()].map((k) => { const [x, z] = k.split(',').map(Number); return { x, z }; })];
@@ -150,7 +153,9 @@ export function planTurn(b: Battle, u: Unit): Plan {
         case 'grab': g = (o.kind === 'rob' && u.loot === 0 && t ? p * (t.id === o.targetId ? 1.8 : 0.9) : 0) + (u.traits || u.role === 'player' ? p * tr.ruthlessness * 0.5 * (1 - tr.compassion) : 0); break;
         case 'subdue': {
           if (!t) break;
-          const want = (o.kind === 'capture' || o.kind === 'enforce') && t.id === o.targetId ? 1 : (u.side === 'us' && goals.chief === t.id && goals.spareChief) ? 1.2 : tr.compassion * 0.4;
+          const want = (o.kind === 'capture' || o.kind === 'enforce') && t.id === o.targetId ? 1
+            : (u.side === 'us' && goals.chief === t.id && goals.spareChief) ? 1.2
+            : u.side === 'us' && tr.compassion > 0.8 && named(t) && t.agent.faction !== 'monster' ? 1.1 : tr.compassion * 0.4;
           g = p * want * (frac(t) < 0.45 ? 2.0 : 0.6);
           why = 'take them alive';
           break;

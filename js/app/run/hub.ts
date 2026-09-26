@@ -27,6 +27,13 @@ export interface HubNpcDef {
   model: 'knight' | 'barbarian';
 }
 
+/** Curated stations around the market square (the square is at the origin; the camera looks north). */
+export const HUB_SPOTS: Record<string, [number, number]> = {
+  tom: [-6.5, -1.5], anselm: [-4.6, -4.8], reeve: [-1.2, -6.2], nan: [2.2, -6.0], marta: [5.0, -4.2], hilde: [6.8, -1.2],
+};
+export const COMPANY_SPOTS: Array<[number, number]> = [[-3.2, 3.4], [-1.1, 3.9], [1.1, 3.9], [3.2, 3.4]];
+export const PLAYER_SPOT: [number, number] = [0, 1.6];
+
 export const HUB_NPCS: HubNpcDef[] = [
   { key: 'reeve', name: 'Reeve Aldous', role: 'the reeve', poi: 'market', values: { order: 1, courage: 0.7, mercy: 0.1, theft: -0.8, fire: -0.2, cruelty: -0.2 }, confidants: ['borin'], model: 'knight' },
   { key: 'marta', name: 'Marta Brewer', role: 'keeps the inn', poi: 'rest', values: { courage: 0.5, mercy: 0.5, fire: -0.4, loyalty: 0.6, cruelty: -0.5 }, confidants: ['borin', 'wren', 'pip', 'maud'], model: 'knight' },

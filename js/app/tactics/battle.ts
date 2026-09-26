@@ -191,6 +191,8 @@ export class Battle {
         selfId: u.id, foes: this.foesOf(u).map(v), friends: this.friendsOf(u).map(v),
         playerId: this.session.player?.id ?? null, isCompanion: u.role === 'companion',
       });
+      // a chief does not run from their own fight: they win, or they sue for terms
+      if (u.tags.has('chief') && o.kind === 'survive') o = { kind: 'win', label: 'will not run from this' };
       this.objectives.set(u.id, o);
     }
     return o;
@@ -1013,8 +1015,9 @@ export class Battle {
   private morale(): void {
     const lost = (s: Side) => { const all = this.units.filter((u) => u.side === s); return all.length ? all.filter((u) => u.out === 'dead' || u.out === 'captured').length / all.length : 0; };
     for (const u of this.active()) {
-      if (u.role === 'player') continue;
-      if (!(frac(u) < 0.35 || u.morale !== 'steady' || lost(u.side) >= 0.5 || u.burning > 0)) continue;
+      if (u.role === 'player' || u.tags.has('chief')) continue;     // a chief fights to the end, or sues for terms — never runs
+      const scorched = u.burning > 0 && (!u.traits || u.traits.bravery < 0.5);
+      if (!(frac(u) < 0.35 || u.morale !== 'steady' || lost(u.side) >= 0.5 || scorched)) continue;
       const grit = u.traits ? Math.round((u.traits.bravery - 0.5) * 8) : 0;   // a companion's bravery steadies (or fails) them
       if (check(u.sheet.nerve + grit, 11 + (u.morale === 'shaken' ? 2 : 0) + (u.morale === 'broken' ? 20 : 0)).ok) continue;
       u.morale = 'broken';
@@ -1089,7 +1092,7 @@ export class Battle {
   place(u: Unit): void {
     const t = this.map.tile(u.x, u.z); if (!t) return;
     u.agent.pos.x = t.wx; u.agent.pos.z = t.wz;
-    u.agent.pos.y = this.map.standH(u.x, u.z) * 0.5;
+    u.agent.pos.y = this.map.surfaceY(u.x, u.z);
   }
   private swing(u: Unit): void { try { u.agent.fighter.ready('DOWN'); u.agent.fighter.release(); } catch { /* cosmetic */ } }
   private release(u: Unit): void { u.agent._encounter = null; }

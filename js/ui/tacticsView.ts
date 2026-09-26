@@ -3,7 +3,8 @@
 // through the Battle API (moveTo / act / endTurn); the view never mutates battle state itself.
 
 import { TUNE } from '../constants.js';
-import { runTurn } from '../app/tactics/ai.js';
+import { runTurn, planTurn } from '../app/tactics/ai.js';
+import { phrase } from '../app/run/autopilot.js';
 import { readWriteIn, describeTrigger, type GridReading } from '../app/tactics/writein.js';
 import { key } from '../app/tactics/map.js';
 import type { Action, Battle, Spot, Unit } from '../app/tactics/battle.js';
@@ -38,6 +39,11 @@ const CSS = `
 #tac .log .hit { color: #eef3f8; } #tac .log .miss { color: #9aa6b2; } #tac .log .env { color: #ffab5e; } #tac .log .social { color: #b9a3f0; }
 #tac .log .join { color: #8fe39a; } #tac .log .end { color: #e8c879; font-weight: 700; } #tac .log .rd { color: #6f7b88; font-size: 10px; margin-top: 3px; }
 #tac .hint { font-size: 10px; color: #6f7b88; margin-top: 5px; }
+#tac-cap { position: fixed; left: calc(50% - 200px); top: 64px; transform: translateX(-50%); z-index: 32; pointer-events: none; max-width: min(760px, 70vw);
+  text-align: center; font-family: "Segoe UI", system-ui, sans-serif; font-size: 22px; font-weight: 600; color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,.9);
+  background: rgba(8,10,14,.62); border-radius: 10px; padding: 8px 18px; transition: opacity .35s; opacity: 0; }
+#tac-cap.on { opacity: 1; } #tac-cap .q { display: block; font-size: 15px; font-weight: 400; font-style: italic; color: #e8c879; margin-bottom: 2px; }
+#tac-cap.env { color: #ffcf9a; } #tac-cap.social { color: #d9ccff; } #tac-cap.end { color: #e8c879; font-size: 28px; }
 `;
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string);
@@ -52,6 +58,17 @@ export class TacticsView {
   private draft = '';
   private readings: GridReading[] = [];
   private err = '';
+  /** Autopilot: plays the player's (and commanded companions') turns, typing write-ins visibly. */
+  auto = false;
+  private autoT = 0;
+  private autoText: string | null = null;
+  private autoPlan: ReturnType<typeof planTurn> | null = null;
+  private autoUnit: Unit | null = null;
+  pace = 0.65;
+  private cap: HTMLDivElement | null = null;
+  private capT = 0;
+  private seenLog = 0;
+  private lastTyped: string | null = null;
 
   constructor() {
     if (typeof document === 'undefined') return;
@@ -59,10 +76,31 @@ export class TacticsView {
     this.root = document.createElement('div'); this.root.id = 'tac'; this.root.className = 'hidden';
     document.body.appendChild(this.root);
     this.root.addEventListener('keydown', (e) => e.stopPropagation());
+    this.cap = document.createElement('div'); this.cap.id = 'tac-cap'; document.body.appendChild(this.cap);
   }
 
-  open(b: Battle, r: BattleRender): void { this.b = b; this.r = r; this.draft = ''; this.readings = []; this.err = ''; this.root?.classList.remove('hidden'); this.refresh(); }
-  close(): void { this.b = null; this.r = null; this.root?.classList.add('hidden'); if (this.root) this.root.innerHTML = ''; }
+  /** Announce the latest meaningful line of the log as a big caption (the video's narrator). */
+  private caption(dt: number): void {
+    const b = this.b, cap = this.cap; if (!b || !cap) return;
+    this.capT -= dt;
+    if (b.log.length > this.seenLog) {
+      const fresh = b.log.slice(this.seenLog);
+      this.seenLog = b.log.length;
+      const rank = (k: string) => ({ end: 6, env: 5, social: 4, join: 4, hit: 3, info: 3, move: 2, miss: 1 } as Record<string, number>)[k] ?? 0;
+      const best = fresh.reduce((x, y) => (rank(y.kind) >= rank(x.kind) ? y : x));
+      if (rank(best.kind) >= 2 || this.capT <= 0) {
+        cap.className = `on ${best.kind}`;
+        const q = this.lastTyped ? `<span class="q">“${esc(this.lastTyped)}”</span>` : '';
+        cap.innerHTML = q + esc(best.text);
+        this.lastTyped = null;
+        this.capT = best.kind === 'end' ? 99 : 2.6;
+      }
+    }
+    if (this.capT <= 0) cap.className = '';
+  }
+
+  open(b: Battle, r: BattleRender): void { this.seenLog = b.log.length; this.capT = 0; this.b = b; this.r = r; this.draft = ''; this.readings = []; this.err = ''; this.root?.classList.remove('hidden'); this.refresh(); }
+  close(): void { if (this.cap) this.cap.className = ''; this.b = null; this.r = null; this.root?.classList.add('hidden'); if (this.root) this.root.innerHTML = ''; }
 
   private mine(): Unit | null { const u = this.b?.current(); return u && this.b!.playerControls(u) ? u : null; }
 
@@ -72,10 +110,38 @@ export class TacticsView {
     const u = b.current();
     if (!b.outcome && u && !b.playerControls(u)) {
       this.npcTimer += dt;
-      if (this.npcTimer > 0.65) { this.npcTimer = 0; runTurn(b, u); this.refresh(); }
+      if (this.npcTimer > this.pace) { this.npcTimer = 0; runTurn(b, u); this.refresh(); }
     } else this.npcTimer = 0;
+    if (this.auto && !b.outcome && u && b.playerControls(u)) this.autoStep(b, u, dt);
     this.highlight();
+    this.caption(dt);
     this.r?.sync(dt);
+  }
+
+  private autoStep(b: Battle, u: Unit, dt: number): void {
+    if (this.autoUnit !== u) { this.autoUnit = u; this.autoT = 0; this.autoPlan = null; this.autoText = null; this.draft = ''; this.readings = []; }
+    this.autoT += dt;
+    if (!this.autoPlan && this.autoT > 0.5) {
+      this.autoPlan = planTurn(b, u);
+      this.autoText = phrase(b, u, this.autoPlan.action);
+      this.autoT = 0;
+    }
+    if (!this.autoPlan) return;
+    if (this.autoText) {
+      const n = Math.min(this.autoText.length, Math.floor(this.autoT * 32));
+      if (n > this.draft.length) { this.draft = this.autoText.slice(0, n); this.readings = readWriteIn(b, u, this.draft); this.refresh(); }
+      if (n < this.autoText.length || this.autoT < this.autoText.length / 32 + 0.8) return;
+      const r = this.readings[0];
+      const same = r && r.action.kind === this.autoPlan.action.kind;
+      this.autoUnit = null;
+      if (same) { this.lastTyped = this.autoText; this.run(u, r); if (b.current() === u) b.endTurn(u); this.refresh(); return; }
+    } else if (this.autoT < 0.4) return;
+    const plan = this.autoPlan;
+    this.autoUnit = null; this.draft = ''; this.readings = [];
+    if (plan.to) b.moveTo(u, plan.to);
+    if (b.current() === u && !u.acted && u.out === null) b.act(u, plan.action);
+    if (b.current() === u) b.endTurn(u);
+    this.refresh();
   }
 
   /** A click on the grid: move to a reachable tile, or strike a foe you can reach. */
@@ -150,7 +216,8 @@ export class TacticsView {
       body = '';
     } else if (!mine) {
       const o = b.objectiveOf(u);
-      body = `<div class="who"><b>${esc(b.nm(u, true))}</b> <span class="st">${u.side === 'us' ? (u.role === 'companion' ? 'companion' : 'ally') : 'foe'} · ${esc(o.label)}</span></div>
+      const trait = u.traits && u.role === 'companion' ? ` · bravery ${u.traits.bravery.toFixed(2)} · compassion ${u.traits.compassion.toFixed(2)} · loyalty ${u.traits.loyalty.toFixed(2)}` : '';
+      body = `<div class="who"><b>${esc(b.nm(u, true))}</b> <span class="st">${u.side === 'us' ? (u.role === 'companion' ? 'companion' : 'ally') : `foe · ${u.tactic}`} · ${esc(o.label)}${trait}</span></div>
         <div class="bar"><i style="width:${hp(u)}%"></i></div><div class="st">${esc(status(u))}</div>`;
     } else {
       const opts = b.options(mine).filter((a) => !mine.acted);

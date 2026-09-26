@@ -97,8 +97,40 @@ export function buildDecor(a: Agent): void {
   updateLabel(a);
 }
 
+/**
+ * Presentation overrides a frontend may set (visual only; the sim never reads them):
+ *   _hideLabel   hide this agent's floating label and ring
+ *   _plate       draw a clean nameplate instead of the debug label: { name, sub?, hp?, color? }
+ *   _ringColor   tint the ground ring
+ */
+export interface Plate { name: string; sub?: string; hp?: number; color?: string; }
+
 export function updateLabel(a: Agent): void {
   const ctx = a._lblCtx as CanvasRenderingContext2D | null; if (!ctx) return;
+  const hide = !!a._hideLabel;
+  if (a.label) (a.label as THREE.Sprite).visible = !hide;
+  if (a.ring) (a.ring as THREE.Mesh).visible = !hide;
+  if (a._ringColor != null && a.ringMat) (a.ringMat as THREE.MeshBasicMaterial).color.setHex(a._ringColor as number);
+  const plate = a._plate as Plate | null | undefined;
+  if (plate) {
+    const hp = plate.hp == null ? -1 : Math.round(Math.max(0, Math.min(1, plate.hp)) * 40);
+    const psig = `P|${plate.name}|${plate.sub ?? ''}|${hp}|${plate.color ?? ''}`;
+    if (psig === a._lblSig) return;
+    a._lblSig = psig;
+    ctx.clearRect(0, 0, 256, 64);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(8,10,14,0.72)'; ctx.fillRect(28, 2, 200, 34);
+    ctx.font = 'bold 22px sans-serif'; ctx.fillStyle = plate.color ?? '#eef3f8';
+    ctx.fillText(plate.name, 128, 26);
+    if (hp >= 0) {
+      ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(48, 42, 160, 12);
+      ctx.fillStyle = hp > 20 ? '#6fcf7f' : hp > 10 ? '#e8c23a' : '#e0685a'; ctx.fillRect(50, 44, hp * 3.9, 8);
+    } else if (plate.sub) {
+      ctx.font = '17px sans-serif'; ctx.fillStyle = '#c7d0d9'; ctx.fillText(plate.sub, 128, 56);
+    }
+    (a._lblTex as THREE.CanvasTexture).needsUpdate = true;
+    return;
+  }
   const sub = a.controlled ? 'you'
     : `${a.goal?.kind ?? 'idle'}${a._tradeFlash > 0 ? ' · traded!' : ' · ' + Math.round(a.gold) + 'g'}`;
   // skip the canvas redraw + GPU upload when nothing visible changed — this is

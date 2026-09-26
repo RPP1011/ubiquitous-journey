@@ -42,6 +42,8 @@ const PROP_LOOK: Record<string, { geo: () => THREE.BufferGeometry; color: number
   well: { geo: () => new THREE.CylinderGeometry(0.8, 0.8, 0.9, 14), color: 0x7d7d78, y: 0.45 },
   log: { geo: () => new THREE.CylinderGeometry(0.3, 0.3, 1.8, 8), color: 0x5e4128, y: 0.3 },
   torch: { geo: () => new THREE.CylinderGeometry(0.06, 0.06, 1.0, 6), color: 0x5e4128, y: 0.5 },
+  relic: { geo: () => new THREE.BoxGeometry(0.55, 0.45, 0.4), color: 0xd8dde6, y: 0.25 },
+  tent: { geo: () => new THREE.ConeGeometry(1.1, 1.8, 4), color: 0xb9a57c, y: 0.9 },
 };
 
 export class BattleRender {
@@ -68,7 +70,7 @@ export class BattleRender {
     const m = new THREE.Matrix4(), q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
     const one = new THREE.Vector3(1, 1, 1);
     this.map.tiles.forEach((t, i) => {
-      m.compose(new THREE.Vector3(t.wx, t.h * LEVEL + 0.04, t.wz), q, one);
+      m.compose(new THREE.Vector3(t.wx, this.map.surfaceY(t.x, t.z, false) + 0.06, t.wz), q, one);
       this.tiles.setMatrixAt(i, m);
       this.tiles.setColorAt(i, COL.base);
     });
@@ -114,17 +116,17 @@ export class BattleRender {
       let mesh = this.propMeshes.get(p.id);
       if (!mesh) { mesh = this.makeProp(p); this.propMeshes.set(p.id, mesh); this.scene.add(mesh); }
       const t = this.map.tile(p.x, p.z)!;
-      const look = PROP_LOOK[p.kind];
-      o3(mesh).position.set(t.wx, t.h * LEVEL + (p.tipped ? 0.45 : look.y), t.wz);
+      const look = PROP_LOOK[p.kind] ?? PROP_LOOK.crate;
+      o3(mesh).position.set(t.wx, this.map.surfaceY(t.x, t.z, false) + (p.tipped ? 0.45 : look.y), t.wz);
       o3(mesh).rotation.x = p.tipped ? Math.PI / 2 : p.kind === 'log' ? Math.PI / 2 : 0;
     }
     for (const [id, mesh] of this.propMeshes) if (!live.has(id)) { this.scene.remove(mesh); this.propMeshes.delete(id); }
 
     // flames on burning tiles and props, plus lit fire sources
     const spots: Array<{ x: number; y: number; z: number; s: number }> = [];
-    for (const t of this.map.tiles) if (t.burning > 0) spots.push({ x: t.wx, y: t.h * LEVEL, z: t.wz, s: 1 });
+    for (const t of this.map.tiles) if (t.burning > 0) spots.push({ x: t.wx, y: this.map.surfaceY(t.x, t.z, false), z: t.wz, s: 1 });
     for (const p of this.map.props.values()) {
-      if (p.fireSource || p.burning > 0) { const t = this.map.tile(p.x, p.z)!; spots.push({ x: t.wx, y: t.h * LEVEL + (p.kind === 'brazier' ? 1.0 : p.kind === 'torch' ? 1.0 : 0.2), z: t.wz, s: p.kind === 'torch' ? 0.4 : 0.8 }); }
+      if (p.fireSource || p.burning > 0) { const t = this.map.tile(p.x, p.z)!; spots.push({ x: t.wx, y: this.map.surfaceY(t.x, t.z, false) + (p.kind === 'brazier' ? 1.0 : p.kind === 'torch' ? 1.0 : 0.2), z: t.wz, s: p.kind === 'torch' ? 0.4 : 0.8 }); }
     }
     for (const u of this.battle.active()) if (u.burning > 0) spots.push({ x: u.agent.pos.x, y: u.agent.pos.y + 1.2, z: u.agent.pos.z, s: 0.6 });
     while (this.flames.length < spots.length) { const f = new THREE.Mesh(this.flameGeo, this.flameMat); this.flames.push(f); this.scene.add(f); }
@@ -139,7 +141,7 @@ export class BattleRender {
   }
 
   private makeProp(p: Prop): THREE.Mesh {
-    const look = PROP_LOOK[p.kind];
+    const look = PROP_LOOK[p.kind] ?? PROP_LOOK.crate;
     const mesh = new THREE.Mesh(look.geo(), new THREE.MeshLambertMaterial({ color: look.color }) as unknown as THREE.MeshBasicMaterial);
     if (p.kind === 'tree') {
       const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 1.2, 6), new THREE.MeshLambertMaterial({ color: 0x5a3e28 }) as unknown as THREE.MeshBasicMaterial);

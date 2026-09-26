@@ -23,7 +23,12 @@ import { Battle, type Outcome, type Traits, type Unit } from '../tactics/battle.
 import { abilityById } from './gear.js';
 import { COMPANIONS, freshProfile, developFromBattle, bark, checkDeparture, type CompanionKey, type CompanionProfile } from './companions.js';
 import { QUESTS, QUEST_ORDER, type QuestDef, type StageDef } from './quests.js';
-import { HUB_NPCS, freshHub, tellTales, speak, type Deed, type HubLine, type HubState } from './hub.js';
+import { HUB_NPCS, HUB_SPOTS, COMPANY_SPOTS, PLAYER_SPOT, freshHub, tellTales, speak, type Deed, type HubLine, type HubState } from './hub.js';
+
+/** Turn a body to look at a point (visual). */
+function faceTo(a: AgentT, x: number, z: number): void {
+  try { a.fighter.root.rotation.y = Math.atan2(-(x - a.pos.x), -(z - a.pos.z)); } catch { /* stub */ }
+}
 
 export interface SaveData {
   version: 1;
@@ -126,15 +131,16 @@ export class RunController {
     HUB_NPCS.forEach((def, i) => {
       let a = this.hubAgents.get(def.key);
       if (!a) {
-        const poi = world.nearest(def.poi, origin);
-        const p = poi ? poi.pos.clone() : new THREE.Vector3(Math.cos(i) * 6, 0, Math.sin(i) * 6);
-        p.x += Math.cos(i * 2.1) * 2.2; p.z += Math.sin(i * 2.1) * 2.2;
+        const spot = HUB_SPOTS[def.key];
+        const p = spot ? new THREE.Vector3(spot[0], 0, spot[1]) : (world.nearest(def.poi, origin)?.pos.clone() ?? new THREE.Vector3(Math.cos(i) * 6, 0, Math.sin(i) * 6));
         a = this.spawn(def.name, 'townsfolk', def.model, p, { risk_tolerance: 0.3, social_drive: 0.6, ambition: 0.4, altruism: 0.6, curiosity: 0.5 }, false);
         a.gold = 80;
         (a as { canWork?: boolean }).canWork = false;
         a._held = true;                           // stays at their post (the hub cast doesn't wander off)
         this.hubAgents.set(def.key, a);
       }
+      const spot = HUB_SPOTS[def.key];
+      if (spot) { a.pos.set(spot[0], 0, spot[1]); faceTo(a, 0, 0); }
       // what they remember of you becomes an engine belief (the inspector reads it too)
       if (player) {
         a.beliefs.observe(player.id, player.faction, player.pos, sim.time, false);
@@ -149,23 +155,46 @@ export class RunController {
     // kin who came home stand beside their family
     if (this.save.kinHome.includes('tom') && !this.hubAgents.has('col')) {
       const tom = this.hubAgents.get('tom')!;
-      const col = this.spawn('Col Garrow', 'townsfolk', 'barbarian', tom.pos.clone().add(new THREE.Vector3(1.6, 0, 0.8)), { risk_tolerance: 0.4, social_drive: 0.3, ambition: 0.3, altruism: 0.4, curiosity: 0.3 }, false);
-      col._held = true; this.hubAgents.set('col', col);
+      const col = this.spawn('Col Garrow', 'townsfolk', 'barbarian', tom.pos.clone().add(new THREE.Vector3(1.3, 0, 1.2)), { risk_tolerance: 0.4, social_drive: 0.3, ambition: 0.3, altruism: 0.4, curiosity: 0.3 }, false);
+      col._held = true; faceTo(col, 0, 0); this.hubAgents.set('col', col);
     }
     if (this.save.kinHome.includes('nan') && !this.hubAgents.has('elsie')) {
       const nan = this.hubAgents.get('nan')!;
       const el = this.spawn('Elsie Miller', 'townsfolk', 'knight', nan.pos.clone().add(new THREE.Vector3(-1.4, 0, 1)), { risk_tolerance: 0.2, social_drive: 0.6, ambition: 0.3, altruism: 0.7, curiosity: 0.5 }, false);
-      el._held = true; this.hubAgents.set('elsie', el);
+      el._held = true; faceTo(el, 0, 0); this.hubAgents.set('elsie', el);
     }
-    // your company waits by the inn
-    const inn = world.nearest('rest', origin)?.pos ?? origin;
+    // your company stands with you at the south of the square
     this.available().forEach((k, i) => {
       const a = this.companion(k);
-      a.pos.set(inn.x + 3 + i * 1.4, 0, inn.z - 2);
+      const s = COMPANY_SPOTS[i] ?? [i * 1.5 - 3, 4];
+      a.pos.set(s[0], 0, s[1]); faceTo(a, 0, -3);
       a.fighter.health = Math.max(a.fighter.health, TUNE.maxHealth);
       a._held = true;
     });
-    if (player) { player.pos.set(inn.x + 2, 0, inn.z + 2); player.fighter.health = TUNE.maxHealth; player.gold = this.save.gold; }
+    // (the fallen and the departed are not in the square)
+    for (const [k, a] of this.companionAgents) if (!this.available().includes(k)) a.pos.set(0, -200, 0);
+    this.curate();
+    if (player) {
+      if (!player.alive) (player.fighter as { revive?: (h: number) => void }).revive?.(TUNE.maxHealth);   // carried home, patched up at the chapel
+      player.pos.set(PLAYER_SPOT[0], 0, PLAYER_SPOT[1]); faceTo(player, 0, -3); player.fighter.health = TUNE.maxHealth; player.gold = this.save.gold; player._encounter = null;
+    }
+  }
+
+  /**
+   * The hub is curated: only you, the cast and your company. Everyone else the engine spawned
+   * (the background town, camp monsters) is removed — and kept out on later frames.
+   */
+  curate(): void {
+    const keep = new Set<AgentT>([...this.hubAgents.values(), ...this.companionAgents.values(), ...this.stageAgents]);
+    const player = this.session.player;
+    if (player) keep.add(player);
+    const sim = this.session.sim as unknown as { scene: { remove(o: unknown): void }; agents: AgentT[]; agentsById: Map<unknown, AgentT> };
+    for (const a of [...sim.agents]) {
+      if (keep.has(a)) continue;
+      try { sim.scene.remove(a.fighter.root); (a.fighter as { dispose?: () => void }).dispose?.(); } catch { /* headless */ }
+      sim.agents.splice(sim.agents.indexOf(a), 1);
+      sim.agentsById.delete(a.id);
+    }
   }
 
   /** Companions who will still travel with you. */
@@ -233,6 +262,7 @@ export class RunController {
     const map = new BattleMap(spot, 16, { bare: true });
     // soften the raw terrain into readable steps, then raise any authored high ground
     const floor = Math.min(...map.tiles.map((t) => t.h));
+    map.baseY = floor * 0.5;
     for (const t of map.tiles) t.h = Math.min(3, Math.round((t.h - floor) * 0.35));
     if (st.rise) for (const t of map.tiles) { const d = Math.hypot(t.x - st.rise.at[0], t.z - st.rise.at[1]); if (d <= st.rise.r) t.h += Math.round(st.rise.h * (1 - d / (st.rise.r + 1))) + 1; }
     for (const t of map.tiles) t.ground = st.biome === 'hills' ? (t.h >= 3 ? 'stone' : 'grass') : 'grass';

@@ -15,6 +15,9 @@ import { createSession } from './app/session.js';
 import { BattleDirector } from './app/tactics/director.js';
 import { BattleRender } from './ui/battleRender.js';
 import { TacticsView } from './ui/tacticsView.js';
+import { RunController, localStore } from './app/run/run.js';
+import { RunUI } from './ui/runView.js';
+import { hubStage, battleStage } from './ui/stagecraft.js';
 import { terrainHeight } from './arena.js';
 import { ABILITY_CATALOG } from './rpg/abilities/catalog.js';
 import { DungeonManager } from './world/dungeonManager.js';
@@ -30,6 +33,27 @@ let session = null;                // the app-layer Session (js/app/session.ts) 
 let tactics = null;                // BattleDirector: opens a tactical grid battle when the player's side comes to blows
 let battleRender = null;           // the grid/props/fire drawn for the current battle
 const tacView = new TacticsView();
+// RUN MODE (the game): hub → quests → tactical stages → home. `?sandbox` keeps the old free-roam
+// town; `?autoplay` plays runs by itself (for recordings); `?fresh` wipes the save first.
+const PARAMS = new URLSearchParams(location.search);
+const RUN_MODE = !PARAMS.has('sandbox');
+const AUTO = PARAMS.has('autoplay');
+if (PARAMS.has('fresh')) { try { localStorage.removeItem('hearsay.save.v1'); } catch { /* private mode */ } }
+let rc = null;                     // RunController (run mode)
+let runUI = null;                  // the run screens
+let camFocus = null;               // a point the camera should favour (the person you're talking to)
+const HUB_CENTER = new THREE.Vector3(0, 0, -1.5);
+// hub: click a person in the square to talk to them
+const _pickRay = new THREE.Raycaster();
+renderer.domElement.addEventListener('mousedown', (e) => {
+  if (!RUN_MODE || game.state !== 'run' || !rc || !runUI || e.button !== 0) return;
+  const people = [...rc.hubAgents.entries(), ...rc.companionAgents.entries()].filter(([, a]) => a.proxy && a.alive);
+  _pickRay.setFromCamera(new THREE.Vector2(commander.mouseNDC.x, commander.mouseNDC.y), camera);
+  const hits = _pickRay.intersectObjects(people.map(([, a]) => a.proxy), false);
+  if (!hits.length) return;
+  const hit = people.find(([, a]) => a.proxy === hits[0].object);
+  if (hit && ['reeve', 'marta', 'anselm', 'hilde', 'tom', 'nan', 'borin', 'wren', 'pip', 'maud'].includes(hit[0])) runUI.talkTo(hit[0]);
+});
 
 // ---- HUD (panels + readouts) -----------------------------------------------
 const hud = new Hud({
@@ -41,7 +65,7 @@ const hud = new Hud({
 // ---- game state ------------------------------------------------------------
 const game = { state: 'start', world: null, sim: null, player: null, playerFighter: null };
 // devtools handle (read-only inspection; the UI never reads it)
-window.__hearsay = { game, get session() { return session; }, get tactics() { return tactics; } };
+window.__hearsay = { game, get session() { return session; }, get tactics() { return tactics; }, get rc() { return rc; } };
 
 // ---- player input ----------------------------------------------------------
 const controls = new PlayerControls({
@@ -67,16 +91,29 @@ function buildWorld() {
   const abilities = ['power_strike', 'frost_bolt', 'second_wind', 'whirlwind']
     .map((id) => ABILITY_CATALOG[id]).filter(Boolean);
   const pf = new Fighter('knight', { isPlayer: true });
-  session = createSession({ scene, seed: _seed, player: { fighter: pf, spawn: { x: 0, z: 8 }, abilities } });
+  // run mode keeps a smaller town around the hub cast (the town sim is scenery, not the game)
+  session = createSession({ scene, seed: _seed, townsfolkPerTown: RUN_MODE ? 1 : undefined, player: { fighter: pf, spawn: { x: 0, z: 8 }, abilities } });
   game.world = session.world;
   game.sim = session.sim;
   game.playerFighter = pf;
   // the player's swing lands only on the body they were ordered to attack, so peaceful
   // villagers aren't friendly-fire pass-through once you choose a victim.
   session.playerStrikeGate = (tgt) => commander.targetFighter === tgt;
-  session.onRunEnd((summary) => { endBattleView(); showRunOver(summary); });
+  session.onRunEnd((summary) => { if (RUN_MODE) return; endBattleView(); showRunOver(summary); });
   endBattleView();
   tactics = new BattleDirector(session);
+  if (RUN_MODE) {
+    if (runUI) runUI.dispose();
+    rc = new RunController(session, localStore());
+    rc.setupHub();
+    runUI = new RunUI({
+      rc, auto: AUTO,
+      openBattle: (b) => openBattle(b),
+      closeBattle: () => { endBattleView(); game.state = 'run'; },
+      focus: (p) => { camFocus = p ? new THREE.Vector3(p.x, 0, p.z) : null; },
+      onDone: () => { window.__runDone = true; console.log('[run] done'); },
+    });
+  }
 
   // dungeons: scatter cave-mouth portals in the wilds and expose the manager to
   // the quest board so it can mint "delve" radiant quests against real dungeons.
@@ -139,11 +176,13 @@ function endBattleView() {
 function openBattle(b) {
   game.state = 'battle';
   if (session.player) session.player.goal = { kind: 'idle' };
-  b.start();
+  if (!b.order.length) b.start();
   battleRender = new BattleRender(scene, b);
+  tacView.auto = AUTO;
   tacView.open(b, battleRender);
 }
 tacView.onEnd = () => {
+  if (RUN_MODE && runUI) { runUI.battleDone(); return; }
   endBattleView();
   tactics.clear();
   if (session.player) session.player.goal = { kind: 'idle' };   // don't chase a foe who fled or yielded
@@ -210,12 +249,19 @@ function frame() {
         const b = game.state === 'playing' && tactics ? tactics.watch() : null;
         if (b) openBattle(b);
       }
+    } else if (game.state === 'run') {
+      // run mode, between battles: the curated hub (cast + company only), no real-time blows
+      session.step(dt, { combat: false, stage: stageFn, beforeCombat: () => scene.updateMatrixWorld(true) });
+      stage = 'run.curate'; if (rc) { rc.curate(); hubStage(rc, runUI ? runUI.speaking : null); }
+      stage = 'run.tick'; if (runUI) runUI.tick(dt, null);
     } else if (game.state === 'battle') {
       // the world holds its breath: only the battle advances (the town is not simulated mid-fight)
       stage = 'battle.tick'; tacView.tick(dt);
+      if (runUI && rc) runUI.tick(dt, rc.battle);
+      if (rc && rc.battle) battleStage(rc.battle);
       if (game.sim) { stage = 'fighter.update'; for (const f of game.sim.fighters) f.update(dt); }
       scene.updateMatrixWorld(true);
-      if (session.player && !session.player.alive) session.checkRunEnd();
+      if (!RUN_MODE && session.player && !session.player.alive) session.checkRunEnd();
       if (hud.hpFill) hud.hpFill.style.width = `${Math.max(0, (game.playerFighter.health / TUNE.maxHealth) * 100)}%`;
     } else {
       // paused / start / over: the sim is frozen, bodies keep animating (as before), no blows
@@ -224,7 +270,24 @@ function frame() {
     }
 
     hud.render(game, commander.mouseNDC, stageFn);
-    if (game.playerFighter) { stage = 'camera'; orbitCam.update(game.playerFighter.root.position, dt); }
+    stage = 'camera';
+    if (game.state === 'battle' && battleRender && rc && rc.battle) {
+      // battle camera: frame the acting unit, pulled back to read the field
+      const cur = rc.battle.current();
+      const at = cur ? cur.agent.pos : game.playerFighter.root.position;
+      orbitCam.distance += (16 - orbitCam.distance) * Math.min(1, dt * 2);
+      orbitCam.pitch += (0.92 - orbitCam.pitch) * Math.min(1, dt * 2);
+      orbitCam.update(at, dt);
+    } else if (game.state === 'battle' && battleRender) {
+      orbitCam.update(game.playerFighter.root.position, dt);
+    } else if (game.playerFighter) {
+      if (RUN_MODE) {
+        // the hub: an establishing shot of the square, or a close-up on whoever you're talking to
+        orbitCam.distance += ((camFocus ? 7.5 : 17) - orbitCam.distance) * Math.min(1, dt * 2);
+        orbitCam.pitch += ((camFocus ? 0.55 : 0.78) - orbitCam.pitch) * Math.min(1, dt * 2);
+        orbitCam.update(camFocus ?? HUB_CENTER, dt);
+      } else orbitCam.update(game.playerFighter.root.position, dt);
+    }
     stage = 'render';     renderer.render(scene, camera);
 
     const n = game.sim ? game.sim.agents.length : 0;
@@ -255,8 +318,20 @@ const INTRO = `<h1>MARKET TOWN</h1>
 setOverlay(`<h1>MARKET TOWN</h1><p>Loading…</p>`);
 preloadCharacters().then(() => {
   buildWorld();
-  game.state = 'start';
-  setOverlay(INTRO);
+  if (RUN_MODE) {
+    hideOverlay(); hint.classList.add('hidden');
+    document.body.classList.add('runmode');
+    if (!PARAMS.has('debug') && hud._dbg) hud._dbg.style.display = 'none';
+    if (hud._pstats) hud._pstats.style.display = 'none';
+    const st = document.createElement('style');
+    st.textContent = '.runmode #hud, .runmode #tabs, .runmode #econView, .runmode #inspector, .runmode #mindHint, .runmode #mindList, .runmode #mindDetail, .runmode #playerHud, .runmode #hint { display: none !important; }';
+    document.head.appendChild(st);
+    game.state = 'run';
+    if (AUTO) runUI.autoplay(); else runUI.title();
+  } else {
+    game.state = 'start';
+    setOverlay(INTRO);
+  }
   renderer.setAnimationLoop(frame);
 }).catch((err) => {
   setOverlay(`<h1 class="lose">Load error</h1><p>${err.message}</p><p>Serve over http (python3 -m http.server).</p>`);

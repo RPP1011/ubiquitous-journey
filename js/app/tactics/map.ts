@@ -145,6 +145,19 @@ export class BattleMap {
   propAt(x: number, z: number): Prop | undefined { for (const p of this.props.values()) if (p.x === x && p.z === z) return p; return undefined; }
   edge(x: number, z: number): boolean { return x === 0 || z === 0 || x === this.n - 1 || z === this.n - 1; }
 
+  /** World-space y of the level-0 floor (a stage may soften raw terrain into readable steps). */
+  baseY = 0;
+
+  /**
+   * Where a tile's surface is DRAWN: never below the real terrain mesh (so bodies and the grid
+   * are visible), raised by the tile's tactical height and any climbable prop.
+   */
+  surfaceY(x: number, z: number, withProp = true): number {
+    const t = this.tile(x, z); if (!t) return 0;
+    const floor = Math.max(safe(() => terrainHeight(t.wx, t.wz), 0), this.baseY + t.h * LEVEL);
+    return floor + (withProp ? this.standH(x, z) - t.h : 0) * LEVEL;
+  }
+
   /** Standing height of a tile (a climbable prop lifts you onto it). */
   standH(x: number, z: number): number {
     const t = this.tile(x, z); if (!t) return 0;
