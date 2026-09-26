@@ -19,6 +19,7 @@ import { TacticsView } from './ui/tacticsView.js';
 import { RunController, localStore } from './app/run/run.js';
 import { RunUI } from './ui/runView.js';
 import { hubStage, battleStage } from './ui/stagecraft.js';
+import { CameraRig } from './ui/cameraRig.js';
 import { terrainHeight } from './arena.js';
 import { ABILITY_CATALOG } from './rpg/abilities/catalog.js';
 import { DungeonManager } from './world/dungeonManager.js';
@@ -45,6 +46,8 @@ let rc = null;                     // RunController (run mode)
 let runUI = null;                  // the run screens
 let camFocus = null;               // a point the camera should favour (the person you're talking to)
 const HUB_CENTER = new THREE.Vector3(0, 0, -1.5);
+// run mode's camera is its own rig — it frames scenes, it doesn't chase whoever is acting
+const rig = new CameraRig(camera, renderer.domElement);
 // hub: click a person in the square to talk to them
 const _pickRay = new THREE.Raycaster();
 renderer.domElement.addEventListener('mousedown', (e) => {
@@ -277,22 +280,18 @@ function frame() {
 
     hud.render(game, commander.mouseNDC, stageFn);
     stage = 'camera';
-    if (game.state === 'battle' && battleRender && rc && rc.battle) {
-      // battle camera: frame the acting unit, pulled back to read the field
-      const cur = rc.battle.current();
-      const at = cur ? cur.agent.pos : game.playerFighter.root.position;
-      orbitCam.distance += (16 - orbitCam.distance) * Math.min(1, dt * 2);
-      orbitCam.pitch += (0.92 - orbitCam.pitch) * Math.min(1, dt * 2);
-      orbitCam.update(at, dt);
+    if (RUN_MODE) {
+      if (game.state === 'battle' && rc && rc.battle) {
+        // frame the fight as a whole: everyone still in it
+        const pts = rc.battle.units.filter((u) => u.out === null || u.out === 'downed').map((u) => u.agent.pos.clone());
+        rig.frameBox(pts);
+      } else if (camFocus) rig.frameOn(camFocus);
+      else rig.frameWide(HUB_CENTER);
+      rig.update(dt, input);
     } else if (game.state === 'battle' && battleRender) {
       orbitCam.update(game.playerFighter.root.position, dt);
     } else if (game.playerFighter) {
-      if (RUN_MODE) {
-        // the hub: an establishing shot of the square, or a close-up on whoever you're talking to
-        orbitCam.distance += ((camFocus ? 7.5 : 17) - orbitCam.distance) * Math.min(1, dt * 2);
-        orbitCam.pitch += ((camFocus ? 0.55 : 0.78) - orbitCam.pitch) * Math.min(1, dt * 2);
-        orbitCam.update(camFocus ?? HUB_CENTER, dt);
-      } else orbitCam.update(game.playerFighter.root.position, dt);
+      orbitCam.update(game.playerFighter.root.position, dt);
     }
     stage = 'render';     renderer.render(scene, camera);
 
