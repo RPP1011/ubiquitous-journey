@@ -10,10 +10,8 @@
 import * as THREE from 'three';
 import { preloadCharacters } from './assets.js';
 import { Fighter } from './fighter.js';
-import { resolveCombat } from './combat.js';
 import { TUNE } from './constants.js';
-import { World } from './sim/world.js';
-import { Simulation } from './sim/simulation.js';
+import { createSession } from './app/session.js';
 import { terrainHeight } from './arena.js';
 import { ABILITY_CATALOG } from './rpg/abilities/catalog.js';
 import { DungeonManager } from './world/dungeonManager.js';
@@ -25,6 +23,7 @@ import { PlayerControls } from './playerControls.js';
 const { renderer, scene, camera, orbitCam, input, commander } = boot();
 
 let dungeonMgr = null;             // built per-world in buildWorld()
+let session = null;                // the app-layer Session (js/app/session.ts) for the current run
 
 // ---- HUD (panels + readouts) -----------------------------------------------
 const hud = new Hud({
@@ -47,17 +46,27 @@ controls.installKeys();
 
 function buildWorld() {
   if (dungeonMgr) { dungeonMgr.dispose(); dungeonMgr = null; }
-  if (game.sim) { game.sim.dispose?.(); for (const a of game.sim.agents) a.fighter.dispose(); }
-  if (game.world) game.world.dispose();
+  if (session) { session.dispose(); session = null; }
 
-  game.world = new World(scene);
   // SEEDED DETERMINISM (opt-in): `?seed=<n>` in the URL arms the shared PRNG so the run
   // reproduces (same seed → same routed stochastic stream). No param ⇒ seed undefined ⇒
   // the PRNG stays unseeded (rng() === Math.random()), the default non-deterministic world.
   const _seedParam = new URLSearchParams(location.search).get('seed');
   const _seed = _seedParam == null ? undefined : (Number(_seedParam) | 0);
-  game.sim = new Simulation(scene, game.world, _seed === undefined ? {} : { seed: _seed });
-  game.sim.spawn();
+  // Starter loadout so keys 1-4 have something to cast. Mix a melee spec (arms
+  // the next swing), a projectile, a self spec and an AoE so every cast path is
+  // exercised. Guarded: missing catalog ids are skipped.
+  const abilities = ['power_strike', 'frost_bolt', 'second_wind', 'whirlwind']
+    .map((id) => ABILITY_CATALOG[id]).filter(Boolean);
+  const pf = new Fighter('knight', { isPlayer: true });
+  session = createSession({ scene, seed: _seed, player: { fighter: pf, spawn: { x: 0, z: 8 }, abilities } });
+  game.world = session.world;
+  game.sim = session.sim;
+  game.playerFighter = pf;
+  // the player's swing lands only on the body they were ordered to attack, so peaceful
+  // villagers aren't friendly-fire pass-through once you choose a victim.
+  session.playerStrikeGate = (tgt) => commander.targetFighter === tgt;
+  session.onRunEnd(showRunOver);
 
   // dungeons: scatter cave-mouth portals in the wilds and expose the manager to
   // the quest board so it can mint "delve" radiant quests against real dungeons.
@@ -65,18 +74,7 @@ function buildWorld() {
   dungeonMgr.placeEntrances();
   game.sim.dungeons = dungeonMgr;
 
-  const pf = new Fighter('knight', { isPlayer: true });
-  pf.root.position.set(0, 0, 8);
-  scene.add(pf.root);
-  game.playerFighter = pf;
-  const playerAgent = game.sim.addPlayer(pf);
-  commander.attach(playerAgent, game.sim);   // you drive this one body, point-and-click
-  // Starter loadout so keys 1-4 have something to cast. Mix a melee spec (arms
-  // the next swing), a projectile, a self spec and an AoE so every cast path is
-  // exercised. Guarded: missing catalog ids are skipped.
-  for (const id of ['power_strike', 'frost_bolt', 'second_wind', 'whirlwind']) {
-    if (ABILITY_CATALOG[id]) playerAgent.grantAbility(ABILITY_CATALOG[id]);
-  }
+  commander.attach(session.player, game.sim);   // you drive this one body, point-and-click
 
   hud.setWorld(game.sim, controls.useItem);
   // overhead follow camera (Stoneshard/Qud-ish angle), no mouse-look
@@ -90,6 +88,20 @@ const hint = document.getElementById('hint');
 function setOverlay(html) { overlay.innerHTML = html; }
 function showOverlay() { overlay.classList.remove('hidden'); }
 function hideOverlay() { overlay.classList.add('hidden'); }
+
+const _esc = (t) => String(t).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+
+// The run is over (the player's body died). Nothing carries over; R begins a new run.
+function showRunOver(summary) {
+  game.state = 'over';
+  const mins = Math.floor(summary.t / 60), secs = Math.floor(summary.t % 60);
+  const beats = summary.beats.slice(-8).map((b) => `<li>${_esc(b.text)}</li>`).join('');
+  setOverlay(`<h1 class="lose">YOU HAVE FALLEN</h1>
+    <p>Your story ended after ${mins}m ${secs}s.</p>
+    ${beats ? `<p>The town will remember:</p><ul style="text-align:left;font-size:13px">${beats}</ul>` : ''}
+    <p><span class="key">R</span> to begin a new life.</p>`);
+  showOverlay();
+}
 
 function restart() {
   buildWorld();
@@ -124,45 +136,41 @@ function frame() {
   try {
     commander.enabled = (game.state === 'playing');
 
-    if (game.state === 'playing') {
-      stage = 'commander';     commander.update(dt, game.sim._ctx());
-      // keep the player inside dungeon walls (overrides the arena clamp while below)
-      stage = 'dungeon.collide'; if (dungeonMgr && dungeonMgr.active) dungeonMgr.collidePlayer(game.playerFighter.root.position);
-      stage = 'sim.update';    game.sim.update(dt);
-      stage = 'dungeon.update'; if (dungeonMgr) dungeonMgr.update(dt);
-      // settle the PLAYER onto the terrain surface too (the commander moves it in
-      // x/z without re-grounding, so it would float on the hills). Overworld only —
-      // while below, the dungeon owns the player's deep y, so we leave it alone.
-      stage = 'groundPlayer';
-      if (game.playerFighter && !(dungeonMgr && dungeonMgr.active)) {
-        const p = game.playerFighter.root.position;
-        try { p.y = terrainHeight(p.x, p.z); } catch { /* never throw on the frame */ }
+    if (game.state === 'playing' || game.state === 'dialogue') {
+      const playing = game.state === 'playing';
+      if (playing) {
+        stage = 'commander';     commander.update(dt, game.sim._ctx());
+        // keep the player inside dungeon walls (overrides the arena clamp while below)
+        stage = 'dungeon.collide'; if (dungeonMgr && dungeonMgr.active) dungeonMgr.collidePlayer(game.playerFighter.root.position);
       }
-      stage = 'castInput';     controls.pollCastKeys();
-      stage = 'gather';        controls.pollGather(dt);
-    } else if (game.state === 'dialogue') {
-      // freeze the player but keep the social sim alive behind the modal
-      stage = 'sim.update';    game.sim.update(dt);
-    }
-
-    const fighters = game.sim ? game.sim.fighters : [];
-    stage = 'fighter.update'; for (const f of fighters) f.update(dt);
-    scene.updateMatrixWorld(true);
-
-    if (game.state === 'playing') {
-      stage = 'resolveCombat';
-      // hostility gate: NPCs use ground-truth isHostile; the player's swings are
-      // allowed to land only on the body they were ordered to attack, so peaceful
-      // villagers aren't friendly-fire pass-through once you choose a victim.
-      const isHostile = (atk, tgt) => atk === game.playerFighter
-        ? commander.targetFighter === tgt
-        : game.sim.isHostile(atk, tgt);
-      const events = resolveCombat(fighters, isHostile, game.sim._ctx());
-      if (events.length) {
-        stage = 'onCombatEvents'; game.sim.onCombatEvents(events);
+      // The canonical frame lives in the Session. In dialogue the player is frozen but the
+      // social sim keeps running behind the modal, and no blows resolve.
+      const events = session.step(dt, {
+        combat: playing,
+        stage: stageFn,
+        afterSimUpdate: () => {
+          if (!playing) return;
+          if (dungeonMgr) dungeonMgr.update(dt);
+          // settle the PLAYER onto the terrain surface too (the commander moves it in
+          // x/z without re-grounding, so it would float on the hills). Overworld only —
+          // while below, the dungeon owns the player's deep y, so we leave it alone.
+          if (game.playerFighter && !(dungeonMgr && dungeonMgr.active)) {
+            const p = game.playerFighter.root.position;
+            try { p.y = terrainHeight(p.x, p.z); } catch { /* never throw on the frame */ }
+          }
+        },
+        beforeCombat: () => scene.updateMatrixWorld(true),
+      });
+      if (playing) {
         for (const ev of events) if (ev.target === game.playerFighter && ev.type !== 'blocked') hud.flashHurt();
+        stage = 'castInput';     controls.pollCastKeys();
+        stage = 'gather';        controls.pollGather(dt);
+        if (hud.hpFill) hud.hpFill.style.width = `${Math.max(0, (game.playerFighter.health / TUNE.maxHealth) * 100)}%`;
       }
-      if (hud.hpFill) hud.hpFill.style.width = `${Math.max(0, (game.playerFighter.health / TUNE.maxHealth) * 100)}%`;
+    } else {
+      // paused / start / over: the sim is frozen, bodies keep animating (as before), no blows
+      if (game.sim) { stage = 'fighter.update'; for (const f of game.sim.fighters) f.update(dt); }
+      scene.updateMatrixWorld(true);
     }
 
     hud.render(game, commander.mouseNDC, stageFn);
