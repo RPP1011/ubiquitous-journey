@@ -38,6 +38,7 @@ export function foldBonds(b: Battle, bonds: Record<string, BondRec>, keyOf: Map<
     else if (e.kind === 'revive') add(e.actor, e.target, 3);
     else if (e.kind === 'combo' && combos < 3) { add(e.actor, e.with, 1); combos++; }
     else if (e.kind === 'down' && e.target != null) downed.add(e.target);
+    else if (e.kind === 'broke') add(e.actor, e.target, -1);
     else if ((e.kind === 'escape' || e.kind === 'broken') && e.actor != null) for (const d of downed) add(e.actor, d, -2);
   }
   if (won) {

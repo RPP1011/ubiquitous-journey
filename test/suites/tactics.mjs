@@ -287,6 +287,12 @@ export function tacticsTest(ok, { stubScene, makeFighter }) {
     b.order = [pip, you, maud, g, m]; b.turn = 0;
     b.speak(you, plan.call);
     ok((predictAllies(b, pip).get(m.id) ?? 0) === 1, 'talk: Pip, acting first, now knows exactly what you will do');
+    // say one thing, do another: your word is worth less to those who heard
+    const w0 = willingness(b, pip, you, { kinds: ['attack'], target: g.id }).w;
+    b.order = [you, pip, maud, g, m]; b.turn = 0; you.acted = false; you.moved = false;
+    b.act(you, { kind: 'defend' });
+    b.endTurn(you);
+    ok(willingness(b, pip, you, { kinds: ['attack'], target: g.id }).w < w0 && b.events.some((e) => e.kind === 'broke'), 'talk: breaking your announced plan costs you their trust');
     ss.dispose();
   }
 

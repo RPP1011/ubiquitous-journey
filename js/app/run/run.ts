@@ -472,6 +472,10 @@ export class RunController {
       const others = witnesses.filter((w) => w !== k);
       if (E.some((e) => (e.kind === 'escape' || e.kind === 'broken') && e.actor === uid)) add({ label: `${first} ran at ${at}`, lurid: `${first} fled screaming at ${at}`, tags: ['courage'], weight: 0.6, about: k, witnesses: others });
       else if (b.get(uid)?.agent.alive && E.filter((e) => (e.kind === 'kill' || e.kind === 'guard' || e.kind === 'revive') && e.actor === uid).length >= 2) add({ label: `${first} stood firm at ${at}`, lurid: `${first} held off five men alone at ${at}`, tags: ['courage'], weight: 0.6, about: k, witnesses: others.length ? others : witnesses });
+      const dive = E.find((e) => e.kind === 'save' && e.actor === uid);
+      if (dive) add({ label: `${first} took a blow meant for ${dive.target === pid ? 'you' : nm(dive.target)} at ${at}`, lurid: `${first} took a sword through the shoulder for ${dive.target === pid ? 'you' : nm(dive.target)} at ${at}`, tags: ['loyalty', 'courage'], weight: 0.9, about: k, witnesses: others.length ? others : witnesses });
+      const together = E.filter((e) => e.kind === 'combo' && ((e.actor === pid && e.with === uid) || (e.actor === uid && e.with === pid))).length;
+      if (together >= 2) add({ label: `fought as one with ${first} at ${at}`, lurid: `fought back to back with ${first} against twenty at ${at}`, tags: ['loyalty', 'courage'], weight: 0.6, about: 'player' });
       const saved = E.find((e) => e.kind === 'revive' && e.actor === pid && e.target === uid);
       if (saved) add({ label: `hauled ${first} out of the fight at ${at}`, lurid: `carried ${first} out on their back at ${at}`, tags: ['loyalty', 'courage'], weight: 0.8, about: 'player' });
     }

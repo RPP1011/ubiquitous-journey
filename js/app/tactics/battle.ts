@@ -26,7 +26,7 @@ import { check, chance, sheetOf, type Sheet, type Stat } from '../combat/rules.j
 import { objectiveOf, type Objective } from '../combat/objectives.js';
 import { BattleMap, DIRS, JUMP, FALL_SAFE, TILE, key, type Prop, type Tile } from './map.js';
 import { areaTiles, inReach, type PieceDef, type PieceState } from './pieces.js';
-import { hears, type Call, type Want } from './comms.js';
+import { answers, hears, type Call, type Want } from './comms.js';
 
 export type Side = 'us' | 'them';
 export type Role = 'player' | 'companion' | 'ally' | 'foe';
@@ -48,7 +48,7 @@ export interface Traits { bravery: number; compassion: number; loyalty: number; 
 export interface BattleEvent {
   round: number;
   kind: 'hit' | 'kill' | 'down' | 'revive' | 'flee' | 'escape' | 'ignite' | 'burned' | 'shove' | 'hazard' | 'social' | 'bluffed'
-    | 'grab' | 'yield' | 'parley' | 'heal' | 'guard' | 'reaction' | 'free' | 'rescued' | 'relic' | 'broken' | 'finish' | 'refuse' | 'fell' | 'piece' | 'combo' | 'save';
+    | 'grab' | 'yield' | 'parley' | 'heal' | 'guard' | 'reaction' | 'free' | 'rescued' | 'relic' | 'broken' | 'finish' | 'refuse' | 'fell' | 'piece' | 'combo' | 'save' | 'broke';
   actor?: Unit['id'];
   target?: Unit['id'];
   detail?: string;
@@ -189,6 +189,10 @@ export class Battle {
   /** What people have called out (comms.ts): asks and announced plans, heard by those in earshot. */
   calls: Call[] = [];
   private callSeq = 0;
+  /** How much a speaker's word is worth less after they said one thing and did another. */
+  brokenWord = new Map<Unit['id'], number>();
+  /** What each unit did on its last turn (to check it against what it said it would do). */
+  private lastDeed = new Map<Unit['id'], { action: Action; at: Spot }>();
 
   /** Call out — free, once a turn. Everyone in earshot hears it, foes included. */
   speak(u: Unit, c: { to: Unit['id'][] | 'all'; kind: 'ask' | 'plan'; want: Want; words: string }): string | null {
@@ -436,6 +440,17 @@ export class Battle {
   /** The current unit has finished (player: End Turn; NPC: after its plan). */
   endTurn(u: Unit, facing?: Spot): void {
     if (this.current() !== u) return;
+    // said you'd do one thing and did another: the ones who heard trust your word less
+    for (const c of this.calls) {
+      if (c.kind !== 'plan' || c.from !== u.id || c.round !== this.round || c.answered.includes(u.id)) continue;
+      c.answered.push(u.id);
+      const did = this.lastDeed.get(u.id);
+      if (did && answers(c.want, did.action, did.at)) continue;
+      this.brokenWord.set(u.id, (this.brokenWord.get(u.id) ?? 0) + 0.15);
+      const heard = c.heardBy.map((id) => this.get(id)).filter((x): x is Unit => !!x && x.side === u.side && x.role === 'companion');
+      for (const l of heard) this.ev('broke', u, l);
+      if (heard.length) this.note('social', `${heard.map((l) => l.agent.name.split(' ')[0]).join(' and ')} ${heard.length > 1 ? 'notice' : 'notices'} — that wasn't what ${u.agent.controlled ? 'you' : this.nm(u)} said.`);
+    }
     const foe = facing ?? this.nearestFoe(u);
     if (foe) this.face(u, foe);
     u.slowed = 0;
@@ -678,6 +693,7 @@ export class Battle {
     const legal = a.kind === 'wait' || a.kind === 'social' || a.kind === 'ready' || this.options(u).some((o) => sameAction(o, a));
     if (!legal) return 'not possible from here';
     u.acted = true;
+    this.lastDeed.set(u.id, { action: a, at: { x: u.x, z: u.z } });
     const before = new Map(this.units.map((x) => [x, [x.prone, x.exposed, x.stunned]] as const));
     const fl = flourish ? ` — "${flourish}"` : '';
     const t = 'target' in a && a.target != null ? this.get(a.target as Unit['id']) : undefined;
