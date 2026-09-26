@@ -57,6 +57,9 @@ export function verbOf(u: Unit, a: Action): Verb {
     case 'trip': return V('trip', 'Trip', '🦵', 'Fight');
     case 'disarm': return V('disarm', 'Disarm', '🗡', 'Fight');
     case 'hurl': return V('hurl', 'Hurl weapon', '🪃', 'Fight');
+    case 'charge': return V('charge', 'Charge', '🐂', 'Fight');
+    case 'pin': return V('pin', 'Pinning shot', '📌', 'Fight');
+    case 'howl': return V('howl', 'Howl', '🐺', 'Stance');
     case 'grab': return V('grab', 'Pickpocket', '👛', 'Fight');
     case 'guard': return V('guard', 'Guard', '🛡', 'People');
     case 'aid': return V('aid', 'Aid', '✚', 'People');
@@ -96,6 +99,8 @@ export function actionLabel(b: Battle, u: Unit, a: Action): string {
     case 'trip': return `Trip ${T(a.target)}`;
     case 'disarm': return `Disarm ${T(a.target)}`;
     case 'hurl': return `Hurl your weapon at ${T(a.target)}`;
+    case 'charge': return `Charge ${T(a.target)}`;
+    case 'pin': return `Pin ${T(a.target)}`;
     case 'aid': return a.target === u.id ? 'Patch yourself up' : `Aid ${T(a.target)}`;
     case 'free': return `Cut ${T(a.target)} free`;
     case 'guard': return `Guard ${T(a.target)}`;
@@ -109,7 +114,7 @@ export function actionLabel(b: Battle, u: Unit, a: Action): string {
 }
 
 function groupOf(b: Battle, a: Action): AffGroup {
-  if (['attack', 'ability', 'subdue', 'grab', 'trip', 'disarm', 'hurl'].includes(a.kind) || (a.kind === 'shove' && b.get(a.target as Unit['id']))) return 'Fight';
+  if (['attack', 'ability', 'subdue', 'grab', 'trip', 'disarm', 'hurl', 'charge', 'pin'].includes(a.kind) || (a.kind === 'shove' && b.get(a.target as Unit['id']))) return 'Fight';
   if (['kick', 'throw', 'ignite', 'douse', 'pickup', 'shove', 'hew', 'use'].includes(a.kind)) return 'Environment';
   if (a.kind === 'social' || a.kind === 'aid' || a.kind === 'guard' || a.kind === 'free') return 'People';
   return 'Stance';

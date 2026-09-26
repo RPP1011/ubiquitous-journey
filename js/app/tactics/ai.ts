@@ -16,6 +16,7 @@ import { FALL_SAFE, DIRS, key } from './map.js';
 import type { Action, Battle, Spot, Unit } from './battle.js';
 import { areaTiles } from './pieces.js';
 import { answers, callName, feasible, heardCalls, wantSpot, willingness } from './comms.js';
+import { honour } from './intents.js';
 
 const frac = (u: Unit) => Math.max(0, u.agent.fighter.health) / TUNE.maxHealth;
 const dist = (a: Spot, b: Spot) => Math.abs(a.x - b.x) + Math.abs(a.z - b.z);
@@ -70,6 +71,7 @@ function setupOf(b: Battle, u: Unit, a: Action, s: Spot): Unit['id'] | null {
     case 'ability': { const spec = u.agent.abilities.get(a.abilityId); return t && spec?.effects.some((e) => e.op === 'expose' || e.op === 'stun' || e.op === 'knockback') ? t.id : null; }
     case 'social': return t && a.verb === 'bluff' && a.claim === 'look_behind' ? t.id : null;
     case 'trip': return t ? t.id : null;
+    case 'charge': return t ? t.id : null;
     case 'throw': { const p = b.map.props.get(a.prop) ?? u.carrying; const tu = b.unitAt(a.at.x, a.at.z); return p?.blinding && tu ? tu.id : null; }
     case 'use': {
       const pc = b.pieces.get(a.piece); if (!pc) return null;
@@ -119,7 +121,7 @@ export function planTurn(b: Battle, u: Unit, opts: { predict?: boolean } = {}): 
     if (t.tags.has('chief') && goals.chief === t.id && u.side === 'us') w *= 1.6;
     if (t.tactic === 'archer' || t.tactic === 'healer') w *= 1.2;                  // pick off the back line
     if (t.morale === 'broken') w *= u.traits || u.role === 'player' ? Math.max(0.05, 0.3 + tr.ruthlessness * 2 - tr.compassion) : 0.6;
-    if (t.tags.has('captive')) w *= u.side === 'them' ? 1.4 : 0;                   // guards cut down an escaping captive
+    if (t.tags.has('captive')) w *= u.side === 'them' && !t.bound ? 1.4 : 0;     // guards cut down an ESCAPING captive; a bound one is a hostage
     return w;
   };
   // the merciful take NAMED people alive (a chief, someone's son); others want the chief alive by order
@@ -228,6 +230,27 @@ export function planTurn(b: Battle, u: Unit, opts: { predict?: boolean } = {}): 
         }
         case 'free': g = u.side === 'us' ? 2.0 + tr.compassion : 0; why = 'cut the captive free'; break;
         case 'grab': g = (o.kind === 'rob' && u.loot === 0 && t ? p * (t.id === o.targetId ? 1.8 : 0.9) : 0) + (u.traits || u.role === 'player' ? p * tr.ruthlessness * 0.5 * (1 - tr.compassion) : 0); break;
+        case 'charge': {
+          if (!t) break;
+          const dmg = TUNE.damage * (0.75 + 0.08 * u.sheet.might) * 1.3;
+          g = p * weight(t) * (Math.min(1, dmg / Math.max(1, t.agent.fighter.health)) + 0.3) * (0.6 + risk * 0.6);
+          why = `charge ${b.nm(t)}`;
+          break;
+        }
+        case 'pin': {
+          if (!t) break;
+          const runner = t.tactic === 'rogue' || t.tactic === 'skirmisher' || t.carrying?.kind === 'relic' || t.tags.has('captive') || t.role === 'player';
+          g = p * weight(t) * (runner ? 0.55 : 0.3);
+          why = `pin ${b.nm(t)} down`;
+          break;
+        }
+        case 'howl': {
+          const pack = friends.filter((f) => f.tactic === 'beast' && f.morale !== 'steady').length;
+          const timid = foes.filter((f) => dist(f, u) <= 6 && (f.traits ? f.traits.bravery < 0.45 : f.sheet.nerve < 2)).length;
+          g = foes.some((f) => dist(f, u) <= 7) ? 0.25 + pack * 0.5 + timid * 0.35 : 0;
+          why = 'howl';
+          break;
+        }
         case 'hurl': {
           // a last resort at range: worth it on a fleeing chief or an archer you can't reach otherwise
           if (!t) break;
@@ -320,6 +343,23 @@ export function planTurn(b: Battle, u: Unit, opts: { predict?: boolean } = {}): 
         else if (!can && at) asked += 0.45 * w * Math.max(0, dist(u, at) - dist(s, at)) / Math.max(1, u.move);   // out of reach: close in
       }
       if (threatened && (a.kind === 'defend' || a.kind === 'block')) asked += 0.35;
+      // read what the other side has committed to (telegraphed intents): get out of it, brace for
+      // it, or stand in the way of the blow meant for a friend
+      for (const it of b.intents.values()) {
+        const foe = b.get(it.unit); if (!foe || foe.side === u.side || foe.out !== null || it.target == null) continue;
+        const from = it.to ?? foe;
+        if (it.target === u.id) {
+          if (a.kind === 'defend' || a.kind === 'block') asked += 0.3;
+          if (dist(s, from) > 2 && dist(u, from) <= 2) asked += 0.25;           // step out of it
+        } else {
+          const ward = b.get(it.target);
+          if (!ward || ward.side !== u.side || ward === u) continue;
+          const care = (tr.compassion + (u.tactic === 'guardian' ? 0.6 : 0) + 0.1 * b.bondOf(u, ward).lvl);
+          if (a.kind === 'guard' && a.target === ward.id) asked += 0.35 * care;
+          if (a.kind === 'block' && dist(s, from) + dist(s, ward) <= dist(from, ward) + 1) asked += 0.45 * care;
+          if (it.action.kind === 'charge' && (a.kind === 'defend' || a.kind === 'block') && (s.x === from.x || s.z === from.z) && dist(s, from) < dist(from, ward)) asked += 0.4 * care;   // brace in the charge's path
+        }
+      }
       if (asked > 0.2 && !opts.predict) why = `${why} (as asked)`;
       if (g + asked > 0) consider(s, a, g + asked, why, v);
     }
@@ -412,13 +452,24 @@ function positionValue(b: Battle, u: Unit, s: Spot): number {
 /** Run a unit's whole turn: move (if planned), act, end facing the nearest foe. */
 export function runTurn(b: Battle, u: Unit): Plan {
   callOrders(b, u);
-  const plan = planTurn(b, u);
+  // do what you said you'd do — unless they've made it impossible
+  const it = b.intents.get(u.id);
+  const kept = it ? honour(b, u, it) : null;
+  if (it) b.intents.delete(u.id);
+  if (it && !kept && it.target != null && b.get(it.target)?.out === null) b.note('move', `${b.nm(u, true)} can't get at ${b.nm(b.get(it.target)!)} — the plan is foiled.`);
+  const plan: Plan = kept ? { to: kept.to, action: kept.action, score: 1, why: it!.why } : planTurn(b, u);
   answerCalls(b, u, plan);
   if (plan.to) b.moveTo(u, plan.to);
   const before = new Map(b.foesOf(u).map((f) => [f, [f.prone, f.exposed, f.stunned].join()]));
   if (u.out === null && u.agent.alive && b.current() === u && !u.acted) {
     const err = b.act(u, plan.action);
     if (err && plan.action.kind !== 'defend') b.act(u, { kind: 'defend' });
+  }
+  // a skirmisher hits and runs: a couple of steps back, out of reach
+  if (u.tactic === 'skirmisher' && u.out === null && (plan.action.kind === 'attack' || plan.action.kind === 'ability') && b.foesOf(u).some((f) => dist(f, u) <= 1)) {
+    let best: Spot | null = null, bd = 1;
+    for (const k of b.reachable(u, 2).keys()) { const [x, z] = k.split(',').map(Number); const d = Math.min(...b.foesOf(u).map((f) => dist(f, { x, z }))); if (d > bd) { bd = d; best = { x, z }; } }
+    if (best) { const from = { x: u.x, z: u.z }; u.x = best.x; u.z = best.z; b.place(u); b.cue({ k: 'step', u: u.id, from, to: best }); b.note('move', `${b.nm(u, true)} darts back out of reach.`); }
   }
   // laid someone open? call it, so the others can pile in
   if (!u.spoke && u.out === null && (u.traits || u.tactic === 'leader')) {

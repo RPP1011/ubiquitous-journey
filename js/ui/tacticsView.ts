@@ -4,7 +4,7 @@
 
 import * as THREE from 'three';
 import { TUNE } from '../constants.js';
-import { affordances, forecast, propTraits, useIcons, verbOf, aimOf, type Affordance } from '../app/tactics/affordances.js';
+import { affordances, forecast, propTraits, useIcons, verbOf, aimOf, actionLabel, type Affordance } from '../app/tactics/affordances.js';
 import { runTurn, planTurn } from '../app/tactics/ai.js';
 import { phrase, autoCall } from '../app/run/autopilot.js';
 import { readWriteIn, describeTrigger, resolveIntents, splitConditional, readTrigger, readyReadings, norm, type GridReading } from '../app/tactics/writein.js';
@@ -46,6 +46,8 @@ const CSS = `
 #tac .log .join { color: #8fe39a; } #tac .log .end { color: #e8c879; font-weight: 700; } #tac .log .rd { color: #6f7b88; font-size: 10px; margin-top: 3px; }
 #tac .hint { font-size: 10px; color: #6f7b88; margin-top: 5px; }
 #tac .verbs { display: flex; flex-wrap: wrap; gap: 5px; }
+#tac .coming { margin-top: 6px; font-size: 11.5px; } #tac .coming h5 { margin: 0 0 2px; font-size: 10px; letter-spacing: .8px; text-transform: uppercase; color: #8d99a6; }
+#tac .coming .ci.foe { color: #f0a59a; } #tac .coming .ci.mate { color: #9ad8a4; } #tac .coming .ci::before { content: '→ '; opacity: .6; }
 #tac .verb { padding: 4px 8px; font-size: 13px; } #tac .verb .n { display: inline-block; min-width: 16px; margin-left: 5px; padding: 0 5px; border-radius: 8px;
   background: rgba(255,255,255,.12); font-size: 11px; text-align: center; }
 #tac .verb.env { border-color: rgba(216,162,74,.6); background: rgba(216,162,74,.14); } #tac .verb.env .n { background: #d8a24a; color: #1a1206; font-weight: 700; }
@@ -354,6 +356,16 @@ export class TacticsView {
     const b = this.b, r = this.r; if (!b || !r) return;
     const u = this.mine();
     r.reach.clear(); r.targets.clear(); r.path = []; r.usable.clear(); r.preview = null;
+    // what everyone else has committed to (shown on your turn)
+    r.intents = !u || b.outcome ? [] : [...b.intents.values()].flatMap((it) => {
+      const w = b.get(it.unit), t = it.target != null ? b.get(it.target) : undefined;
+      if (!w || w.out !== null || (t && t.out === 'dead')) return [];
+      // aimed at someone, at a set-piece, or just somewhere to be
+      const pc = it.action.kind === 'use' ? b.pieces.get(it.action.piece) : undefined;
+      const end = t ? { x: t.x, z: t.z } : pc ? { x: pc.at[0][0], z: pc.at[0][1] } : it.to;
+      if (!end || (end.x === w.x && end.z === w.z)) return [];
+      return [{ from: { x: w.x, z: w.z }, via: t || pc ? it.to : null, to: end, foe: w.side !== u.side, heavy: it.action.kind === 'charge' || it.action.kind === 'use' }];
+    });
     if (!u || b.outcome) return;
     for (const a of this.options()) if (a.subject?.kind === 'piece') { const pc = b.pieces.get(a.subject.id); if (pc) for (const [x, z] of pc.at) r.usable.add(key(x, z)); }
     for (const a of this.options()) if (a.subject?.kind === 'prop') { const p = b.map.props.get(a.subject.id); if (p && !(p.kind === 'tree' && !a.catches.length)) r.usable.add(key(p.x, p.z)); }
@@ -440,7 +452,14 @@ export class TacticsView {
       const sel = this.verb ? verbs.get(this.verb) : undefined;
       const pickHtml = sel ? `<div class="pick">${sel.v.name}: click a highlighted target (${sel.n})<button data-x="unverb">cancel</button></div>` : '';
       const chips = this.readings.map((r, i) => `<button class="chip ${i ? 'alt' : ''}" data-r="${i}">${esc(r.label)}${r.p < 1 ? `<span class="p">${pct(r.p)}</span>` : ''}${r.notes.length ? ` <i style="color:#8d99a6">· ${esc(r.notes.join(', '))}</i>` : ''}</button>`).join('');
+      const coming = [...b.intents.values()].map((it) => {
+        const w = b.get(it.unit), t = it.target != null ? b.get(it.target) : undefined;
+        if (!w || w.out !== null) return '';
+        void t;
+        return `<div class="ci ${w.side !== mine.side ? 'foe' : 'mate'}"><b>${esc(b.nm(w, true))}</b>: ${esc(actionLabel(b, w, it.action).replace(/^Brace$/, 'hold and brace'))}${it.to ? ' (after moving)' : ''}</div>`;
+      }).filter(Boolean);
       body = `<div class="who"><b>${esc(mine.role === 'player' ? 'Your turn' : `Command ${mine.agent.name}`)}</b> <span class="st">${mine.moved ? 'moved' : 'can move'} · ${mine.acted ? 'acted' : 'can act'}</span></div>
+        ${coming.length ? `<div class="coming"><h5>Coming</h5>${coming.join('')}</div>` : ''}
         <div class="bar"><i style="width:${hp(mine)}%"></i></div><div class="st">${esc(status(mine))}</div>
         ${Object.entries(groups).filter(([, v]) => v.length).map(([k, v]) => `<div class="grp"><h5>${k === 'Environment' ? 'Use the field' : k}</h5><div class="verbs">${v.join('')}</div></div>`).join('')}${pickHtml}${all.length ? '' : '<div class="st">You have acted — move, or end your turn.</div>'}
         <input id="tac-in" placeholder="Describe what ${mine.role === 'player' ? 'you do' : esc(mine.agent.name) + ' does'}… (Enter)" value="${esc(this.draft)}" autocomplete="off">

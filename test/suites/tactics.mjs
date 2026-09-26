@@ -281,7 +281,7 @@ export function tacticsTest(ok, { stubScene, makeFighter }) {
     const w = willingness(b, maud, you, { kinds: ['attack'], target: m.id });
     ok(w.w < 0.2 && /given up/.test(w.why), `talk: Maud refuses to strike the broken (${w.w.toFixed(2)}: ${w.why})`);
     // overheard: a foe near enough hears the plan against it
-    ok(b.calls[0].heardBy.includes(pip.id), 'talk: the ask was heard by Pip');
+    ok(b.calls.find((c) => c.words === ask.call.words)?.heardBy.includes(pip.id), 'talk: the ask was heard by Pip');
     // announcing: "I'll shove Mira" — a friend acting before you can predict you exactly
     b.calls.length = 0; you.spoke = false;
     const plan = readWriteIn(b, you, "I'll shove Mira")[0];
@@ -328,6 +328,27 @@ export function tacticsTest(ok, { stubScene, makeFighter }) {
     const d0 = Math.abs(you.x - g.x) + Math.abs(you.z - g.z);
     ok(!b.moveTo(you, r.via) && !b.act(you, { kind: 'dash' }) && !b.moveTo(you, r.to), 'dash: move, dash, move again');
     ok(d0 - (Math.abs(you.x - g.x) + Math.abs(you.z - g.z)) > you.move, `dash: covered more ground than one move (${d0} → ${Math.abs(you.x - g.x) + Math.abs(you.z - g.z)})`);
+    ss.dispose();
+  }
+
+  // --- 18. intents: foes commit to a telegraphed move; you can foil it; a charge breaks on a brace --
+  {
+    const { s: ss, b, mk } = arena(stubScene, makeFighter);
+    const you = b.add(ss.player, 'player', { x: 5, z: 9 });
+    const borinA = mk('Borin', 'townsfolk'); borinA.inParty = true;
+    const borin = b.add(borinA, 'companion', { x: 2, z: 9 }, { traits: { bravery: 0.9, compassion: 0.6, loyalty: 0.8, ruthlessness: 0.2 }, tactic: 'guardian' });
+    const brute = b.add(mk('Hob'), 'foe', { x: 5, z: 4 }, { tactic: 'brute' });
+    order(b, you, borin, brute); b.start();
+    const it = b.intents.get(brute.id);
+    ok(it && it.target != null, `intents: as your turn begins, Hob has committed to a move (${it && `${it.action.kind} → ${it.target}`})`);
+    ok(b.options(brute).some((a) => a.kind === 'charge' && a.target === you.id), 'intents: a brute in a clear line can charge');
+    // Hob committed to charging you — step into his line, braced, and the charge breaks on you... on Borin
+    b.intents.set(brute.id, { unit: brute.id, to: null, action: { kind: 'charge', target: you.id }, why: 'charge', target: you.id, round: b.round });
+    b.endTurn(you);                                   // Borin's turn: plant in the lane, braced
+    borin.x = 5; borin.z = 6; b.place(borin); b.act(borin, { kind: 'defend' }); b.endTurn(borin);
+    const hobHp = brute.agent.fighter.health;
+    runTurn(b, brute);
+    ok(brute.prone || brute.agent.fighter.health < hobHp || b.log.some((l) => /foiled|breaks on the braced/.test(l.text)), `intents: the charge is foiled or breaks on the braced shield (${b.log.slice(-2).map((l) => l.text).join(' | ')})`);
     ss.dispose();
   }
 

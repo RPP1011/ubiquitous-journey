@@ -75,6 +75,10 @@ export class BattleRender {
   private vis: boolean[] = [];
   /** Tiles holding an object the acting unit can use this turn. */
   usable = new Set<string>();
+  /** Telegraphed intents to draw: from the unit (or its planned tile) to what it means to act on. */
+  intents: Array<{ from: Spot; via: Spot | null; to: Spot; foe: boolean; heavy: boolean }> = [];
+  private intentKey = '';
+  private intentGroup: THREE.Group | null = null;
   /** A hovered option: its object, and the tiles it will touch. */
   preview: { subject: Set<string>; effect: Set<string> } | null = null;
 
@@ -110,6 +114,40 @@ export class BattleRender {
   }
 
   /** World position of a tile's surface (for screen-space markers). */
+  /** Arrows for what everyone else will do: red for foes, green for your side; heavy for a charge. */
+  private drawIntents(): void {
+    const k = JSON.stringify(this.intents);
+    if (k === this.intentKey) { if (this.intentGroup) (this.intentGroup as unknown as { children: Array<{ material?: { opacity: number } }> }).children.forEach((c) => { if (c.material) c.material.opacity = 0.55 + 0.35 * Math.sin(this.t * 4); }); return; }
+    this.intentKey = k;
+    if (this.intentGroup) { this.scene.remove(this.intentGroup); this.intentGroup = null; }
+    if (!this.intents.length) return;
+    const g = new THREE.Group();
+    const add = (o: unknown) => (g as unknown as { add(o: unknown): void }).add(o);
+    for (const it of this.intents) {
+      const color = it.foe ? (it.heavy ? 0xff5a2a : 0xe0503f) : 0x6fd07f;
+      const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, depthWrite: false });
+      const pts = [it.from, ...(it.via ? [it.via] : []), it.to].map((s) => this.worldOf(s, 1.1, false));
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i], b = pts[i + 1];
+        const len = a.distanceTo(b); if (len < 0.01) continue;
+        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(it.heavy ? 0.09 : 0.05, it.heavy ? 0.09 : 0.05, len, 6), mat);
+        o3(shaft).position.set((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
+        (shaft as unknown as { lookAt(v: unknown): void; rotateX(r: number): void }).lookAt(b);
+        (shaft as unknown as { rotateX(r: number): void }).rotateX(Math.PI / 2);
+        add(shaft);
+      }
+      const end = pts[pts.length - 1], prev = pts[pts.length - 2];
+      const head = new THREE.Mesh(new THREE.ConeGeometry(it.heavy ? 0.28 : 0.2, 0.5, 8), mat);
+      const dir = end.clone().sub(prev).normalize();
+      o3(head).position.set(end.x - dir.x * 0.45, end.y - dir.y * 0.45, end.z - dir.z * 0.45);
+      (head as unknown as { lookAt(v: unknown): void }).lookAt(end.clone().add(dir));
+      (head as unknown as { rotateX(r: number): void }).rotateX(Math.PI / 2);
+      add(head);
+    }
+    o3(g).renderOrder = 7;
+    this.scene.add(g); this.intentGroup = g;
+  }
+
   worldOf(s: Spot, lift = 0, onProp = true): THREE.Vector3 {
     const t = this.map.tile(s.x, s.z)!;
     return new THREE.Vector3(t.wx, this.map.surfaceY(s.x, s.z, onProp) + lift, t.wz);
@@ -158,6 +196,7 @@ export class BattleRender {
     this.hi.instanceMatrix.needsUpdate = true;
     if (this.hi.instanceColor) this.hi.instanceColor.needsUpdate = true;
     this.hiMat.opacity = 0.62 + 0.25 * Math.sin(this.t * 6);
+    this.drawIntents();
 
     // props: add new; ease existing toward where the rules put them (a kicked barrel ROLLS, a
     // tipped table FALLS); the removed shrink away (burnt, thrown, picked up)
@@ -213,7 +252,7 @@ export class BattleRender {
   }
 
   dispose(): void {
-    this.scene.remove(this.tiles); this.scene.remove(this.hi);
+    this.scene.remove(this.tiles); this.scene.remove(this.hi); if (this.intentGroup) this.scene.remove(this.intentGroup);
     for (const m of this.propMeshes.values()) this.scene.remove(m);
     for (const f of this.flames) this.scene.remove(f);
     this.propMeshes.clear(); this.flames = [];
