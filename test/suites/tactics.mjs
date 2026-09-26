@@ -6,6 +6,7 @@ import { createSession } from '../../js/app/session.js';
 import { BattleMap } from '../../js/app/tactics/map.js';
 import { Battle } from '../../js/app/tactics/battle.js';
 import { runTurn } from '../../js/app/tactics/ai.js';
+import { readWriteIn } from '../../js/app/tactics/writein.js';
 import { Agent } from '../../js/sim/agent.js';
 import { HeadlessFighter } from '../../js/headlessFighter.js';
 
@@ -146,6 +147,35 @@ export function tacticsTest(ok, { stubScene, makeFighter }) {
     order(b, g, lookout, you); b.start();
     ok(b.current() === lookout, 'tactics: the surprised bandit\'s first turn is skipped');
     s.dispose();
+  }
+
+  // --- 8. write-ins resolve to grid actions (with the GM's positioning) -----------------------
+  {
+    const { s: ss, map, b, mk } = arena(stubScene, makeFighter);
+    const you = b.add(ss.player, 'player', { x: 3, z: 5 });
+    const borinA = mk('Borin', 'townsfolk'); borinA.inParty = true;
+    const borin = b.add(borinA, 'companion', { x: 3, z: 7 });
+    const g = b.add(mk('Garrick'), 'foe', { x: 7, z: 5 });
+    const m = b.add(mk('Mira'), 'foe', { x: 6, z: 3 });
+    map.addProp('brazier', 5, 5); map.addProp('campfire', 6, 2); map.addProp('flour', 3, 4); map.addProp('cart', 2, 5);
+    order(b, you, borin, g, m); b.start();
+    you.agent.fighter.health = 60;
+    const top = (t) => readWriteIn(b, you, t)[0];
+    const cases = [
+      ['kick the brazier into Garrick', (r) => r.action.kind === 'kick' && r.to && r.to.x === 4 && r.to.z === 5],
+      ['shove Mira into the fire', (r) => r.action.kind === 'shove' && r.action.target === m.id && r.to && r.to.x === 6 && r.to.z === 4],
+      ['throw the flour at Mira', (r) => r.action.kind === 'throw' && r.action.at.x === m.x],
+      ['climb onto the cart', (r) => r.to && r.to.x === 2 && r.to.z === 5],
+      ['if anyone attacks Borin, I shove them', (r) => r.action.kind === 'ready' && r.action.trigger.on === 'attacks' && r.action.response.kind === 'shove'],
+      ['when Garrick moves, hit him', (r) => r.action.kind === 'ready' && r.action.trigger.on === 'moves'],
+      ['yell at Mira that Garrick is a traitor', (r) => r.action.kind === 'social' && r.action.claim === 'turncoat' && r.action.target === m.id && r.action.subject === g.id],
+      ['bandage myself', (r) => r.action.kind === 'aid' && r.action.target === you.id],
+    ];
+    let pass = 0;
+    for (const [t, pred] of cases) { const r = top(t); if (r && pred(r)) pass++; else console.log(`   write-in miss: "${t}" → ${JSON.stringify(r && { to: r.to, action: r.action })}`); }
+    ok(pass === cases.length, `tactics: grid write-ins resolve with sensible positioning ${pass}/${cases.length}`);
+    ok(readWriteIn(b, you, 'summon a dragon').length === 0, 'tactics: a write-in naming nothing on the field yields no reading');
+    ss.dispose();
   }
 
   // --- 7. whole battles, AI on every side: terminate, conserve gold, release every body -------
