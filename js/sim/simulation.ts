@@ -418,9 +418,8 @@ export class Simulation {
     const SITES = ['field', 'forest', 'mine', 'meadow', 'market'];
     let cohort = 0;
     for (const row of ROSTER) cohort += row.n;
-    // TEST-ONLY count override (guarded): the scaling test (test/scaling.mjs) passes
-    // opts.townsfolkPerTown to build sims at several N and prove per-agent reasoning
-    // cost stays flat as N grows. When opts is empty this is BYTE-IDENTICAL to the
+    // Count override (guarded): small worlds for tests and app-layer sessions pass
+    // opts.townsfolkPerTown (js/app/session.ts). When opts is empty this is BYTE-IDENTICAL to the
     // default cohort — soak/depth/scenarios call sim.spawn() with no args and are
     // untouched. The towns/anchors/sites are unchanged; only the per-town headcount.
     const perTown = opts.townsfolkPerTown;

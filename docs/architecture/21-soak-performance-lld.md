@@ -324,7 +324,7 @@ full suite where we want it; B5 is contingent.
 - Baseline recorded: full suite 9m44s; soak ~95s; per-pass profile + density above.
 - After each phase: `bunx tsc --noEmit` (clean) → `bun test/headless.mjs` (green, **no assertion edits**)
   → record soak wall + (for P1) full-suite wall under `test/run-parallel.mjs`.
-- Keep the instrumentation as a scratch `test/profrun.mjs` (per-pass timers) so each phase's gain is
+- Keep the instrumentation as a scratch profiling runner (the old `test/profrun.mjs` was removed) (per-pass timers) so each phase's gain is
   attributable to the pass it targeted, not guessed.
 - **Acceptance:** full-suite wall minimized; the headline number to report is `test/run-parallel.mjs`
   wall (the parallel path) and the single-process soak wall (the long-pole the parallel path is bounded

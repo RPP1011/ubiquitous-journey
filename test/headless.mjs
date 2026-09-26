@@ -50,8 +50,8 @@ import { homecomingTest } from './suites/homecoming.mjs';
 import { cityTest } from './suites/city.mjs';
 import { roadsTest } from './suites/roads.mjs';
 import { soak } from './suites/soak.mjs';
-import { scalingTest } from './suites/scaling.mjs';
 import { runScenarios } from './scenarios.mjs';
+import { sessionTest } from './suites/session.mjs';
 
 const { ok, failures } = makeOk();
 const helpers = { makeFighter, stubScene };
@@ -146,6 +146,8 @@ obituaryTest(ok, helpers);
 // full deterministic scenario suite (docs/goal-system-tests.md): A1–A4, B1–B7,
 // C1–C4, D1–D4, E1/E3, and the whole-system G1–G4/G6. Folds into the same tally.
 runScenarios(ok);
+// App layer: the Session (canonical frame step + run lifecycle, js/app/session.ts).
+sessionTest(ok, helpers);
 // Phase-1 emergent buildings: homes + tavern, gold-neutral, headless-safe. ISOLATED on its OWN seed
 // (it has two residual RNG-edge gates — builder-housed + guildhall-converge — that the author's
 // frame-pinning can't fully tame): snapshot the ambient stream, run construction from CONSTRUCTION_SEED
@@ -165,10 +167,6 @@ cityTest(ok, helpers);
 // road-pull blend (graph connectivity, roadPull sanity, oscillation-free route walk).
 roadsTest(ok);
 await soak(ok, helpers);
-// Phase-3 (Scale) gate: the reasoning-cost-per-agent-per-tick metric stays SUB-LINEAR
-// as N grows (LOD amortizes the distant/idle tail). Fast in-suite sweep; the full
-// LOD-off vs LOD-on proof at larger N lives in the standalone `test/scaling.mjs`.
-await scalingTest(ok, helpers);
 
 console.log(`\n${failures.count ? `${failures.count} CHECK(S) FAILED` : 'ALL CHECKS PASSED'}`);
 process.exit(failures.count ? 1 : 0);

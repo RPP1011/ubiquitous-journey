@@ -42,10 +42,11 @@ vendored and import-mapped.
   `schemas`, `percept`, `homecoming`, `construction` (incl. the granary gates),
   `roads`, `city`, `seeding`, `hearsay`, `obituary`, `trace`, `arcs`, `signals`,
   `learning`, `recipes`, `recruit`, `urchin`, `affect`, `obligations`, `ledger`,
-  `caution`, `wealth`, `soak`, `scaling`.
+  `caution`, `wealth`, `soak`, `session`.
 - Other runners: `test/scenarios.mjs`, `test/history.mjs`, `test/depth.mjs` (the
-  behavioural-depth harness), and the benchmarks `test/bench.mjs` /
-  `test/levelbench.mjs`.
+  behavioural-depth harness), and the leveling-pace probe `test/levelbench.mjs`.
+  There are no scale/throughput benchmarks: the game does not target hundreds of
+  concurrent agents, so the N-scaling gate and throughput benches were removed.
 
 **There is no single-suite CLI flag.** To run one suite, comment out the others in
 `headless.mjs`, or import the suite into a scratch runner.

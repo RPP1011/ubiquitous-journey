@@ -24,7 +24,7 @@ bundler and no npm runtime dep. Three things consume the source — keep all thr
 - **Typecheck (gate):** `bunx tsc --noEmit` — strict, must be clean. This is the type firewall.
 - **Tests (gate, no build):** `bun test/headless.mjs` — Bun runs `.mjs` tests and the `.ts`/`.js`
   sim sources they import **natively, with no transpile step** (~0.2s: combat unit + 12k-tick soak,
-  epistemic scan, soak invariants, scenarios, scaling/LOD, homecoming, percept, schemas; exit 1 on
+  epistemic scan, soak invariants, scenarios, session, homecoming, percept, schemas; exit 1 on
   failure).
 - **Browser:** typecheck-then-emit, then serve:
 
@@ -66,10 +66,11 @@ that loads `test/harness.mjs` (`makeOk` tally, `stubScene`, `makeFighter`) and t
 `test/suites/*.mjs` (`epistemic`, `shadows`, `combat`, `abilities`, `planner`, `obligations`,
 `urchin`, `learning`, `recruit`, `affect`, `ledger`, `caution`, `execution`, `memoryGoals`,
 `percept`, `schemas`, `recipes`, `trace`, `hearsay`, `obituary`, `construction`, `homecoming`,
-`city`, `soak`, `scaling` — the action-grammar/caution features each have their own suite) plus
+`city`, `soak`, `session` — the action-grammar/caution features each have their own suite) plus
 `test/scenarios.mjs`. There's no single-suite CLI flag — to run one suite,
 comment out the others in `headless.mjs` or import the suite into a scratch runner. Other runners:
-`test/scenarios.mjs`, `test/history.mjs`, and the `test/bench.mjs` / `test/levelbench.mjs` benchmarks.
+`test/scenarios.mjs`, `test/history.mjs`, and the `test/levelbench.mjs` leveling-pace probe. There are deliberately no scale/throughput
+benchmarks — the game does not target hundreds of concurrent agents.
 The seam is a logic-only
 `js/headlessFighter.js` injected via `Simulation`'s `makeFighter` factory (browser default stays the
 visual `Fighter`); `Agent._buildDecor` skips its canvas/meshes when `document` is undefined. The bare
