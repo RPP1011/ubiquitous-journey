@@ -22,7 +22,7 @@ export interface CompanionDef {
   short: string;
   title: string;
   blurb: string;
-  model: 'knight' | 'barbarian';
+  model: 'knight' | 'barbarian' | 'rogue' | 'hooded';
   tactic: 'guardian' | 'archer' | 'rogue' | 'healer';
   abilities: string[];
   potions: number;
@@ -35,10 +35,10 @@ export const COMPANIONS: Record<CompanionKey, CompanionDef> = {
     model: 'knight', tactic: 'guardian', abilities: ['power_strike', 'second_wind'], potions: 1,
     base: { bravery: 0.72, compassion: 0.5, loyalty: 0.55, ruthlessness: 0.3 }, social: 0.3 },
   wren: { key: 'wren', name: 'Wren Tallow', short: 'Wren', title: 'the hunter', blurb: 'A quiet trapper who counts arrows and people the same way.',
-    model: 'barbarian', tactic: 'archer', abilities: ['shortbow', 'expose_weakness'], potions: 0,
+    model: 'hooded', tactic: 'archer', abilities: ['shortbow', 'expose_weakness'], potions: 0,
     base: { bravery: 0.55, compassion: 0.3, loyalty: 0.45, ruthlessness: 0.55 }, social: 0.2 },
   pip: { key: 'pip', name: 'Pip Marrow', short: 'Pip', title: 'the tanner\'s boy', blurb: 'Seventeen, quick-tongued, and very sure he is not afraid.',
-    model: 'knight', tactic: 'rogue', abilities: ['lunge'], potions: 0,
+    model: 'rogue', tactic: 'rogue', abilities: ['lunge'], potions: 0,
     base: { bravery: 0.22, compassion: 0.7, loyalty: 0.6, ruthlessness: 0.15 }, social: 0.9 },
   maud: { key: 'maud', name: 'Sister Maud', short: 'Maud', title: 'of the chapel', blurb: 'A field-nurse from the chapel who has buried too many.',
     model: 'knight', tactic: 'healer', abilities: [], potions: 3,

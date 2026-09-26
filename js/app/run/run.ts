@@ -295,7 +295,7 @@ export class RunController {
     // the foes
     this.stageAgents = [];
     for (const f of st.foes) {
-      const a = this.spawn(f.name, f.faction, f.model ?? 'barbarian', new THREE.Vector3(), { risk_tolerance: f.risk ?? 0.5, social_drive: 0.3, ambition: 0.5, altruism: 0.2, curiosity: 0.3 }, true);
+      const a = this.spawn(f.name, f.faction, f.model ?? (f.tactic === 'archer' ? 'hooded' : f.tactic === 'skirmisher' ? 'rogue' : 'barbarian'), new THREE.Vector3(), { risk_tolerance: f.risk ?? 0.5, social_drive: 0.3, ambition: 0.5, altruism: 0.2, curiosity: 0.3 }, true);
       a.gold = f.gold ?? 0;
       if (f.epithet) a.epithet = f.epithet;
       for (const id of f.abilities ?? []) { const s = abilityById(id); if (s) a.grantAbility(s); }

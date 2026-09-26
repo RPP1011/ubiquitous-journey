@@ -9,6 +9,7 @@
 import * as THREE from 'three';
 import { TILE, LEVEL, type BattleMap, type Prop } from '../app/tactics/map.js';
 import type { Battle, Spot } from '../app/tactics/battle.js';
+import { buildProp } from './propModels.js';
 
 // The vendored three.module.js is plain JS: transform members are invisible to tsc.
 interface Obj3 {
@@ -51,7 +52,8 @@ export class BattleRender {
   private battle: Battle;
   private map: BattleMap;
   private tiles: THREE.InstancedMesh;
-  private propMeshes = new Map<string, THREE.Mesh>();
+  private propMeshes = new Map<string, THREE.Object3D>();
+  private propState = new Map<string, { pos: THREE.Vector3; tip: number; roll: number; dying: number }>();
   private flames: THREE.Mesh[] = [];
   private flameGeo = new THREE.ConeGeometry(0.35, 1.0, 7);
   private flameMat = new THREE.MeshBasicMaterial({ color: 0xff8a2a, transparent: true, opacity: 0.85 });
@@ -109,18 +111,40 @@ export class BattleRender {
     });
     if (this.tiles.instanceColor) this.tiles.instanceColor.needsUpdate = true;
 
-    // props: add new, move existing, drop removed
+    // props: add new; ease existing toward where the rules put them (a kicked barrel ROLLS, a
+    // tipped table FALLS); the removed shrink away (burnt, thrown, picked up)
     const live = new Set<string>();
+    const ease = 1 - Math.exp(-dt * 9);
     for (const p of this.map.props.values()) {
       live.add(p.id);
-      let mesh = this.propMeshes.get(p.id);
-      if (!mesh) { mesh = this.makeProp(p); this.propMeshes.set(p.id, mesh); this.scene.add(mesh); }
       const t = this.map.tile(p.x, p.z)!;
-      const look = PROP_LOOK[p.kind] ?? PROP_LOOK.crate;
-      o3(mesh).position.set(t.wx, this.map.surfaceY(t.x, t.z, false) + (p.tipped ? 0.45 : look.y), t.wz);
-      o3(mesh).rotation.x = p.tipped ? Math.PI / 2 : p.kind === 'log' ? Math.PI / 2 : 0;
+      const target = new THREE.Vector3(t.wx, this.map.surfaceY(t.x, t.z, false), t.wz);
+      let mesh = this.propMeshes.get(p.id);
+      let st = this.propState.get(p.id);
+      if (!mesh || !st) {
+        mesh = buildProp(p.kind); this.propMeshes.set(p.id, mesh); this.scene.add(mesh);
+        st = { pos: target.clone(), tip: p.tipped ? 1 : 0, roll: 0, dying: 0 };
+        this.propState.set(p.id, st);
+        o3(mesh).rotation.y = (p.x * 7 + p.z * 13) % 6 * 0.5;        // a little variety
+      }
+      const before = st.pos.clone();
+      st.pos.lerp(target, dt ? ease : 1);
+      st.roll += before.distanceTo(st.pos) / 0.5;
+      st.tip += ((p.tipped ? 1 : 0) - st.tip) * (dt ? ease : 1);
+      o3(mesh).position.set(st.pos.x, st.pos.y + st.tip * 0.45, st.pos.z);
+      o3(mesh).rotation.z = st.tip * Math.PI / 2;
+      if (p.kind === 'barrel' || p.kind === 'oil') o3(mesh).rotation.x = st.roll;
+      const char = p.burning > 0 ? 0.6 : 1;
+      o3(mesh).scale.set(1, char + (1 - char) * Math.abs(Math.sin(this.t * 3)), 1);
     }
-    for (const [id, mesh] of this.propMeshes) if (!live.has(id)) { this.scene.remove(mesh); this.propMeshes.delete(id); }
+    for (const [id, mesh] of this.propMeshes) {
+      if (live.has(id)) continue;
+      const st = this.propState.get(id)!;
+      st.dying += dt;
+      const k = Math.max(0, 1 - st.dying / 0.4);
+      o3(mesh).scale.set(k, k, k);
+      if (k <= 0) { this.scene.remove(mesh); this.propMeshes.delete(id); this.propState.delete(id); }
+    }
 
     // flames on burning tiles and props, plus lit fire sources
     const spots: Array<{ x: number; y: number; z: number; s: number }> = [];
@@ -138,17 +162,6 @@ export class BattleRender {
       o3(f).position.set(s.x, s.y + 0.5 * s.s * flick, s.z);
       o3(f).scale.set(s.s, s.s * flick * 1.3, s.s);
     });
-  }
-
-  private makeProp(p: Prop): THREE.Mesh {
-    const look = PROP_LOOK[p.kind] ?? PROP_LOOK.crate;
-    const mesh = new THREE.Mesh(look.geo(), new THREE.MeshLambertMaterial({ color: look.color }) as unknown as THREE.MeshBasicMaterial);
-    if (p.kind === 'tree') {
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 1.2, 6), new THREE.MeshLambertMaterial({ color: 0x5a3e28 }) as unknown as THREE.MeshBasicMaterial);
-      o3(trunk).position.set(0, -1.5, 0);
-      o3(mesh).add(trunk);
-    }
-    return mesh;
   }
 
   dispose(): void {

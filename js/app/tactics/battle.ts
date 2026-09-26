@@ -47,6 +47,39 @@ export interface BattleEvent {
   detail?: string;
 }
 
+/**
+ * PRESENTATION CUES: what the screen should SHOW, in order, for everything that just happened.
+ * Pure data for the view's choreographer (ui/battleFX); logic never reads them and building them
+ * never draws from rng(), so headless runs are unchanged. `logAt` is the log length when the cue
+ * was made, so the view can caption each beat with the lines it produced.
+ */
+type Id = number | string;
+export type CueSpec =
+  | { k: 'step'; u: Id; from: Spot; to: Spot }
+  | { k: 'strike'; u: Id; t: Id; res: 'hit' | 'miss'; style: 'blade' | 'power' | 'shove' | 'pommel' | 'opportunity' | 'bite'; crit?: boolean; back?: boolean }
+  | { k: 'shot'; u: Id; t: Id; res: 'hit' | 'miss'; kind: 'arrow' | 'frost' | 'magic' }
+  | { k: 'intercept'; u: Id; t: Id }
+  | { k: 'dmg'; t: Id; amt: number; res: 'hit' | 'dead' | 'down' | 'blocked'; how: string; hp: number }
+  | { k: 'slide'; t: Id; from: Spot; to: Spot }
+  | { k: 'bump'; t: Id; at: Spot }
+  | { k: 'fall'; t: Id }
+  | { k: 'anim'; u: Id; clip: string }
+  | { k: 'spill'; from: Spot; tiles: Spot[] }
+  | { k: 'throw'; u: Id; from: Spot; to: Spot; prop: string; effect: 'splash' | 'cloud' | 'fire' | 'hit' | 'miss' }
+  | { k: 'fire'; at: Spot; oil?: boolean }
+  | { k: 'douse'; at: Spot }
+  | { k: 'heal'; t: Id; amt: number; hp: number }
+  | { k: 'getup'; t: Id }
+  | { k: 'free'; u: Id; t: Id }
+  | { k: 'tether'; u: Id; t: Id }
+  | { k: 'stance'; u: Id; what: 'guard' | 'aim' | 'ready' }
+  | { k: 'say'; u: Id; t?: Id; text: string; ok: boolean; react: 'recoil' | 'turn' | 'anger' | 'shrug' | 'rally' | 'kneel' | 'none' }
+  | { k: 'coins'; u: Id; t: Id; amt: number }
+  | { k: 'yield'; t: Id }
+  | { k: 'escape'; u: Id; to: Spot }
+  | { k: 'icon'; u: Id; icon: '!' | '!!' | '?' | 'zzz' };
+export type Cue = CueSpec & { logAt: number };
+
 export interface Unit {
   id: number | string;
   agent: Agent;
@@ -125,6 +158,7 @@ export class Battle {
   outcome: Outcome | null = null;
   log: LogLine[] = [];
   events: BattleEvent[] = [];
+  cues: Cue[] = [];
   /** What this fight is FOR (set by the scene): the AI and the run's objective check read these. */
   goals: { rescue?: Unit['id']; retrieve?: string; chief?: Unit['id']; spareChief?: boolean } = {};
   highStakes = false;
@@ -309,7 +343,7 @@ export class Battle {
     u.defending = false; u.overwatch = false; u.moved = false; u.acted = false;
     if (u.readied) { u.readied = null; }
     if (u.bound) { u.moved = true; u.acted = true; return; }
-    if (u.surprised) { u.surprised = false; u.moved = true; u.acted = true; this.note('info', `${this.nm(u, true)} ${u.agent.controlled ? 'are' : 'is'} caught off guard!`); return; }
+    if (u.surprised) { this.cue({ k: 'icon', u: u.id, icon: '?' }); u.surprised = false; u.moved = true; u.acted = true; this.note('info', `${this.nm(u, true)} ${u.agent.controlled ? 'are' : 'is'} caught off guard!`); return; }
     if (u.burning > 0) {
       this.wound(u.lastHitBy ?? u, u, 8, 'fire');
       u.burning--;
@@ -317,7 +351,8 @@ export class Battle {
       if (u.role !== 'player' && u.out === null && u.morale === 'steady') u.morale = 'shaken';
     }
     if (u.stunned) { u.stunned = false; u.acted = true; u.moved = true; this.note('info', `${this.nm(u, true)} ${u.agent.controlled ? 'are' : 'is'} stunned and lose${u.agent.controlled ? '' : 's'} the turn.`); }
-    if (u.prone && !u.stunned) { u.prone = false; this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'get' : 'gets'} up.`); u.slowed = Math.max(u.slowed, 0); }
+    if (u.prone && !u.stunned) {
+      this.cue({ k: 'getup', t: u.id }); u.prone = false; this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'get' : 'gets'} up.`); u.slowed = Math.max(u.slowed, 0); }
     if (u.stunned === false && u.acted && u.moved) { /* stunned turn */ }
   }
 
@@ -368,6 +403,7 @@ export class Battle {
       this.face(u, step);
       u.x = step.x; u.z = step.z;
       this.place(u);
+      this.cue({ k: 'step', u: u.id, from: leaving, to: { x: step.x, z: step.z } });
       this.opportunity(u, leaving);
       if (u.out !== null) return null;
       this.overwatchFire(u);
@@ -406,6 +442,7 @@ export class Battle {
       if (!legal) { this.note('miss', `${this.nm(w, true)} ${w.agent.controlled ? 'were' : 'was'} ready — but the moment slips past.`); continue; }
       this.note('info', `${this.nm(w, true)} ${w.agent.controlled ? 'spring' : 'springs'} into action!`);
       this.ev('reaction', w, mover);
+      this.cue({ k: 'icon', u: w.id, icon: '!' });
       const saved = { acted: w.acted };
       w.acted = false;
       this.performAs(w, resp, r.flourish);
@@ -563,7 +600,7 @@ export class Battle {
       if (u.out !== null || !u.agent.alive || u.stunned) { this.checkEnd(); return null; }
     }
     switch (a.kind) {
-      case 'ready': u.readied = { trigger: a.trigger, response: a.response, flourish }; this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'wait' : 'waits'}, ready${fl}.`); break;
+      case 'ready': this.cue({ k: 'stance', u: u.id, what: 'ready' }); u.readied = { trigger: a.trigger, response: a.response, flourish }; this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'wait' : 'waits'}, ready${fl}.`); break;
       case 'attack': this.strike(u, t!, false, 1, fl); break;
       case 'ability': { const spec = u.agent.abilities.get(a.abilityId); if (spec) this.useAbility(u, spec, t!); break; }
       case 'shove': t ? this.shoveUnit(u, t, fl) : this.shoveProp(u, this.map.props.get(String(a.target))!, fl); break;
@@ -571,18 +608,19 @@ export class Battle {
       case 'throw': this.throwProp(u, this.map.props.get(a.prop) ?? u.carrying!, a.at, fl); break;
       case 'ignite': this.ignite(a.at.x, a.at.z, u, fl); break;
       case 'douse': this.douse(a.at.x, a.at.z, u); break;
-      case 'pickup': { const p = this.map.props.get(a.prop)!; u.carrying = p; if (p.kind === 'relic') this.ev('relic', u); this.map.removeProp(p); this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'pick' : 'picks'} up ${p.name}.`); u.acted = false; break; }
+      case 'pickup': { const p = this.map.props.get(a.prop)!; u.carrying = p; this.cue({ k: 'anim', u: u.id, clip: 'PickUp' }); if (p.kind === 'relic') this.ev('relic', u); this.map.removeProp(p); this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'pick' : 'picks'} up ${p.name}.`); u.acted = false; break; }
       case 'grab': this.grab(u, t!); break;
       case 'subdue': this.subdue(u, t!); break;
       case 'aid': this.aid(u, t ?? u); break;
       case 'free':
-        if (t && t.bound) { t.bound = false; this.ev('free', u, t); this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'cut' : 'cuts'} ${this.nm(t)} free!`); }
+        if (t && t.bound) { t.bound = false; this.ev('free', u, t); this.cue({ k: 'free', u: u.id, t: t.id }); this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'cut' : 'cuts'} ${this.nm(t)} free!`); }
         break;
-      case 'guard': this.ev('guard', u, t); t!.guardedBy = u; this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'cover' : 'covers'} ${this.nm(t!)}.`); break;
-      case 'defend': u.defending = true; this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'brace' : 'braces'}.`); break;
-      case 'overwatch': u.overwatch = true; this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'hold' : 'holds'}, watching.`); break;
+      case 'guard': this.ev('guard', u, t); this.cue({ k: 'tether', u: u.id, t: t!.id }); t!.guardedBy = u; this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'cover' : 'covers'} ${this.nm(t!)}.`); break;
+      case 'defend': this.cue({ k: 'stance', u: u.id, what: 'guard' }); u.defending = true; this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'brace' : 'braces'}.`); break;
+      case 'overwatch': this.cue({ k: 'stance', u: u.id, what: 'aim' }); u.overwatch = true; this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'hold' : 'holds'}, watching.`); break;
       case 'escape':
         u.out = 'fled'; this.release(u); this.ev(u.tags.has('captive') ? 'rescued' : 'escape', u, undefined, u.carrying?.kind);
+        this.cue({ k: 'escape', u: u.id, to: { x: u.x + (u.x === 0 ? -3 : u.x === this.map.n - 1 ? 3 : 0), z: u.z + (u.z === 0 ? -3 : u.z === this.map.n - 1 ? 3 : 0) } });
         this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'slip' : 'slips'} away from the fight${u.carrying ? ` with ${u.carrying.name}` : ''}.`); break;
       case 'social': this.social(u, a, t, fl); break;
       case 'wait': break;
@@ -595,12 +633,15 @@ export class Battle {
 
   private strike(u: Unit, t: Unit, _ranged: boolean, mul: number, fl = ''): void {
     if (t.guardedBy && t.guardedBy.out === null && t.guardedBy !== u && this.adjacent(t.guardedBy, t) && rng() < 0.5) {
+      this.cue({ k: 'intercept', u: t.guardedBy.id, t: t.id });
       this.note('move', `${this.nm(t.guardedBy, true)} ${t.guardedBy.agent.controlled ? 'step' : 'steps'} in front of ${this.nm(t)}.`);
       t = t.guardedBy;
     }
     this.swing(u);
     const h = this.hitDC(u, t, u, false);
     const r = check(u.sheet.might + this.trickMod(fl, false), h.dc);
+    const style = mul < 0.8 ? 'opportunity' : u.tactic === 'beast' ? 'bite' : 'blade';
+    this.cue({ k: 'strike', u: u.id, t: t.id, res: r.ok ? 'hit' : 'miss', style, crit: r.crit, back: this.facingOf(u, t) === 'back' });
     if (!r.ok) { this.note('miss', `${this.nm(u, true)} ${u.agent.controlled ? 'swing' : 'swings'} at ${this.nm(t)}${fl} — and ${u.agent.controlled ? 'miss' : 'misses'}.`); return; }
     const back = this.facingOf(u, t) === 'back';
     let dmg = TUNE.damage * (0.75 + 0.08 * u.sheet.might) * (0.85 + rng() * 0.3) * mul;
@@ -618,9 +659,13 @@ export class Battle {
     const targets = r0 > 0 ? this.foesOf(u).filter((f) => dist(f, t) <= r0) : [t];
     this.swing(u);
     const parts: string[] = [];
+    const tags = spec.effects.flatMap((e) => e.tags || []);
+    const shotKind = tags.includes('FROST') ? 'frost' : tags.includes('PIERCE') || spec.id === 'shortbow' ? 'arrow' : 'magic';
     for (const tt of targets) {
       const h = this.hitDC(u, tt, u, ranged);
       const r = check(Math.max(u.sheet.might, u.sheet.presence) + 1, h.dc);
+      if (ranged) this.cue({ k: 'shot', u: u.id, t: tt.id, res: r.ok ? 'hit' : 'miss', kind: shotKind });
+      else this.cue({ k: 'strike', u: u.id, t: tt.id, res: r.ok ? 'hit' : 'miss', style: 'power', crit: r.crit });
       if (!r.ok) { parts.push(`${this.nm(tt)} evades`); continue; }
       let fell = false;
       for (const e of spec.effects) {
@@ -635,7 +680,8 @@ export class Battle {
       parts.push(fell ? `${this.nm(tt)} falls` : `${this.nm(tt)} is hit`);
     }
     if (!targets.length || spec.effects.every((e) => e.op === 'heal' || e.op === 'shield')) {
-      for (const e of spec.effects) if (e.op === 'heal') u.agent.fighter.health = Math.min(TUNE.maxHealth, u.agent.fighter.health + e.amount);
+      for (const e of spec.effects) if (e.op === 'heal') { u.agent.fighter.health = Math.min(TUNE.maxHealth, u.agent.fighter.health + e.amount); this.cue({ k: 'heal', t: u.id, amt: e.amount, hp: u.agent.fighter.health }); }
+      if (!spec.effects.some((e) => e.op === 'heal')) this.cue({ k: 'anim', u: u.id, clip: 'Spellcast_Raise' });
       this.note('hit', `${this.nm(u, true)} ${u.agent.controlled ? 'use' : 'uses'} ${spec.name}.`); return;
     }
     this.note('hit', `${this.nm(u, true)} ${u.agent.controlled ? 'unleash' : 'unleashes'} ${spec.name}: ${parts.join(', ')}.`);
@@ -655,6 +701,7 @@ export class Battle {
 
   private shoveUnit(u: Unit, t: Unit, fl: string): void {
     const r = check(u.sheet.might, 10 + t.sheet.might + (t.defending ? 2 : 0) - this.heightEdge(u, t) * 2);
+    this.cue({ k: 'strike', u: u.id, t: t.id, res: r.ok ? 'hit' : 'miss', style: 'shove' });
     if (!r.ok) { this.note('miss', `${this.nm(t, true)} ${t.agent.controlled ? 'hold' : 'holds'} firm against ${this.nm(u)}'s shove.`); return; }
     this.note('hit', `${this.nm(u, true)} ${u.agent.controlled ? 'shove' : 'shoves'} ${this.nm(t)}${fl}!`);
     this.push(t, this.dirFrom(u, t), r.crit ? 2 : 1, u);
@@ -662,6 +709,7 @@ export class Battle {
 
   private shoveProp(u: Unit, p: Prop, fl: string): void {
     const r = check(u.sheet.might, p.kind === 'cart' ? 13 : 9);
+    this.cue({ k: 'anim', u: u.id, clip: 'Block_Attack' });
     if (!r.ok) { this.note('miss', `${p.name} won't budge.`); return; }
     const d = this.dirFrom(u, p);
     this.note('env', `${this.nm(u, true)} ${u.agent.controlled ? 'heave' : 'heaves'} ${p.name}${fl}.`);
@@ -670,7 +718,11 @@ export class Battle {
 
   private kick(u: Unit, p: Prop, fl: string): void {
     const d = this.dirFrom(u, p);
+    this.cue({ k: 'anim', u: u.id, clip: 'Unarmed_Melee_Attack_Kick' });
     if (p.kind === 'brazier') {
+      const tiles: Spot[] = [];
+      for (let i = 0; i < 4; i++) if (this.map.tile(p.x + d[0] * i, p.z + d[1] * i)) tiles.push({ x: p.x + d[0] * i, z: p.z + d[1] * i });
+      this.cue({ k: 'spill', from: { x: p.x, z: p.z }, tiles });
       this.note('env', `${this.nm(u, true)} ${u.agent.controlled ? 'kick' : 'kicks'} over ${p.name}${fl} — coals spill!`);
       this.map.removeProp(p);
       for (let i = 0; i < 4; i++) this.ignite(p.x + d[0] * i, p.z + d[1] * i, u, '', true);
@@ -694,6 +746,7 @@ export class Battle {
       hit = check(u.sheet.finesse, h.dc - 2).ok;
     }
     const where = tu ? this.nm(tu) : 'the ground';
+    this.cue({ k: 'throw', u: u.id, from: { x: u.x, z: u.z }, to: { x: at.x, z: at.z }, prop: p.kind, effect: !hit ? 'miss' : p.liquid ? 'splash' : p.blinding ? 'cloud' : p.fireSource ? 'fire' : 'hit' });
     if (!hit) { this.note('miss', `${this.nm(u, true)} ${u.agent.controlled ? 'hurl' : 'hurls'} ${p.name} at ${where}${fl} — wide.`); return; }
     if (p.liquid) { this.douse(at.x, at.z, u); if (tu && tu.side !== u.side) { tu.exposed = true; } this.note('env', `${cap(p.name)} splashes ${where}${fl}.`); return; }
     if (p.blinding) {
@@ -708,17 +761,21 @@ export class Battle {
   private grab(u: Unit, t: Unit): void {
     const r = check(u.sheet.finesse, 10 + t.sheet.finesse + (t.defending ? 2 : 0));
     const purse = Math.floor(t.agent.gold || 0);
+    this.cue({ k: 'anim', u: u.id, clip: 'Interact' });
     if (!r.ok || purse <= 0) { this.note('miss', `${this.nm(u, true)} ${u.agent.controlled ? 'grab' : 'grabs'} at ${t.agent.controlled ? 'your' : this.nm(t) + "'s"} purse and ${purse > 0 ? 'misses' : 'finds it empty'}.`); return; }
     const amt = Math.min(purse, Math.round(6 + u.sheet.finesse * 3 + rng() * 10));
     t.agent.gold -= amt; u.agent.gold = (u.agent.gold || 0) + amt; u.loot += amt;   // a transfer, never a mint
     this.ev('grab', u, t, String(amt));
+    this.cue({ k: 'coins', u: u.id, t: t.id, amt });
     this.note('social', `${this.nm(u, true)} ${u.agent.controlled ? 'cut' : 'cuts'} ${t.agent.controlled ? 'your' : this.nm(t) + "'s"} purse — ${amt} gold.`);
   }
 
   private subdue(u: Unit, t: Unit): void {
     this.swing(u);
     const h = this.hitDC(u, t, u, false);
-    if (!check(u.sheet.might, h.dc + 2).ok) { this.note('miss', `${this.nm(u, true)} ${u.agent.controlled ? 'try' : 'tries'} to pin ${this.nm(t)} and ${u.agent.controlled ? 'fail' : 'fails'}.`); return; }
+    const sOk = check(u.sheet.might, h.dc + 2).ok;
+    this.cue({ k: 'strike', u: u.id, t: t.id, res: sOk ? 'hit' : 'miss', style: 'pommel' });
+    if (!sOk) { this.note('miss', `${this.nm(u, true)} ${u.agent.controlled ? 'try' : 'tries'} to pin ${this.nm(t)} and ${u.agent.controlled ? 'fail' : 'fails'}.`); return; }
     const dmg = TUNE.damage * 0.5;
     if (hpOf(t) - dmg <= TUNE.maxHealth * 0.25) { this.yieldTo(u, t); return; }
     this.wound(u, t, dmg);
@@ -728,6 +785,7 @@ export class Battle {
   private yieldTo(u: Unit, t: Unit): void {
     t.out = 'yielded'; this.release(t);
     this.ev('yield', u, t);
+    this.cue({ k: 'yield', t: t.id });
     t.agent.fighter.health = Math.max(t.agent.fighter.health, 10);
     this.note('social', `${this.nm(t, true)} ${t.agent.controlled ? 'are' : 'is'} beaten down and ${t.agent.controlled ? 'yield' : 'yields'} to ${this.nm(u)}.`);
     if (t.role === 'player' && this.active().some((x) => x.side === 'us' && x !== t && !x.tags.has('captive'))) {
@@ -750,12 +808,14 @@ export class Battle {
   private aid(u: Unit, w: Unit): void {
     const inv = u.agent.inventory as Record<string, number> | undefined;
     if (w.out === 'downed') {
-      if (check(u.sheet.finesse, 10).ok) { this.ev('revive', u, w); w.out = null; w.deathSaves = { ok: 0, fail: 0 }; w.agent.fighter.health = 15 + u.sheet.finesse * 3; this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'haul' : 'hauls'} ${this.nm(w)} back up.`); }
+      this.cue({ k: 'anim', u: u.id, clip: 'Interact' });
+      if (check(u.sheet.finesse, 10).ok) { this.cue({ k: 'getup', t: w.id }); this.ev('revive', u, w); w.out = null; w.deathSaves = { ok: 0, fail: 0 }; w.agent.fighter.health = 15 + u.sheet.finesse * 3; this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'haul' : 'hauls'} ${this.nm(w)} back up.`); }
       else this.note('miss', `${this.nm(u, true)} can't rouse ${this.nm(w)}.`);
       return;
     }
-    if (inv && (inv.potion || 0) >= 1) { inv.potion -= 1; w.agent.fighter.health = Math.min(TUNE.maxHealth, hpOf(w) + 45); this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'pour' : 'pours'} a potion into ${w === u ? (u.agent.controlled ? 'yourself' : 'themself') : this.nm(w)}.`); return; }
-    if (check(u.sheet.finesse, 11).ok) { w.agent.fighter.health = Math.min(TUNE.maxHealth, hpOf(w) + 12 + u.sheet.finesse * 2); this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'bind' : 'binds'} a wound.`); }
+    if (inv && (inv.potion || 0) >= 1) { inv.potion -= 1; w.agent.fighter.health = Math.min(TUNE.maxHealth, hpOf(w) + 45); this.cue({ k: 'anim', u: u.id, clip: 'Use_Item' }); this.cue({ k: 'heal', t: w.id, amt: 45, hp: w.agent.fighter.health }); this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'pour' : 'pours'} a potion into ${w === u ? (u.agent.controlled ? 'yourself' : 'themself') : this.nm(w)}.`); return; }
+    this.cue({ k: 'anim', u: u.id, clip: 'Interact' });
+    if (check(u.sheet.finesse, 11).ok) { w.agent.fighter.health = Math.min(TUNE.maxHealth, hpOf(w) + 12 + u.sheet.finesse * 2); this.cue({ k: 'heal', t: w.id, amt: 12 + u.sheet.finesse * 2, hp: w.agent.fighter.health }); this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'bind' : 'binds'} a wound.`); }
     else this.note('miss', `${this.nm(u, true)} ${u.agent.controlled ? 'fumble' : 'fumbles'} the bandage.`);
   }
 
@@ -786,6 +846,20 @@ export class Battle {
   private social(u: Unit, a: Extract<Action, { kind: 'social' }>, t: Unit | undefined, fl: string): void {
     const ok = rng() < this.socialOdds(u, a, t).p;
     this.ev(ok ? 'social' : 'bluffed', u, t, a.verb);
+    {
+      const pick = (xs: string[]) => xs[(this.round + (t ? String(t.id).length : 0)) % xs.length];
+      const subj = a.subject != null ? this.get(a.subject) : undefined;
+      const line = fl ? fl.replace(/^ — "/, '').replace(/"$/, '')
+        : a.verb === 'intimidate' ? pick(['Run, or die where you stand!', "Look at me. You're next."])
+        : a.verb === 'taunt' ? pick(["Is that all you've got?", 'Come on, then!'])
+        : a.verb === 'rally' ? pick(['With me! Hold the line!', 'Stand together!'])
+        : a.verb === 'parley' ? (u.side === 'them' ? 'Mercy! I yield!' : 'Enough! Lay down your arms!')
+        : a.claim === 'turncoat' && subj ? `${subj.agent.name.split(' ')[0]} sold you out!`
+        : a.claim === 'reinforcements' ? 'The Watch is right behind us!' : 'Behind you!';
+      const react = !ok ? 'shrug' : a.verb === 'intimidate' || a.claim === 'reinforcements' ? 'recoil' : a.verb === 'taunt' ? 'anger'
+        : a.verb === 'bluff' ? 'turn' : a.verb === 'rally' ? 'rally' : a.verb === 'parley' ? 'kneel' : 'none';
+      this.cue({ k: 'say', u: u.id, t: t?.id, text: line, ok, react });
+    }
     const who = this.nm(u, true);
     switch (a.verb) {
       case 'intimidate':
@@ -825,10 +899,10 @@ export class Battle {
       case 'parley':
         if (ok && u.side === 'them') {
           // a beaten side sues for terms: its fighters lay down arms
-          for (const f of this.active().filter((x) => x.side === 'them')) { f.out = 'yielded'; this.release(f); this.ev('yield', u, f, 'surrender'); }
+          for (const f of this.active().filter((x) => x.side === 'them')) { f.out = 'yielded'; this.release(f); this.ev('yield', u, f, 'surrender'); this.cue({ k: 'yield', t: f.id }); }
           this.note('social', `${who} throws down their weapon and begs for terms${fl}. ${u.tags.has('chief') ? 'The band surrenders.' : ''}`);
         } else if (ok) {
-          for (const f of this.foesOf(u)) { const b = f.agent.beliefs.get(u.id); if (b) { b.hostile = false; b.standing = Math.max(b.standing, -0.3); } f.out = 'yielded'; this.release(f); this.ev('parley', u, f); }
+          for (const f of this.foesOf(u)) { const b = f.agent.beliefs.get(u.id); if (b) { b.hostile = false; b.standing = Math.max(b.standing, -0.3); } f.out = 'yielded'; this.release(f); this.ev('parley', u, f); this.cue({ k: 'yield', t: f.id }); }
           this.note('social', `${who} ${u.agent.controlled ? 'talk' : 'talks'} them down${fl}. Weapons lower.`);
           this.outcome = 'truce';
         } else this.note('miss', `${who} ${u.agent.controlled ? 'try' : 'tries'} to parley; no one is listening.`);
@@ -863,6 +937,7 @@ export class Battle {
   ignite(x: number, z: number, by?: Unit, fl = '', silent = false): void {
     const t = this.map.tile(x, z); if (!t || t.wet > 0 || t.ground === 'water') return;
     const p = this.map.propAt(x, z);
+    this.cue({ k: 'fire', at: { x, z }, oil: p?.kind === 'oil' });
     if (p && p.flammable) p.burning = Math.max(p.burning, p.kind === 'oil' ? 1 : 3);
     t.burning = Math.max(t.burning, p?.kind === 'hay' ? 3 : 2);
     if (p?.kind === 'oil') {
@@ -879,6 +954,7 @@ export class Battle {
   }
 
   douse(x: number, z: number, by?: Unit): void {
+    this.cue({ k: 'douse', at: { x, z } });
     for (const [dx, dz] of [[0, 0], ...DIRS]) {
       const t = this.map.tile(x + dx, z + dz); if (!t) continue;
       t.burning = 0; t.wet = 3;
@@ -930,6 +1006,7 @@ export class Battle {
       const hereH = this.map.standH(t.x, t.z);
       const other = this.unitAt(nx, nz);
       if (!tile || !this.map.standable(nx, nz) || other || this.map.standH(nx, nz) - hereH > JUMP) {
+        this.cue({ k: 'bump', t: t.id, at: { x: nx, z: nz } });
         this.wound(by, t, 7, 'collision'); t.prone = true;
         if (other && other.out === null) { this.wound(by, other, 5, 'collision'); other.prone = true; }
         const what = !tile ? 'the edge' : other ? this.nm(other) : this.map.propAt(nx, nz)?.name ?? 'the wall';
@@ -937,7 +1014,10 @@ export class Battle {
         return;
       }
       const drop = hereH - this.map.standH(nx, nz);
+      const from = { x: t.x, z: t.z };
       t.x = nx; t.z = nz; this.place(t);
+      this.cue({ k: 'slide', t: t.id, from, to: { x: nx, z: nz } });
+      if (drop > FALL_SAFE) this.cue({ k: 'fall', t: t.id });
       if (drop > FALL_SAFE) { this.ev('hazard', by, t, 'ledge'); this.wound(by, t, (drop - FALL_SAFE) * 7, 'fall'); t.prone = true; this.note('env', `${this.nm(t, true)} ${t.agent.controlled ? 'tumble' : 'tumbles'} off the ledge!`); }
       this.enterTile(t);
       if (tile.burning > 0 || this.map.propAt(nx, nz)?.fireSource) this.ev('hazard', by, t, 'fire');
@@ -975,12 +1055,14 @@ export class Battle {
     t.lastHitBy = by;
     if (t.side === 'us' && dmg >= f.health && this.active().some((o) => o.side === 'us' && o !== t)) {
       f.health = 0.5; t.out = 'downed'; t.burning = 0;
+      this.cue({ k: 'dmg', t: t.id, amt: dmg, res: 'down', how: _how, hp: 0 });
       this.fold(by, t, 'hit');
       this.ev('down', by, t, _how);
       this.note('info', `${this.nm(t, true)} ${t.agent.controlled ? 'go' : 'goes'} down!`);
       return 'hit';
     }
     const res = f.takeHit(dmg, 'DOWN');
+    this.cue({ k: 'dmg', t: t.id, amt: dmg, res, how: _how, hp: Math.max(0, f.health) });
     this.fold(by, t, res);
     if (res === 'dead' || !t.agent.alive) {
       this.ev(t.morale === 'broken' ? 'finish' : 'kill', by, t, _how);
@@ -999,7 +1081,7 @@ export class Battle {
   private deathSave(u: Unit): void {
     if (u.deathSaves.ok >= 3) return;
     const r = check(0, 10);
-    if (r.crit) { u.out = null; u.agent.fighter.health = 10; this.note('info', 'You drag yourself up, somehow.'); return; }
+    if (r.crit) { u.out = null; u.agent.fighter.health = 10; this.cue({ k: 'getup', t: u.id }); this.note('info', 'You drag yourself up, somehow.'); return; }
     if (r.ok) u.deathSaves.ok++; else u.deathSaves.fail += r.fumble ? 2 : 1;
     if (u.deathSaves.fail >= 3) this.kill(u);
     else this.note('info', u.deathSaves.ok >= 3 ? 'You are stable, but out of the fight.' : `You cling on (${u.deathSaves.ok} saves, ${u.deathSaves.fail} failures).`);
@@ -1008,6 +1090,7 @@ export class Battle {
   private kill(u: Unit): void {
     const by = u.lastHitBy ?? u;
     u.agent.fighter.health = 0.5; u.agent.fighter.takeHit(1e6, 'DOWN');
+    this.cue({ k: 'dmg', t: u.id, amt: 0, res: 'dead', how: 'wounds', hp: 0 });
     this.fold(by, u, 'dead');
     u.out = 'dead'; this.release(u);
   }
@@ -1022,6 +1105,7 @@ export class Battle {
       if (check(u.sheet.nerve + grit, 11 + (u.morale === 'shaken' ? 2 : 0) + (u.morale === 'broken' ? 20 : 0)).ok) continue;
       u.morale = 'broken';
       this.ev('broken', u);
+      this.cue({ k: 'icon', u: u.id, icon: '!!' });
       this.objectives.delete(u.id);
       this.note('social', `${this.nm(u, true)}'s nerve breaks!`);
     }
@@ -1086,7 +1170,7 @@ export class Battle {
   face(u: Unit, s: Spot): void {
     const d = this.dirFrom(u, s);
     if (s.x !== u.x || s.z !== u.z) u.facing = d;
-    try { u.agent.fighter.root.rotation.y = Math.atan2(-d[0], -d[1]); } catch { /* stub */ }
+    try { u.agent.fighter.setFacing(Math.atan2(-d[0], -d[1])); } catch { /* stub */ }
   }
   /** Snap the unit's body to its tile (world position, standing height). */
   place(u: Unit): void {
@@ -1094,7 +1178,7 @@ export class Battle {
     u.agent.pos.x = t.wx; u.agent.pos.z = t.wz;
     u.agent.pos.y = this.map.surfaceY(u.x, u.z);
   }
-  private swing(u: Unit): void { try { u.agent.fighter.ready('DOWN'); u.agent.fighter.release(); } catch { /* cosmetic */ } }
+  private swing(_u: Unit): void { /* bodies animate from cues (ui/battleFX), not at logic time */ }
   private release(u: Unit): void { u.agent._encounter = null; }
   private trickMod(fl: string, _consume: boolean): number {
     if (!fl) return 0;
@@ -1109,6 +1193,8 @@ export class Battle {
   }
   nm(u: Unit, capital = false): string { const s = u.agent.controlled ? 'you' : u.agent.name; return capital ? cap(s) : s; }
   private roster(side: Side): string { const xs = this.active().filter((u) => u.side === side).map((u) => this.nm(u)); return xs.length ? cap(xs.join(', ')) : 'no one'; }
+  cue(c: CueSpec): void { this.cues.push({ ...c, logAt: this.log.length } as Cue); }
+
   ev(kind: BattleEvent['kind'], actor?: Unit, target?: Unit, detail?: string): void {
     this.events.push({ round: this.round, kind, actor: actor?.id, target: target?.id, detail });
   }

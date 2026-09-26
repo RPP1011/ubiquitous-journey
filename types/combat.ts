@@ -7,7 +7,7 @@ import type { Agent } from './agent.js';
 import type { AbilitySpec } from './abilities.js';
 
 /** Directional swing state. */
-export type FighterState = 'idle' | 'ready' | 'attack' | 'recover' | 'block' | 'stagger' | 'dead';
+export type FighterState = 'idle' | 'ready' | 'attack' | 'recover' | 'block' | 'stagger' | 'dead' | 'act' | 'pose';
 /** A directional-melee direction (constants.js DIR). */
 export type FighterDir = 'UP' | 'DOWN' | 'LEFT' | 'RIGHT';
 

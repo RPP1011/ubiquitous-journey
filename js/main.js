@@ -14,6 +14,7 @@ import { TUNE } from './constants.js';
 import { createSession } from './app/session.js';
 import { BattleDirector } from './app/tactics/director.js';
 import { BattleRender } from './ui/battleRender.js';
+import { BattleFX } from './ui/battleFX.js';
 import { TacticsView } from './ui/tacticsView.js';
 import { RunController, localStore } from './app/run/run.js';
 import { RunUI } from './ui/runView.js';
@@ -32,6 +33,7 @@ let dungeonMgr = null;             // built per-world in buildWorld()
 let session = null;                // the app-layer Session (js/app/session.ts) for the current run
 let tactics = null;                // BattleDirector: opens a tactical grid battle when the player's side comes to blows
 let battleRender = null;           // the grid/props/fire drawn for the current battle
+let battleFX = null;               // the choreographer: plays each action as animation + effects
 const tacView = new TacticsView();
 // RUN MODE (the game): hub → quests → tactical stages → home. `?sandbox` keeps the old free-roam
 // town; `?autoplay` plays runs by itself (for recordings); `?fresh` wipes the save first.
@@ -171,6 +173,7 @@ function togglePause() {
 // ---- tactical battles (js/app/tactics) ------------------------------------
 function endBattleView() {
   tacView.close();
+  if (battleFX) { battleFX.dispose(); battleFX = null; tacView.fx = null; }
   if (battleRender) { battleRender.dispose(); battleRender = null; }
 }
 function openBattle(b) {
@@ -178,6 +181,9 @@ function openBattle(b) {
   if (session.player) session.player.goal = { kind: 'idle' };
   if (!b.order.length) b.start();
   battleRender = new BattleRender(scene, b);
+  battleFX = new BattleFX(scene, b);
+  battleFX.onCaption = (text, kind, quote) => tacView.showCaption(text, kind, quote);
+  tacView.fx = battleFX;
   tacView.auto = AUTO;
   tacView.open(b, battleRender);
 }
@@ -257,8 +263,8 @@ function frame() {
     } else if (game.state === 'battle') {
       // the world holds its breath: only the battle advances (the town is not simulated mid-fight)
       stage = 'battle.tick'; tacView.tick(dt);
-      if (runUI && rc) runUI.tick(dt, rc.battle);
-      if (rc && rc.battle) battleStage(rc.battle);
+      if (runUI && rc) runUI.tick(dt, rc.battle, !!battleFX && battleFX.busy);
+      if (rc && rc.battle) battleStage(rc.battle, battleFX);
       if (game.sim) { stage = 'fighter.update'; for (const f of game.sim.fighters) f.update(dt); }
       scene.updateMatrixWorld(true);
       if (!RUN_MODE && session.player && !session.player.alive) session.checkRunEnd();
@@ -327,7 +333,7 @@ preloadCharacters().then(() => {
     st.textContent = '.runmode #hud, .runmode #tabs, .runmode #econView, .runmode #inspector, .runmode #mindHint, .runmode #mindList, .runmode #mindDetail, .runmode #playerHud, .runmode #hint { display: none !important; }';
     document.head.appendChild(st);
     game.state = 'run';
-    if (AUTO) runUI.autoplay(); else runUI.title();
+    if (AUTO) runUI.autoplay(PARAMS.has('quick')); else runUI.title();
   } else {
     game.state = 'start';
     setOverlay(INTRO);

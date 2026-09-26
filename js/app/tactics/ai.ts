@@ -170,7 +170,8 @@ export function planTurn(b: Battle, u: Unit): Plan {
         }
         case 'guard': g = t && frac(t) < 0.6 ? (o.kind === 'protect' && o.wardId === t.id ? 0.9 : 0.25 + tr.bravery * 0.3) * (u.tactic === 'guardian' ? 1.5 : 1) : 0; break;
         case 'defend': g = 0.08 + foes.filter((f) => dist(f, s) <= 1).length * 0.1 * (1.2 - risk) * (1 - frac(u)); break;
-        case 'overwatch': g = foes.some((f) => dist(f, s) <= 1) ? 0 : (u.tactic === 'archer' || u.tactic === 'leader' ? 0.35 : 0.15); break;
+        // overwatch only pays when a foe could actually come into reach next turn; otherwise advance
+        case 'overwatch': g = foes.some((f) => dist(f, s) <= 1) ? 0 : foes.some((f) => dist(f, s) <= f.move + 1) ? (u.tactic === 'archer' || u.tactic === 'leader' ? 0.4 : 0.2) : 0.02; break;
         case 'escape': {
           const carrying = u.carrying?.kind === 'relic';
           g = (o.kind === 'survive' ? 2.5 : 0) + (o.kind === 'rob' && u.loot > 0 ? 3 : 0) + (carrying && u.side === 'us' ? 3 : 0);
@@ -195,7 +196,7 @@ export function planTurn(b: Battle, u: Unit): Plan {
     }
   }
   // nothing worth doing in reach: advance on the goal (captive, relic, chief) or the objective's target
-  if (best.score < 0.25 && !u.moved) {
+  if (best.score < 0.3 && !u.moved) {
     const aim: Spot | undefined =
       (u.side === 'us' && goals.rescue != null ? b.units.find((x) => x.id === goals.rescue && x.bound) : undefined)
       ?? (u.side === 'us' && goals.retrieve ? b.map.props.get(goals.retrieve) : undefined)

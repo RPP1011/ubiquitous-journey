@@ -156,6 +156,10 @@ export class HeadlessFighter implements IFighter {
   // --- per-frame ------------------------------------------------------------
   setFacing(yaw: number): void { this.targetYaw = yaw + MODEL_YAW_OFFSET; this.aimYaw = yaw; }
   setMoving(speed: number): void { this.moveSpeed = speed; }
+  fxLock = false;
+  playClip(_name: string, _opts: object = {}): number { return 0; }
+  endPose(): void { /* headless: nothing to pose */ }
+  holdLoop(_name: string): void { /* headless */ }
 
   update(dt: number): void {
     switch (this.state) {

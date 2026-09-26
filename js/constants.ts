@@ -71,6 +71,8 @@ export const ENEMY = {
 export const CHARACTERS = {
   knight:    { url: 'assets/Knight.glb',    weapon: '1H_Sword' },
   barbarian: { url: 'assets/Barbarian.glb', weapon: '1H_Axe'   },
+  rogue:     { url: 'assets/Rogue.glb',        weapon: 'Knife'    },
+  hooded:    { url: 'assets/Rogue_Hooded.glb', weapon: 'Knife'    },
 };
 
 // Node-name fragments to hide so each fighter holds only its single 1H weapon.

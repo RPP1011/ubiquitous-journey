@@ -14,7 +14,7 @@ export interface FoeDef {
   faction: 'bandit' | 'monster' | 'rival';
   tactic: Tactic;
   at: [number, number];               // grid coords on the 16×16 map
-  model?: 'knight' | 'barbarian';
+  model?: 'knight' | 'barbarian' | 'rogue' | 'hooded';
   hp?: number;
   bonus?: Partial<Record<'might' | 'finesse' | 'presence' | 'nerve', number>>;
   move?: number;

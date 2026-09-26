@@ -83,6 +83,13 @@ export class Fighter implements IFighter {
   healthBar?: HealthBarSprite;
   _hbCanvas?: HTMLCanvasElement;
   _hbCtx?: CanvasRenderingContext2D | null;
+  /**
+   * VISUAL LOCK (turn-based battles): logic still applies damage/death instantly, but the body
+   * doesn't animate it — a choreographer (ui/battleFX) plays the clips when the blow LANDS on
+   * screen. Off in real-time play.
+   */
+  fxLock = false;
+  private _actT = 0;
 
   constructor(characterKey: string, { isPlayer = false }: { isPlayer?: boolean } = {}) {
     const inst = createCharacterInstance(characterKey);
@@ -224,6 +231,7 @@ export class Fighter implements IFighter {
 
     this.state = 'stagger';
     this.staggerTimer = TUNE.staggerTime;
+    if (this.fxLock) { this.state = 'idle'; return 'hit'; }
     const a = this._action(CLIP.hit);
     if (a) {
       if (this.current) { this.current.fadeOut(0.06); this.current = null; }
@@ -238,6 +246,7 @@ export class Fighter implements IFighter {
   _die(): void {
     this.alive = false;
     this.state = 'dead';
+    if (this.fxLock) { if (this.healthBar) this.healthBar.visible = false; return; }
     if (this.current) this.current.fadeOut(0.15);
     if (this.attackAction) this.attackAction.fadeOut(0.1);
     const a = this._action(CLIP.death);
@@ -262,6 +271,32 @@ export class Fighter implements IFighter {
     this._playLoop(CLIP.idle, 0.1);
     if (this.healthBar) this.healthBar.visible = true;
   }
+
+  // --- choreography (turn-based battles) ---------------------------------------
+  /**
+   * Play a named clip once (returns its duration in seconds), then fall back to locomotion.
+   * `hold` keeps the last frame (a downed body lying there, a kneeling surrender) until
+   * endPose(). Works while dead only for death clips.
+   */
+  playClip(name: string, opts: { speed?: number; hold?: boolean; fade?: number } = {}): number {
+    const a = this._action(name);
+    if (!a) return 0;
+    const fade = opts.fade ?? 0.12;
+    if (this.current) { this.current.fadeOut(fade); this.current = null; }
+    if (this.attackAction && this.attackAction !== a) this.attackAction.fadeOut(fade);
+    a.reset(); a.setLoop(LoopOnce, 1); a.clampWhenFinished = true; a.enabled = true;
+    a.setEffectiveTimeScale(opts.speed ?? 1); a.setEffectiveWeight(1); a.fadeIn(fade); a.play();
+    this.attackAction = a;
+    const d = a.getClip().duration / (opts.speed ?? 1);
+    if (this.alive) { this.state = opts.hold ? 'pose' : 'act'; this._actT = d; }
+    return d;
+  }
+
+  /** Release a held pose back to idle (e.g. a downed ally hauled up). */
+  endPose(): void { if (this.alive && (this.state === 'pose' || this.state === 'act')) { this.state = 'idle'; this._applyLocomotion(); } }
+
+  /** Loop a clip (e.g. aiming on overwatch, blocking when braced) until the next clip or endPose. */
+  holdLoop(name: string): void { if (!this.alive) return; this.state = 'pose'; this._playLoop(name, 0.15); }
 
   // --- hit sampling ---------------------------------------------------------
   isHitActive(): boolean {
@@ -317,6 +352,10 @@ export class Fighter implements IFighter {
         break;
       case 'idle':
         this._applyLocomotion();
+        break;
+      case 'act':
+        this._actT -= dt;
+        if (this._actT <= 0) { this.state = 'idle'; this._applyLocomotion(); }
         break;
       // ready / block: hold current pose; dead: nothing
     }

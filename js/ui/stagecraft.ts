@@ -10,7 +10,8 @@ import type { Agent } from '../../types/sim.js';
 import type { RunController } from '../app/run/run.js';
 import { HUB_NPCS } from '../app/run/hub.js';
 import { COMPANIONS, type CompanionKey } from '../app/run/companions.js';
-import type { Battle } from '../app/tactics/battle.js';
+import type { Battle, Unit } from '../app/tactics/battle.js';
+import type { BattleFX } from './battleFX.js';
 
 const MOOD = (s: number) => (s > 0.35 ? '#8fe39a' : s < -0.35 ? '#f09a8d' : s < -0.05 ? '#f0c674' : '#eef3f8');
 const RING = { us: 0x4fc76a, them: 0xd6503f, cur: 0xf2c94c, captive: 0x5aa7e8, down: 0x6b7280, hub: 0x9aa6b2 };
@@ -38,15 +39,24 @@ export function hubStage(rc: RunController, talking: string | null): void {
   if (player) set(player, { name: 'You', sub: `${Math.round(player.gold || 0)} silver`, color: '#e8c879' }, RING.us);
 }
 
-export function battleStage(b: Battle): void {
+function icons(u: Unit): string {
+  return [u.burning > 0 ? '🔥' : '', u.defending ? '🛡' : '', u.overwatch ? '👁' : '', u.readied ? '⏳' : '', u.exposed ? '✖' : '',
+    u.morale === 'shaken' ? '😰' : u.morale === 'broken' ? '😱' : '', u.tauntedBy ? '💢' : '', u.turnedOn ? '⚔' : '', u.carrying ? '✋' : ''].join('');
+}
+
+export function battleStage(b: Battle, fx: BattleFX | null = null): void {
   const cur = b.current();
   for (const u of b.units) {
     const a = u.agent;
-    const gone = u.out === 'dead' || u.out === 'fled' || u.out === 'yielded' || u.out === 'captured' || !a.alive;
+    const shown = fx ? fx.view(u) : null;
+    const gone = shown ? shown.gone : (u.out === 'dead' || u.out === 'fled' || u.out === 'yielded' || u.out === 'captured' || !a.alive);
     if (gone) { set(a, null, null, true); continue; }
-    const ring = u === cur ? RING.cur : u.out === 'downed' ? RING.down : u.tags.has('captive') ? RING.captive : u.side === 'us' ? RING.us : RING.them;
-    const name = a.controlled ? 'You' : a.name;
-    set(a, { name, hp: u.bound ? undefined : Math.max(0, a.fighter.health) / 100, sub: u.bound ? 'bound' : undefined, color: u.side === 'us' ? '#cdf0d2' : '#f3c2ba' }, ring);
+    const down = shown ? shown.down : u.out === 'downed';
+    const ring = u === cur ? RING.cur : down ? RING.down : u.tags.has('captive') ? RING.captive : u.side === 'us' ? RING.us : RING.them;
+    const ic = icons(u);
+    const name = (a.controlled ? 'You' : a.name) + (ic ? ` ${ic}` : '');
+    const hp = shown ? shown.hp : Math.max(0, a.fighter.health);
+    set(a, { name, hp: u.bound ? undefined : hp / 100, sub: u.bound ? 'bound' : undefined, color: u.side === 'us' ? '#cdf0d2' : '#f3c2ba' }, ring);
   }
 }
 

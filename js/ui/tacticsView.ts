@@ -9,6 +9,7 @@ import { readWriteIn, describeTrigger, type GridReading } from '../app/tactics/w
 import { key } from '../app/tactics/map.js';
 import type { Action, Battle, Spot, Unit } from '../app/tactics/battle.js';
 import type { BattleRender } from './battleRender.js';
+import type { BattleFX } from './battleFX.js';
 
 const CSS = `
 #tac { position: fixed; right: 12px; top: 12px; bottom: 12px; width: min(400px, 94vw); display: flex; flex-direction: column; gap: 8px;
@@ -69,6 +70,8 @@ export class TacticsView {
   private capT = 0;
   private seenLog = 0;
   private lastTyped: string | null = null;
+  /** The choreographer playing this battle's cues (NPC turns and autopilot wait on it). */
+  fx: BattleFX | null = null;
 
   constructor() {
     if (typeof document === 'undefined') return;
@@ -79,8 +82,17 @@ export class TacticsView {
     this.cap = document.createElement('div'); this.cap.id = 'tac-cap'; document.body.appendChild(this.cap);
   }
 
-  /** Announce the latest meaningful line of the log as a big caption (the video's narrator). */
+  /** Show a caption for the beat now playing (called by the choreographer). */
+  showCaption(text: string, kind: string, quote: string | null): void {
+    const cap = this.cap; if (!cap) return;
+    cap.className = `on ${kind}`;
+    cap.innerHTML = (quote ? `<span class="q">“${esc(quote)}”</span>` : '') + esc(text);
+    this.capT = kind === 'end' ? 99 : 2.4;
+  }
+
+  /** (legacy) log-driven caption, used only when no choreographer is attached. */
   private caption(dt: number): void {
+    if (this.fx) { this.capT -= dt; if (this.capT <= 0 && this.cap) this.cap.className = ''; return; }
     const b = this.b, cap = this.cap; if (!b || !cap) return;
     this.capT -= dt;
     if (b.log.length > this.seenLog) {
@@ -107,7 +119,10 @@ export class TacticsView {
   /** Per frame: pace NPC turns, keep highlights in sync. */
   tick(dt: number): void {
     const b = this.b; if (!b) return;
+    this.fx?.update(dt);
+    const busy = !!this.fx && this.fx.busy;
     const u = b.current();
+    if (busy) { this.highlight(); this.caption(dt); this.r?.sync(dt); return; }
     if (!b.outcome && u && !b.playerControls(u)) {
       this.npcTimer += dt;
       if (this.npcTimer > this.pace) { this.npcTimer = 0; runTurn(b, u); this.refresh(); }
@@ -134,7 +149,7 @@ export class TacticsView {
       const r = this.readings[0];
       const same = r && r.action.kind === this.autoPlan.action.kind;
       this.autoUnit = null;
-      if (same) { this.lastTyped = this.autoText; this.run(u, r); if (b.current() === u) b.endTurn(u); this.refresh(); return; }
+      if (same) { this.lastTyped = this.autoText; this.fx?.setQuote(this.autoText); this.run(u, r); if (b.current() === u) b.endTurn(u); this.refresh(); return; }
     } else if (this.autoT < 0.4) return;
     const plan = this.autoPlan;
     this.autoUnit = null; this.draft = ''; this.readings = [];
@@ -172,6 +187,7 @@ export class TacticsView {
 
   private run(u: Unit, reading: GridReading): void {
     const b = this.b!;
+    if (this.draft.trim() && !this.auto) this.fx?.setQuote(this.draft.trim());
     if (reading.to) { const e = b.moveTo(u, reading.to); if (e) { this.err = e; this.refresh(); return; } }
     if (b.current() === u && !u.acted) this.err = b.act(u, reading.action, this.draft.trim() || undefined) || '';
     this.draft = ''; this.readings = [];

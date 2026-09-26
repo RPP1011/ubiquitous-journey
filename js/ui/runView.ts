@@ -300,10 +300,10 @@ export class RunUI {
   // ---- autoplay ---------------------------------------------------------------------------------
 
   /** Script a whole run: visit people, take the work, fight every stage, come home, hear the town. */
-  autoplay(): void {
+  autoplay(quick = false): void {
     const rc = this.o.rc;
-    const S = (run: () => void, wait: number) => this.steps.push({ run, wait });
-    const talkers = rc.save.runs === 0 ? ['marta', 'reeve'] : ['marta', 'anselm', 'tom', 'nan', 'hilde'];
+    const S = (run: () => void, wait: number) => this.steps.push({ run, wait: quick ? Math.min(wait, 0.8) : wait });
+    const talkers = quick ? [] : rc.save.runs === 0 ? ['marta', 'reeve'] : ['marta', 'anselm', 'tom', 'nan', 'hilde'];
     S(() => this.act('hub'), 2.5);
     if (rc.save.runs > 0) S(() => this.act('journal'), 7);
     if (rc.save.runs > 0) S(() => this.act('hub'), 1.5);
@@ -328,9 +328,9 @@ export class RunUI {
     S(() => this.o.onDone?.(), 1);
   }
 
-  tick(dt: number, battle: Battle | null): void {
+  tick(dt: number, battle: Battle | null, fxBusy = false): void {
     if (this.waitingBattle) {
-      if (battle && battle.outcome) { this.battleOverT += dt; if (this.o.auto && this.battleOverT > 3) this.battleDone(); }
+      if (battle && battle.outcome && !fxBusy) { this.battleOverT += dt; if (this.o.auto && this.battleOverT > 3) this.battleDone(); }
       return;
     }
     if (!this.steps.length) return;
