@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { TUNE } from '../constants.js';
 import { affordances, forecast, propTraits, useIcons, verbOf, aimOf, type Affordance } from '../app/tactics/affordances.js';
 import { runTurn, planTurn } from '../app/tactics/ai.js';
-import { phrase } from '../app/run/autopilot.js';
+import { phrase, autoCall } from '../app/run/autopilot.js';
 import { readWriteIn, describeTrigger, resolveIntents, splitConditional, readTrigger, readyReadings, norm, type GridReading } from '../app/tactics/writein.js';
 import { interpretLLM } from '../app/tactics/llmParse.js';
 import { isEnabled as llmEnabled } from '../ai/llm.js';
@@ -50,6 +50,7 @@ const CSS = `
   background: rgba(255,255,255,.12); font-size: 11px; text-align: center; }
 #tac .verb.env { border-color: rgba(216,162,74,.6); background: rgba(216,162,74,.14); } #tac .verb.env .n { background: #d8a24a; color: #1a1206; font-weight: 700; }
 #tac .verb.hot .n { background: #ff6a1a; color: #fff; }
+#tac .verb.piece { border-color: #ffe066; background: rgba(255,224,102,.16); } #tac .verb.piece .n { display: none; }
 #tac .verb.sel { background: rgba(255,224,102,.3); border-color: #ffe066; }
 #tac .pick { margin-top: 6px; font-size: 12px; color: #ffe066; } #tac .pick button { margin-left: 6px; padding: 0 6px; }
 #tac-marks { position: fixed; inset: 0; pointer-events: none; z-index: 30; }
@@ -161,7 +162,21 @@ export class TacticsView {
       if (!a.catches.length && b!.map.props.get(a.subject.id)?.kind === 'tree') continue;
       (byProp.get(a.subject.id) ?? byProp.set(a.subject.id, []).get(a.subject.id)!).push(a);
     }
-    for (const [id, el] of this.markEls) if (!byProp.has(id)) { el.remove(); this.markEls.delete(id); }
+    const byPiece = new Map<string, Affordance[]>();
+    if (show) for (const a of this.options()) if (a.subject?.kind === 'piece') (byPiece.get(a.subject.id) ?? byPiece.set(a.subject.id, []).get(a.subject.id)!).push(a);
+    // every unused piece gets a star, bright when you can use it this turn
+    if (show) for (const pc of b!.pieces.values()) if (!pc.used) {
+      const k = `piece:${pc.id}`;
+      let el = this.markEls.get(k);
+      if (!el) { el = document.createElement('div'); el.className = 'pm'; marks.appendChild(el); this.markEls.set(k, el); }
+      const can = byPiece.has(pc.id);
+      el.textContent = can ? '★' : '☆'; el.style.opacity = can ? '1' : '0.55';
+      el.classList.toggle('hot', (byPiece.get(pc.id) ?? []).some((a) => a.catches.some((w) => w.side !== u!.side)));
+      const sp = this.screen({ x: pc.at[0][0], z: pc.at[0][1] }, 2.6);
+      el.style.display = sp ? '' : 'none';
+      if (sp) { el.style.left = `${sp.x}px`; el.style.top = `${sp.y}px`; }
+    }
+    for (const [id, el] of this.markEls) if (!byProp.has(id) && !(id.startsWith('piece:') && show && b!.pieces.get(id.slice(6)) && !b!.pieces.get(id.slice(6))!.used)) { el.remove(); this.markEls.delete(id); }
     const hovered = this.r?.hover ?? null;
     for (const [id, list] of byProp) {
       const p = b!.map.props.get(id) ?? (u!.carrying?.id === id ? u!.carrying : undefined); if (!p) continue;
@@ -180,7 +195,13 @@ export class TacticsView {
     if (show && hovered) {
       const p = b!.map.propAt(hovered.x, hovered.z);
       const w = b!.unitAt(hovered.x, hovered.z);
-      if (p) {
+      const pc = [...b!.pieces.values()].find((q) => !q.used && q.at.some(([x, z]) => x === hovered.x && z === hovered.z));
+      if (pc) {
+        const uses = this.verb ? (this.aimAff ? [this.aimAff] : []) : byPiece.get(pc.id) ?? [];
+        html = `<b>★ ${esc(pc.name[0].toUpperCase() + pc.name.slice(1))}</b><div class="tr">${esc(pc.describe)}${pc.check ? ` · ${pc.check.stat} check` : ''}${pc.needsFire ? ' · needs a flame' : ''}</div>` +
+          (uses.length ? uses.map((a) => this.tipLine(a)).join('') : `<div class="h">get within ${pc.reach ?? 1} tile${(pc.reach ?? 1) > 1 ? 's' : ''} to use it${pc.needsFire ? ', with a flame' : ''}</div>`);
+        anchor = { x: pc.at[0][0], z: pc.at[0][1] };
+      } else if (p) {
         const uses = this.verb ? (this.aimAff ? [this.aimAff] : []) : byProp.get(p.id) ?? [];
         html = `<b>${esc(p.name[0].toUpperCase() + p.name.slice(1))}</b><div class="tr">${esc(propTraits(b!, u, p).join(' · '))}</div>` +
           (uses.length ? uses.slice(0, 5).map((a) => this.tipLine(a)).join('') + (this.verb ? '<div class="h">click to do it</div>' : '') : '<div class="h">nothing you can do with it from here this turn</div>');
@@ -259,6 +280,8 @@ export class TacticsView {
     this.autoT += dt;
     if (!this.autoPlan && this.autoT > 0.5) {
       this.autoPlan = planTurn(b, u);
+      const said = autoCall(b, u, this.autoPlan);
+      if (said) { b.speak(u, said); this.refresh(); }
       this.autoText = phrase(b, u, this.autoPlan.action);
       this.autoT = 0;
     }
@@ -332,6 +355,7 @@ export class TacticsView {
     const u = this.mine();
     r.reach.clear(); r.targets.clear(); r.path = []; r.usable.clear(); r.preview = null;
     if (!u || b.outcome) return;
+    for (const a of this.options()) if (a.subject?.kind === 'piece') { const pc = b.pieces.get(a.subject.id); if (pc) for (const [x, z] of pc.at) r.usable.add(key(x, z)); }
     for (const a of this.options()) if (a.subject?.kind === 'prop') { const p = b.map.props.get(a.subject.id); if (p && !(p.kind === 'tree' && !a.catches.length)) r.usable.add(key(p.x, p.z)); }
     const vk = this.verb ?? this.hoverVerb;
     this.aimAff = this.verb && r.hover ? this.aimedAt(this.verb, r.hover) : null;
@@ -349,6 +373,7 @@ export class TacticsView {
       if (pr) subj.add(key(pr.x, pr.z));
       const tu = a.target != null ? b.get(a.target as Unit['id']) : undefined;
       if (tu) subj.add(key(tu.x, tu.z));
+      if (hv.action.kind === 'use') { const pc = b.pieces.get(hv.action.piece); if (pc) for (const [x, z] of pc.at) subj.add(key(x, z)); }
       if (hv.action.kind === 'ignite' || hv.action.kind === 'throw' || hv.action.kind === 'douse') { const at = (hv.action as { at: Spot }).at; subj.add(key(at.x, at.z)); }
       for (const k of aims) subj.add(k);
       r.preview = { subject: subj, effect: new Set(f.footprint.map((t) => key(t.x, t.z))) };
@@ -364,6 +389,8 @@ export class TacticsView {
 
   private run(u: Unit, reading: GridReading): void {
     const b = this.b!;
+    // words, not a deed: call out to your side (free; your turn goes on)
+    if (reading.call) { this.err = b.speak(u, reading.call) || ''; this.draft = ''; this.readings = []; this.refresh(); return; }
     if (this.draft.trim() && !this.auto) this.fx?.setQuote(this.draft.trim());
     if (reading.to) { const e = b.moveTo(u, reading.to); if (e) { this.err = e; this.refresh(); return; } }
     if (b.current() === u && !u.acted) this.err = b.act(u, reading.action, this.draft.trim() || undefined) || '';
@@ -395,13 +422,14 @@ export class TacticsView {
       const verbs = new Map<string, { v: ReturnType<typeof verbOf>; n: number; hot: boolean; only: number }>();
       all.forEach((a, i) => {
         const vb = verbOf(mine, a.action);
+        if (a.action.kind === 'use') vb.name = b.pieces.get(a.action.piece)?.label ?? vb.name;
         const e = verbs.get(vb.key) ?? verbs.set(vb.key, { v: vb, n: 0, hot: false, only: i }).get(vb.key)!;
         e.n += 1;
         if (a.catches.some((w) => w.side !== mine.side)) e.hot = true;
       });
       const btn = (e: { v: ReturnType<typeof verbOf>; n: number; hot: boolean; only: number }) => e.v.group === 'Stance'
         ? `<button class="verb" data-f="${e.only}" title="${esc(all[e.only].effect)}">${esc(e.v.name)}</button>`
-        : `<button class="verb ${e.v.env ? 'env' : ''} ${e.hot ? 'hot' : ''} ${this.verb === e.v.key ? 'sel' : ''}" data-v="${esc(e.v.key)}">${e.v.icon} ${esc(e.v.name)}<span class="n">${e.n}</span></button>`;
+        : `<button class="verb ${e.v.key.startsWith('use:') ? 'piece' : ''} ${e.v.env ? 'env' : ''} ${e.hot ? 'hot' : ''} ${this.verb === e.v.key ? 'sel' : ''}" data-v="${esc(e.v.key)}">${e.v.icon} ${esc(e.v.name)}<span class="n">${e.n}</span></button>`;
       const groups: Record<string, string[]> = { Environment: [], Fight: [], People: [], Stance: [] };
       for (const e of verbs.values()) groups[e.v.group].push(btn(e));
       const sel = this.verb ? verbs.get(this.verb) : undefined;
@@ -413,12 +441,12 @@ export class TacticsView {
         <input id="tac-in" placeholder="Describe what ${mine.role === 'player' ? 'you do' : esc(mine.agent.name) + ' does'}… (Enter)" value="${esc(this.draft)}" autocomplete="off">
         <div class="chips">${chips}</div><div class="err">${esc(this.err)}</div>
         <div class="row">${mine.moved && !mine.acted ? '<button data-x="dash">Dash</button>' : ''}<button data-x="end">End turn</button></div>
-        <div class="hint">Blue: move · red: attack · <span style="color:#d8a24a">amber: things you can use</span>. Pick a verb — the number is how many things you can do it to this turn — then click a lit target (hover one to see what happens). Or write it: "kick the brazier into Garrick", "if anyone goes for Borin, shove them".</div>`;
+        <div class="hint">Blue: move · red: attack · <span style="color:#d8a24a">amber: things you can use</span>. Pick a verb — the number is how many things you can do it to this turn — then click a lit target (hover one to see what happens). Or write it: "kick the brazier into Garrick". Talk to your side (free, once a turn — they decide for themselves): "Borin, hold the gate", "everyone on the archer", "I'll shove Garrick — follow up!"</div>`;
     }
     const lines: string[] = []; let rd = -1;
     for (const l of b.log.slice(-60)) { if (l.round !== rd) { lines.push(`<div class="rd">— round ${l.round} —</div>`); rd = l.round; } lines.push(`<div class="${l.kind}">${esc(l.text)}</div>`); }
     root.innerHTML = `<div class="card"><div class="hd"><b>Round ${b.round}</b><span>${b.outcome ? 'over' : u ? esc(b.nm(u, true)) + "'s turn" : ''}</span></div>
-        ${b.highStakes && !b.outcome ? `<div class="stakes">High stakes — ${esc(b.stakesReason)}. You command your companions.</div>` : ''}
+        ${b.highStakes && !b.outcome ? `<div class="stakes">High stakes — ${esc(b.stakesReason)}.</div>` : ''}
         <div class="order">${order}</div></div>
       <div class="card">${body}</div>
       <div class="card log" id="tac-log">${lines.join('')}</div>`;

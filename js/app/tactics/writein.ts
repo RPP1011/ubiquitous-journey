@@ -20,6 +20,7 @@
 import { DIRS, key, type Prop } from './map.js';
 import type { Action, Battle, Claim, Spot, Trigger, Unit } from './battle.js';
 import { HEWABLE } from './battle.js';
+import { callName, likelihood, type Want } from './comms.js';
 
 export interface GridReading {
   to: Spot | null;
@@ -32,13 +33,17 @@ export interface GridReading {
   deferred?: boolean;
   /** Produced by the model interpreter (shown with a mark in the UI). */
   model?: boolean;
+  /** Not a deed but words: a call to your side (comms.ts) — free, once a turn. */
+  call?: { to: Unit['id'][] | 'all'; kind: 'ask' | 'plan'; want: Want; words: string };
 }
 
 export type Verb = 'attack' | 'shove' | 'kick' | 'hew' | 'throw' | 'ignite' | 'douse' | 'pickup' | 'grab' | 'subdue' | 'aid'
-  | 'free' | 'guard' | 'defend' | 'block' | 'overwatch' | 'escape' | 'intimidate' | 'taunt' | 'bluff' | 'rally' | 'parley' | 'move';
+  | 'free' | 'guard' | 'defend' | 'block' | 'hide' | 'use' | 'overwatch' | 'escape' | 'intimidate' | 'taunt' | 'bluff' | 'rally' | 'parley' | 'move';
 
 /** What the player meant, independent of how it gets done on this field. */
 export interface Intent {
+  /** A set-piece of the place (pieces.ts), by id. */
+  piece?: string;
   verb: Verb;
   target?: Unit['id'];              // a foe (or the listener of a bluff)
   ally?: Unit['id'];                // a friend (aid, guard, free)
@@ -55,7 +60,7 @@ export interface Intent {
 }
 
 export const VERBS: readonly Verb[] = ['attack', 'shove', 'kick', 'hew', 'throw', 'ignite', 'douse', 'pickup', 'grab', 'subdue', 'aid',
-  'free', 'guard', 'defend', 'block', 'overwatch', 'escape', 'intimidate', 'taunt', 'bluff', 'rally', 'parley', 'move'];
+  'free', 'guard', 'defend', 'block', 'hide', 'use', 'overwatch', 'escape', 'intimidate', 'taunt', 'bluff', 'rally', 'parley', 'move'];
 
 const has = (t: string, ...ws: string[]) => ws.some((w) => new RegExp(`(^| )${w}( |$)`).test(t));
 export const norm = (s: string) => ` ${s.toLowerCase().replace(/[^a-z0-9' ]+/g, ' ').replace(/'s\b/g, '').replace(/\s+/g, ' ').trim()} `;
@@ -82,6 +87,10 @@ const V: Record<Exclude<Verb, 'move'>, string[]> = {
     'hold the right', 'hold the gap', 'hold the door', 'hold the pass', 'hold the bridge', 'stand between', 'get between', 'step between',
     'body block', 'plug the gap', 'stand in the way', 'in his way', 'in her way', 'in their way', 'intercept', 'bottleneck',
     'keep them away', 'keep them off', 'keep him away', 'keep her away', "can't get past", 'nobody gets past', 'no one gets past'],
+  hide: ['hide', 'lie low', 'stay low', 'crouch in', 'duck into', 'into the brush', 'into the grass', 'into the wheat', 'into the gorse',
+    'in the brush', 'in the grass', 'in the wheat', 'in the bracken', 'into the bracken', 'conceal', 'out of sight', 'sneak', 'creep'],
+  // set-pieces are matched by their own nouns (below), not by a verb list
+  use: [],
   // weak words ("ready", "watch") only win when no other verb is in the order: "ready to heal" heals
   overwatch: ['overwatch', 'watch', 'wait for', 'hold position', 'hold here', 'hold fire', 'ready', 'keep watch', 'stand ready'],
   escape: ['flee', 'run away', 'escape', 'retreat', 'withdraw', 'get out'],
@@ -236,6 +245,14 @@ export function interpretRegex(b: Battle, u: Unit, raw: string, speaker?: Unit):
     out.push(I);
   }
   // the weak readiness words give way to any real verb ("stay ready to heal" heals, "get ready to strike" strikes)
+  // the place's set-pieces, by their nouns ("cut the logs loose", "ring the bell", "open the sluice")
+  for (const pc of b.pieces.values()) {
+    if (pc.used) continue;
+    const noun = pc.nouns.filter((n) => text.includes(` ${n} `)).sort((x, y) => y.length - x.length)[0];
+    if (!noun) continue;
+    const verbed = pc.verbs.some((v) => c.includes(` ${v} `));
+    out.push({ verb: 'use', piece: pc.id, score: 2.5 + (verbed ? 2 : 0) + noun.length / 20 });
+  }
   if (out.length > 1 && !has(text, 'overwatch', 'keep watch')) { const i = out.findIndex((I) => I.verb === 'overwatch'); if (i >= 0) out.splice(i, 1); }
   if (!out.length && dest) out.push({ verb: 'move', dest, destProp: prop?.id, destFoe: namedFoes[0]?.u.id, score: 1 });
   return out.sort((a, c2) => c2.score - a.score);
@@ -344,6 +361,20 @@ export function resolveIntents(b: Battle, u: Unit, intents: Intent[], model = fa
       case 'guard': if (ally) anywhere({ kind: 'guard', target: ally.id }, `Guard ${b.nm(ally)}`, score, null, ally); break;
       case 'defend': push(dest, { kind: 'defend' }, 'Brace', score); break;
       case 'overwatch': push(dest, { kind: 'overwatch' }, 'Overwatch', score); break;
+      case 'use': {
+        const pc = I.piece ? b.pieces.get(I.piece) : undefined;
+        if (pc && !pc.used) anywhere({ kind: 'use', piece: pc.id }, pc.label, score, null, { x: pc.at[0][0], z: pc.at[0][1] });
+        break;
+      }
+      case 'hide': {
+        // the nearest brush you can reach, out of any foe's arm's length
+        const cands = [{ x: u.x, z: u.z }, ...[...reach.keys()].map((k) => { const [x, z] = k.split(',').map(Number); return { x, z }; })]
+          .filter((s) => b.map.tile(s.x, s.z)?.ground === 'brush')
+          .sort((p, q) => (b.foesOf(u).some((f) => dist(f, p) <= 1) ? 1 : 0) - (b.foesOf(u).some((f) => dist(f, q) <= 1) ? 1 : 0) || dist(p, u) - dist(q, u));
+        const at = cands[0];
+        if (at && push(at.x === u.x && at.z === u.z ? null : at, { kind: 'defend' }, 'Hide in the brush', score + 1)) out[out.length - 1].notes.push('hidden: archers and watchers can\'t find you here');
+        break;
+      }
       case 'block': {
         const foe = t ?? b.nearestFoe(u);
         if (!foe) break;
@@ -395,6 +426,8 @@ export function resolveIntents(b: Battle, u: Unit, intents: Intent[], model = fa
 
 /** The instant path: regex interpretation, deterministic resolution. Conditionals become READY. */
 export function readWriteIn(b: Battle, u: Unit, raw: string): GridReading[] {
+  const said = callReadings(b, u, raw);
+  if (said) return said;
   // "Borin, …" is only an order for Borin (read on his turn, when he's yours to command)
   const addr = addressee(b, u, raw);
   if (addr.who && addr.who !== u) return [];
@@ -443,8 +476,8 @@ export function readyReadings(b: Battle, u: Unit, trig: Trigger, thenText: strin
 export function sameKind(a: Action, c: Action): boolean {
   if (a.kind !== c.kind) return false;
   const A = a as Record<string, unknown>, C = c as Record<string, unknown>;
-  for (const k of ['target', 'prop', 'abilityId']) if (A[k] !== undefined && C[k] !== undefined && A[k] !== C[k]) return false;
-  if ('at' in a && 'at' in c) return a.at.x === c.at.x && a.at.z === c.at.z;
+  for (const k of ['target', 'prop', 'abilityId', 'piece']) if (A[k] !== undefined && C[k] !== undefined && A[k] !== C[k]) return false;
+  if ('at' in a && 'at' in c && a.at && c.at) return a.at.x === c.at.x && a.at.z === c.at.z;
   return true;
 }
 
@@ -492,6 +525,64 @@ export function describeTrigger(b: Battle, t: Trigger): string {
     case 'enter': return 'when someone enters the area';
     case 'reach': return 'when a foe comes within reach';
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// TALK (comms.ts): words to your side are read as a CALL, not a deed.
+
+const KINDS: Partial<Record<Verb, string[]>> = {
+  attack: ['attack'], shove: ['shove'], kick: ['kick'], hew: ['hew'], throw: ['throw'], ignite: ['ignite'], douse: ['douse'],
+  pickup: ['pickup'], grab: ['grab'], subdue: ['subdue'], aid: ['aid'], free: ['free'], guard: ['guard'], defend: ['defend', 'block'],
+  block: ['block'], hide: ['defend'], use: ['use'], overwatch: ['overwatch', 'ready'], escape: ['escape'],
+  intimidate: ['social'], taunt: ['social'], bluff: ['social'], rally: ['social'], parley: ['social'],
+};
+const GROUP = /^\s*(everyone|everybody|all of you|all|both of you|lads|friends|you lot|company)\s*[,:;!]?\s+(.+)$/i;
+const ANNOUNCE = /^\s*(?:i'?ll|i will|i'?m going to|im going to|i'?m gonna|i'?m going for|watch me|i've got|i got)\s+(.+)$/i;
+const MINE = /^\s*leave (.+?) to me\b/i;
+
+/**
+ * "Borin, block Fitch" / "Pip and Wren, …" / "everyone on the archer" / "tell Maud to …" → an ASK;
+ * "I'll shove Garrick" / "leave Garrick to me" → a PLAN your side can count on. Returns null when
+ * the words aren't talk (then they're read as your own deed).
+ */
+export function callReadings(b: Battle, u: Unit, raw: string): GridReading[] | null {
+  if (u.role !== 'player') return null;
+  let to: Unit['id'][] | 'all' | null = null, text = raw, kind: 'ask' | 'plan' = 'ask';
+  const g = GROUP.exec(raw);
+  if (g) { to = 'all'; text = g[2]; }
+  else {
+    const v = /^\s*([^,:;]{2,40})[,:;]\s*(.+)$/.exec(raw);
+    const names = v ? v[1].split(/\s+and\s+|\s*&\s*/) : [];
+    const who = names.map((n) => addressee(b, u, `${n}, x`).who).filter((x): x is Unit => !!x && x !== u);
+    if (v && who.length && who.length === names.length) { to = who.map((w) => w.id); text = v[2]; }
+    else { const a = addressee(b, u, raw); if (a.who && a.who !== u) { to = [a.who.id]; text = a.text; } }
+  }
+  if (!to) {
+    const mine = MINE.exec(text), an = ANNOUNCE.exec(text);
+    if (mine) { kind = 'plan'; text = `attack ${mine[1]}`; }
+    else if (an) { kind = 'plan'; text = an[1]; }
+    else return null;
+  }
+  // read the words from the doer's side: the listener for an ask, you for a plan
+  const mates = b.friendsOf(u).filter((f) => f.out === null && f.role !== 'player' && !f.bound && f.tactic !== 'civilian');
+  const listener = kind === 'plan' ? u : to === 'all' ? mates[0] : b.get(to![0]);
+  if (!listener) return null;
+  const cond = splitConditional(text);
+  const trig = cond ? readTrigger(b, listener, norm(cond.when)) : null;
+  const intents = interpretRegex(b, listener, cond && trig ? cond.then : text, kind === 'ask' ? u : undefined);
+  const I = intents[0];
+  if (!I || !KINDS[I.verb]) return null;
+  const want: Want = { kinds: (KINDS[I.verb] ?? []).map((k) => (trig ? `ready:${k}` : k)), target: I.target, ally: I.ally, prop: I.prop, piece: I.piece };
+  if (!['attack', 'shove', 'subdue', 'grab', 'intimidate', 'taunt', 'bluff', 'block'].includes(I.verb)) delete want.target;
+  const what = (resolveIntents(b, listener, [I])[0]?.label ?? I.verb).replace(/ \(after moving\)$/, '').replace(/^Close in to /, '').replace(/ next turn$/, '');
+  const words = raw.trim();
+  const call = { to: to ?? 'all', kind, want, words } as NonNullable<GridReading['call']>;
+  if (kind === 'plan') return [{ to: null, action: { kind: 'wait' }, label: `📣 Tell your side: you'll ${what.toLowerCase()}`, p: 1, notes: ['free — they can plan around it'], score: 20, call }];
+  const ears = to === 'all' ? mates : (to as Unit['id'][]).map((id) => b.get(id)!).filter(Boolean);
+  const reads = ears.map((l) => ({ l, r: likelihood(b, l, u, want) }));
+  const p = reads.length ? Math.max(...reads.map((x) => x.r.p)) : 0;
+  const who = to === 'all' ? 'everyone' : ears.map((l) => callName(l.agent.name)).join(' and ');
+  return [{ to: null, action: { kind: 'wait' }, label: `📣 Ask ${who}: ${what.toLowerCase()}`, p, notes: reads.map((x) => `${callName(x.l.agent.name)}: ${x.r.words}`), score: 20, call }];
 }
 
 export type { Prop };

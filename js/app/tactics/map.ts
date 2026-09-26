@@ -19,7 +19,7 @@ export const LEVEL = 0.5;         // metres per height level
 export const JUMP = 2;            // levels a unit may climb in one step
 export const FALL_SAFE = 3;       // a drop of more than this many levels hurts
 
-export type Ground = 'grass' | 'dirt' | 'stone' | 'water' | 'mud' | 'ash' | 'snow';
+export type Ground = 'grass' | 'dirt' | 'stone' | 'water' | 'mud' | 'ash' | 'snow' | 'brush';
 export type Cover = 0 | 1 | 2;    // none / half / full
 
 export interface Tile {
@@ -35,7 +35,7 @@ export interface Tile {
 
 export type PropKind =
   | 'crate' | 'barrel' | 'oil' | 'hay' | 'campfire' | 'brazier' | 'bucket' | 'flour' | 'rocks'
-  | 'table' | 'cart' | 'tree' | 'well' | 'log' | 'torch' | 'relic' | 'tent';
+  | 'table' | 'cart' | 'tree' | 'well' | 'log' | 'torch' | 'relic' | 'tent' | 'rubble';
 
 export interface Prop {
   id: string;
@@ -73,6 +73,7 @@ const PROP_DEFS: Record<PropKind, Omit<Prop, 'id' | 'x' | 'z' | 'burning' | 'tip
   log:      { kind: 'log', name: 'a fallen log', nouns: ['log', 'branch', 'bough'], hp: 30, weight: 1, cover: 1, blocks: false, climbable: true, flammable: true, fireSource: false, liquid: false, blinding: false },
   relic:    { kind: 'relic', name: 'the silver reliquary', nouns: ['relic', 'reliquary', 'silver', 'casket'], hp: 99, weight: 0, cover: 0, blocks: false, climbable: false, flammable: false, fireSource: false, liquid: false, blinding: false },
   tent:     { kind: 'tent', name: 'a tent', nouns: ['tent', 'canvas', 'awning'], hp: 15, weight: 2, cover: 1, blocks: true, climbable: false, flammable: true, fireSource: false, liquid: false, blinding: false },
+  rubble:   { kind: 'rubble', name: 'rubble', nouns: ['rubble', 'debris', 'stones', 'wreckage'], hp: 99, weight: 2, cover: 1, blocks: false, climbable: true, flammable: false, fireSource: false, liquid: false, blinding: false },
   torch:    { kind: 'torch', name: 'a torch', nouns: ['torch', 'brand'], hp: 5, weight: 0, cover: 0, blocks: false, climbable: false, flammable: false, fireSource: true, liquid: false, blinding: false },
 };
 

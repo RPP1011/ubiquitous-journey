@@ -101,6 +101,8 @@ export class BattleFX {
   private moving = new Set<Unit['id']>();
   private clipIdx = 0;
   onCaption: ((text: string, kind: string, quote: string | null) => void) | null = null;
+  /** A set-piece goes off (the stage set animates its model). */
+  onPiece: ((id: string, dir: [number, number]) => void) | null = null;
   private quote: string | null = null;
   private lastCaptionAt = -1;
 
@@ -450,6 +452,12 @@ export class BattleFX {
         return { dur: 0.9, t: 0,
           tick: (_t, k) => { const ang = (Math.PI / 2) * k * k; o3(g).rotation.x = dz * ang; o3(g).rotation.z = -dx * ang; },
           done: () => { this.scene.remove(g); this.dust(this.at({ x: c.at.x + dx, z: c.at.z + dz }), 22); this.dust(this.at({ x: c.at.x + 2 * dx, z: c.at.z + 2 * dz }), 14); this.ring(this.at({ x: c.at.x + dx, z: c.at.z + dz }), 0xb8a98c, 2.5); } };
+      }
+      case 'piece': {
+        this.onPiece?.(c.id, c.dir);
+        const p = this.at(c.at);
+        let n = 0;
+        return { dur: 1.1, t: 0, tick: (tt) => { if (n < 3 && tt > n * 0.3) { this.dust(p.clone().add(new THREE.Vector3(c.dir[0] * n * 2, 0, c.dir[1] * n * 2)), 18); n++; } } };
       }
       case 'icon': {
         const f = this.fx(c.u); if (!f) return null;

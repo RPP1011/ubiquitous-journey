@@ -8,9 +8,10 @@
 
 import { DIRS, FALL_SAFE, key, type Prop } from './map.js';
 import type { Action, Battle, Spot, Unit } from './battle.js';
+import { pieceFootprint } from './pieces.js';
 
 export type AffGroup = 'Environment' | 'Fight' | 'People' | 'Stance';
-export type Subject = { kind: 'prop'; id: string } | { kind: 'unit'; id: Unit['id'] } | null;
+export type Subject = { kind: 'prop'; id: string } | { kind: 'unit'; id: Unit['id'] } | { kind: 'piece'; id: string } | null;
 
 export interface Affordance {
   /** Where to stand first (null = act from here). */
@@ -42,6 +43,7 @@ export interface Verb { key: string; name: string; icon: string; group: AffGroup
 export function verbOf(u: Unit, a: Action): Verb {
   const V = (key: string, name: string, icon: string, group: AffGroup, env = false): Verb => ({ key, name, icon, group, env });
   switch (a.kind) {
+    case 'use': return V(`use:${a.piece}`, a.piece, '★', 'Environment', true);
     case 'kick': return V('kick', 'Kick', '🦶', 'Environment', true);
     case 'shove': return V('shove', 'Shove', '✋', 'Environment', true);
     case 'hew': return V('hew', 'Chop', '🪓', 'Environment', true);
@@ -63,6 +65,7 @@ export function verbOf(u: Unit, a: Action): Verb {
 
 /** The tile you click to aim an option: what it's done TO (thrown at, lit, kicked, struck). */
 export function aimOf(b: Battle, u: Unit, a: Action): Spot | null {
+  if (a.kind === 'use') { const pc = b.pieces.get(a.piece); return pc ? { x: pc.at[0][0], z: pc.at[0][1] } : null; }
   if ('at' in a && a.at) return a.at;
   if ('prop' in a && a.prop) { const p = b.map.props.get(a.prop); return p ? { x: p.x, z: p.z } : u.carrying?.id === a.prop ? { x: u.x, z: u.z } : null; }
   if ('target' in a && a.target != null) { const t = b.get(a.target as Unit['id']); if (t) return { x: t.x, z: t.z }; const p = b.map.props.get(String(a.target)); if (p) return { x: p.x, z: p.z }; }
@@ -93,6 +96,7 @@ export function actionLabel(b: Battle, u: Unit, a: Action): string {
     case 'social': return `${a.verb[0].toUpperCase() + a.verb.slice(1)}${a.target != null ? ' ' + T(a.target) : ''}`;
     case 'ready': return 'Ready';
     case 'block': return 'Block (hold the ground)';
+    case 'use': return b.pieces.get(a.piece)?.label ?? 'Use it';
     case 'defend': return 'Brace';
     default: return a.kind[0].toUpperCase() + a.kind.slice(1);
   }
@@ -100,17 +104,18 @@ export function actionLabel(b: Battle, u: Unit, a: Action): string {
 
 function groupOf(b: Battle, a: Action): AffGroup {
   if (['attack', 'ability', 'subdue', 'grab'].includes(a.kind) || (a.kind === 'shove' && b.get(a.target as Unit['id']))) return 'Fight';
-  if (['kick', 'throw', 'ignite', 'douse', 'pickup', 'shove', 'hew'].includes(a.kind)) return 'Environment';
+  if (['kick', 'throw', 'ignite', 'douse', 'pickup', 'shove', 'hew', 'use'].includes(a.kind)) return 'Environment';
   if (a.kind === 'social' || a.kind === 'aid' || a.kind === 'guard' || a.kind === 'free') return 'People';
   return 'Stance';
 }
 
 function subjectOf(b: Battle, a: Action): Subject {
+  if (a.kind === 'use') return { kind: 'piece', id: a.piece };
   if ('prop' in a && a.prop) return { kind: 'prop', id: a.prop };
   if (a.kind === 'shove' && !b.get(a.target as Unit['id'])) return { kind: 'prop', id: String(a.target) };
   if (a.kind === 'ignite') { const p = b.map.propAt(a.at.x, a.at.z); return p ? { kind: 'prop', id: p.id } : null; }
   if ('target' in a && a.target != null && b.get(a.target as Unit['id'])) return { kind: 'unit', id: a.target as Unit['id'] };
-  if ('at' in a) { const w = b.unitAt(a.at.x, a.at.z); return w ? { kind: 'unit', id: w.id } : null; }
+  if ('at' in a && a.at) { const w = b.unitAt(a.at.x, a.at.z); return w ? { kind: 'unit', id: w.id } : null; }
   return null;
 }
 
@@ -201,6 +206,11 @@ export function forecast(b: Battle, u: Unit, a: Action, from: Spot = u): { effec
     }
     case 'douse': return { effect: 'puts out the fire', footprint: [{ x: a.at.x, z: a.at.z }] };
     case 'pickup': { const p = prop(a.prop); return { effect: p?.fireSource ? 'carry a flame — beasts fear it; light things' : p?.kind === 'relic' ? 'take the objective' : 'carry it (costs no action)', footprint: [] }; }
+    case 'use': {
+      const pc = b.pieces.get(a.piece); if (!pc) break;
+      const fp = pieceFootprint(pc, from, (s) => !!b.map.tile(s.x, s.z), (s) => { const w = b.unitAt(s.x, s.z); return !!w && w.out === null && w !== u; });
+      return { effect: pc.describe, footprint: fp };
+    }
     case 'block': return { effect: 'foes who step next to you must stop there', footprint: DIRS.map(([dx, dz]) => ({ x: from.x + dx, z: from.z + dz })).filter((s) => b.map.tile(s.x, s.z)) };
     case 'overwatch': return { effect: 'strike the first foe who comes into reach', footprint: [] };
     case 'defend': return { effect: 'harder to hit until your next turn', footprint: [] };

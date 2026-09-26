@@ -5,6 +5,7 @@
 // rules don't cover yet (persisted in the browser; readable from the journal and the console).
 
 import type { Battle, Unit } from './battle.js';
+import { addressee } from './writein.js';
 
 export interface UnmetRequest { at: number; text: string; reason: string; where: string; near: string[]; who: string; }
 
@@ -14,7 +15,6 @@ const UNSUPPORTED: Array<[RegExp, string]> = [
   [/\b(build|barricade|wall up|fortify)\b/, 'building'],
   [/\b(swim|dive)\b/, 'swimming'],
   [/\b(pray|bless|curse)\b/, 'prayer'],
-  [/\b(hide|sneak|stealth|vanish)\b/, 'hiding'],
   [/\b(poison|drug)\b/, 'poison'],
   [/\b(trap|snare|tripwire)\b/, 'traps'],
   [/\b(tie|rope|lasso|bind (him|her|them))\b/, 'rope-work'],
@@ -40,7 +40,10 @@ export function isSituational(reason: string): boolean {
 /** Why the GM can't read this. */
 export function explainUnmet(b: Battle, u: Unit, raw: string): string {
   const text = ` ${raw.toLowerCase().replace(/[^a-z0-9' ]+/g, ' ').replace(/\s+/g, ' ')} `;
+  const to = addressee(b, u, raw).who;
+  if (to && to !== u) return `${to.agent.name} makes their own choices in a fight — you can't give them orders`;
   for (const [re, what] of UNSUPPORTED) if (re.test(text)) return `the rules don't cover ${what} yet`;
+  if (/\b(hide|sneak|stealth|vanish|lie low|creep)\b/.test(text)) return 'there is no brush or tall grass within reach to hide in';
   if (/\b(bandage|heal|patch|potion|tend)\b/.test(text) && ![u, ...b.friendsOf(u), ...b.downed(u.side)].some((x) => x.agent.fighter.health < 100 || x.out === 'downed'))
     return 'nobody on your side is hurt';
   const prop = b.map.propNamed(text, u, 99);

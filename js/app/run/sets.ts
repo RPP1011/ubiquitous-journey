@@ -6,6 +6,7 @@
 // Layout: 16 rows (z = 0 is the far/north edge, where the foes usually are) of 16 chars (x):
 //   .  grass      ,  dirt / road / trampled      =  stone / flagstone      ~  water (slow, douses)
 //   %  mud (slow)  _  ash                         *  snow                    #  wall (stone underfoot)
+//   "  brush / tall grass / wheat / gorse: hides you from archers and watchers, and burns
 // Heights (optional): 16 rows of digits, in LEVELs (0.5 m); a stage's `rise` is added on top.
 
 import type { Ground } from '../tactics/map.js';
@@ -27,7 +28,9 @@ export const SETS: Record<string, SetLayout> = {
       '.....%.,,.......', '.....%.,,.......',
       '.......,,.......',
       '.......,,..%....', '.......,,..%....',
-      ...rows(9, '.......,,.......'),
+      '.......,,.......',
+      ...rows(5, '.""....,,.......'),
+      ...rows(3, '.......,,.......'),
     ],
     h: rows(16, '2221000000001222'),
   },
@@ -48,7 +51,7 @@ export const SETS: Record<string, SetLayout> = {
   // two roads cross at the well; a waystone at the corner; open fields all round
   crossroads: {
     ground: [
-      ...rows(6, '.......,,.......'),
+      ...rows(6, '"""""".,,.......'),
       '......#,,.......',
       ',,,,,,,,,,,,,,,,', ',,,,,,,,,,,,,,,,',
       ...rows(7, '.......,,.......'),
@@ -73,7 +76,9 @@ export const SETS: Record<string, SetLayout> = {
   // a dry-stone sheepfold: you are inside the pen; its gate faces the dark
   sheepfold: {
     ground: [
-      ...rows(6, '................'),
+      ...rows(3, '................'),
+      '......""""".....', '......""""".....',
+      '................',
       '...####,,####...',
       '...#,,,,,,,,#...', '...#,,,,,,,,#...', '...#,,,,,,,,#...', '...#,,,,,,,,#...',
       '....,,,,,,,,....',
@@ -86,8 +91,9 @@ export const SETS: Record<string, SetLayout> = {
   hollow: {
     ground: [
       ...rows(4, '................'),
-      '..........%%....', '....%%..........', '.....%..........',
-      ...rows(6, '................'),
+      '..........%%....', '""""%%......""""', '"""""%......""""',
+      '""""........""""', '""""........""""',
+      ...rows(4, '................'),
       '............~~..', '............~~..', '................',
     ],
   },
@@ -98,7 +104,7 @@ export const SETS: Record<string, SetLayout> = {
   },
 };
 
-const G: Record<string, Ground> = { '.': 'grass', ',': 'dirt', '=': 'stone', '~': 'water', '%': 'mud', '_': 'ash', '*': 'snow', '#': 'stone' };
+const G: Record<string, Ground> = { '"': 'brush', '.': 'grass', ',': 'dirt', '=': 'stone', '~': 'water', '%': 'mud', '_': 'ash', '*': 'snow', '#': 'stone' };
 
 /** The tile at (x, z) in a set: its ground, whether it's a wall, and its base height. */
 export function setTile(s: SetLayout, x: number, z: number): { ground: Ground; wall: boolean; h: number } {

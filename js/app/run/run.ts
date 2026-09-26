@@ -24,6 +24,8 @@ import { abilityById } from './gear.js';
 import { COMPANIONS, freshProfile, developFromBattle, bark, checkDeparture, type CompanionKey, type CompanionProfile } from './companions.js';
 import { QUESTS, QUEST_ORDER, type QuestDef, type StageDef } from './quests.js';
 import { SETS, setTile, stageCenter } from './sets.js';
+import { PIECES } from './setPieces.js';
+import { installBonds, foldBonds, type BondRec } from './bonds.js';
 import { HUB_NPCS, HUB_SPOTS, COMPANY_SPOTS, PLAYER_SPOT, freshHub, tellTales, speak, type Deed, type HubLine, type HubState } from './hub.js';
 
 /** Turn a body to look at a point (visual). */
@@ -41,6 +43,8 @@ export interface SaveData {
   kinHome: string[];                        // hub-kin keys whose people came home (Col spared, Elsie saved)
   lastSeen: Partial<Record<CompanionKey, Traits>>;   // traits when the town last saw them
   gold: number;
+  /** How close the people on your side have grown (bonds.ts); absent in older saves. */
+  bonds: Record<string, BondRec>;
 }
 
 export interface SaveStore { load(): SaveData | null; save(d: SaveData): void; }
@@ -59,7 +63,7 @@ export function localStore(key = 'hearsay.save.v1'): SaveStore {
 
 function freshSave(): SaveData {
   return {
-    version: 1, runs: 0, hub: freshHub(), deeds: [], questsDone: [], kinHome: [], lastSeen: {}, gold: 40,
+    version: 1, runs: 0, hub: freshHub(), deeds: [], questsDone: [], kinHome: [], lastSeen: {}, gold: 40, bonds: {},
     profiles: Object.fromEntries((Object.keys(COMPANIONS) as CompanionKey[]).map((k) => [k, freshProfile(k)])) as Record<CompanionKey, CompanionProfile>,
   };
 }
@@ -113,6 +117,7 @@ export class RunController {
     this.session = session;
     this.store = store;
     this.save = store.load() ?? freshSave();
+    this.save.bonds ??= {};
   }
 
   name(k: string): string {
@@ -281,10 +286,11 @@ export class RunController {
     if (st.rise) for (const t of map.tiles) { const d = Math.hypot(t.x - st.rise.at[0], t.z - st.rise.at[1]); if (d <= st.rise.r) t.h += Math.round(st.rise.h * (1 - d / (st.rise.r + 1))) + 1; }
     const rocky = set?.rockyAbove ?? (st.biome === 'hills' ? 3 : 99);
     for (const t of map.tiles) if (t.h >= rocky && !t.wall) t.ground = 'stone';
-    const reserved = new Set<string>([...st.partyAt, ...st.foes.map((f) => f.at), ...(st.captive ? [st.captive.at] : [])].map(([x, z]) => `${x},${z}`));
+    const reserved = new Set<string>([...st.partyAt, ...st.foes.map((f) => f.at), ...(st.captive ? [st.captive.at] : []), ...(set ? (PIECES[st.id] ?? []).flatMap((p) => p.at) : [])].map(([x, z]) => `${x},${z}`));
     for (const [k, x, z] of st.props) if (!map.propAt(x, z)) map.addProp(k, x, z);
     if (st.trees) for (const t of map.tiles) if (!reserved.has(`${t.x},${t.z}`) && !map.propAt(t.x, t.z) && !t.wall && t.ground === 'grass' && rng() < st.trees) map.addProp('tree', t.x, t.z);
     const b = new Battle(this.session, map);
+    if (set) for (const p of PIECES[st.id] ?? []) b.addPiece(p);
     const seat = (at: [number, number]): Tile => { const t = map.tile(at[0], at[1]); return t && map.standable(t.x, t.z) && !b.unitAt(t.x, t.z) ? t : map.freeNear(at[0], at[1], 3)!; };
 
     // your side
@@ -332,6 +338,7 @@ export class RunController {
     }
     if (st.relicAt) b.goals.retrieve = map.addProp('relic', st.relicAt[0], st.relicAt[1]).id;
     b.goals.spareChief = this.disposition === 'merciful';
+    installBonds(b, this.save.bonds, new Map<string, Unit['id']>([['player', pu.id], ...[...this.companionOf].map(([uid, k]) => [k, uid] as [string, Unit['id']])]));
     this.battle = b;
     return b;
   }
@@ -361,6 +368,8 @@ export class RunController {
     const deeds = this.deedsFrom(b, st, objectiveMet);
     this.runDeeds.push(...deeds);
     const growth = developFromBattle(b, new Map(this.party.map((k) => [k, this.save.profiles[k]])), this.companionOf, this.session.player!.id, this.save.runs + 1, st.name);
+    const members = new Map<Unit['id'], string>([[this.session.player!.id, 'player'], ...this.companionOf]);
+    growth.push(...foldBonds(b, this.save.bonds, members, (k) => this.name(k), won));
     // the dead stay dead; the rest are patched up for the road
     for (const [uid, k] of this.companionOf) {
       const u = b.get(uid)!;

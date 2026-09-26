@@ -5,7 +5,8 @@
 import { createSession } from '../../js/app/session.js';
 import { BattleMap } from '../../js/app/tactics/map.js';
 import { Battle } from '../../js/app/tactics/battle.js';
-import { runTurn } from '../../js/app/tactics/ai.js';
+import { runTurn, planTurn, predictAllies } from '../../js/app/tactics/ai.js';
+import { willingness } from '../../js/app/tactics/comms.js';
 import { readWriteIn } from '../../js/app/tactics/writein.js';
 import { affordances, pathRisks } from '../../js/app/tactics/affordances.js';
 import { Agent } from '../../js/sim/agent.js';
@@ -182,7 +183,9 @@ export function tacticsTest(ok, { stubScene, makeFighter }) {
     ok(pass === cases.length, `tactics: grid write-ins resolve with sensible positioning ${pass}/${cases.length}`);
     ok(readWriteIn(b, you, 'summon a dragon').length === 0, 'tactics: a write-in naming nothing on the field yields no reading');
     // an order addressed to a companion is theirs: read from Borin, "me" is the one giving it
-    ok(readWriteIn(b, you, 'Borin, guard me').length === 0, 'tactics: "Borin, …" is not an order for you');
+    const said = readWriteIn(b, you, 'Borin, guard me')[0];
+    ok(said && said.call && said.call.kind === 'ask' && said.call.to[0] === borin.id && said.call.want.kinds.includes('guard') && said.call.want.ally === you.id,
+      `tactics: "Borin, guard me" is a call to Borin, not your own deed (${said && said.label})`);
     const bg = readWriteIn(b, borin, 'Borin, guard me')[0];
     ok(bg && bg.action.kind === 'guard' && bg.action.target === you.id, `tactics: "Borin, guard me" read on Borin's turn guards you (${bg && bg.label})`);
     const tm = readWriteIn(b, borin, 'tell Borin to cover you')[0];
@@ -208,6 +211,80 @@ export function tacticsTest(ok, { stubScene, makeFighter }) {
     g.overwatch = true; g.x = 4; g.z = 6;
     const risks = pathRisks(b, you, [{ x: 3, z: 5 }, { x: 4, z: 5 }]);
     ok(risks.some((r) => /overwatch/.test(r)), `affordances: the walk warns of a foe's overwatch (${risks.join('; ')})`);
+    ss.dispose();
+  }
+
+  // --- 12. set-pieces: usable once by anyone in reach; effects resolve from the shared primitives --
+  {
+    const { s: ss, b, mk } = arena(stubScene, makeFighter);
+    const you = b.add(ss.player, 'player', { x: 5, z: 6 });
+    const g = b.add(mk('Garrick'), 'foe', { x: 5, z: 2 });
+    const m = b.add(mk('Mira'), 'foe', { x: 9, z: 9 });
+    b.addPiece({ id: 'pillar', kind: 'pillar', name: 'the leaning pillar', label: 'Topple the pillar', nouns: ['pillar'], verbs: ['topple', 'push'],
+      at: [[5, 5]], solid: true, effects: [{ do: 'hit', area: { line: 'away', len: 3 }, dmg: 16, prone: true }, { do: 'drop', area: { line: 'away', len: 2 }, prop: 'rubble' }],
+      says: 'it falls!', describe: 'falls 3 tiles away from you' });
+    b.addPiece({ id: 'bell', kind: 'bell', name: 'the bell', label: 'Ring the bell', nouns: ['bell'], verbs: ['ring'], at: [[4, 6]], effects: [{ do: 'shake', r: 7 }], says: 'boom!', describe: 'rattles foes' });
+    order(b, you, g, m); b.start();
+    ok(b.map.tile(5, 5).wall, 'pieces: a solid piece fills its tile until used');
+    const r = readWriteIn(b, you, 'topple the pillar onto Garrick')[0];
+    ok(r && r.action.kind === 'use' && r.action.piece === 'pillar', `pieces: "topple the pillar" reads as the set-piece (${r && r.label})`);
+    const aff = affordances(b, you).find((a) => a.action.kind === 'use' && a.action.piece === 'pillar');
+    ok(aff && aff.catches.includes(g), `pieces: the forecast shows it falling on Garrick (${aff && aff.effect})`);
+    const hp0 = g.agent.fighter.health;
+    b.act(you, { kind: 'use', piece: 'pillar' });
+    ok(g.agent.fighter.health < hp0 && g.prone && !b.map.tile(5, 5).wall && [...b.map.props.values()].some((p) => p.kind === 'rubble'), 'pieces: the pillar falls away from you, crushes Garrick, and leaves rubble');
+    ok(!b.options(you).some((a) => a.kind === 'use' && a.piece === 'pillar'), 'pieces: a used piece is gone');
+    ss.dispose();
+  }
+
+  // --- 13. brush: cover against missiles, hidden from far archers and from overwatch -------------
+  {
+    const { s: ss, map, b, mk } = arena(stubScene, makeFighter);
+    const you = b.add(ss.player, 'player', { x: 3, z: 3 });
+    const g = b.add(mk('Garrick'), 'foe', { x: 3, z: 9 });
+    for (const [x, z] of [[3, 3], [4, 3], [3, 4]]) map.tile(x, z).ground = 'brush';
+    order(b, you, g); b.start();
+    ok(b.hidden(you), 'brush: in the brush with no foe beside you, you are hidden');
+    ok(b.hitDC(g, you, g, true).notes.includes('in the brush'), 'brush: missiles at someone in the brush are harder');
+    const r = readWriteIn(b, you, 'hide in the brush')[0];
+    ok(r && r.label.startsWith('Hide') && r.action.kind === 'defend', `brush: "hide in the brush" is understood (${r && r.label})`);
+    ok(b.flammable(3, 3), 'brush: it burns');
+    ss.dispose();
+  }
+
+  // --- 14. talk: calls are weighed, not obeyed; plans let friends predict you (comms.ts, ai.ts) ---
+  {
+    const { s: ss, b, mk } = arena(stubScene, makeFighter);
+    const you = b.add(ss.player, 'player', { x: 4, z: 8 });
+    const pipA = mk('Pip', 'townsfolk'); pipA.inParty = true;
+    const pip = b.add(pipA, 'companion', { x: 6, z: 8 }, { traits: { bravery: 0.6, compassion: 0.5, loyalty: 0.9, ruthlessness: 0.3 }, tactic: 'rogue' });
+    const maudA = mk('Maud', 'townsfolk'); maudA.inParty = true;
+    const maud = b.add(maudA, 'companion', { x: 5, z: 10 }, { traits: { bravery: 0.5, compassion: 0.95, loyalty: 0.2, ruthlessness: 0.05 }, tactic: 'healer' });
+    const g = b.add(mk('Garrick'), 'foe', { x: 8, z: 4 });
+    const m = b.add(mk('Mira'), 'foe', { x: 9, z: 9 });
+    order(b, you, pip, maud, g, m); b.start();
+    // asking: Pip is loyal and it's a fair ask — the likelihood says so, and Pip's own plan now answers it
+    const ask = readWriteIn(b, you, 'Pip, go for Garrick')[0];
+    ok(ask && ask.call && ask.call.want.target === g.id && ask.p >= 0.5, `talk: "Pip, go for Garrick" reads as an ask with a good chance (${ask && ask.label} ${ask && Math.round(ask.p * 100)}%)`);
+    const before = planTurn(b, pip, { predict: true });
+    b.speak(you, ask.call);
+    const after = planTurn(b, pip, { predict: true });
+    ok(after.action.target === g.id || (after.to && Math.abs(after.to.x - g.x) + Math.abs(after.to.z - g.z) < Math.abs(pip.x - g.x) + Math.abs(pip.z - g.z)),
+      `talk: Pip weighs the ask and goes for Garrick (${before.why} → ${after.why})`);
+    ok(b.speak(you, ask.call) !== null, 'talk: one call a turn');
+    // a clash with who they are: Maud won't cut down someone who has given up
+    m.morale = 'broken';
+    const w = willingness(b, maud, you, { kinds: ['attack'], target: m.id });
+    ok(w.w < 0.2 && /given up/.test(w.why), `talk: Maud refuses to strike the broken (${w.w.toFixed(2)}: ${w.why})`);
+    // overheard: a foe near enough hears the plan against it
+    ok(b.calls[0].heardBy.includes(pip.id), 'talk: the ask was heard by Pip');
+    // announcing: "I'll shove Mira" — a friend acting before you can predict you exactly
+    b.calls.length = 0; you.spoke = false;
+    const plan = readWriteIn(b, you, "I'll shove Mira")[0];
+    ok(plan && plan.call && plan.call.kind === 'plan' && plan.call.want.target === m.id, `talk: "I'll shove Mira" announces your plan (${plan && plan.label})`);
+    b.order = [pip, you, maud, g, m]; b.turn = 0;
+    b.speak(you, plan.call);
+    ok((predictAllies(b, pip).get(m.id) ?? 0) === 1, 'talk: Pip, acting first, now knows exactly what you will do');
     ss.dispose();
   }
 

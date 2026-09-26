@@ -202,6 +202,7 @@ function openBattle(b) {
   if (RUN_MODE && rc && rc.stage && hasSet(rc.stage.id) && !b.map.onTerrain) { stageSet = new StageSet(scene, b, rc.stage.id); battleRender.bare = true; }
   battleFX = new BattleFX(scene, b);
   battleFX.onCaption = (text, kind, quote) => tacView.showCaption(text, kind, quote);
+  battleFX.onPiece = (id, dir) => { if (stageSet) stageSet.playPiece(id, dir); };
   tacView.fx = battleFX;
   tacView.auto = AUTO;
   tacView.open(b, battleRender);

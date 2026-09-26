@@ -3,7 +3,8 @@
 // phrases its battle actions as WRITE-INS, so a recording shows the write-in box doing the work.
 
 import { planTurn, runTurn } from '../tactics/ai.js';
-import { readWriteIn } from '../tactics/writein.js';
+import { readWriteIn, type GridReading } from '../tactics/writein.js';
+import { callName } from '../tactics/comms.js';
 import type { Action, Battle, Unit } from '../tactics/battle.js';
 import type { CompanionKey } from './companions.js';
 import type { Disposition, RunController, RunReport } from './run.js';
@@ -49,8 +50,28 @@ export function phrase(b: Battle, u: Unit, a: Action): string | null {
  * The player's (or a commanded companion's) turn, via the write-in box when the phrasing reads
  * back to the same action; otherwise directly. Returns the text typed (if any).
  */
+/**
+ * What the autopilot says before it acts: when friends act after you this round, tell them your
+ * move — a set-up (a shove, a bluff) or the chief — so they can plan around it (comms.ts).
+ */
+export function autoCall(b: Battle, u: Unit, pl: ReturnType<typeof planTurn>): NonNullable<GridReading['call']> | null {
+  if (u.spoke) return null;
+  const later = b.order.slice(b.order.indexOf(u) + 1).filter((x) => x.side === u.side && x.role === 'companion' && x.out === null);
+  const tid = (pl.action as { target?: Unit['id'] }).target;
+  const t = tid != null ? b.get(tid) : undefined;
+  if (!later.length || !t || t.side === u.side) return null;
+  const setup = pl.action.kind === 'shove' || (pl.action.kind === 'social' && pl.action.verb === 'bluff');
+  if (!setup && !t.tags.has('chief') && b.round % 2 === 0) return null;
+  const first = callName(t.agent.name);
+  const kind = pl.action.kind === 'ability' ? 'attack' : pl.action.kind;
+  const words = pl.action.kind === 'shove' ? `I'll shove ${first} — follow up!` : setup ? `Watch me — ${first} will turn. Be ready.` : `I'm on ${first}!`;
+  return { to: 'all', kind: 'plan', want: { kinds: [kind], target: t.id }, words };
+}
+
 export function playerTurn(b: Battle, u: Unit, typed?: (text: string) => void): string | null {
   const pl = planTurn(b, u);
+  const said = autoCall(b, u, pl);
+  if (said) b.speak(u, said);
   const text = phrase(b, u, pl.action);
   if (text) {
     const r = readWriteIn(b, u, text)[0];

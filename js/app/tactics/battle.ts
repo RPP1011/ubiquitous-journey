@@ -25,6 +25,8 @@ import type { Session } from '../session.js';
 import { check, chance, sheetOf, type Sheet, type Stat } from '../combat/rules.js';
 import { objectiveOf, type Objective } from '../combat/objectives.js';
 import { BattleMap, DIRS, JUMP, FALL_SAFE, TILE, key, type Prop, type Tile } from './map.js';
+import { areaTiles, inReach, type PieceDef, type PieceState } from './pieces.js';
+import { hears, type Call, type Want } from './comms.js';
 
 export type Side = 'us' | 'them';
 export type Role = 'player' | 'companion' | 'ally' | 'foe';
@@ -32,6 +34,11 @@ export type Out = null | 'downed' | 'dead' | 'fled' | 'yielded' | 'captured';
 export type Outcome = 'victory' | 'defeat' | 'escaped' | 'truce' | 'arrested' | 'overpowered' | 'timeout';
 
 /** How a unit fights (drives AI positioning and choices). */
+/** A passing state a friend's fate puts on you: wrath (a bonded friend just fell). */
+export interface Boon { kind: 'wrath'; by: Unit['id']; until: number }
+export interface Bond { lvl: number; kind: 'friend' | 'rival' }
+export const pairKey = (a: Unit['id'], b: Unit['id']): string => [String(a), String(b)].sort().join('|');
+
 export type Tactic = 'brute' | 'archer' | 'skirmisher' | 'leader' | 'beast' | 'guardian' | 'healer' | 'rogue' | 'civilian';
 
 /** A companion's developing temperament (0..1), read by the AI. */
@@ -41,10 +48,12 @@ export interface Traits { bravery: number; compassion: number; loyalty: number; 
 export interface BattleEvent {
   round: number;
   kind: 'hit' | 'kill' | 'down' | 'revive' | 'flee' | 'escape' | 'ignite' | 'burned' | 'shove' | 'hazard' | 'social' | 'bluffed'
-    | 'grab' | 'yield' | 'parley' | 'heal' | 'guard' | 'reaction' | 'free' | 'rescued' | 'relic' | 'broken' | 'finish' | 'refuse' | 'fell';
+    | 'grab' | 'yield' | 'parley' | 'heal' | 'guard' | 'reaction' | 'free' | 'rescued' | 'relic' | 'broken' | 'finish' | 'refuse' | 'fell' | 'piece' | 'combo' | 'save';
   actor?: Unit['id'];
   target?: Unit['id'];
   detail?: string;
+  /** The second person in a two-person moment (the one who set it up, the partner, the one saved). */
+  with?: Unit['id'];
 }
 
 /**
@@ -79,7 +88,8 @@ export type CueSpec =
   | { k: 'escape'; u: Id; to: Spot }
   | { k: 'icon'; u: Id; icon: '!' | '!!' | '?' | 'zzz' }
   | { k: 'hew'; u: Id; at: Spot; kind: string; left: number; max: number }
-  | { k: 'topple'; at: Spot; dir: [number, number]; kind: string; log: Spot | null };
+  | { k: 'topple'; at: Spot; dir: [number, number]; kind: string; log: Spot | null }
+  | { k: 'piece'; id: string; dir: [number, number]; at: Spot };
 export type Cue = CueSpec & { logAt: number };
 
 export interface Unit {
@@ -94,6 +104,11 @@ export interface Unit {
   move: number;
   out: Out;
   moved: boolean; acted: boolean; reacted: boolean;
+  /** Who laid a foe open: follow-through credits the setter (docs 23). */
+  setBy: { prone?: Unit['id']; exposed?: Unit['id']; stunned?: Unit['id'] };
+  /** Has this unit called out this turn (talk is free, once a turn)? */
+  spoke: boolean;
+  boon: Boon | null;
   burning: number; prone: boolean; exposed: boolean; defending: boolean; overwatch: boolean;
   /** Holding ground: a foe that steps next to this unit must stop there (zone of control). */
   blocking: boolean;
@@ -144,6 +159,7 @@ export type Action =
   | { kind: 'guard'; target: Unit['id'] }
   | { kind: 'social'; verb: SocialVerb; target?: Unit['id']; claim?: Claim; subject?: Unit['id'] }
   | { kind: 'ready'; trigger: Trigger; response: Action }
+  | { kind: 'use'; piece: string }                         // set off a set-piece (pieces.ts)
   | { kind: 'overwatch' } | { kind: 'defend' } | { kind: 'block' } | { kind: 'dash' } | { kind: 'escape' } | { kind: 'wait' };
 
 export interface LogLine { round: number; text: string; kind: 'hit' | 'miss' | 'move' | 'env' | 'social' | 'join' | 'info' | 'end'; }
@@ -166,6 +182,41 @@ export class Battle {
   cues: Cue[] = [];
   /** What this fight is FOR (set by the scene): the AI and the run's objective check read these. */
   goals: { rescue?: Unit['id']; retrieve?: string; chief?: Unit['id']; spareChief?: boolean } = {};
+  /** What people have called out (comms.ts): asks and announced plans, heard by those in earshot. */
+  calls: Call[] = [];
+  private callSeq = 0;
+
+  /** Call out — free, once a turn. Everyone in earshot hears it, foes included. */
+  speak(u: Unit, c: { to: Unit['id'][] | 'all'; kind: 'ask' | 'plan'; want: Want; words: string }): string | null {
+    if (u.spoke) return 'you have already called out this turn';
+    u.spoke = true;
+    const heardBy = this.active().filter((l) => hears(this, u, l)).map((l) => l.id);
+    this.calls.push({ id: ++this.callSeq, from: u.id, ...c, round: this.round, heardBy, answered: [] });
+    if (this.calls.length > 40) this.calls.splice(0, 10);
+    this.cue({ k: 'say', u: u.id, text: c.words, ok: true, react: 'none' });
+    this.note('social', `${this.nm(u, true)}: “${c.words}”`);
+    return null;
+  }
+
+  /** Bonds between the people on our side (installed by the run; absent = level 0). */
+  bonds = new Map<string, Bond>();
+  bondOf(a: Unit, c: Unit): Bond { return this.bonds.get(pairKey(a.id, c.id)) ?? { lvl: 0, kind: 'friend' }; }
+
+  /** The place's set-pieces (pieces.ts): usable once, by anyone in reach. */
+  pieces = new Map<string, PieceState>();
+
+  /** Install a set-piece; a solid one fills its tiles until it's used. */
+  addPiece(def: PieceDef): PieceState {
+    const p: PieceState = { ...def, used: false };
+    this.pieces.set(p.id, p);
+    if (p.solid) for (const [x, z] of p.at) { const t = this.map.tile(x, z); if (t) t.wall = true; }
+    return p;
+  }
+
+  /** In the brush and no foe close enough to see you: archers and watchers can't find you. */
+  hidden(t: Unit): boolean {
+    return this.map.tile(t.x, t.z)?.ground === 'brush' && !this.foesOf(t).some((f) => dist(f, t) <= 1);
+  }
   highStakes = false;
   stakesReason = '';
   private objectives = new Map<Unit['id'], Objective>();
@@ -185,7 +236,7 @@ export class Battle {
       id: agent.id, agent, side: role === 'foe' ? 'them' : 'us', role, sheet,
       x: at.x, z: at.z, facing: [0, 1], init: check(sheet.finesse, 0).total,
       move: 4 + (sheet.finesse >= 3 ? 1 : 0), out: null,
-      moved: false, acted: false, reacted: false,
+      moved: false, acted: false, reacted: false, setBy: {}, boon: null, spoke: false,
       burning: 0, prone: false, exposed: false, defending: false, overwatch: false, blocking: false, stunned: false, slowed: 0, shield: 0,
       morale: 'steady', guardedBy: null, tauntedBy: null, turnedOn: null, lastHitBy: null, carrying: null, readied: null, surprised: false,
       tactic: extra.tactic ?? (agent.faction === 'monster' ? 'beast' : role === 'foe' ? 'brute' : 'guardian'),
@@ -237,9 +288,9 @@ export class Battle {
     return o;
   }
 
-  /** Is this unit's turn one the player decides (their own, or a commanded companion's)? */
+  /** Is this unit's turn one the player decides? Only their own: companions always act for themselves. */
   playerControls(u: Unit): boolean {
-    return u.role === 'player' || (u.role === 'companion' && this.highStakes);
+    return u.role === 'player';
   }
 
   adjacent(a: Spot, b: Spot): boolean { return dist(a, b) === 1; }
@@ -318,8 +369,15 @@ export class Battle {
       if (cov) { dc += cov * 3; notes.push(cov === 2 ? 'full cover' : 'half cover'); }
       else notes.push('flanked');
       if (this.map.tile(t.x, t.z)!.smoke > 0) { dc += 4; notes.push('smoke'); }
+      if (this.map.tile(t.x, t.z)!.ground === 'brush') { dc += 3; notes.push('in the brush'); }
       dc += Math.max(0, Math.floor((dist(from, t) - 4) / 2));
+    } else if (dist(from, t) === 1) {
+      const opp = this.unitAt(2 * t.x - from.x, 2 * t.z - from.z);
+      if (opp && opp !== a && opp.side === a.side && opp.out === null) { dc -= this.bondOf(a, opp).lvl >= 2 ? 3 : 2; notes.push('pincered'); }
     }
+    const ft = this.followThrough(a, t);
+    if (ft) notes.push(`following through (${this.nm(ft.by)})`);
+    dc = Math.max(5, dc);
     return { dc, notes };
   }
 
@@ -353,6 +411,8 @@ export class Battle {
 
   private startTurn(u: Unit): void {
     u.defending = false; u.overwatch = false; u.blocking = false; u.moved = false; u.acted = false;
+    for (const o of this.units) if (o.boon && this.round > o.boon.until) o.boon = null;
+    u.spoke = false;
     if (u.readied) { u.readied = null; }
     if (u.bound) { u.moved = true; u.acted = true; return; }
     if (u.surprised) { this.cue({ k: 'icon', u: u.id, icon: '?' }); u.surprised = false; u.moved = true; u.acted = true; this.note('info', `${this.nm(u, true)} ${u.agent.controlled ? 'are' : 'is'} caught off guard!`); return; }
@@ -504,6 +564,7 @@ export class Battle {
   }
 
   private overwatchFire(u: Unit): void {
+    if (this.hidden(u)) return;                                   // moving through the brush unseen
     for (const f of this.foesOf(u)) {
       if (!f.overwatch || f.reacted) continue;
       const ranged = this.rangedReach(f);
@@ -552,6 +613,7 @@ export class Battle {
       case 'subdue': { if (!t) return { p: 0, notes: [] }; const h = this.hitDC(u, t, from, false); return roll('might', h.dc + 2, h.notes); }
       case 'aid': { const w = t ?? u; return w.out === 'downed' ? roll('finesse', 10) : ((u.agent.inventory as Record<string, number> | undefined)?.potion ?? 0) > 0 ? { p: 1, notes: ['potion'] } : roll('finesse', 11); }
       case 'social': return this.socialOdds(u, a, t);
+      case 'use': { const p = this.pieces.get(a.piece); return p?.check ? roll(p.check.stat, p.check.dc) : { p: 1, notes: [] }; }
       default: return { p: 1, notes: [] };
     }
   }
@@ -568,6 +630,7 @@ export class Battle {
       for (const ab of u.agent.abilities?.values?.() ?? []) {
         if ((u.readyRound.get(ab.id) ?? 0) > this.round || !ab.effects.some((e) => e.op === 'damage' || e.op === 'stun' || e.op === 'expose')) continue;
         const reach = Math.max(1, Math.ceil(ab.header.range / TILE));
+        if (reach > 1 && dist(from, f) > 2 && this.hidden(f)) continue;       // can't shoot what you can't see
         if (dist(from, f) <= reach && (reach === 1 || this.map.sees(from.x, from.z, f.x, f.z))) out.push({ kind: 'ability', abilityId: ab.id, target: f.id });
       }
       if (dist(from, f) <= 6 && this.map.sees(from.x, from.z, f.x, f.z)) {
@@ -591,6 +654,7 @@ export class Battle {
     if (u.carrying) for (const f of foes) if (dist(from, f) <= 5) out.push({ kind: 'throw', prop: u.carrying.id, at: { x: f.x, z: f.z } });
     if (this.flameAt(u, from)) for (const [dx, dz] of DIRS) { const t = this.map.tile(from.x + dx, from.z + dz); if (t && this.flammable(t.x, t.z)) out.push({ kind: 'ignite', at: { x: t.x, z: t.z } }); }
     if (this.waterAt(u, from)) for (const [dx, dz] of [[0, 0], ...DIRS]) { const t = this.map.tile(from.x + dx, from.z + dz); if (t && (t.burning || this.unitAt(t.x, t.z)?.burning)) out.push({ kind: 'douse', at: { x: t.x, z: t.z } }); }
+    for (const p of this.pieces.values()) if (!p.used && inReach(p, from) && (!p.needsFire || this.flameAt(u, from))) out.push({ kind: 'use', piece: p.id });
     out.push({ kind: 'defend' }, { kind: 'overwatch' }, { kind: 'block' }, { kind: 'social', verb: 'rally' }, { kind: 'social', verb: 'parley' });
     if (this.map.edge(from.x, from.z)) out.push({ kind: 'escape' });
     return out;
@@ -604,6 +668,7 @@ export class Battle {
     const legal = a.kind === 'wait' || a.kind === 'social' || a.kind === 'ready' || this.options(u).some((o) => sameAction(o, a));
     if (!legal) return 'not possible from here';
     u.acted = true;
+    const before = new Map(this.units.map((x) => [x, [x.prone, x.exposed, x.stunned]] as const));
     const fl = flourish ? ` — "${flourish}"` : '';
     const t = 'target' in a && a.target != null ? this.get(a.target as Unit['id']) : undefined;
     if (t && t.side !== u.side) this.face(u, t);
@@ -638,11 +703,30 @@ export class Battle {
         this.cue({ k: 'escape', u: u.id, to: { x: u.x + (u.x === 0 ? -3 : u.x === this.map.n - 1 ? 3 : 0), z: u.z + (u.z === 0 ? -3 : u.z === this.map.n - 1 ? 3 : 0) } });
         this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'slip' : 'slips'} away from the fight${u.carrying ? ` with ${u.carrying.name}` : ''}.`); break;
       case 'social': this.social(u, a, t, fl); break;
+      case 'use': { const p = this.pieces.get(a.piece); if (p && !p.used) this.usePiece(u, p, fl); break; }
       case 'wait': break;
+    }
+    for (const [x, [pr, ex, st]] of before) {
+      if (x.side === u.side) continue;
+      if (x.prone && !pr) x.setBy.prone = u.id; if (!x.prone) delete x.setBy.prone;
+      if (x.exposed && !ex) x.setBy.exposed = u.id; if (!x.exposed) delete x.setBy.exposed;
+      if (x.stunned && !st) x.setBy.stunned = u.id; if (!x.stunned) delete x.setBy.stunned;
     }
     this.checkEnd();
     return null;
   }
+
+  /** A foe someone ELSE on your side laid open: the follow-through (docs 23). */
+  followThrough(u: Unit, t: Unit): { mul: number; by: Unit; state: 'stunned' | 'prone' | 'exposed' } | null {
+    for (const st of ['stunned', 'prone', 'exposed'] as const) {
+      if (!t[st]) continue;
+      const id = t.setBy[st]; const by = id != null ? this.get(id) : undefined;
+      if (!by || by === u || by.side !== u.side) continue;
+      return { mul: 1.2 + 0.05 * this.bondOf(u, by).lvl, by, state: st };
+    }
+    return null;
+  }
+
 
   // ---- resolution helpers -------------------------------------------------------------------
 
@@ -654,16 +738,20 @@ export class Battle {
     }
     this.swing(u);
     const h = this.hitDC(u, t, u, false);
-    const r = check(u.sheet.might + this.trickMod(fl, false), h.dc);
+    const r = check(u.sheet.might + this.trickMod(fl, false) + (u.boon?.kind === 'wrath' ? 1 : 0), h.dc);
     const style = mul < 0.8 ? 'opportunity' : u.tactic === 'beast' ? 'bite' : 'blade';
     this.cue({ k: 'strike', u: u.id, t: t.id, res: r.ok ? 'hit' : 'miss', style, crit: r.crit, back: this.facingOf(u, t) === 'back' });
     if (!r.ok) { this.note('miss', `${this.nm(u, true)} ${u.agent.controlled ? 'swing' : 'swings'} at ${this.nm(t)}${fl} — and ${u.agent.controlled ? 'miss' : 'misses'}.`); return; }
     const back = this.facingOf(u, t) === 'back';
     let dmg = TUNE.damage * (0.75 + 0.08 * u.sheet.might) * (0.85 + rng() * 0.3) * mul;
-    if (r.crit || (back && rng() < 0.35)) dmg *= 1.5;
-    if (t.exposed) { dmg *= 1.5; t.exposed = false; }
+    const ft = this.followThrough(u, t);
+    let k = 1;
+    if (r.crit || (back && rng() < 0.35)) k *= 1.5;
+    if (t.exposed) { k *= 1.5; t.exposed = false; }
+    if (ft) { k *= ft.mul; this.ev('combo', u, t, ft.state, ft.by); }
+    dmg *= Math.min(k, 2.2);
     const res = this.wound(u, t, dmg);
-    this.note('hit', `${this.nm(u, true)} ${u.agent.controlled ? 'hit' : 'hits'} ${this.nm(t)}${back ? ' from behind' : ''}${fl}${r.crit ? ' — critical!' : ''}${this.fellText(t, res)}.`);
+    this.note('hit', `${this.nm(u, true)} ${u.agent.controlled ? 'hit' : 'hits'} ${this.nm(t)}${back ? ' from behind' : ''}${fl}${r.crit ? ' — critical!' : ''}${ft ? ` — following through on ${this.nm(ft.by)}'s opening` : ''}${this.fellText(t, res)}.`);
   }
 
   private useAbility(u: Unit, spec: NonNullable<ReturnType<Agent['abilities']['get']>>, t: Unit): void {
@@ -677,6 +765,7 @@ export class Battle {
     const tags = spec.effects.flatMap((e) => e.tags || []);
     const shotKind = tags.includes('FROST') ? 'frost' : tags.includes('PIERCE') || spec.id === 'shortbow' ? 'arrow' : 'magic';
     for (const tt of targets) {
+      const ft = this.followThrough(u, tt);
       const h = this.hitDC(u, tt, u, ranged);
       const r = check(Math.max(u.sheet.might, u.sheet.presence) + 1, h.dc);
       if (ranged) this.cue({ k: 'shot', u: u.id, t: tt.id, res: r.ok ? 'hit' : 'miss', kind: shotKind });
@@ -685,7 +774,12 @@ export class Battle {
       let fell = false;
       for (const e of spec.effects) {
         if (e.when && e.when !== 'on_hit') continue;
-        if (e.op === 'damage') { const res = this.wound(u, tt, (e.amount || TUNE.damage) * (r.crit ? 1.5 : 1) * (tt.exposed ? 1.5 : 1)); tt.exposed = false; if (res === 'dead' || tt.out) { fell = true; break; } }
+        if (e.op === 'damage') {
+          const k = Math.min(2.2, (r.crit ? 1.5 : 1) * (tt.exposed ? 1.5 : 1) * (ft ? ft.mul : 1));
+          if (ft) this.ev('combo', u, tt, ft.state, ft.by);
+          const res = this.wound(u, tt, (e.amount || TUNE.damage) * k); tt.exposed = false;
+          if (res === 'dead' || tt.out) { fell = true; break; }
+        }
         else if (e.op === 'stun') tt.stunned = true;
         else if (e.op === 'slow') tt.slowed = 2;
         else if (e.op === 'expose') tt.exposed = true;
@@ -729,6 +823,62 @@ export class Battle {
     const d = this.dirFrom(u, p);
     this.note('env', `${this.nm(u, true)} ${u.agent.controlled ? 'heave' : 'heaves'} ${p.name}${fl}.`);
     this.slideProp(p, d, p.kind === 'barrel' || p.kind === 'oil' ? 4 : 2, u);
+  }
+
+  /** Set off a set-piece: roll if it asks for one, then its effects in order (pieces.ts). */
+  usePiece(u: Unit, p: PieceState, fl = ''): void {
+    const anchor = { x: p.at[0][0], z: p.at[0][1] };
+    this.face(u, anchor);
+    if (p.check && !check(u.sheet[p.check.stat], p.check.dc).ok) {
+      this.cue({ k: 'anim', u: u.id, clip: 'Block_Attack' });
+      this.note('miss', `${this.nm(u, true)} ${u.agent.controlled ? 'strain' : 'strains'} at ${p.name}${fl} — it holds, for now.`);
+      return;
+    }
+    p.used = true;
+    this.cue({ k: 'anim', u: u.id, clip: dist(u, anchor) > 1 ? 'Throw' : 'Interact' });
+    this.cue({ k: 'piece', id: p.id, dir: this.dirFrom(u, anchor), at: anchor });
+    if (p.solid) for (const [x, z] of p.at) { const t = this.map.tile(x, z); if (t) t.wall = false; }
+    this.ev('piece', u, undefined, p.id);
+    this.note('env', `${this.nm(u, true)} ${u.agent.controlled ? 'go' : 'goes'} for ${p.name}${fl} — ${p.says}`);
+    const inB = (s: Spot) => !!this.map.tile(s.x, s.z);
+    const body = (s: Spot) => { const w = this.unitAt(s.x, s.z); return !!w && w.out === null && w !== u; };
+    for (const e of p.effects) {
+      if (e.do === 'shake') {
+        for (const f of this.foesOf(u)) {
+          if (dist(f, anchor) > e.r) continue;
+          f.overwatch = false; f.readied = null;
+          if (f.role !== 'player' && f.morale === 'steady' && !f.tags.has('chief')) f.morale = 'shaken';
+          this.cue({ k: 'icon', u: f.id, icon: '!!' });
+        }
+        continue;
+      }
+      const tiles = areaTiles(p, e.area, u, inB, body);
+      for (const s of tiles) {
+        const t = this.map.tile(s.x, s.z)!;
+        switch (e.do) {
+          case 'hit': {
+            const v = this.unitAt(s.x, s.z);
+            if (!v || v.out !== null || v === u) break;
+            this.wound(u, v, e.dmg, 'crushed');
+            if (e.prone) v.prone = true;
+            if (e.expose) v.exposed = true;
+            if (e.shake && v.role !== 'player' && v.morale === 'steady') v.morale = 'shaken';
+            break;
+          }
+          case 'ignite': this.ignite(s.x, s.z, u, '', true); break;
+          case 'flood': {
+            t.ground = 'water'; t.burning = 0; t.wet = Math.max(t.wet, 2);
+            const pr = this.map.propAt(s.x, s.z); if (pr) pr.burning = 0;
+            const v = this.unitAt(s.x, s.z); if (v) v.burning = 0;
+            this.cue({ k: 'douse', at: s });
+            break;
+          }
+          case 'breach': t.wall = false; break;
+          case 'drop': if (!t.wall && !this.map.propAt(s.x, s.z) && !this.unitAt(s.x, s.z)) this.map.addProp(e.prop, s.x, s.z); break;
+          case 'smoke': t.smoke = Math.max(t.smoke, e.turns); break;
+        }
+      }
+    }
   }
 
   /** Damage a blow does to wood (no roll: a tree doesn't dodge). */
@@ -975,7 +1125,7 @@ export class Battle {
   flammable(x: number, z: number): boolean {
     const t = this.map.tile(x, z); if (!t || t.wet > 0 || t.ground === 'water') return false;
     const p = this.map.propAt(x, z);
-    return t.ground === 'grass' || t.ground === 'mud' || !!(p && p.flammable);
+    return t.ground === 'grass' || t.ground === 'brush' || t.ground === 'mud' || !!(p && p.flammable);
   }
 
   /** A flame within reach: an adjacent fire source, a burning neighbour, a carried torch, a fire ability. */
@@ -1039,7 +1189,7 @@ export class Battle {
       }
     }
     for (const t of this.map.tiles) {
-      if (t.burning > 0) { t.burning--; if (t.burning === 0 && t.ground === 'grass') t.ground = 'ash'; }
+      if (t.burning > 0) { t.burning--; if (t.burning === 0 && (t.ground === 'grass' || t.ground === 'brush')) t.ground = 'ash'; }
       if (t.smoke > 0) t.smoke--;
       if (t.wet > 0) t.wet--;
     }
@@ -1107,13 +1257,25 @@ export class Battle {
   // ---- damage, death, morale ------------------------------------------------------------------
 
   /** Apply damage and fold it through the engine (witnesses, reputation, vendettas, XP). */
-  wound(by: Unit, t: Unit, amount: number, _how = 'blow'): 'hit' | 'dead' | 'blocked' {
+  wound(by: Unit, t: Unit, amount: number, _how = 'blow', redirected = false): 'hit' | 'dead' | 'blocked' {
     const f = t.agent.fighter;
     if (!f.alive) return 'dead';
     let dmg = Math.max(1, Math.round(amount));
     if (t.shield > 0) { const s = Math.min(t.shield, dmg); t.shield -= s; dmg -= s; if (dmg <= 0) return 'blocked'; }
+    // DIVE IN: a lethal blow on one of us, and a friend beside them who would take it (docs 23)
+    if (!redirected && t.side === 'us' && dmg >= f.health && by !== t) {
+      const w = this.diver(t, by);
+      if (w) {
+        w.reacted = true;
+        this.cue({ k: 'intercept', u: w.id, t: t.id });
+        this.note('hit', `${this.nm(w, true)} ${w.agent.controlled ? 'dive' : 'dives'} in front of the blow meant for ${this.nm(t)}!`);
+        this.ev('save', w, t, _how, t);
+        return this.wound(by, w, amount * 0.8, _how, true);
+      }
+    }
     t.lastHitBy = by;
     if (t.side === 'us' && dmg >= f.health && this.active().some((o) => o.side === 'us' && o !== t)) {
+      for (const o of this.active()) if (o !== t && o.side === 'us' && this.bondOf(o, t).lvl >= 3) { o.boon = { kind: 'wrath', by: t.id, until: this.round + 1 }; this.cue({ k: 'icon', u: o.id, icon: '!!' }); this.note('social', `${this.nm(o, true)} ${o.agent.controlled ? 'see' : 'sees'} ${this.nm(t)} fall — and something hardens.`); }
       f.health = 0.5; t.out = 'downed'; t.burning = 0;
       this.cue({ k: 'dmg', t: t.id, amt: dmg, res: 'down', how: _how, hp: 0 });
       this.fold(by, t, 'hit');
@@ -1131,6 +1293,15 @@ export class Battle {
     if (res === 'hit') this.ev('hit', by, t, _how);
     if (t.agent._held) { t.out = 'captured'; this.release(t); }
     return res;
+  }
+
+  /** Who beside t would throw themselves into a killing blow: bonded, soft-hearted, or a shield. */
+  private diver(t: Unit, by: Unit): Unit | null {
+    const cands = this.active().filter((w) => w !== t && w !== by && w.side === 'us' && !w.reacted && !w.stunned && !w.bound && w.tactic !== 'civilian' && w.role !== 'player'
+      && this.adjacent(w, t) && (this.bondOf(w, t).lvl >= 2 || (w.traits?.compassion ?? 0) >= 0.75 || w.tactic === 'guardian'));
+    if (!cands.length) return null;
+    const w = cands.sort((a, c) => (c.tactic === 'guardian' ? 1 : 0) - (a.tactic === 'guardian' ? 1 : 0) || this.bondOf(c, t).lvl - this.bondOf(a, t).lvl)[0];
+    return check(w.sheet.finesse + this.bondOf(w, t).lvl, 12).ok ? w : null;
   }
 
   private fold(by: Unit, t: Unit, type: 'hit' | 'dead' | 'blocked'): void {
@@ -1161,7 +1332,9 @@ export class Battle {
       if (u.role === 'player' || u.tags.has('chief')) continue;     // a chief fights to the end, or sues for terms — never runs
       const scorched = u.burning > 0 && (!u.traits || u.traits.bravery < 0.5);
       if (!(frac(u) < 0.35 || u.morale !== 'steady' || lost(u.side) >= 0.5 || scorched)) continue;
-      const grit = u.traits ? Math.round((u.traits.bravery - 0.5) * 8) : 0;   // a companion's bravery steadies (or fails) them
+      if (u.boon?.kind === 'wrath') continue;                        // a fallen friend to answer for: no running
+      const steady = Math.min(3, this.active().filter((o) => o !== u && o.side === u.side && this.adjacent(o, u)).reduce((q, o) => q + this.bondOf(u, o).lvl, 0));
+      const grit = (u.traits ? Math.round((u.traits.bravery - 0.5) * 8) : 0) + steady;   // bravery, and a bonded friend at your shoulder
       if (check(u.sheet.nerve + grit, 11 + (u.morale === 'shaken' ? 2 : 0) + (u.morale === 'broken' ? 20 : 0)).ok) continue;
       u.morale = 'broken';
       this.ev('broken', u);
@@ -1255,8 +1428,8 @@ export class Battle {
   private roster(side: Side): string { const xs = this.active().filter((u) => u.side === side).map((u) => this.nm(u)); return xs.length ? cap(xs.join(', ')) : 'no one'; }
   cue(c: CueSpec): void { this.cues.push({ ...c, logAt: this.log.length } as Cue); }
 
-  ev(kind: BattleEvent['kind'], actor?: Unit, target?: Unit, detail?: string): void {
-    this.events.push({ round: this.round, kind, actor: actor?.id, target: target?.id, detail });
+  ev(kind: BattleEvent['kind'], actor?: Unit, target?: Unit, detail?: string, withU?: Unit): void {
+    this.events.push({ round: this.round, kind, actor: actor?.id, target: target?.id, detail, ...(withU ? { with: withU.id } : {}) });
   }
   note(kind: LogLine['kind'], text: string): void { this.log.push({ round: this.round, kind, text }); if (this.log.length > 300) this.log.splice(0, 100); }
 }
@@ -1267,8 +1440,8 @@ export const HEWABLE = ['tree', 'crate', 'barrel', 'table', 'cart', 'tent'];
 export function sameAction(a: Action, b: Action): boolean {
   if (a.kind !== b.kind) return false;
   const A = a as Record<string, unknown>, B = b as Record<string, unknown>;
-  for (const k of ['target', 'abilityId', 'prop', 'verb']) if (A[k] !== undefined && B[k] !== undefined && A[k] !== B[k]) return false;
-  if ('at' in a && 'at' in b) return a.at.x === b.at.x && a.at.z === b.at.z;
+  for (const k of ['target', 'abilityId', 'prop', 'verb', 'piece']) if (A[k] !== undefined && B[k] !== undefined && A[k] !== B[k]) return false;
+  if ('at' in a && 'at' in b && a.at && b.at) return a.at.x === b.at.x && a.at.z === b.at.z;
   return true;
 }
 

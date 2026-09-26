@@ -88,6 +88,10 @@ const BUILDERS: Record<string, (g: THREE.Group) => void> = {
     part(g, new THREE.ConeGeometry(1.15, 0.6, 4), lam(0x6b3a2a), 0, 2.2, 0, 0, Math.PI / 4);
     part(g, new THREE.CylinderGeometry(0.05, 0.05, 1.5, 6), lam(DARK), 0, 1.7, 0, 0, 0, Math.PI / 2);
   },
+  rubble(g) {
+    for (const [x, z, r, c] of [[-0.35, -0.2, 0.42, STONE], [0.3, 0.1, 0.36, 0x77766f], [0, 0.35, 0.3, 0x8e8c84], [-0.1, 0.05, 0.26, 0x6e6d66], [0.4, -0.35, 0.22, STONE]]) part(g, new THREE.DodecahedronGeometry(r), lam(c), x, r * 0.6, z, x * 4, z * 3, x * 2);
+    part(g, new THREE.BoxGeometry(0.9, 0.12, 0.2), lam(DARK), 0.1, 0.35, -0.1, 0, 0.7, 0.3);
+  },
   log(g) {
     part(g, new THREE.CylinderGeometry(0.28, 0.3, 1.8, 9), lam(0x5e4128), 0, 0.28, 0, 0, 0, Math.PI / 2);
     for (const s of [-1, 1]) part(g, new THREE.CircleGeometry(0.28, 9), lam(0xb8905a), s * 0.91, 0.28, 0, 0, s * Math.PI / 2);
