@@ -30,6 +30,8 @@ let session = null;                // the app-layer Session (js/app/session.ts) 
 let combat = null;                 // CombatDirector: opens turn-based encounters around the player's fights
 let playback = 0;                  // real seconds left in the current round's playback
 const encView = new EncounterView();
+// devtools handle (read-only inspection; the UI never reads it)
+window.__hearsay = { game, get session() { return session; }, get combat() { return combat; } };
 
 // ---- HUD (panels + readouts) -----------------------------------------------
 const hud = new Hud({

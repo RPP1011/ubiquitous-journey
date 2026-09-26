@@ -53,6 +53,7 @@ import { soak } from './suites/soak.mjs';
 import { runScenarios } from './scenarios.mjs';
 import { sessionTest } from './suites/session.mjs';
 import { encounterTest } from './suites/encounter.mjs';
+import { tacticsTest } from './suites/tactics.mjs';
 
 const { ok, failures } = makeOk();
 const helpers = { makeFighter, stubScene };
@@ -151,6 +152,8 @@ runScenarios(ok);
 sessionTest(ok, helpers);
 // App layer: tabletop encounters — write-in parser, full fights, command/autonomy, lasting beliefs.
 encounterTest(ok, helpers);
+// App layer: tactical grid battles — terrain, environment chains, readied actions, AI battles.
+tacticsTest(ok, helpers);
 // Phase-1 emergent buildings: homes + tavern, gold-neutral, headless-safe. ISOLATED on its OWN seed
 // (it has two residual RNG-edge gates — builder-housed + guildhall-converge — that the author's
 // frame-pinning can't fully tame): snapshot the ambient stream, run construction from CONSTRUCTION_SEED

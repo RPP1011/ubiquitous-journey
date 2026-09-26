@@ -1,0 +1,183 @@
+// Tactical grid battles (js/app/tactics): movement over heights, the environment chains
+// (shove into fire, oil bursts, spilled braziers, spreading hay fires, blinding flour),
+// readied actions + surprise, and whole AI-vs-AI battles that must terminate conserved.
+
+import { createSession } from '../../js/app/session.js';
+import { BattleMap } from '../../js/app/tactics/map.js';
+import { Battle } from '../../js/app/tactics/battle.js';
+import { runTurn } from '../../js/app/tactics/ai.js';
+import { Agent } from '../../js/sim/agent.js';
+import { HeadlessFighter } from '../../js/headlessFighter.js';
+
+const P = (risk = 0.5) => ({ risk_tolerance: risk, social_drive: 0.4, ambition: 0.5, altruism: 0.5, curiosity: 0.4 });
+const CENTER = { x: 300, z: 300 };
+
+/** A flat, empty 12×12 field with a player and helpers to drop people and props on it. */
+function arena(stubScene, makeFighter) {
+  const s = createSession({ scene: stubScene, makeFighter, townsfolkPerTown: 1,
+    player: { fighter: new HeadlessFighter('knight', { isPlayer: true }), spawn: CENTER } });
+  const map = new BattleMap(CENTER, 12, { bare: true });
+  for (const t of map.tiles) { t.h = 0; t.ground = 'dirt'; }
+  const b = new Battle(s, map);
+  const mk = (name, faction = 'bandit', risk = 0.5) => {
+    const a = new Agent(makeFighter('knight', {}), { id: s.sim._nextId++, name, profession: null, personality: P(risk), faction, combatant: true, controlled: false });
+    s.sim.agents.push(a); s.sim.agentsById.set(a.id, a);
+    return a;
+  };
+  const see = (a, bb, hostile = true) => { a.beliefs.observe(bb.id, bb.faction, bb.pos, 0, hostile); if (hostile) a.beliefs.get(bb.id).hostile = true; };
+  return { s, map, b, mk, see };
+}
+
+/** Force a deterministic turn order (highest first). */
+function order(b, ...units) { units.forEach((u, i) => (u.init = 100 - i)); }
+
+export function tacticsTest(ok, { stubScene, makeFighter }) {
+  // --- 1. movement: ledges, walls, foes block -----------------------------------------------
+  {
+    const { s, map, b, mk } = arena(stubScene, makeFighter);
+    const you = b.add(s.player, 'player', { x: 2, z: 2 });
+    for (let x = 0; x < 12; x++) map.tile(x, 4).h = 6;          // a 3m cliff across the field
+    map.tile(3, 2).wall = true;
+    const g = b.add(mk('Garrick'), 'foe', { x: 2, z: 3 });
+    order(b, you, g); b.start();
+    const r = b.reachable(you);
+    ok(!r.has('2,4') && !r.has('3,4'), 'tactics: a unit cannot climb a 3m cliff in one step');
+    ok(!r.has('3,2'), 'tactics: walls are impassable');
+    ok(!r.has('2,3'), 'tactics: a foe\'s tile cannot be entered');
+    s.dispose();
+  }
+
+  // --- 2. shove a bandit into the campfire ------------------------------------------------------
+  {
+    const { s, map, b, mk } = arena(stubScene, makeFighter);
+    const you = b.add(s.player, 'player', { x: 4, z: 5 });
+    const g = b.add(mk('Garrick'), 'foe', { x: 5, z: 5 });
+    map.addProp('campfire', 6, 5);
+    you.sheet.might = 30;                                        // make the shove certain
+    order(b, you, g); b.start();
+    const odds = b.odds(you, { kind: 'shove', target: g.id });
+    ok(odds.notes.includes('into the fire!'), `tactics: the preview warns the shove lands in the fire (${odds.notes.join(', ')})`);
+    b.act(you, { kind: 'shove', target: g.id });
+    ok(g.x === 6 && g.burning > 0, `tactics: shoved into the campfire, the bandit catches fire (x=${g.x}, burning=${g.burning})`);
+    s.dispose();
+  }
+
+  // --- 3. hay fire spreads, oil bursts, a kicked brazier spills -------------------------------
+  {
+    const { s, map, b, mk } = arena(stubScene, makeFighter);
+    const you = b.add(s.player, 'player', { x: 1, z: 1 });
+    const g = b.add(mk('Garrick'), 'foe', { x: 9, z: 8 });
+    const m = b.add(mk('Mira'), 'foe', { x: 8, z: 9 });
+    for (let x = 2; x <= 7; x++) map.addProp('hay', x, 5);
+    map.addProp('oil', 9, 9);
+    order(b, you, g, m); b.start();
+    b.ignite(2, 5, you);
+    let rounds = 0;
+    while (rounds < 8 && !map.tile(7, 5).burning && ![...map.props.values()].every((p) => p.kind !== 'hay' || p.x < 7)) {
+      for (const t of map.tiles) { /* just let the environment tick */ }
+      b['environment'](); rounds++;
+    }
+    const burnt = [2, 3, 4, 5, 6, 7].filter((x) => map.tile(x, 5).burning || map.tile(x, 5).ground === 'ash' || !map.propAt(x, 5)).length;
+    ok(burnt >= 4, `tactics: fire runs along the hay line (${burnt}/6 tiles caught within ${rounds} rounds)`);
+    const hp0 = g.agent.fighter.health + m.agent.fighter.health;
+    b.ignite(9, 9, you);
+    ok(!map.propAt(9, 9) && g.burning > 0 && m.burning > 0, 'tactics: a lit oil barrel bursts and sets the adjacent bandits alight');
+    ok(g.agent.fighter.health + m.agent.fighter.health < hp0, 'tactics: the burst wounds them');
+    s.dispose();
+    // kick a brazier toward a foe
+    const k = arena(stubScene, makeFighter);
+    const y2 = k.b.add(k.s.player, 'player', { x: 3, z: 5 });
+    const f2 = k.b.add(k.mk('Tomas'), 'foe', { x: 6, z: 5 });
+    k.map.addProp('brazier', 4, 5);
+    order(k.b, y2, f2); k.b.start();
+    const br = k.map.propAt(4, 5);
+    k.b.act(y2, { kind: 'kick', prop: br.id });
+    ok(k.map.tile(4, 5).burning && k.map.tile(5, 5).burning && k.map.tile(6, 5).burning && f2.burning > 0, 'tactics: a kicked brazier spills a line of coals that catches the foe');
+    k.s.dispose();
+  }
+
+  // --- 4. flour blinds: a cloud blocks sight -------------------------------------------------
+  {
+    const { s, map, b, mk } = arena(stubScene, makeFighter);
+    const you = b.add(s.player, 'player', { x: 2, z: 5 });
+    const g = b.add(mk('Garrick'), 'foe', { x: 7, z: 5 });
+    map.addProp('flour', 3, 5);
+    order(b, you, g); b.start();
+    ok(map.sees(2, 5, 7, 5), 'tactics: clear sight before the cloud');
+    you.sheet.finesse = 30;
+    b.act(you, { kind: 'throw', prop: map.propAt(3, 5).id, at: { x: 7, z: 5 } });
+    ok(map.tile(7, 5).smoke > 0 && !map.sees(2, 5, 9, 5), 'tactics: a burst flour sack leaves a cloud that blocks line of sight');
+    s.dispose();
+  }
+
+  // --- 5. readied action interrupts an attack on a ward; overwatch fires on approach ----------
+  {
+    const { s, b, mk } = arena(stubScene, makeFighter);
+    const you = b.add(s.player, 'player', { x: 4, z: 4 });
+    const borinA = mk('Borin', 'townsfolk'); borinA.inParty = true;
+    const borin = b.add(borinA, 'companion', { x: 6, z: 4 });
+    const g = b.add(mk('Garrick'), 'foe', { x: 5, z: 6 });
+    you.sheet.might = 30;
+    order(b, you, borin, g); b.start();
+    // "if anyone goes for Borin, I shove them" — the response target is left open (-1)
+    b.act(you, { kind: 'ready', trigger: { on: 'attacks', ward: borin.id }, response: { kind: 'shove', target: -1 } });
+    b.endTurn(you);
+    b.act(borin, { kind: 'defend' }); b.endTurn(borin);
+    b.moveTo(g, { x: 5, z: 4 });                 // step between you and Borin
+    const gx = g.x;
+    b.act(g, { kind: 'attack', target: borin.id });
+    ok(b.log.some((l) => l.text.includes('springs into action') || l.text.includes('spring into action')), 'tactics: the readied response fires when the ward is attacked');
+    const iReact = b.log.findIndex((l) => /spring/.test(l.text));
+    const iBlow = b.log.findIndex((l, i) => i > iReact && /Garrick (swings|hits)/.test(l.text));
+    const iShove = b.log.findIndex((l, i) => i > iReact && /(shove Garrick|holds firm)/.test(l.text));
+    ok(iShove > iReact && (iBlow === -1 || iShove < iBlow), `tactics: …and the shove resolves before Garrick's blow (react@${iReact} shove@${iShove} blow@${iBlow}, moved=${g.x !== gx})`);
+    s.dispose();
+  }
+
+  // --- 6. surprise: those who never saw it coming lose round one ------------------------------
+  {
+    const { s, b, mk, see } = arena(stubScene, makeFighter);
+    const you = b.add(s.player, 'player', { x: 2, z: 2 });
+    const g = b.add(mk('Garrick'), 'foe', { x: 8, z: 8 });
+    const lookout = b.add(mk('Lookout'), 'foe', { x: 9, z: 8 });
+    see(lookout.agent, s.player);
+    b.surpriseFromBeliefs();
+    ok(g.surprised && !lookout.surprised, 'tactics: the bandit with no belief about you is surprised; the lookout who saw you is not');
+    order(b, g, lookout, you); b.start();
+    ok(b.current() === lookout, 'tactics: the surprised bandit\'s first turn is skipped');
+    s.dispose();
+  }
+
+  // --- 7. whole battles, AI on every side: terminate, conserve gold, release every body -------
+  {
+    let ended = 0, conserved = 0, released = 0, nan = 0, envUsed = 0;
+    const N = 6;
+    for (let k = 0; k < N; k++) {
+      const { s, map, b, mk, see } = arena(stubScene, makeFighter);
+      map.addProp('campfire', 6, 6); map.addProp('hay', 5, 3); map.addProp('hay', 6, 3); map.addProp('crate', 4, 7);
+      map.addProp('barrel', 7, 4); map.addProp('brazier', 3, 5); map.addProp('bucket', 2, 2);
+      const you = b.add(s.player, 'player', { x: 2, z: 5 });
+      const comp = mk('Borin', 'townsfolk'); comp.inParty = true;
+      b.add(comp, 'companion', { x: 2, z: 6 });
+      const foes = [b.add(mk('Garrick'), 'foe', { x: 9, z: 5 }), b.add(mk('Mira', 'bandit', 0.3), 'foe', { x: 9, z: 7 }), b.add(mk('Tomas', 'bandit', 0.8), 'foe', { x: 8, z: 3 })];
+      for (const f of foes) { see(f.agent, s.player); see(f.agent, comp); }
+      const gold0 = s.sim.agents.reduce((t, a) => t + (a.gold || 0), 0);
+      b.start();
+      let guard = 0;
+      while (!b.outcome && guard++ < 400) {
+        const u = b.current(); if (!u) break;
+        runTurn(b, u);                            // autopilot everyone, player included
+      }
+      if (b.outcome) ended++;
+      if (Math.abs(s.sim.agents.reduce((t, a) => t + (a.gold || 0), 0) - gold0) < 1e-6) conserved++;
+      if (b.units.every((u) => u.agent._encounter == null)) released++;
+      if (b.units.some((u) => !Number.isFinite(u.agent.fighter.health))) nan++;
+      if (b.log.some((l) => l.kind === 'env')) envUsed++;
+      s.dispose();
+    }
+    ok(ended === N, `tactics: every AI battle reaches an outcome (${ended}/${N})`);
+    ok(conserved === N, `tactics: gold conserved in every battle (${conserved}/${N})`);
+    ok(released === N && nan === 0, `tactics: bodies released, no NaN health (${released}/${N}, nan=${nan})`);
+    ok(envUsed >= 1, `tactics: the AI uses the environment in some battles (${envUsed}/${N})`);
+  }
+}

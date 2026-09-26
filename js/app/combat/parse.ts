@@ -19,6 +19,8 @@ export interface Manifest {
   foes: ReadonlyArray<{ id: EntityRef; name: string; aliases: readonly string[] }>;
   allies: ReadonlyArray<{ id: EntityRef; name: string; aliases: readonly string[] }>;
   abilities: ReadonlyArray<{ id: string; name: string }>;
+  /** Battlefield features in view: props to use, rises and cover to move to. */
+  features?: ReadonlyArray<{ id: string; kind: 'high' | 'cover' | 'prop'; nouns: readonly string[] }>;
 }
 
 export interface Reading { intent: Intent; score: number; }
@@ -38,6 +40,9 @@ const LEX: Record<Exclude<CombatVerb, 'ability'>, string[]> = {
   aid: ['heal', 'bandage', 'potion', 'tend', 'patch up', 'help up', 'drag to safety', 'first aid', 'revive'],
   improvise: ['throw', 'hurl', 'fling', 'toss', 'grab', 'use the', 'set fire', 'burn', 'douse', 'climb', 'leap', 'jump',
     'swing from', 'brazier', 'barrel', 'crate', 'torch', 'rock', 'stone', 'sand', 'dirt', 'mud', 'table', 'chair', 'rope', 'lantern', 'bucket'],
+  grab: ['steal', 'snatch', 'rob', 'pickpocket', 'cut his purse', 'cut her purse', 'grab his purse', 'grab her purse', 'purse', 'take his gold', 'take her gold', 'lift'],
+  subdue: ['subdue', 'knock out', 'knock him out', 'knock her out', 'disarm', 'pin', 'wrestle', 'restrain', 'arrest', 'take him alive', 'take her alive', 'pommel', 'choke', 'grapple', 'hold down'],
+  move: ['move to', 'get behind', 'take cover', 'climb', 'high ground', 'run to', 'back to', 'duck behind', 'get to', 'up the', 'reposition', 'circle'],
   flee: ['flee', 'run away', 'escape', 'retreat', 'withdraw', 'bolt', 'get out', 'fall back', 'run'],
   parley: ['parley', 'negotiate', 'surrender', 'yield', 'truce', 'bargain', 'bribe', 'talk', 'reason with', 'stand down', 'mercy', 'lay down'],
 };
@@ -143,7 +148,7 @@ export function parseWriteIn(raw: string, m: Manifest): Reading[] {
           intent.targetId = listener ? listener.id : (m.currentTargetId as EntityRef);
         } else intent.claim = 'look_behind';
       }
-    } else if (verb === 'defend' || verb === 'rally' || verb === 'flee' || verb === 'parley') {
+    } else if (verb === 'defend' || verb === 'rally' || verb === 'flee' || verb === 'parley' || verb === 'move') {
       // no target
     } else {
       intent.targetId = foeTarget ?? undefined;
@@ -152,6 +157,28 @@ export function parseWriteIn(raw: string, m: Manifest): Reading[] {
     if (verb === 'shove' && phraseHits(text, LEX.improvise).score > 0) s -= 0.5;
     out.push({ intent, score: s });
   }
+
+  // Battlefield nouns: a prop makes a trick concrete; a rise or cover with a move phrase is a reposition.
+  const feats = m.features ?? [];
+  const featNamed = (kind: 'prop' | 'place') => {
+    let best: { id: string; len: number } | null = null;
+    for (const f of feats) {
+      if ((kind === 'prop') !== (f.kind === 'prop')) continue;
+      for (const n of f.nouns) if (new RegExp(`(^| )${norm(n)}s?( |$)`).test(text) && (!best || n.length > best.len)) best = { id: f.id, len: n.length };
+    }
+    return best?.id;
+  };
+  const prop = featNamed('prop'), place = featNamed('place');
+  const moving = phraseHits(text, LEX.move).score > 0;
+  for (const r of out) {
+    if (prop && (r.intent.verb === 'improvise' || r.intent.verb === 'shove' || r.intent.verb === 'strike')) {
+      if (r.intent.verb !== 'improvise') { r.intent.verb = 'improvise'; }
+      r.intent.propId = prop; r.score += 1;
+    }
+    if (place && (moving || r.intent.verb === 'move')) r.intent.moveTo = place;
+  }
+  if (place && moving && !out.some((r) => r.intent.verb === 'move')) out.push({ intent: { verb: 'move', moveTo: place, flourish, text: raw }, score: 1 });
+  if (prop && !out.some((r) => r.intent.verb === 'improvise') && foeTarget != null) out.push({ intent: { verb: 'improvise', propId: prop, targetId: foeTarget, flourish, text: raw }, score: 1.5 });
 
   // Nothing recognised, but a foe was named: treat it as an improvised physical trick.
   if (!out.length && foe != null) out.push({ intent: { verb: 'improvise', targetId: foe, flourish, text: raw }, score: 0.5 });

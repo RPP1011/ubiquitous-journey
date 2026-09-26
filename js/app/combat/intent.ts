@@ -10,6 +10,7 @@ export type EntityRef = number | string;
 export const VERBS = [
   'strike', 'ability', 'defend', 'guard', 'shove', 'trip', 'feint',
   'bluff', 'intimidate', 'taunt', 'rally', 'aid', 'improvise', 'flee', 'parley',
+  'grab', 'subdue', 'move',
 ] as const;
 export type CombatVerb = typeof VERBS[number];
 
@@ -23,6 +24,10 @@ export interface Intent {
   abilityId?: string;            // verb 'ability'
   claim?: Claim;                 // verb 'bluff'
   subjectId?: EntityRef;         // bluff 'turncoat': who the listener is told is a traitor
+  /** Reposition before acting (a battlefield feature id: a rise, a bit of cover). Free, up to the move allowance. */
+  moveTo?: string;
+  /** The prop an improvised trick uses (a battlefield feature id). */
+  propId?: string;
   /** Write-in flavour kept for narration + novelty ("kick the brazier") — never read for magnitude. */
   flourish?: string;
   /** The raw text the player typed, if any (logged, never re-parsed during resolution). */
@@ -33,7 +38,7 @@ export interface Intent {
 export const TARGETING: Record<CombatVerb, 'foe' | 'ally' | 'self' | 'none' | 'foe?'> = {
   strike: 'foe', ability: 'foe?', defend: 'self', guard: 'ally', shove: 'foe', trip: 'foe',
   feint: 'foe', bluff: 'foe', intimidate: 'foe', taunt: 'foe', rally: 'none', aid: 'ally',
-  improvise: 'foe', flee: 'none', parley: 'none',
+  improvise: 'foe', flee: 'none', parley: 'none', grab: 'foe', subdue: 'foe', move: 'none',
 };
 
 /** The stat a verb is checked on (the rules pick the DC). */
@@ -41,12 +46,14 @@ export const VERB_STAT: Record<CombatVerb, Stat | null> = {
   strike: 'might', ability: null, defend: null, guard: null, shove: 'might', trip: 'finesse',
   feint: 'finesse', bluff: 'presence', intimidate: 'presence', taunt: 'presence',
   rally: 'presence', aid: 'finesse', improvise: 'finesse', flee: 'finesse', parley: 'presence',
+  grab: 'finesse', subdue: 'might', move: null,
 };
 
 export const VERB_LABEL: Record<CombatVerb, string> = {
   strike: 'Strike', ability: 'Ability', defend: 'Defend', guard: 'Guard', shove: 'Shove',
   trip: 'Trip', feint: 'Feint', bluff: 'Bluff', intimidate: 'Intimidate', taunt: 'Taunt',
   rally: 'Rally', aid: 'Aid', improvise: 'Improvise', flee: 'Flee', parley: 'Parley',
+  grab: 'Grab purse', subdue: 'Subdue', move: 'Move',
 };
 
 /** Structural validation against the closed vocabulary. The encounter re-checks ids/sides. */
@@ -56,6 +63,8 @@ export function validateIntent(x: unknown): x is Intent {
   if (!(VERBS as readonly string[]).includes(i.verb)) return false;
   if (i.claim != null && !(CLAIMS as readonly string[]).includes(i.claim)) return false;
   if (i.verb === 'ability' && typeof i.abilityId !== 'string') return false;
+  if (i.moveTo != null && typeof i.moveTo !== 'string') return false;
+  if (i.propId != null && typeof i.propId !== 'string') return false;
   if (i.flourish != null && (typeof i.flourish !== 'string' || i.flourish.length > 120)) return false;
   return true;
 }
