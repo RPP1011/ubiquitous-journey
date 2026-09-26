@@ -109,7 +109,10 @@ function judge(hub: HubState, npc: string, d: Deed, hops: number): void {
   for (const t of d.tags) delta += (def.values[t] ?? 0) * 0.12 * d.weight;
   if (d.kin && d.kin.npc === npc) delta += d.kin.fate === 'killed' || d.kin.fate === 'lost' ? -0.9 : 0.7;
   if (d.about !== 'player') delta *= 0.3;           // deeds about companions colour the company less
-  hub.standing[npc] = Math.max(-1, Math.min(1, (hub.standing[npc] ?? 0) + delta * trust));
+  // diminishing returns toward either extreme: the tenth good deed moves a warm heart less than
+  // the first, so people keep their differences instead of all ending at "adores you"
+  const s = hub.standing[npc] ?? 0, step = delta * trust;
+  hub.standing[npc] = Math.max(-1, Math.min(1, s + step * (step > 0 ? 1 - Math.max(0, s) * 0.85 : 1 + Math.min(0, s) * 0.85)));
 }
 
 export interface HubLine { speaker: string; text: string; mood: 'warm' | 'cool' | 'cold' | 'neutral'; }

@@ -7,6 +7,7 @@ import { BattleMap } from '../../js/app/tactics/map.js';
 import { Battle } from '../../js/app/tactics/battle.js';
 import { runTurn, planTurn, predictAllies } from '../../js/app/tactics/ai.js';
 import { willingness } from '../../js/app/tactics/comms.js';
+import { foldBonds, installBonds } from '../../js/app/run/bonds.js';
 import { readWriteIn } from '../../js/app/tactics/writein.js';
 import { affordances, pathRisks } from '../../js/app/tactics/affordances.js';
 import { Agent } from '../../js/sim/agent.js';
@@ -312,6 +313,25 @@ export function tacticsTest(ok, { stubScene, makeFighter }) {
     pip.sheet.finesse = 30;
     for (let i = 0; i < 6 && !g.disarmed; i++) { pip.acted = false; b.act(pip, { kind: 'disarm', target: g.id }); }
     ok(g.disarmed === 2 && !b.options(g).some((a) => a.kind === 'ability'), 'disarm: no weapon, no weapon arts for two rounds');
+    ss.dispose();
+  }
+
+  // --- 16. bonds: friction sours a pair into rivals; a rival won't dive in -------------------------
+  {
+    const { s: ss, b, mk } = arena(stubScene, makeFighter);
+    const you = b.add(ss.player, 'player', { x: 4, z: 5 });
+    const pipA = mk('Pip', 'townsfolk'); pipA.inParty = true;
+    const pip = b.add(pipA, 'companion', { x: 5, z: 5 }, { traits: { bravery: 0.6, compassion: 0.9, loyalty: 0.9, ruthlessness: 0.1 }, tactic: 'guardian' });
+    const g = b.add(mk('Garrick'), 'foe', { x: 3, z: 5 });
+    order(b, you, pip, g); b.start();
+    // three times you cut down someone fleeing, with soft-hearted Pip watching
+    const bonds = {};
+    const keyOf = new Map([[you.id, 'player'], [pip.id, 'pip']]);
+    for (let i = 0; i < 3; i++) { b.events.length = 0; b.ev('finish', you, g); foldBonds(b, bonds, keyOf, (k) => k, true, (k) => (k === 'pip' ? pip.traits : undefined)); }
+    ok(bonds['pip|player']?.kind === 'rival', `bonds: cutting down the fleeing before Pip makes you rivals (${JSON.stringify(bonds['pip|player'])})`);
+    installBonds(b, bonds, new Map([['player', you.id], ['pip', pip.id]]));
+    ok(b.bondOf(you, pip).kind === 'rival' && b.bondOf(you, pip).lvl === 0, 'bonds: a rivalry installs with none of a friendship\'s help');
+    ok(willingness(b, pip, you, { kinds: ['attack'], target: g.id }).w < 0.25 + 0.5 * 0.9, 'bonds: a rival trusts your asks less');
     ss.dispose();
   }
 

@@ -6,7 +6,8 @@
 
 import { pairKey, type Battle, type Bond, type Unit } from '../tactics/battle.js';
 
-export interface BondRec { xp: number; lvl: number; kind: 'friend' | 'rival' }
+/** A pair's history: closeness (xp → lvl) and friction (clashes that can sour it into a rivalry). */
+export interface BondRec { xp: number; lvl: number; kind: 'friend' | 'rival'; friction?: number }
 export const BOND_XP = [0, 3, 8, 15, 25];
 const lvlOf = (xp: number) => BOND_XP.filter((t) => xp >= t).length - 1;
 const NAMES: Record<string, string> = { player: 'you' };
@@ -16,7 +17,8 @@ export function installBonds(b: Battle, bonds: Record<string, BondRec>, idOf: Ma
   b.bonds.clear();
   for (const [k, rec] of Object.entries(bonds)) {
     const [a, c] = k.split('|'); const ia = idOf.get(a), ic = idOf.get(c);
-    if (ia != null && ic != null && rec.lvl > 0) b.bonds.set(pairKey(ia, ic), { lvl: rec.lvl, kind: rec.kind } as Bond);
+    // a rivalry gives none of a friendship's help, whatever they once were to each other
+    if (ia != null && ic != null && (rec.lvl > 0 || rec.kind === 'rival')) b.bonds.set(pairKey(ia, ic), { lvl: rec.kind === 'rival' ? 0 : rec.lvl, kind: rec.kind } as Bond);
   }
 }
 
@@ -24,8 +26,15 @@ export function installBonds(b: Battle, bonds: Record<string, BondRec>, idOf: Ma
  * Fold a finished battle into the bonds. `keyOf` maps unit ids to members ('player' / companion
  * keys); `nameOf` gives display names. Returns the growth lines for the stage report.
  */
-export function foldBonds(b: Battle, bonds: Record<string, BondRec>, keyOf: Map<Unit['id'], string>, nameOf: (k: string) => string, won: boolean): string[] {
+export function foldBonds(b: Battle, bonds: Record<string, BondRec>, keyOf: Map<Unit['id'], string>, nameOf: (k: string) => string, won: boolean,
+  traitsOf: (k: string) => { compassion: number; ruthlessness: number } | undefined = () => undefined): string[] {
   const gain = new Map<string, number>();
+  const rub = new Map<string, number>();
+  const clash = (x: Unit['id'] | undefined, y: Unit['id'] | undefined, n: number) => {
+    const a = x != null ? keyOf.get(x) : undefined, c = y != null ? keyOf.get(y) : undefined;
+    if (!a || !c || a === c) return;
+    const k = [a, c].sort().join('|'); rub.set(k, (rub.get(k) ?? 0) + n);
+  };
   const add = (x: Unit['id'] | undefined, y: Unit['id'] | undefined, n: number) => {
     const a = x != null ? keyOf.get(x) : undefined, c = y != null ? keyOf.get(y) : undefined;
     if (!a || !c || a === c) return;
@@ -38,18 +47,30 @@ export function foldBonds(b: Battle, bonds: Record<string, BondRec>, keyOf: Map<
     else if (e.kind === 'revive') add(e.actor, e.target, 3);
     else if (e.kind === 'combo' && combos < 3) { add(e.actor, e.with, 1); combos++; }
     else if (e.kind === 'down' && e.target != null) downed.add(e.target);
-    else if (e.kind === 'broke') add(e.actor, e.target, -1);
-    else if ((e.kind === 'escape' || e.kind === 'broken') && e.actor != null) for (const d of downed) add(e.actor, d, -2);
+    else if (e.kind === 'broke') { add(e.actor, e.target, -1); clash(e.actor, e.target, 0.5); }
+    else if ((e.kind === 'escape' || e.kind === 'broken') && e.actor != null) for (const d of downed) { add(e.actor, d, -2); clash(e.actor, d, 1); }
+    else if (e.kind === 'finish' && e.actor != null) {
+      // cutting down the fleeing grates on the soft-hearted who saw it
+      for (const [id, k] of keyOf) if (id !== e.actor && (traitsOf(k)?.compassion ?? 0) > 0.65) clash(e.actor, id, 1);
+    }
   }
   if (won) {
     const standing = b.units.filter((u) => u.side === 'us' && u.out === null && keyOf.has(u.id));
     for (let i = 0; i < standing.length; i++) for (let j = i + 1; j < standing.length; j++) add(standing[i].id, standing[j].id, 0.5);
   }
   const lines: string[] = [];
+  const nameOfPair = (k: string) => { const [a, c] = k.split('|').map((m) => NAMES[m] ?? nameOf(m)); return [a[0].toUpperCase() + a.slice(1), c]; };
+  for (const [k, n] of rub) {
+    const rec = bonds[k] ?? (bonds[k] = { xp: 0, lvl: 0, kind: 'friend' });
+    rec.friction = (rec.friction ?? 0) + n;
+    if (rec.kind === 'friend' && rec.friction >= 3 && rec.xp < 6) { rec.kind = 'rival'; const [a, c] = nameOfPair(k); lines.push(`${a} & ${c}: rivals now`); }
+  }
   for (const [k, n] of gain) {
     const rec = bonds[k] ?? (bonds[k] = { xp: 0, lvl: 0, kind: 'friend' });
     const before = rec.lvl;
     rec.xp = Math.max(0, rec.xp + n); rec.lvl = lvlOf(rec.xp);
+    // enough shared hardship mends a rivalry
+    if (rec.kind === 'rival' && rec.xp >= 12) { rec.kind = 'friend'; rec.friction = 0; const [a, c] = nameOfPair(k); lines.push(`${a} & ${c}: made their peace`); }
     if (rec.lvl !== before) {
       const [a, c] = k.split('|').map((m) => NAMES[m] ?? nameOf(m));
       lines.push(`${a[0].toUpperCase() + a.slice(1)} & ${c}: bond ${rec.lvl > before ? '▲' : '▼'} ${rec.lvl}`);

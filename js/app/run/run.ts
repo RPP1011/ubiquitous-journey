@@ -347,8 +347,12 @@ export class RunController {
     return this.party.filter((k) => this.companionAgents.get(k)?.alive).map((k, i) => {
       // a close bond (2+) sometimes speaks instead: to the friend beside them, or to you
       const mates = ['player', ...this.party.filter((o) => o !== k && this.companionAgents.get(o)?.alive)];
-      const best = mates.map((o) => ({ o, lvl: this.save.bonds[[k, o].sort().join('|')]?.lvl ?? 0 })).sort((a, c) => c.lvl - a.lvl)[0];
-      if (best && best.lvl >= 2 && (this.save.runs + this.stageIdx + i) % 2 === 0) return { who: COMPANIONS[k].name, text: pairBark(k, best.o === 'player' ? null : COMPANIONS[best.o as CompanionKey].short) };
+      const recs = mates.map((o) => ({ o, rec: this.save.bonds[[k, o].sort().join('|')] }));
+      const rival = recs.find((x) => x.rec?.kind === 'rival');
+      const best = recs.filter((x) => x.rec?.kind !== 'rival').map((x) => ({ o: x.o, lvl: x.rec?.lvl ?? 0 })).sort((a, c) => c.lvl - a.lvl)[0];
+      const turn = (this.save.runs + this.stageIdx + i) % 2 === 0;
+      if (rival && turn) return { who: COMPANIONS[k].name, text: pairBark(k, rival.o === 'player' ? null : COMPANIONS[rival.o as CompanionKey].short, true) };
+      if (best && best.lvl >= 2 && turn) return { who: COMPANIONS[k].name, text: pairBark(k, best.o === 'player' ? null : COMPANIONS[best.o as CompanionKey].short) };
       return { who: COMPANIONS[k].name, text: bark(this.save.profiles[k], 'prebattle') };
     });
   }
@@ -375,7 +379,7 @@ export class RunController {
     this.runDeeds.push(...deeds);
     const growth = developFromBattle(b, new Map(this.party.map((k) => [k, this.save.profiles[k]])), this.companionOf, this.session.player!.id, this.save.runs + 1, st.name);
     const members = new Map<Unit['id'], string>([[this.session.player!.id, 'player'], ...this.companionOf]);
-    growth.push(...foldBonds(b, this.save.bonds, members, (k) => this.name(k), won));
+    growth.push(...foldBonds(b, this.save.bonds, members, (k) => this.name(k), won, (k) => (k in this.save.profiles ? this.save.profiles[k as CompanionKey].traits : undefined)));
     // the dead stay dead; the rest are patched up for the road
     for (const [uid, k] of this.companionOf) {
       const u = b.get(uid)!;

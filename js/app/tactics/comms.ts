@@ -67,6 +67,7 @@ export function willingness(b: Battle, l: Unit, s: Unit, w: Want): { w: number; 
   if (l.traits) trust = 0.25 + 0.5 * l.traits.loyalty + 0.1 * b.bondOf(l, s).lvl;
   else trust = 0.4 + (s.tags.has('chief') || s.tactic === 'leader' ? 0.35 : 0);
   trust -= b.brokenWord.get(s.id) ?? 0;                                   // said one thing, did another
+  if (b.bondOf(l, s).kind === 'rival') trust -= 0.2;                      // and a rival hears everything as an order
   let why = '';
   const t = w.target != null ? b.get(w.target) : undefined;
   const tr = l.traits;

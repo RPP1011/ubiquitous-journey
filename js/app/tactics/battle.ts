@@ -1338,7 +1338,7 @@ export class Battle {
   /** Who beside t would throw themselves into a killing blow: bonded, soft-hearted, or a shield. */
   private diver(t: Unit, by: Unit): Unit | null {
     const cands = this.active().filter((w) => w !== t && w !== by && w.side === 'us' && !w.reacted && !w.stunned && !w.bound && w.tactic !== 'civilian' && w.role !== 'player'
-      && this.adjacent(w, t) && (this.bondOf(w, t).lvl >= 2 || (w.traits?.compassion ?? 0) >= 0.75 || w.tactic === 'guardian'));
+      && this.adjacent(w, t) && this.bondOf(w, t).kind !== 'rival' && (this.bondOf(w, t).lvl >= 2 || (w.traits?.compassion ?? 0) >= 0.75 || w.tactic === 'guardian'));
     if (!cands.length) return null;
     const w = cands.sort((a, c) => (c.tactic === 'guardian' ? 1 : 0) - (a.tactic === 'guardian' ? 1 : 0) || this.bondOf(c, t).lvl - this.bondOf(a, t).lvl)[0];
     return check(w.sheet.finesse + this.bondOf(w, t).lvl, 12).ok ? w : null;
