@@ -87,7 +87,8 @@ export function planTurn(b: Battle, u: Unit, opts: { predict?: boolean } = {}): 
   const tr = T(u);
   const P = (u.agent.personality || {}) as Record<string, number>;
   const risk = u.traits ? tr.bravery : (P.risk_tolerance ?? 0.5);
-  const foes = b.foesOf(u);
+  // only the foes this side can see (fog of war): you can't plan against what you don't know is there
+  const foes = b.foesOf(u).filter((f) => b.visibleTo(u.side, f) || dist(f, u) <= 1);
   const friends = b.friendsOf(u);
   const goals = b.goals;
   // what this unit heard: asks meant for it (weighed by trust in the speaker), and threats it overheard
@@ -465,8 +466,17 @@ function positionValue(b: Battle, u: Unit, s: Spot): number {
   const t = b.map.tile(s.x, s.z)!;
   if (t.burning) v -= 1.5;
   if (t.caltrops) v -= 0.6;
+  // lost them? go and look where they were last seen
+  const seen = b.foesOf(u).filter((f) => b.visibleTo(u.side, f));
+  if (!seen.length) {
+    const mem = [...(b.lastSeen.get(u.side)?.entries() ?? [])].filter(([id]) => b.get(id)?.out === null);
+    if (mem.length) { const near = Math.min(...mem.map(([, p]) => dist(p, s))); v += 0.35 * Math.max(0, 1 - near / 12); }
+  }
+  // stay unseen if you can (the timid and the sly like it best)
+  const tile = b.map.tile(s.x, s.z)!;
+  if (tile.ground === 'brush' && u.side === 'them' && (u.tactic === 'beast' || u.tactic === 'skirmisher') && !seen.some((f) => dist(f, s) <= 1)) v += 0.12;   // predators wait in the brush
   if (t.oil > 0) v -= b.map.tiles.some((x) => x.burning > 0 && Math.abs(x.x - s.x) + Math.abs(x.z - s.z) <= 3) || b.foesOf(u).some((f) => f.carrying?.fireSource) ? 0.9 : 0.25;
-  const foes = b.foesOf(u);
+  const foes = b.foesOf(u).filter((f) => b.visibleTo(u.side, f));
   const nearest = Math.min(...foes.map((f) => dist(f, s)), 12);
   const role = u.tactic;
   for (const f of foes) {

@@ -322,6 +322,7 @@ export class RunController {
     if (st.trees) for (const t of map.tiles) if (!reserved.has(`${t.x},${t.z}`) && !map.propAt(t.x, t.z) && !t.wall && t.ground === 'grass' && rng() < st.trees) map.addProp('tree', t.x, t.z);
     const b = new Battle(this.session, map);
     if (set) for (const p of PIECES[st.id] ?? []) b.addPiece(p);
+    b.dark = !!set?.dark || st.id === 'hollow' || st.id === 'sheepfold';
     const seat = (at: [number, number]): Tile => { const t = map.tile(at[0], at[1]); return t && map.standable(t.x, t.z) && !b.unitAt(t.x, t.z) ? t : map.freeNear(at[0], at[1], 3)!; };
 
     // your side

@@ -38,6 +38,9 @@ export function isSituational(reason: string): boolean {
 /** Why the GM can't read this. */
 export function explainUnmet(b: Battle, u: Unit, raw: string): string {
   const text = ` ${raw.toLowerCase().replace(/[^a-z0-9' ]+/g, ' ').replace(/\s+/g, ' ')} `;
+  // naming someone your side can't see
+  const unseen = b.foesOf(u).find((f) => !b.visibleTo(u.side, f) && text.includes(` ${f.agent.name.toLowerCase().split(' ')[0]} `));
+  if (unseen) return `you can't see ${unseen.agent.name} from here — they were last seen ${b.lastSeen.get(u.side)?.has(unseen.id) ? 'somewhere out there' : 'nowhere'}`;
   const to = addressee(b, u, raw).who;
   if (to && to !== u) return `${to.agent.name} makes their own choices in a fight — you can't give them orders`;
   for (const [re, what] of UNSUPPORTED) if (re.test(text)) return `the rules don't cover ${what} yet`;

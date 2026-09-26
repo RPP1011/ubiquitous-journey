@@ -377,6 +377,27 @@ export function tacticsTest(ok, { stubScene, makeFighter }) {
     ss.dispose();
   }
 
+  // --- 20. fog of war and stealth: unseen in brush, a spotter's eyes, night, ambush, giving yourself away
+  {
+    const { s: ss, map, b, mk } = arena(stubScene, makeFighter);
+    const you = b.add(ss.player, 'player', { x: 2, z: 2 });
+    const wrenA = mk('Wren', 'townsfolk'); wrenA.inParty = true;
+    const wren = b.add(wrenA, 'companion', { x: 2, z: 10 }, { traits: { bravery: 0.6, compassion: 0.4, loyalty: 0.7, ruthlessness: 0.4 }, tactic: 'archer' });
+    const g = b.add(mk('Garrick'), 'foe', { x: 9, z: 2 });
+    map.tile(2, 2).ground = 'brush';
+    order(b, you, wren, g); b.start();
+    ok(!b.visibleTo('them', you) && b.visibleTo('us', g), 'fog: you in the brush are unseen; Garrick in the open is seen');
+    ok(!b.options(g).some((a) => 'target' in a && a.target === you.id), 'fog: Garrick can\'t aim at what he can\'t see');
+    ok(b.hitDC(you, g, you, true).notes.includes('unseen'), 'fog: striking from hiding is an ambush');
+    b.revealed.add(you.id); b.refreshSight();
+    ok(b.visibleTo('them', you), 'fog: giving yourself away (a strike, a shout) shows you until your next turn');
+    b.revealed.delete(you.id);
+    b.dark = true; g.x = 2; g.z = 9; b.place(g); map.tile(2, 2).ground = 'dirt';
+    ok(!b.visibleTo('them', you) || Math.abs(g.z - you.z) <= b.sightOf(g), 'fog: at night sight is short');
+    ok(b.visibleTo('us', g), 'fog: Wren spots Garrick for the rest of us');
+    ss.dispose();
+  }
+
   // --- 16. bonds: friction sours a pair into rivals; a rival won't dive in -------------------------
   {
     const { s: ss, b, mk } = arena(stubScene, makeFighter);

@@ -178,7 +178,7 @@ export class TacticsView {
       el.style.display = sp ? '' : 'none';
       if (sp) { el.style.left = `${sp.x}px`; el.style.top = `${sp.y}px`; }
     }
-    for (const [id, el] of this.markEls) if (!byProp.has(id) && !(id.startsWith('piece:') && show && b!.pieces.get(id.slice(6)) && !b!.pieces.get(id.slice(6))!.used)) { el.remove(); this.markEls.delete(id); }
+    for (const [id, el] of this.markEls) if (!byProp.has(id) && !id.startsWith('ghost:') && !(id.startsWith('piece:') && show && b!.pieces.get(id.slice(6)) && !b!.pieces.get(id.slice(6))!.used)) { el.remove(); this.markEls.delete(id); }
     const hovered = this.r?.hover ?? null;
     for (const [id, list] of byProp) {
       const p = b!.map.props.get(id) ?? (u!.carrying?.id === id ? u!.carrying : undefined); if (!p) continue;
@@ -190,6 +190,20 @@ export class TacticsView {
       el.classList.toggle('hot', list.some((a) => a.catches.some((w) => w.side !== u!.side)));
       el.style.display = sp ? '' : 'none';
       if (sp) { el.style.left = `${sp.x}px`; el.style.top = `${sp.y}px`; }
+    }
+    // where unseen foes were last seen: a question mark
+    if (show) {
+      const mem = b!.lastSeen.get(u!.side);
+      for (const [id, p] of mem ?? []) {
+        const f = b!.get(id), k = `ghost:${id}`;
+        if (!f || f.out !== null || b!.visibleTo(u!.side, f)) { this.markEls.get(k)?.remove(); this.markEls.delete(k); continue; }
+        let el = this.markEls.get(k);
+        if (!el) { el = document.createElement('div'); el.className = 'pm'; el.style.opacity = '0.7'; marks.appendChild(el); this.markEls.set(k, el); }
+        el.textContent = `? ${f.agent.name.split(' ')[0]}`;
+        const sp = this.screen(p, 1.2, false);
+        el.style.display = sp ? '' : 'none';
+        if (sp) { el.style.left = `${sp.x}px`; el.style.top = `${sp.y}px`; }
+      }
     }
     // the hover card: what's under the pointer, and what you can do with it
     let html = '';
@@ -359,7 +373,7 @@ export class TacticsView {
     // what everyone else has committed to (shown on your turn)
     r.intents = !u || b.outcome ? [] : [...b.intents.values()].flatMap((it) => {
       const w = b.get(it.unit), t = it.target != null ? b.get(it.target) : undefined;
-      if (!w || w.out !== null || (t && t.out === 'dead')) return [];
+      if (!w || w.out !== null || (t && t.out === 'dead') || !b.visibleTo(u.side, w)) return [];
       // aimed at someone, at a set-piece, or just somewhere to be
       const pc = it.action.kind === 'use' ? b.pieces.get(it.action.piece) : undefined;
       const end = t ? { x: t.x, z: t.z } : pc ? { x: pc.at[0][0], z: pc.at[0][1] } : it.to;
@@ -454,7 +468,7 @@ export class TacticsView {
       const chips = this.readings.map((r, i) => `<button class="chip ${i ? 'alt' : ''}" data-r="${i}">${esc(r.label)}${r.p < 1 ? `<span class="p">${pct(r.p)}</span>` : ''}${r.notes.length ? ` <i style="color:#8d99a6">· ${esc(r.notes.join(', '))}</i>` : ''}</button>`).join('');
       const coming = [...b.intents.values()].map((it) => {
         const w = b.get(it.unit), t = it.target != null ? b.get(it.target) : undefined;
-        if (!w || w.out !== null) return '';
+        if (!w || w.out !== null || !b.visibleTo(mine.side, w)) return '';
         void t;
         return `<div class="ci ${w.side !== mine.side ? 'foe' : 'mate'}"><b>${esc(b.nm(w, true))}</b>: ${esc(actionLabel(b, w, it.action).replace(/^Brace$/, 'hold and brace'))}${it.to ? ' (after moving)' : ''}</div>`;
       }).filter(Boolean);

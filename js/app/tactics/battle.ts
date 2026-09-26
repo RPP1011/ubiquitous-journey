@@ -210,6 +210,7 @@ export class Battle {
   speak(u: Unit, c: { to: Unit['id'][] | 'all'; kind: 'ask' | 'plan'; want: Want; words: string }): string | null {
     if (u.spoke) return 'you have already called out this turn';
     u.spoke = true;
+    this.revealed.add(u.id);                                      // a shout gives you away
     const heardBy = this.active().filter((l) => hears(this, u, l)).map((l) => l.id);
     this.calls.push({ id: ++this.callSeq, from: u.id, ...c, round: this.round, heardBy, answered: [] });
     if (this.calls.length > 40) this.calls.splice(0, 10);
@@ -343,6 +344,44 @@ export class Battle {
   /** In the brush and no foe close enough to see you: archers and watchers can't find you. */
   hidden(t: Unit): boolean {
     return this.map.tile(t.x, t.z)?.ground === 'brush' && !this.foesOf(t).some((f) => dist(f, t) <= 1);
+  }
+
+  // ---- sight: each side sees only what its people can see (fog of war, stealth) ---------------
+  /** Night (the run sets it from the stage): sight shrinks, unless you're near a flame. */
+  dark = false;
+  /** Who gave themselves away this turn (struck, threw, shouted): seen from anywhere in sight. */
+  revealed = new Set<Unit['id']>();
+  /** Where each side last saw each of the other side's people. */
+  lastSeen = new Map<Side, Map<Unit['id'], { x: number; z: number; round: number }>>([['us', new Map()], ['them', new Map()]]);
+
+  sightOf(v: Unit): number { return (this.dark ? 6 : 11) + (this.map.standH(v.x, v.z) >= 3 ? 2 : 0); }
+  /** Near a fire, carrying one, or burning: seen as if by day. */
+  lit(t: Unit): boolean { return t.burning > 0 || this.flameAt(t); }
+
+  /** Does v see t right now? Next to you, always; brush and smoke hide; night shortens the look. */
+  spots(v: Unit, t: Unit): boolean {
+    if (v.out !== null && v.out !== 'downed') return false;
+    const d = dist(v, t);
+    if (d <= 1) return true;
+    const tile = this.map.tile(t.x, t.z)!;
+    const loud = this.revealed.has(t.id) || this.lit(t);
+    if (!loud && (tile.ground === 'brush' || tile.smoke > 0)) return false;
+    const range = this.dark && !loud ? this.sightOf(v) : Math.max(this.sightOf(v), 11);
+    return d <= range && this.map.sees(v.x, v.z, t.x, t.z);
+  }
+
+  /** Does anyone on `side` see t? (A side shares what it sees — a spotter helps an archer.) */
+  visibleTo(side: Side, t: Unit): boolean {
+    if (t.side === side) return true;
+    return this.units.some((v) => v.side === side && (v.out === null) && this.spots(v, t));
+  }
+
+  /** Update what each side last saw of the other. */
+  refreshSight(): void {
+    for (const side of ['us', 'them'] as Side[]) {
+      const mem = this.lastSeen.get(side)!;
+      for (const t of this.active()) if (t.side !== side && this.visibleTo(side, t)) mem.set(t.id, { x: t.x, z: t.z, round: this.round });
+    }
   }
   highStakes = false;
   stakesReason = '';
@@ -503,6 +542,7 @@ export class Battle {
       const opp = this.unitAt(2 * t.x - from.x, 2 * t.z - from.z);
       if (opp && opp !== a && opp.side === a.side && opp.out === null) { dc -= this.bondOf(a, opp).lvl >= 2 ? 3 : 2; notes.push('pincered'); }
     }
+    if (!this.visibleTo(t.side, a)) { dc -= 3; notes.push('unseen'); }         // an ambush: they never saw it coming
     const ft = this.followThrough(a, t);
     if (ft) notes.push(`following through (${this.nm(ft.by)})`);
     dc = Math.max(5, dc);
@@ -542,6 +582,8 @@ export class Battle {
 
   private startTurn(u: Unit): void {
     u.defending = false; u.overwatch = false; u.blocking = false; u.moved = false; u.acted = false;
+    this.revealed.delete(u.id);
+    this.refreshSight();
     for (const o of this.units) if (o.boon && this.round > o.boon.until) o.boon = null;
     u.spoke = false;
     if (u.disarmed > 0) { u.disarmed--; if (u.disarmed === 0) this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'snatch' : 'snatches'} up a weapon again.`); }
@@ -627,6 +669,7 @@ export class Battle {
       if (u.out !== null) return null;
       this.enterTile(u);
       if (u.out !== null) return null;
+      this.refreshSight();
       const here = this.map.tile(u.x, u.z)!;
       if (here.caltrops) {
         here.caltrops = false;
@@ -716,6 +759,7 @@ export class Battle {
   private overwatchFire(u: Unit): void {
     if (this.hidden(u)) return;                                   // moving through the brush unseen
     for (const f of this.foesOf(u)) {
+      if (!this.spots(f, u)) continue;                           // can't fire on what you don't see
       if (!f.overwatch || f.reacted) continue;
       const ranged = this.rangedReach(f);
       const inReach = ranged ? dist(f, u) <= ranged && this.map.sees(f.x, f.z, u.x, u.z) : this.adjacent(f, u);
@@ -779,6 +823,7 @@ export class Battle {
     const out: Action[] = [];
     const foes = this.foesOf(u), friends = this.friendsOf(u);
     for (const f of foes) {
+      if (!this.adjacent(from, f) && !this.visibleTo(u.side, f)) continue;   // can't aim at what no one on your side can see
       if (this.adjacent(from, f)) {
         out.push({ kind: 'attack', target: f.id }, { kind: 'shove', target: f.id }, { kind: 'subdue', target: f.id });
         if (!f.prone && f.tactic !== 'beast') out.push({ kind: 'trip', target: f.id });
@@ -824,6 +869,8 @@ export class Battle {
     for (const p of this.pieces.values()) if (!p.used && inReach(p, from) && (!p.needsFire || this.flameAt(u, from))) out.push({ kind: 'use', piece: p.id });
     out.push({ kind: 'defend' }, { kind: 'overwatch' }, { kind: 'block' }, { kind: 'social', verb: 'rally' }, { kind: 'social', verb: 'parley' });
     if (this.map.edge(from.x, from.z)) out.push({ kind: 'escape' });
+    // beasts bite, shove and howl — they don't kick barrels, light fires, pull levers or carry kits
+    if (u.tactic === 'beast') return out.filter((a) => !['kick', 'hew', 'pickup', 'throw', 'ignite', 'douse', 'use', 'item', 'grab', 'subdue', 'trip', 'disarm', 'hurl', 'social'].includes(a.kind) && !(a.kind === 'shove' && !this.get(a.target as Unit['id'])));
     return out;
   }
 
@@ -945,6 +992,9 @@ export class Battle {
       case 'item': this.useItem(u, a.item, t, a.at, fl); break;
       case 'wait': break;
     }
+    // giving yourself away: a strike, a throw — seen from anywhere in sight until your next turn
+    if (!['defend', 'overwatch', 'block', 'wait', 'ready', 'pickup', 'dash', 'escape', 'free', 'aid', 'guard'].includes(a.kind) && !(a.kind === 'item' && (a.item === 'bandage' || a.item === 'draught' || a.item === 'caltrops'))) this.revealed.add(u.id);
+    this.refreshSight();
     for (const [x, [pr, ex, st]] of before) {
       if (x.side === u.side) continue;
       if (x.prone && !pr) x.setBy.prone = u.id; if (!x.prone) delete x.setBy.prone;

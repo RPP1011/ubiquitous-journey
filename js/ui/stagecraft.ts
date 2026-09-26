@@ -53,10 +53,14 @@ export function battleStage(b: Battle, fx: BattleFX | null = null): void {
     if (a.faction === 'monster' && (a.fighter as { model?: unknown }).model) { try { dressAsWolf(a.fighter as never, wolfLook(a.name, u.tags.has('chief'))); } catch { /* visual only */ } }
     const shown = fx ? fx.view(u) : null;
     const gone = shown ? shown.gone : (u.out === 'dead' || u.out === 'fled' || u.out === 'yielded' || u.out === 'captured' || !a.alive);
-    if (gone) { set(a, null, null, true); continue; }
+    const root = (a.fighter as unknown as { root?: { visible: boolean } }).root;
+    // fog of war: a foe no one on your side can see isn't drawn
+    const unseen = u.side !== 'us' && u.out === null && !b.visibleTo('us', u);
+    if (root) root.visible = !unseen && !(shown && shown.gone);
+    if (gone || unseen) { set(a, null, null, true); continue; }
     const down = shown ? shown.down : u.out === 'downed';
     const ring = u === cur ? RING.cur : down ? RING.down : u.tags.has('captive') ? RING.captive : u.side === 'us' ? RING.us : RING.them;
-    const ic = icons(u);
+    const ic = icons(u) + (u.side === 'us' && u.out === null && !b.visibleTo('them', u) ? '🌫' : '');
     const name = (a.controlled ? 'You' : a.name) + (ic ? ` ${ic}` : '');
     const hp = shown ? shown.hp : Math.max(0, a.fighter.health);
     set(a, { name, hp: u.bound ? undefined : hp / 100, sub: u.bound ? 'bound' : undefined, color: u.side === 'us' ? '#cdf0d2' : '#f3c2ba' }, ring);

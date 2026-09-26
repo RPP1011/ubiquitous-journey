@@ -16,6 +16,8 @@ export interface SetLayout {
   h?: readonly string[];
   /** Tiles at or above this height turn to bare stone (a rocky tor). */
   rockyAbove?: number;
+  /** Fought at night or in deep gloom: sight is short except near a flame. */
+  dark?: boolean;
 }
 
 const rows = (n: number, r: string) => Array.from({ length: n }, () => r);
@@ -46,7 +48,7 @@ export const SETS: Record<string, SetLayout> = {
   // a palisaded camp on a rise; you come at it through the gate
   camp: {
     ground: [...rows(11, '#,,,,,,,,,,,,,,#'), '#######,,#######', ...rows(4, '.......,,.......')],
-    rockyAbove: 4,
+    rockyAbove: 4, dark: true,
   },
   // two roads cross at the well; a waystone at the corner; open fields all round
   crossroads: {
@@ -100,7 +102,7 @@ export const SETS: Record<string, SetLayout> = {
   // snow under a cliff; the den's mouth in the rock; a tor where she waits
   den: {
     ground: ['#######===######', '#######===######', ...rows(14, '****************')],
-    rockyAbove: 4,
+    rockyAbove: 4, dark: true,
   },
 };
 
