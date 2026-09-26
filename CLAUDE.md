@@ -102,6 +102,12 @@ npm/import-from-CDN; keep everything local and import-mapped.
 > the full as-built spec (except the design docs noted) — keep them updated when you change
 > architecture (not just tuning).
 
+> **The game (application layer): [`docs/architecture/22-app-layer.md`](docs/architecture/22-app-layer.md).**
+> `js/app/**` sits ON the engine and is never imported by it: `session.ts` (the one frame step + run
+> lifecycle), `tactics/` (grid battles, systemic environment, write-ins, tactical AI) and `run/` (quests,
+> companions who develop, the hub that hears about you). Run mode is the default page; `?sandbox`
+> keeps the old free-roam town, `?autoplay` plays runs, `?fresh` wipes the save.
+
 > **Post-refactor module layout (SRP).** The former god-objects were split into single-
 > responsibility modules — behavior moved, call sites unchanged (thin delegating methods):
 > - **Agent** = a thin state class (`js/sim/agent.js`) delegating to `js/sim/agent/{perception,

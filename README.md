@@ -10,6 +10,15 @@ fighter; everyone else forms beliefs about you, too.
 This ports the Theory-of-Mind design from the `extensive-sim-game` spec
 (`docs/spec/belief-primitive.md`, `engine.md`, etc.) into compact browser JS.
 
+## The game
+
+A run: talk to people in the market square, take a quest, pick up to three companions, fight
+three tactical battles in different parts of the world (click tiles, pick actions, or **write in**
+what you do — "kick the brazier into Garrick", "if anyone goes for Pip, shove them"), then come
+home and hear what the town says about you. Companions change with what happens to them and with
+what they watch you do; the town hears it second- and third-hand. Add `?fresh` to start over,
+`?autoplay` to watch it play itself, `?sandbox` for the old free-roam town.
+
 ## Run it
 
 No build step, no Node — serve over HTTP (ES modules + glTF need `http://`):
