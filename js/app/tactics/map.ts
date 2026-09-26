@@ -35,7 +35,7 @@ export interface Tile {
 
 export type PropKind =
   | 'crate' | 'barrel' | 'oil' | 'hay' | 'campfire' | 'brazier' | 'bucket' | 'flour' | 'rocks'
-  | 'table' | 'cart' | 'tree' | 'well' | 'log' | 'torch';
+  | 'table' | 'cart' | 'tree' | 'well' | 'log' | 'torch' | 'relic' | 'tent';
 
 export interface Prop {
   id: string;
@@ -71,6 +71,8 @@ const PROP_DEFS: Record<PropKind, Omit<Prop, 'id' | 'x' | 'z' | 'burning' | 'tip
   tree:     { kind: 'tree', name: 'a tree', nouns: ['tree', 'trunk', 'oak', 'pine'], hp: 60, weight: 2, cover: 1, blocks: true, climbable: false, flammable: true, fireSource: false, liquid: false, blinding: false },
   well:     { kind: 'well', name: 'the well', nouns: ['well'], hp: 99, weight: 2, cover: 1, blocks: true, climbable: false, flammable: false, fireSource: false, liquid: true, blinding: false },
   log:      { kind: 'log', name: 'a fallen log', nouns: ['log', 'branch', 'bough'], hp: 30, weight: 1, cover: 1, blocks: false, climbable: true, flammable: true, fireSource: false, liquid: false, blinding: false },
+  relic:    { kind: 'relic', name: 'the silver reliquary', nouns: ['relic', 'reliquary', 'silver', 'casket'], hp: 99, weight: 0, cover: 0, blocks: false, climbable: false, flammable: false, fireSource: false, liquid: false, blinding: false },
+  tent:     { kind: 'tent', name: 'a tent', nouns: ['tent', 'canvas', 'awning'], hp: 15, weight: 2, cover: 1, blocks: true, climbable: false, flammable: true, fireSource: false, liquid: false, blinding: false },
   torch:    { kind: 'torch', name: 'a torch', nouns: ['torch', 'brand'], hp: 5, weight: 0, cover: 0, blocks: false, climbable: false, flammable: false, fireSource: true, liquid: false, blinding: false },
 };
 

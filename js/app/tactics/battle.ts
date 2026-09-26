@@ -31,6 +31,22 @@ export type Role = 'player' | 'companion' | 'ally' | 'foe';
 export type Out = null | 'downed' | 'dead' | 'fled' | 'yielded' | 'captured';
 export type Outcome = 'victory' | 'defeat' | 'escaped' | 'truce' | 'arrested' | 'overpowered' | 'timeout';
 
+/** How a unit fights (drives AI positioning and choices). */
+export type Tactic = 'brute' | 'archer' | 'skirmisher' | 'leader' | 'beast' | 'guardian' | 'healer' | 'rogue' | 'civilian';
+
+/** A companion's developing temperament (0..1), read by the AI. */
+export interface Traits { bravery: number; compassion: number; loyalty: number; ruthlessness: number; }
+
+/** A structured record of what happened — fuel for companion growth and hub gossip. */
+export interface BattleEvent {
+  round: number;
+  kind: 'hit' | 'kill' | 'down' | 'revive' | 'flee' | 'escape' | 'ignite' | 'burned' | 'shove' | 'hazard' | 'social' | 'bluffed'
+    | 'grab' | 'yield' | 'parley' | 'heal' | 'guard' | 'reaction' | 'free' | 'rescued' | 'relic' | 'broken' | 'finish' | 'refuse';
+  actor?: Unit['id'];
+  target?: Unit['id'];
+  detail?: string;
+}
+
 export interface Unit {
   id: number | string;
   agent: Agent;
@@ -54,6 +70,10 @@ export interface Unit {
   bluffHeat: number;
   deathSaves: { ok: number; fail: number };
   loot: number;
+  tactic: Tactic;
+  traits: Traits | null;            // companions only
+  tags: Set<string>;                // 'captive' | 'chief' | 'civilian' | …
+  bound: boolean;                   // a captive in ropes: cannot act until freed
 }
 
 /** What a readied action waits for. */
@@ -82,6 +102,7 @@ export type Action =
   | { kind: 'grab'; target: Unit['id'] }
   | { kind: 'subdue'; target: Unit['id'] }
   | { kind: 'aid'; target: Unit['id'] }
+  | { kind: 'free'; target: Unit['id'] }                      // cut a captive's bonds
   | { kind: 'guard'; target: Unit['id'] }
   | { kind: 'social'; verb: SocialVerb; target?: Unit['id']; claim?: Claim; subject?: Unit['id'] }
   | { kind: 'ready'; trigger: Trigger; response: Action }
@@ -103,6 +124,9 @@ export class Battle {
   turn = 0;
   outcome: Outcome | null = null;
   log: LogLine[] = [];
+  events: BattleEvent[] = [];
+  /** What this fight is FOR (set by the scene): the AI and the run's objective check read these. */
+  goals: { rescue?: Unit['id']; retrieve?: string; chief?: Unit['id']; spareChief?: boolean } = {};
   highStakes = false;
   stakesReason = '';
   private objectives = new Map<Unit['id'], Objective>();
@@ -116,7 +140,7 @@ export class Battle {
   // ---- setup ----------------------------------------------------------------------------------
 
   /** Place an engine agent on the grid. Snaps its body to the tile. */
-  add(agent: Agent, role: Role, at: Spot): Unit {
+  add(agent: Agent, role: Role, at: Spot, extra: { tactic?: Tactic; traits?: Traits | null; tags?: string[]; bound?: boolean } = {}): Unit {
     const sheet = sheetOf(agent);
     const u: Unit = {
       id: agent.id, agent, side: role === 'foe' ? 'them' : 'us', role, sheet,
@@ -125,6 +149,8 @@ export class Battle {
       moved: false, acted: false, reacted: false,
       burning: 0, prone: false, exposed: false, defending: false, overwatch: false, stunned: false, slowed: 0, shield: 0,
       morale: 'steady', guardedBy: null, tauntedBy: null, turnedOn: null, lastHitBy: null, carrying: null, readied: null, surprised: false,
+      tactic: extra.tactic ?? (agent.faction === 'monster' ? 'beast' : role === 'foe' ? 'brute' : 'guardian'),
+      traits: extra.traits ?? null, tags: new Set(extra.tags ?? []), bound: !!extra.bound,
       readyRound: new Map(), bluffHeat: 0, deathSaves: { ok: 0, fail: 0 }, loot: 0,
     };
     agent._encounter = 1;
@@ -152,6 +178,13 @@ export class Battle {
   objectiveOf(u: Unit): Objective {
     if (u.role === 'player') return { kind: 'win', label: 'you' };
     let o = this.objectives.get(u.id);
+    if (!o && u.traits && u.role === 'companion') {
+      const pl = this.units.find((x) => x.role === 'player' && x.out !== 'dead');
+      o = u.morale === 'broken' || (u.traits.bravery < 0.3 && frac(u) < 0.35) ? { kind: 'survive', label: 'wants out alive' }
+        : pl && u.traits.loyalty >= 0.3 && (u.traits.compassion >= 0.5 || u.tactic === 'guardian' || u.tactic === 'healer') ? { kind: 'protect', wardId: pl.id, label: 'is watching your back' }
+        : { kind: 'win', label: u.traits.ruthlessness > 0.6 ? 'wants none of them walking away' : 'fights to win' };
+      this.objectives.set(u.id, o);
+    }
     if (!o) {
       const v = (x: Unit) => ({ id: x.id, name: x.agent.name, controlled: !!x.agent.controlled });
       o = u.morale === 'broken' ? { kind: 'survive', label: 'wants out alive' } : objectiveOf(u.agent, {
@@ -273,6 +306,7 @@ export class Battle {
   private startTurn(u: Unit): void {
     u.defending = false; u.overwatch = false; u.moved = false; u.acted = false;
     if (u.readied) { u.readied = null; }
+    if (u.bound) { u.moved = true; u.acted = true; return; }
     if (u.surprised) { u.surprised = false; u.moved = true; u.acted = true; this.note('info', `${this.nm(u, true)} ${u.agent.controlled ? 'are' : 'is'} caught off guard!`); return; }
     if (u.burning > 0) {
       this.wound(u.lastHitBy ?? u, u, 8, 'fire');
@@ -369,6 +403,7 @@ export class Battle {
       const legal = resp.kind === 'social' || this.options(w).some((o) => sameAction(o, resp));
       if (!legal) { this.note('miss', `${this.nm(w, true)} ${w.agent.controlled ? 'were' : 'was'} ready — but the moment slips past.`); continue; }
       this.note('info', `${this.nm(w, true)} ${w.agent.controlled ? 'spring' : 'springs'} into action!`);
+      this.ev('reaction', w, mover);
       const saved = { acted: w.acted };
       w.acted = false;
       this.performAs(w, resp, r.flourish);
@@ -489,7 +524,11 @@ export class Battle {
           { kind: 'social', verb: 'bluff', target: f.id, claim: 'look_behind' });
       }
     }
-    for (const f of [...friends, ...this.downed(u.side)]) if (this.adjacent(from, f)) out.push({ kind: 'aid', target: f.id }, ...(f.out === null ? [{ kind: 'guard', target: f.id } as Action] : []));
+    for (const f of [...friends, ...this.downed(u.side)]) {
+      if (!this.adjacent(from, f)) continue;
+      if (f.bound) { out.push({ kind: 'free', target: f.id }); continue; }
+      out.push({ kind: 'aid', target: f.id }, ...(f.out === null ? [{ kind: 'guard', target: f.id } as Action] : []));
+    }
     if (frac(u) < 1) out.push({ kind: 'aid', target: u.id });
     for (const p of this.map.props.values()) {
       const d = dist(from, p);
@@ -530,14 +569,19 @@ export class Battle {
       case 'throw': this.throwProp(u, this.map.props.get(a.prop) ?? u.carrying!, a.at, fl); break;
       case 'ignite': this.ignite(a.at.x, a.at.z, u, fl); break;
       case 'douse': this.douse(a.at.x, a.at.z, u); break;
-      case 'pickup': { const p = this.map.props.get(a.prop)!; u.carrying = p; this.map.removeProp(p); this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'pick' : 'picks'} up ${p.name}.`); u.acted = false; break; }
+      case 'pickup': { const p = this.map.props.get(a.prop)!; u.carrying = p; if (p.kind === 'relic') this.ev('relic', u); this.map.removeProp(p); this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'pick' : 'picks'} up ${p.name}.`); u.acted = false; break; }
       case 'grab': this.grab(u, t!); break;
       case 'subdue': this.subdue(u, t!); break;
       case 'aid': this.aid(u, t ?? u); break;
-      case 'guard': t!.guardedBy = u; this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'cover' : 'covers'} ${this.nm(t!)}.`); break;
+      case 'free':
+        if (t && t.bound) { t.bound = false; this.ev('free', u, t); this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'cut' : 'cuts'} ${this.nm(t)} free!`); }
+        break;
+      case 'guard': this.ev('guard', u, t); t!.guardedBy = u; this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'cover' : 'covers'} ${this.nm(t!)}.`); break;
       case 'defend': u.defending = true; this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'brace' : 'braces'}.`); break;
       case 'overwatch': u.overwatch = true; this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'hold' : 'holds'}, watching.`); break;
-      case 'escape': u.out = 'fled'; this.release(u); this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'slip' : 'slips'} away from the fight.`); break;
+      case 'escape':
+        u.out = 'fled'; this.release(u); this.ev(u.tags.has('captive') ? 'rescued' : 'escape', u, undefined, u.carrying?.kind);
+        this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'slip' : 'slips'} away from the fight${u.carrying ? ` with ${u.carrying.name}` : ''}.`); break;
       case 'social': this.social(u, a, t, fl); break;
       case 'wait': break;
     }
@@ -665,6 +709,7 @@ export class Battle {
     if (!r.ok || purse <= 0) { this.note('miss', `${this.nm(u, true)} ${u.agent.controlled ? 'grab' : 'grabs'} at ${t.agent.controlled ? 'your' : this.nm(t) + "'s"} purse and ${purse > 0 ? 'misses' : 'finds it empty'}.`); return; }
     const amt = Math.min(purse, Math.round(6 + u.sheet.finesse * 3 + rng() * 10));
     t.agent.gold -= amt; u.agent.gold = (u.agent.gold || 0) + amt; u.loot += amt;   // a transfer, never a mint
+    this.ev('grab', u, t, String(amt));
     this.note('social', `${this.nm(u, true)} ${u.agent.controlled ? 'cut' : 'cuts'} ${t.agent.controlled ? 'your' : this.nm(t) + "'s"} purse — ${amt} gold.`);
   }
 
@@ -680,8 +725,14 @@ export class Battle {
 
   private yieldTo(u: Unit, t: Unit): void {
     t.out = 'yielded'; this.release(t);
+    this.ev('yield', u, t);
     t.agent.fighter.health = Math.max(t.agent.fighter.health, 10);
     this.note('social', `${this.nm(t, true)} ${t.agent.controlled ? 'are' : 'is'} beaten down and ${t.agent.controlled ? 'yield' : 'yields'} to ${this.nm(u)}.`);
+    if (t.role === 'player' && this.active().some((x) => x.side === 'us' && x !== t && !x.tags.has('captive'))) {
+      t.out = 'downed'; t.agent.fighter.health = 0.5;
+      this.note('info', 'You go down under the blows — your companions fight on.');
+      return;
+    }
     if (t.role === 'player') {
       const o = this.objectiveOf(u);
       if (o.kind === 'enforce') this.outcome = 'arrested';
@@ -697,7 +748,7 @@ export class Battle {
   private aid(u: Unit, w: Unit): void {
     const inv = u.agent.inventory as Record<string, number> | undefined;
     if (w.out === 'downed') {
-      if (check(u.sheet.finesse, 10).ok) { w.out = null; w.deathSaves = { ok: 0, fail: 0 }; w.agent.fighter.health = 15 + u.sheet.finesse * 3; this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'haul' : 'hauls'} ${this.nm(w)} back up.`); }
+      if (check(u.sheet.finesse, 10).ok) { this.ev('revive', u, w); w.out = null; w.deathSaves = { ok: 0, fail: 0 }; w.agent.fighter.health = 15 + u.sheet.finesse * 3; this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'haul' : 'hauls'} ${this.nm(w)} back up.`); }
       else this.note('miss', `${this.nm(u, true)} can't rouse ${this.nm(w)}.`);
       return;
     }
@@ -719,6 +770,7 @@ export class Battle {
       }
       case 'rally': return { p: chance(u.sheet.presence, 12), notes: [] };
       case 'parley': {
+        if (u.side === 'us' && u.role !== 'player') return { p: 0, notes: ['only you can speak for the company'] };
         const foes = this.foesOf(u);
         const lead = foes.reduce((m, f) => Math.max(m, f.sheet.nerve), 0);
         const mood = foes.reduce((s, f) => s + (f.agent.beliefs.get(u.id)?.standing || 0), 0) / Math.max(1, foes.length);
@@ -731,6 +783,7 @@ export class Battle {
 
   private social(u: Unit, a: Extract<Action, { kind: 'social' }>, t: Unit | undefined, fl: string): void {
     const ok = rng() < this.socialOdds(u, a, t).p;
+    this.ev(ok ? 'social' : 'bluffed', u, t, a.verb);
     const who = this.nm(u, true);
     switch (a.verb) {
       case 'intimidate':
@@ -768,10 +821,14 @@ export class Battle {
         else this.note('miss', `${who} ${u.agent.controlled ? 'call' : 'calls'} out; no one answers.`);
         return;
       case 'parley':
-        if (ok) {
-          for (const f of this.foesOf(u)) { const b = f.agent.beliefs.get(u.id); if (b) { b.hostile = false; b.standing = Math.max(b.standing, -0.3); } f.out = 'yielded'; this.release(f); }
+        if (ok && u.side === 'them') {
+          // a beaten side sues for terms: its fighters lay down arms
+          for (const f of this.active().filter((x) => x.side === 'them')) { f.out = 'yielded'; this.release(f); this.ev('yield', u, f, 'surrender'); }
+          this.note('social', `${who} throws down their weapon and begs for terms${fl}. ${u.tags.has('chief') ? 'The band surrenders.' : ''}`);
+        } else if (ok) {
+          for (const f of this.foesOf(u)) { const b = f.agent.beliefs.get(u.id); if (b) { b.hostile = false; b.standing = Math.max(b.standing, -0.3); } f.out = 'yielded'; this.release(f); this.ev('parley', u, f); }
           this.note('social', `${who} ${u.agent.controlled ? 'talk' : 'talks'} them down${fl}. Weapons lower.`);
-          if (u.side === 'us') this.outcome = 'truce';
+          this.outcome = 'truce';
         } else this.note('miss', `${who} ${u.agent.controlled ? 'try' : 'tries'} to parley; no one is listening.`);
         return;
     }
@@ -815,6 +872,7 @@ export class Battle {
     }
     const u = this.unitAt(x, z);
     if (u && u.burning === 0) { u.burning = 2; if (by) u.lastHitBy = by; }
+    if (by) this.ev('ignite', by, u, p?.kind ?? 'ground');
     if (!silent && by) this.note('env', `${this.nm(by, true)} ${by.agent.controlled ? 'set' : 'sets'} ${p ? p.name : 'the ground'} alight${fl}.`);
   }
 
@@ -878,8 +936,9 @@ export class Battle {
       }
       const drop = hereH - this.map.standH(nx, nz);
       t.x = nx; t.z = nz; this.place(t);
-      if (drop > FALL_SAFE) { this.wound(by, t, (drop - FALL_SAFE) * 7, 'fall'); t.prone = true; this.note('env', `${this.nm(t, true)} ${t.agent.controlled ? 'tumble' : 'tumbles'} off the ledge!`); }
+      if (drop > FALL_SAFE) { this.ev('hazard', by, t, 'ledge'); this.wound(by, t, (drop - FALL_SAFE) * 7, 'fall'); t.prone = true; this.note('env', `${this.nm(t, true)} ${t.agent.controlled ? 'tumble' : 'tumbles'} off the ledge!`); }
       this.enterTile(t);
+      if (tile.burning > 0 || this.map.propAt(nx, nz)?.fireSource) this.ev('hazard', by, t, 'fire');
       if (tile.burning === 0 && this.map.propAt(nx, nz)?.fireSource) { t.burning = 2; this.note('env', `${this.nm(t, true)} ${t.agent.controlled ? 'land' : 'lands'} in the fire!`); }
       if (t.out !== null) return;
       if (tile.burning > 0 || this.map.propAt(nx, nz)?.fireSource || tile.ground === 'water') return;   // fire and water stop a stumble
@@ -915,12 +974,17 @@ export class Battle {
     if (t.side === 'us' && dmg >= f.health && this.active().some((o) => o.side === 'us' && o !== t)) {
       f.health = 0.5; t.out = 'downed'; t.burning = 0;
       this.fold(by, t, 'hit');
+      this.ev('down', by, t, _how);
       this.note('info', `${this.nm(t, true)} ${t.agent.controlled ? 'go' : 'goes'} down!`);
       return 'hit';
     }
     const res = f.takeHit(dmg, 'DOWN');
     this.fold(by, t, res);
-    if (res === 'dead' || !t.agent.alive) { t.out = t.agent._held ? 'captured' : 'dead'; this.release(t); return 'dead'; }
+    if (res === 'dead' || !t.agent.alive) {
+      this.ev(t.morale === 'broken' ? 'finish' : 'kill', by, t, _how);
+      t.out = t.agent._held ? 'captured' : 'dead'; this.release(t); return 'dead';
+    }
+    if (res === 'hit') this.ev('hit', by, t, _how);
     if (t.agent._held) { t.out = 'captured'; this.release(t); }
     return res;
   }
@@ -951,8 +1015,10 @@ export class Battle {
     for (const u of this.active()) {
       if (u.role === 'player') continue;
       if (!(frac(u) < 0.35 || u.morale !== 'steady' || lost(u.side) >= 0.5 || u.burning > 0)) continue;
-      if (check(u.sheet.nerve, 11 + (u.morale === 'shaken' ? 2 : 0) + (u.morale === 'broken' ? 20 : 0)).ok) continue;
+      const grit = u.traits ? Math.round((u.traits.bravery - 0.5) * 8) : 0;   // a companion's bravery steadies (or fails) them
+      if (check(u.sheet.nerve + grit, 11 + (u.morale === 'shaken' ? 2 : 0) + (u.morale === 'broken' ? 20 : 0)).ok) continue;
       u.morale = 'broken';
+      this.ev('broken', u);
       this.objectives.delete(u.id);
       this.note('social', `${this.nm(u, true)}'s nerve breaks!`);
     }
@@ -979,7 +1045,7 @@ export class Battle {
   private checkEnd(): boolean {
     if (this.outcome) { this.finish(); return true; }
     const p = this.units.find((u) => u.role === 'player');
-    const us = this.active().filter((u) => u.side === 'us'), them = this.active().filter((u) => u.side === 'them');
+    const us = this.active().filter((u) => u.side === 'us' && !u.tags.has('captive')), them = this.active().filter((u) => u.side === 'them');
     if (p && (!p.agent.alive || p.out === 'dead')) this.outcome = 'defeat';
     else if (p && p.out === 'fled') this.outcome = 'escaped';
     else if (!them.length) this.outcome = 'victory';
@@ -1040,6 +1106,9 @@ export class Battle {
   }
   nm(u: Unit, capital = false): string { const s = u.agent.controlled ? 'you' : u.agent.name; return capital ? cap(s) : s; }
   private roster(side: Side): string { const xs = this.active().filter((u) => u.side === side).map((u) => this.nm(u)); return xs.length ? cap(xs.join(', ')) : 'no one'; }
+  ev(kind: BattleEvent['kind'], actor?: Unit, target?: Unit, detail?: string): void {
+    this.events.push({ round: this.round, kind, actor: actor?.id, target: target?.id, detail });
+  }
   note(kind: LogLine['kind'], text: string): void { this.log.push({ round: this.round, kind, text }); if (this.log.length > 300) this.log.splice(0, 100); }
 }
 
