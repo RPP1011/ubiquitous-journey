@@ -6,7 +6,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 29,
+   "passes": 35,
    "strategies": [
     "make cover",
     "deny the archer her perch",
@@ -19,17 +19,23 @@
   "barricade": {
    "capability": "barricade",
    "status": "open",
-   "kind": "unsupported",
-   "demand": 24,
+   "kind": "mixed",
+   "demand": 27,
    "passes": 0,
    "strategies": [
-    "make cover"
+    "make cover",
+    "Hold rubble position"
    ],
    "examples": [
     {
      "text": "build a barricade out of the crates",
      "stage": "the Old Road",
      "outcome": "refused: the rules don't cover building yet"
+    },
+    {
+     "text": "Use the fallen stone and timber, hold the line here",
+     "stage": "plans",
+     "outcome": "misread as Block Wick [block]"
     }
    ],
    "firstSeen": "2026-09-26",
@@ -56,16 +62,18 @@
   },
   "take-cover": {
    "capability": "take-cover",
-   "status": "supported",
+   "status": "open",
    "kind": "mixed",
-   "demand": 10,
-   "passes": 23,
+   "demand": 12,
+   "passes": 30,
    "strategies": [
     "make cover",
     "reposition-defense",
     "fortify",
     "fortify-with-table",
-    "cover"
+    "cover",
+    "react to archer threat",
+    "grab the objective"
    ],
    "examples": [
     {
@@ -82,6 +90,11 @@
      "text": "Take cover at the trestle table near the reliquary.",
      "stage": "plans",
      "outcome": "misread as Brace [defend]"
+    },
+    {
+     "text": "Nell's up north—if she has a clear shot, I duck behind the cart and ready my shield",
+     "stage": "plans",
+     "outcome": "misread as Overwatch (after moving) [overwatch]"
     }
    ],
    "firstSeen": "2026-09-26",
@@ -110,17 +123,29 @@
    "capability": "high-ground",
    "status": "open",
    "kind": "misread",
-   "demand": 1,
+   "demand": 5,
    "passes": 30,
    "strategies": [
     "take position",
-    "take the high ground"
+    "take the high ground",
+    "Anchor to defensible cover",
+    "anchor position on high ground"
    ],
    "examples": [
     {
      "text": "charge up the rise at Garrick the Red",
      "stage": "Blackthorn Camp",
      "outcome": "misread as Move and brace (after moving) [defend]"
+    },
+    {
+     "text": "get behind the fallen log with Borin, make it our line",
+     "stage": "plans",
+     "outcome": "misread as Move and brace (after moving) [defend]"
+    },
+    {
+     "text": "Everyone, move to the elevated tor — we hold the high ground and they come uphill to meet us",
+     "stage": "plans",
+     "outcome": "misread as Block Pale wolf [block]"
     }
    ],
    "firstSeen": "2026-09-26",
@@ -130,8 +155,8 @@
    "capability": "block-path",
    "status": "open",
    "kind": "mixed",
-   "demand": 78,
-   "passes": 74,
+   "demand": 112,
+   "passes": 113,
    "strategies": [
     "deny ground",
     "cut off escape",
@@ -149,7 +174,18 @@
     "Borin blocks the big guy",
     "Borin holds Big Aud",
     "Borin circles",
-    "Borin holds the line"
+    "Borin holds the line",
+    "deny left flank and block skirmisher",
+    "separate alpha from smaller pack",
+    "Maintain line against next wolf",
+    "take position",
+    "scatter and regroup",
+    "wedge formation",
+    "rally to the fold",
+    "steady pressure",
+    "cut off brute support with terrain",
+    "hold the center",
+    "establish healer sanctuary"
    ],
    "examples": [
     {
@@ -209,12 +245,13 @@
    "capability": "trip",
    "status": "open",
    "kind": "mixed",
-   "demand": 45,
-   "passes": 8,
+   "demand": 48,
+   "passes": 11,
    "strategies": [
     "melee craft",
     "trip the brute",
-    "control-advance"
+    "control-advance",
+    "Trip the brute mid-charge"
    ],
    "examples": [
     {
@@ -254,11 +291,12 @@
   "disarm": {
    "capability": "disarm",
    "status": "open",
-   "kind": "unsupported",
-   "demand": 28,
+   "kind": "mixed",
+   "demand": 29,
    "passes": 8,
    "strategies": [
-    "melee craft"
+    "melee craft",
+    "Disarm her weapon"
    ],
    "examples": [
     {
@@ -299,7 +337,7 @@
    "capability": "throw-weapon",
    "status": "open",
    "kind": "unsupported",
-   "demand": 57,
+   "demand": 63,
    "passes": 1,
    "strategies": [
     "melee craft",
@@ -345,8 +383,8 @@
    "capability": "ready-strike",
    "status": "open",
    "kind": "mixed",
-   "demand": 41,
-   "passes": 182,
+   "demand": 62,
+   "passes": 248,
    "strategies": [
     "melee craft",
     "overwatch",
@@ -380,7 +418,12 @@
     "Pip distracts a smaller wolf",
     "Pip moves to flank",
     "Pip attacks and moves",
-    "ready-aid"
+    "ready-aid",
+    "ready for trouble",
+    "ready for the counterattack",
+    "ready for escape",
+    "ready reaction",
+    "secondary fire barrier"
    ],
    "examples": [
     {
@@ -419,10 +462,10 @@
   },
   "demand-surrender": {
    "capability": "demand-surrender",
-   "status": "open",
+   "status": "supported",
    "kind": "unsupported",
-   "demand": 1,
-   "passes": 67,
+   "demand": 2,
+   "passes": 75,
    "strategies": [
     "talk",
     "take him alive",
@@ -444,7 +487,7 @@
    "status": "supported",
    "kind": "mixed",
    "demand": 36,
-   "passes": 21,
+   "passes": 27,
    "strategies": [
     "talk",
     "buy the captive",
@@ -489,7 +532,7 @@
    "capability": "turncoat",
    "status": "open",
    "kind": "unsupported",
-   "demand": 20,
+   "demand": 26,
    "passes": 36,
    "strategies": [
     "talk",
@@ -516,7 +559,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 47,
+   "passes": 50,
    "strategies": [
     "talk",
     "deceive"
@@ -529,8 +572,8 @@
    "capability": "intimidate",
    "status": "open",
    "kind": "mixed",
-   "demand": 31,
-   "passes": 62,
+   "demand": 38,
+   "passes": 72,
    "strategies": [
     "talk",
     "make them panic",
@@ -575,8 +618,8 @@
    "capability": "guard-ally",
    "status": "open",
    "kind": "mixed",
-   "demand": 81,
-   "passes": 211,
+   "demand": 116,
+   "passes": 296,
    "strategies": [
     "look after the company",
     "protect the healer",
@@ -608,7 +651,19 @@
     "Maud supports from back",
     "Maud watches for openings",
     "protect healer",
-    "block one escape route"
+    "block one escape route",
+    "protect healer in the melee",
+    "Announce coordination for follow-through",
+    "Announce follow-up",
+    "Call for immediate follow-through",
+    "Call for coordinated focus",
+    "Coordinate escort through hazard",
+    "set up secondary defense",
+    "manage resources",
+    "flank defense",
+    "position healer safe from ambush",
+    "maintain healer's safety in melee",
+    "Call coordinated finish"
    ],
    "examples": [
     {
@@ -649,7 +704,7 @@
    "capability": "drag-ally",
    "status": "open",
    "kind": "mixed",
-   "demand": 46,
+   "demand": 49,
    "passes": 0,
    "strategies": [
     "look after the company",
@@ -674,8 +729,8 @@
    "capability": "give-item",
    "status": "open",
    "kind": "mixed",
-   "demand": 14,
-   "passes": 42,
+   "demand": 17,
+   "passes": 45,
    "strategies": [
     "look after the company",
     "arm the captive",
@@ -743,8 +798,8 @@
    "capability": "hide",
    "status": "open",
    "kind": "mixed",
-   "demand": 51,
-   "passes": 6,
+   "demand": 54,
+   "passes": 9,
    "strategies": [
     "stealth",
     "hide in the trees and ambush the ambushers",
@@ -780,7 +835,7 @@
    "capability": "disguise",
    "status": "open",
    "kind": "unsupported",
-   "demand": 47,
+   "demand": 50,
    "passes": 0,
    "strategies": [
     "stealth",
@@ -806,7 +861,7 @@
    "status": "supported",
    "kind": "misread",
    "demand": 1,
-   "passes": 8,
+   "passes": 11,
    "strategies": [
     "make cover",
     "block the archer's line",
@@ -824,17 +879,27 @@
   },
   "flank": {
    "capability": "flank",
-   "status": "supported",
+   "status": "open",
    "kind": "mixed",
-   "demand": 18,
-   "passes": 16,
+   "demand": 39,
+   "passes": 34,
    "strategies": [
     "take position",
     "move with the rogue",
     "aggressive-advance",
     "disrupt-skirmisher",
     "flank-wolves",
-    "aggressive-flank"
+    "aggressive-flank",
+    "outflank the archer from high ground",
+    "exploit separated position",
+    "exploit flanking opportunity from height",
+    "Press advantage toward Garrick",
+    "Coordinate pincer attack",
+    "Turn on next target",
+    "Spring ambush on archer",
+    "Reposition against Big Aud",
+    "Announce coordinated strike",
+    "Keep momentum"
    ],
    "examples": [
     {
@@ -851,6 +916,21 @@
      "text": "Pip, move around to the sides and strike the wolves to keep them off us",
      "stage": "plans",
      "outcome": "misread as Block Pale wolf from reaching you (after moving) [block]"
+    },
+    {
+     "text": "Pip and Borin, when Grist is isolated, pin him between us — don't let him break and rally",
+     "stage": "plans",
+     "outcome": "misread as 📣 Ask Pip and Borin: subdue grist [subdue]"
+    },
+    {
+     "text": "Pip, from your high position, watch for any wolf trying to outflank us around the rocks — hit them hard",
+     "stage": "plans",
+     "outcome": "misread as 📣 Ask Pip: overwatch [overwatch]"
+    },
+    {
+     "text": "move up the rise toward Garrick while Pip's on Brann",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
     }
    ],
    "firstSeen": "2026-09-26",
@@ -861,7 +941,7 @@
    "status": "supported",
    "kind": "misread",
    "demand": 5,
-   "passes": 14,
+   "passes": 17,
    "strategies": [
     "make cover",
     "cover the rescue"
@@ -905,7 +985,7 @@
    "capability": "carry-person",
    "status": "open",
    "kind": "unsupported",
-   "demand": 14,
+   "demand": 17,
    "passes": 0,
    "strategies": [
     "rescue",
@@ -930,7 +1010,7 @@
    "capability": "escort",
    "status": "open",
    "kind": "unsupported",
-   "demand": 20,
+   "demand": 26,
    "passes": 4,
    "strategies": [
     "rescue",
@@ -967,10 +1047,10 @@
   },
   "shove-hazard": {
    "capability": "shove-hazard",
-   "status": "supported",
-   "kind": "unsupported",
-   "demand": 0,
-   "passes": 66,
+   "status": "open",
+   "kind": "mixed",
+   "demand": 6,
+   "passes": 90,
    "strategies": [
     "melee craft",
     "push brute into obstacle",
@@ -978,9 +1058,26 @@
     "fire",
     "shove-flanker",
     "Use terrain as a club",
-    "Second wolf"
+    "Second wolf",
+    "trigger avalanche on Grey Mother",
+    "punish overreach",
+    "shove the skirmisher",
+    "drive them off",
+    "crush resistance in close combat",
+    "herd them north"
    ],
-   "examples": [],
+   "examples": [
+    {
+     "text": "Once Mother charges in, bring down the snow cornice from above — bury her and anything else in the den",
+     "stage": "plans",
+     "outcome": "refused: the rules don't cover digging yet"
+    },
+    {
+     "text": "Dace will try to intercept Pip—I shove him into the brazier, he's out for a moment",
+     "stage": "plans",
+     "outcome": "misread as Block Dace from reaching Pip Marrow (after moving) [block]"
+    }
+   ],
    "firstSeen": "2026-09-26",
    "lastSeen": "2026-09-26"
   },
@@ -1008,8 +1105,8 @@
    "capability": "throw-fire",
    "status": "open",
    "kind": "misread",
-   "demand": 23,
-   "passes": 13,
+   "demand": 26,
+   "passes": 16,
    "strategies": [
     "use fire",
     "fire",
@@ -1049,8 +1146,8 @@
    "capability": "scare-with-fire",
    "status": "open",
    "kind": "misread",
-   "demand": 30,
-   "passes": 67,
+   "demand": 39,
+   "passes": 86,
    "strategies": [
     "beasts",
     "fire scares wolves",
@@ -1104,8 +1201,8 @@
    "capability": "distract-animals",
    "status": "open",
    "kind": "mixed",
-   "demand": 10,
-   "passes": 4,
+   "demand": 13,
+   "passes": 7,
    "strategies": [
     "beasts",
     "Use the torch to threaten and guide wolf movement.",
@@ -1130,8 +1227,8 @@
    "capability": "howl-down",
    "status": "open",
    "kind": "mixed",
-   "demand": 10,
-   "passes": 45,
+   "demand": 13,
+   "passes": 54,
    "strategies": [
     "beasts",
     "noise",
@@ -1158,7 +1255,7 @@
    "capability": "climb-prop",
    "status": "open",
    "kind": "misread",
-   "demand": 11,
+   "demand": 14,
    "passes": 3,
    "strategies": [
     "take position",
@@ -1179,7 +1276,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 11,
+   "passes": 14,
    "strategies": [
     "put out fire near captive"
    ],
@@ -1191,7 +1288,7 @@
    "capability": "use-rope",
    "status": "open",
    "kind": "mixed",
-   "demand": 11,
+   "demand": 14,
    "passes": 0,
    "strategies": [
     "rope the chief"
@@ -1211,7 +1308,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 12,
-   "passes": 6,
+   "passes": 12,
    "strategies": [
     "heal before assault",
     "heal"
@@ -1248,7 +1345,7 @@
    "capability": "grab",
    "status": "open",
    "kind": "mixed",
-   "demand": 9,
+   "demand": 13,
    "passes": 4,
    "strategies": [
     "stop the runner",
@@ -1273,7 +1370,7 @@
    "capability": "interrogate",
    "status": "open",
    "kind": "unsupported",
-   "demand": 10,
+   "demand": 13,
    "passes": 7,
    "strategies": [
     "take a prisoner for info",
@@ -1311,9 +1408,9 @@
   "suppress": {
    "capability": "suppress",
    "status": "open",
-   "kind": "unsupported",
-   "demand": 40,
-   "passes": 13,
+   "kind": "mixed",
+   "demand": 50,
+   "passes": 16,
    "strategies": [
     "archer suppression",
     "shut down the archer",
@@ -1347,6 +1444,11 @@
      "text": "Keep the Torn-ear wolf suppressed while we deal with the Pale wolf",
      "stage": "plans",
      "outcome": "refused: the GM couldn't turn that into an action"
+    },
+    {
+     "text": "Pip and I hold the flanks and keep the wolves suppressed",
+     "stage": "plans",
+     "outcome": "misread as Block Pale wolf from reaching Pip Marrow (after moving) [block]"
     }
    ],
    "firstSeen": "2026-09-26",
@@ -1357,7 +1459,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 11,
+   "passes": 14,
    "strategies": [
     "lure"
    ],
@@ -1370,7 +1472,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 59,
+   "passes": 77,
    "strategies": [
     "fire ring",
     "Use it to ignite logs",
@@ -1378,7 +1480,9 @@
     "Secondary barrier",
     "Create a fire line",
     "Expand with hay",
-    "make fire bigger"
+    "make fire bigger",
+    "ignite central prop for control and damage",
+    "ignite lamp oil for area denial"
    ],
    "examples": [],
    "firstSeen": "2026-09-26",
@@ -1388,8 +1492,8 @@
    "capability": "focus-fire",
    "status": "open",
    "kind": "mixed",
-   "demand": 95,
-   "passes": 19,
+   "demand": 135,
+   "passes": 36,
    "strategies": [
     "cull the weak",
     "Focus fire on the weakest link.",
@@ -1404,7 +1508,16 @@
     "boss-focus",
     "maintain-assault",
     "focus the weak wolf",
-    "kill the mother"
+    "kill the mother",
+    "suppress ranged threat immediately",
+    "seal the breach and mop up",
+    "focus fire on priority target",
+    "pursue scattered survivors",
+    "pressure lead wolf to keep momentum",
+    "lock down the brute",
+    "finish isolated foes",
+    "coordinated pressure",
+    "finish wounded"
    ],
    "examples": [
     {
@@ -1444,17 +1557,23 @@
   "trap": {
    "capability": "trap",
    "status": "open",
-   "kind": "unsupported",
-   "demand": 7,
+   "kind": "mixed",
+   "demand": 11,
    "passes": 0,
    "strategies": [
-    "trap"
+    "trap",
+    "Set up trap zone"
    ],
    "examples": [
     {
      "text": "set a snare between the trees for the Grey wolf",
      "stage": "Hollow Wood",
      "outcome": "refused: the rules don't cover traps yet"
+    },
+    {
+     "text": "get to the deadfall at the post, wait for the pack to commit",
+     "stage": "plans",
+     "outcome": "misread as Overwatch [overwatch]"
     }
    ],
    "firstSeen": "2026-09-26",
@@ -1465,7 +1584,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 11,
+   "passes": 14,
    "strategies": [
     "barrel roll"
    ],
@@ -1478,7 +1597,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 11,
+   "passes": 14,
    "strategies": [
     "brace for charge"
    ],
@@ -1491,7 +1610,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 10,
+   "passes": 13,
    "strategies": [
     "duel"
    ],
@@ -1501,14 +1620,24 @@
   },
   "taunt": {
    "capability": "taunt",
-   "status": "supported",
+   "status": "open",
    "kind": "unsupported",
-   "demand": 0,
-   "passes": 10,
+   "demand": 3,
+   "passes": 22,
    "strategies": [
-    "draw-aggro"
+    "draw-aggro",
+    "Draw melee brute toward me",
+    "Draw charge by moving threateningly",
+    "Bait charging wolf",
+    "Bait wolf into pincer zone"
    ],
-   "examples": [],
+   "examples": [
+    {
+     "text": "lead Old wolf between me and Borin",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    }
+   ],
    "firstSeen": "2026-09-26",
    "lastSeen": "2026-09-26"
   },
@@ -1535,7 +1664,7 @@
    "capability": "break-contact",
    "status": "open",
    "kind": "mixed",
-   "demand": 12,
+   "demand": 15,
    "passes": 0,
    "strategies": [
     "Flee through the smoke",
@@ -1566,7 +1695,7 @@
    "capability": "carry-away",
    "status": "open",
    "kind": "mixed",
-   "demand": 11,
+   "demand": 14,
    "passes": 0,
    "strategies": [
     "Carry and escape through the flames",
@@ -1592,7 +1721,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 10,
+   "passes": 13,
    "strategies": [
     "Take the torch"
    ],
@@ -1604,7 +1733,7 @@
    "capability": "command-ally",
    "status": "open",
    "kind": "misread",
-   "demand": 2,
+   "demand": 5,
    "passes": 2,
    "strategies": [
     "Rally companion",
@@ -1625,7 +1754,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 10,
+   "passes": 13,
    "strategies": [
     "Chase to the edge"
    ],
@@ -1637,8 +1766,8 @@
    "capability": "dash",
    "status": "open",
    "kind": "mixed",
-   "demand": 57,
-   "passes": 6,
+   "demand": 78,
+   "passes": 9,
    "strategies": [
     "move straight to the chief",
     "move to Garrick while distracted",
@@ -1646,7 +1775,9 @@
     "continue through",
     "tackle the Gaunt wolf",
     "finish and chase the other",
-    "drive forward"
+    "drive forward",
+    "Close distance to force engagement",
+    "Move to next target"
    ],
    "examples": [
     {
@@ -1687,7 +1818,7 @@
    "capability": "escape",
    "status": "open",
    "kind": "mixed",
-   "demand": 32,
+   "demand": 39,
    "passes": 0,
    "strategies": [
     "run for freedom",
@@ -1730,8 +1861,8 @@
    "capability": "subdue",
    "status": "open",
    "kind": "mixed",
-   "demand": 12,
-   "passes": 6,
+   "demand": 15,
+   "passes": 12,
    "strategies": [
     "Subdue Jory and make him face reality.",
     "If Aud refuses, subdue him before Tamsin can support.",
@@ -1756,7 +1887,7 @@
    "capability": "dodge",
    "status": "open",
    "kind": "mixed",
-   "demand": 10,
+   "demand": 13,
    "passes": 0,
    "strategies": [
     "reactive-defense"
@@ -1813,7 +1944,7 @@
    "capability": "shield-wall",
    "status": "open",
    "kind": "unsupported",
-   "demand": 10,
+   "demand": 13,
    "passes": 0,
    "strategies": [
     "shielded advance"
@@ -1833,7 +1964,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 10,
+   "passes": 13,
    "strategies": [
     "burning barrier"
    ],
@@ -1859,7 +1990,208 @@
    ],
    "firstSeen": "2026-09-26",
    "lastSeen": "2026-09-26"
+  },
+  "follow-through": {
+   "capability": "follow-through",
+   "status": "open",
+   "kind": "misread",
+   "demand": 6,
+   "passes": 0,
+   "strategies": [
+    "press wounded enemy while advantage holds",
+    "finish weakened target relentlessly"
+   ],
+   "examples": [
+    {
+     "text": "If any of them are rattled or slowed, I push hard before they rally",
+     "stage": "plans",
+     "outcome": "misread as Rally [social]"
+    },
+    {
+     "text": "When Mother staggers, I drive the blade home — finish this before her packmates can save her",
+     "stage": "plans",
+     "outcome": "misread as Intimidate the Grey Mother [social]"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "extract-ally": {
+   "capability": "extract-ally",
+   "status": "open",
+   "kind": "unsupported",
+   "demand": 3,
+   "passes": 3,
+   "strategies": [
+    "Free the captive",
+    "Cut bonds in chaos"
+   ],
+   "examples": [
+    {
+     "text": "Cut her loose, fast",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "guard-formation": {
+   "capability": "guard-formation",
+   "status": "open",
+   "kind": "unsupported",
+   "demand": 3,
+   "passes": 0,
+   "strategies": [
+    "Defensive group formation"
+   ],
+   "examples": [
+    {
+     "text": "Get around her on both sides, shield her from attacks",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "use-bell": {
+   "capability": "use-bell",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 6,
+   "strategies": [
+    "Prepare the trap",
+    "Ready the first trap"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "escape-with-goal": {
+   "capability": "escape-with-goal",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 3,
+   "strategies": [
+    "Escape west"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "use-environment": {
+   "capability": "use-environment",
+   "status": "open",
+   "kind": "misread",
+   "demand": 2,
+   "passes": 1,
+   "strategies": [
+    "Use created obstacle"
+   ],
+   "examples": [
+    {
+     "text": "The fallen pillar blocks their advance—hold here",
+     "stage": "plans",
+     "outcome": "misread as Overwatch [overwatch]"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "carry-relic": {
+   "capability": "carry-relic",
+   "status": "open",
+   "kind": "unsupported",
+   "demand": 3,
+   "passes": 0,
+   "strategies": [
+    "Carry the goal"
+   ],
+   "examples": [
+    {
+     "text": "I've got it, moving out fast with it",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "guard-fold": {
+   "capability": "guard-fold",
+   "status": "open",
+   "kind": "misread",
+   "demand": 2,
+   "passes": 0,
+   "strategies": [
+    "Hold the perimeter"
+   ],
+   "examples": [
+    {
+     "text": "Borin, hold the fold wall, keep them from breaking back in",
+     "stage": "plans",
+     "outcome": "misread as 📣 Ask Borin: heave the fold wall over [use]"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "drive-off-pack": {
+   "capability": "drive-off-pack",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 9,
+   "strategies": [
+    "Final push",
+    "Finish the pack",
+    "Decisive final push"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "prepare-defense": {
+   "capability": "prepare-defense",
+   "status": "open",
+   "kind": "misread",
+   "demand": 3,
+   "passes": 0,
+   "strategies": [
+    "Prepare multi-trap setup"
+   ],
+   "examples": [
+    {
+     "text": "Everyone positions: I'll hit the wall, Pip lights the gorse",
+     "stage": "plans",
+     "outcome": "misread as 📣 Ask everyone: attack → young wolf [attack]"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "herd-wolves": {
+   "capability": "herd-wolves",
+   "status": "open",
+   "kind": "misread",
+   "demand": 3,
+   "passes": 0,
+   "strategies": [
+    "Coordinate pack harassment"
+   ],
+   "examples": [
+    {
+     "text": "Borin, keep them from breaking through the gap—push hard",
+     "stage": "plans",
+     "outcome": "misread as 📣 Ask Borin: shove young wolf [shove]"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
   }
  },
- "runs": 20
+ "runs": 23
 }

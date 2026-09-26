@@ -1,0 +1,149 @@
+{
+  "persona": "saboteur",
+  "plans": [
+    {
+      "goal": "Ring the chapel bell to stun all enemies within range, then grab the reliquary unopposed",
+      "steps": [
+        "Send Pip north to the bell-rope on the chapel's far wall",
+        "Ring the bell to rattle and stun all foes within 7 tiles, stripping their readied actions",
+        "While enemies are rattled, push into the chapel center",
+        "Secure the silver reliquary from the altar",
+        "Carry it west out of the chapel using rubble and walls as cover"
+      ],
+      "atoms": [
+        {
+          "strategy": "Prepare the trap",
+          "capability": "use-bell",
+          "text": "Pip, get to that chapel bell-rope and ring it when you're set",
+          "expect": ["use"]
+        },
+        {
+          "strategy": "Synchronize the strike",
+          "capability": "social-command",
+          "text": "When the bell rings, that's my window to move in",
+          "expect": ["social"]
+        },
+        {
+          "strategy": "Secure the objective",
+          "capability": "grab-relic",
+          "text": "I'm moving in for the reliquary on the altar",
+          "expect": ["pickup"]
+        },
+        {
+          "strategy": "Use natural cover",
+          "capability": "use-cover",
+          "text": "Taking shelter behind the fallen log while I grab it",
+          "expect": ["move"]
+        },
+        {
+          "strategy": "Carry the goal",
+          "capability": "carry-relic",
+          "text": "I've got the reliquary, moving fast",
+          "expect": ["carry"]
+        },
+        {
+          "strategy": "Escape west",
+          "capability": "escape-with-goal",
+          "text": "Everyone west, away from the chapel—cover me",
+          "expect": ["escape", "guard"]
+        }
+      ]
+    },
+    {
+      "goal": "Topple the leaning pillar to create a mobile barrier and crushing zone between you and the foes",
+      "steps": [
+        "Maneuver to the eastern side of the chapel where the pillar leans",
+        "Topple the pillar to crush and block enemy advancement",
+        "Use the fallen pillar as both cover and battering ram concept",
+        "Slip in behind the rubble to grab the reliquary",
+        "Carry it back west, using the pillar as a shield against counterattack"
+      ],
+      "atoms": [
+        {
+          "strategy": "Reach the leverage point",
+          "capability": "navigate-ruin",
+          "text": "Moving to the leaning pillar on the east wall",
+          "expect": ["dash", "move"]
+        },
+        {
+          "strategy": "Collapse the structure",
+          "capability": "topple-pillar",
+          "text": "Topple the leaning pillar",
+          "expect": ["use"]
+        },
+        {
+          "strategy": "Use created obstacle",
+          "capability": "use-environment",
+          "text": "The fallen pillar blocks their advance—hold here",
+          "expect": ["block"]
+        },
+        {
+          "strategy": "Claim the relic",
+          "capability": "grab-relic",
+          "text": "Now I slip in and grab the reliquary from the altar",
+          "expect": ["pickup"]
+        },
+        {
+          "strategy": "Carry and shield",
+          "capability": "carry-relic",
+          "text": "Got it—staying low, using the rubble as shield",
+          "expect": ["carry", "move"]
+        },
+        {
+          "strategy": "Fortified exit",
+          "capability": "escape-with-cover",
+          "text": "Fall back west, the pillar blocks their pursuit",
+          "expect": ["escape", "defend"]
+        }
+      ]
+    },
+    {
+      "goal": "Ring the bell and topple the pillar together for overwhelming chaos—then calmly take the reliquary",
+      "steps": [
+        "Pip prepares the bell-rope while you position at the pillar",
+        "Ring the bell and topple the pillar at nearly the same moment",
+        "Enemies are both stunned AND blocked by collapsing stone",
+        "Maximum confusion: enemies lose actions AND lose clear approach",
+        "Walk in and secure the silver reliquary unopposed"
+      ],
+      "atoms": [
+        {
+          "strategy": "Ready the first trap",
+          "capability": "use-bell",
+          "text": "Pip, get to that bell-rope—you're my signal",
+          "expect": ["use"]
+        },
+        {
+          "strategy": "Ready the second trap",
+          "capability": "prepare-ruin",
+          "text": "I'm at the pillar, waiting on your bell",
+          "expect": ["move", "ready"]
+        },
+        {
+          "strategy": "Dual activation",
+          "capability": "topple-pillar",
+          "text": "Topple the leaning pillar—do it now, Pip ring that bell",
+          "expect": ["use"]
+        },
+        {
+          "strategy": "Seize the moment",
+          "capability": "grab-relic",
+          "text": "Clear field, both of you—I'm taking the reliquary",
+          "expect": ["pickup"]
+        },
+        {
+          "strategy": "Carry the goal",
+          "capability": "carry-relic",
+          "text": "I've got it, moving out fast with it",
+          "expect": ["carry", "dash"]
+        },
+        {
+          "strategy": "Navigate debris and escape",
+          "capability": "escape-with-goal",
+          "text": "Out through the gap, everyone moving west—go",
+          "expect": ["escape", "climb"]
+        }
+      ]
+    }
+  ]
+}

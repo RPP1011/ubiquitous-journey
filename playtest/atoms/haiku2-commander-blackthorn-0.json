@@ -1,0 +1,125 @@
+{
+  "persona": "commander",
+  "plans": [
+    {
+      "goal": "Burn the ambush and drive them into our blades with fire and chaos",
+      "steps": [
+        "Ignite the cart to control the center and scatter their formation",
+        "Maud anchors back safely; Borin holds the left flank against Fitch",
+        "Pip flanks through the brush while I push forward to isolate their leader"
+      ],
+      "atoms": [
+        {
+          "strategy": "ignite central prop for control and damage",
+          "capability": "ignite-prop",
+          "text": "I'll ignite the handcart at the center — watch for the flames",
+          "expect": ["ignite", "use"]
+        },
+        {
+          "strategy": "position healer safe from ambush",
+          "capability": "guard-ally",
+          "text": "Maud, hold back by the trees — you're no good to us if you're stabbed",
+          "expect": ["guard", "move"]
+        },
+        {
+          "strategy": "deny left flank and block skirmisher",
+          "capability": "block-path",
+          "text": "Borin, hold the left by the barrel — stop Fitch cold",
+          "expect": ["block", "guard"]
+        },
+        {
+          "strategy": "outflank the archer from high ground",
+          "capability": "flank",
+          "text": "Pip, swing north through the brush and get behind that archer",
+          "expect": ["dash", "attack"]
+        },
+        {
+          "strategy": "collapse on leader after chaos settles",
+          "capability": "focus-fire",
+          "text": "Once the fire spreads, everyone on Col — he's the strongest and I want him first",
+          "expect": ["social", "attack"]
+        }
+      ]
+    },
+    {
+      "goal": "Isolate and eliminate Nell the archer, then crush the brutes in detail",
+      "steps": [
+        "Silence the archer before she can rain arrows on us",
+        "Use the log-pile as a trap when they bunch up chasing",
+        "Sweep up the remaining brutes before they coordinate"
+      ],
+      "atoms": [
+        {
+          "strategy": "suppress ranged threat immediately",
+          "capability": "focus-fire",
+          "text": "Nell on the high ground is dangerous — everyone, focus the archer before she finds her range",
+          "expect": ["attack", "social"]
+        },
+        {
+          "strategy": "bait enemy into set piece",
+          "capability": "lure-foe",
+          "text": "I'm falling back toward the log-pile — if Col and Fitch chase, they're walking into it",
+          "expect": ["move", "dash"]
+        },
+        {
+          "strategy": "trigger set piece when enemies converge",
+          "capability": "use-rope",
+          "text": "If they bunch up by the road, cut the log-pile loose and let gravity do the work",
+          "expect": ["use", "attack"]
+        },
+        {
+          "strategy": "maintain healer's safety in melee",
+          "capability": "guard-ally",
+          "text": "Maud, don't move from where you are — Borin and I will keep the chaos away from you",
+          "expect": ["guard", "defend"]
+        },
+        {
+          "strategy": "crush remaining foes after archer falls",
+          "capability": "focus-fire",
+          "text": "Pip, once Nell is down, we collapse on the left flank — finish the brutes before they break",
+          "expect": ["attack", "dash"]
+        }
+      ]
+    },
+    {
+      "goal": "Provoke the bees nest to scatter their formation, then pick off isolated targets",
+      "steps": [
+        "Knock down the nest from range to flood the area with chaos",
+        "Let confusion settle for one breath, then identify isolated prey",
+        "Drive wedges between them and finish them one by one"
+      ],
+      "atoms": [
+        {
+          "strategy": "trigger area denial with bees",
+          "capability": "distract-animals",
+          "text": "Knock down the bees' nest — let them sting everyone within two tiles, exposed or hidden",
+          "expect": ["use", "attack"]
+        },
+        {
+          "strategy": "use chaos to separate formation",
+          "capability": "distract-animals",
+          "text": "Pip, exploit the confusion — roll through the middle while they're swatting insects",
+          "expect": ["dash", "attack"]
+        },
+        {
+          "strategy": "protect healer in the melee",
+          "capability": "guard-ally",
+          "text": "Maud, if the fight comes your way, Borin shields you — don't get separated",
+          "expect": ["guard", "defend"]
+        },
+        {
+          "strategy": "commit to high-priority target",
+          "capability": "focus-fire",
+          "text": "Once the chaos clears, everyone focuses Fitch — a skirmisher is easier to break than a brute",
+          "expect": ["attack", "social"]
+        },
+        {
+          "strategy": "press wounded enemy while advantage holds",
+          "capability": "follow-through",
+          "text": "If any of them are rattled or slowed, I push hard before they rally",
+          "expect": ["attack", "ability"]
+        }
+      ]
+    }
+  ]
+}

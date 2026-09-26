@@ -1,0 +1,131 @@
+{
+  "persona": "commander",
+  "plans": [
+    {
+      "goal": "Ignite the lamp oil and use the ore cart as a battering ram to breach the barricade",
+      "steps": [
+        "Get close enough to the lamp oil barrel to use fire",
+        "Send the ore cart south to smash whoever defends the line",
+        "Exploit the chaos to break through and finish them inside"
+      ],
+      "atoms": [
+        {
+          "strategy": "advance under heavy fire to oil position",
+          "capability": "rush-position",
+          "text": "I'm moving up the center through the carts — give me covering fire, Wren",
+          "expect": ["dash", "move"]
+        },
+        {
+          "strategy": "ignite lamp oil for area denial",
+          "capability": "ignite-prop",
+          "text": "I'll ignite the lamp-oil barrel — it'll spread and force them back from the barricade",
+          "expect": ["ignite", "use"]
+        },
+        {
+          "strategy": "trigger set piece to break formation",
+          "capability": "shove-hazard",
+          "text": "Send the ore cart down the rails — let it crush whoever is standing in the way",
+          "expect": ["use", "attack"]
+        },
+        {
+          "strategy": "protect flanks while oil spreads",
+          "capability": "block-path",
+          "text": "Borin, Pip, keep the flanks clear — Rook has crossfire from the left and I need your backs",
+          "expect": ["guard", "block"]
+        },
+        {
+          "strategy": "exploit momentum after breach",
+          "capability": "follow-through",
+          "text": "Once the cart hits and oil spreads, everyone follows me through the gap — don't hesitate",
+          "expect": ["attack", "social"]
+        }
+      ]
+    },
+    {
+      "goal": "Overwhelm the barricade with coordinated assault: break the center while flanking",
+      "steps": [
+        "Borin and I will hit the barricade head-on with shields up",
+        "Pip flanks left to cut off Rook; Maud stays back with support",
+        "Break through the line and finish them in close quarters"
+      ],
+      "atoms": [
+        {
+          "strategy": "anchor defense on main assault",
+          "capability": "block-path",
+          "text": "Borin, shields on the handcarts — we'll barrel through the center and damn the consequences",
+          "expect": ["guard", "block"]
+        },
+        {
+          "strategy": "threaten ranged archer from behind",
+          "capability": "flank",
+          "text": "Pip, move left around the rocks — I want Rook worried about his back",
+          "expect": ["dash", "attack"]
+        },
+        {
+          "strategy": "provide ranged support to the assault",
+          "capability": "focus-fire",
+          "text": "Wren, lay covering fire on the left flank — keep Rook from adjusting his aim",
+          "expect": ["attack", "social"]
+        },
+        {
+          "strategy": "support healer position safely",
+          "capability": "guard-ally",
+          "text": "Maud, you anchor ten tiles back — readied for when we break their line",
+          "expect": ["guard", "move"]
+        },
+        {
+          "strategy": "crush resistance in close combat",
+          "capability": "shove-hazard",
+          "text": "Borin and I are hitting the center — once they break, I'll shove whoever comes at us back into their own lines",
+          "expect": ["shove", "attack"]
+        },
+        {
+          "strategy": "seal the breach and mop up",
+          "capability": "focus-fire",
+          "text": "Once we break through, form a line — don't let them rally or reinforce from the back",
+          "expect": ["social", "attack"]
+        }
+      ]
+    },
+    {
+      "goal": "Divide their forces and eliminate them in detail: separate Crowe from her brutes",
+      "steps": [
+        "Drive a wedge between Crowe and Grist to split their defense",
+        "Crush one group quickly while the other is cut off",
+        "Finish the survivors without reinforcement"
+      ],
+      "atoms": [
+        {
+          "strategy": "target the leader for isolation",
+          "capability": "focus-fire",
+          "text": "Edda Crowe is the glue holding them together — focus attacks on her, make them scramble without orders",
+          "expect": ["attack", "social"]
+        },
+        {
+          "strategy": "cut off brute support with terrain",
+          "capability": "block-path",
+          "text": "I'll position by the cart and the oil barrel — block Grist from supporting Crowe if she retreats",
+          "expect": ["move", "guard"]
+        },
+        {
+          "strategy": "exploit separated position",
+          "capability": "flank",
+          "text": "Pip and Borin, when Grist is isolated, pin him between us — don't let him break and rally",
+          "expect": ["attack", "dash"]
+        },
+        {
+          "strategy": "suppress remaining archer",
+          "capability": "focus-fire",
+          "text": "Everyone who can see Rook, keep him suppressed — don't let him get a clean shot at Maud",
+          "expect": ["attack", "social"]
+        },
+        {
+          "strategy": "finish isolated target quickly",
+          "capability": "follow-through",
+          "text": "Once Crowe or Grist breaks, the other's strength drains — hit them hard while they're confused",
+          "expect": ["attack", "ability"]
+        }
+      ]
+    }
+  ]
+}

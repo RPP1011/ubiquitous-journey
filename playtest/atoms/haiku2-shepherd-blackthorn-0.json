@@ -1,0 +1,131 @@
+{
+  "persona": "shepherd",
+  "plans": [
+    {
+      "goal": "block the road and keep Maud safe behind the cart",
+      "steps": [
+        "form a wall between the road and Maud",
+        "use the cart as cover and rally point",
+        "if anyone breaks through, drag them back or shove them into the water"
+      ],
+      "atoms": [
+        {
+          "strategy": "take position",
+          "capability": "block-path",
+          "text": "I'm moving to block the road between Col and Maud—no one gets past me",
+          "expect": ["move", "dash"]
+        },
+        {
+          "strategy": "set up secondary defense",
+          "capability": "guard-ally",
+          "text": "Borin, stand behind the cart with Maud—guard her if anything comes from the side",
+          "expect": ["social", "guard"]
+        },
+        {
+          "strategy": "ready for trouble",
+          "capability": "ready-strike",
+          "text": "I'll ready my guard—if Col charges at Maud, I shove him into the water",
+          "expect": ["ready", "defend", "block"]
+        },
+        {
+          "strategy": "coordinate archer support",
+          "capability": "focus-fire",
+          "text": "Pip and Wren, on the archer Nell—don't let her shoot us up from the north",
+          "expect": ["social", "ability"]
+        },
+        {
+          "strategy": "protect left flank",
+          "capability": "block-path",
+          "text": "Borin, move left past the cart—Fitch will try to flank from the trees",
+          "expect": ["move", "dash", "social"]
+        },
+        {
+          "strategy": "trigger environmental aid",
+          "capability": "distract-animals",
+          "text": "Knock down the bees' nest—anything in range gets stung, and we can slip through",
+          "expect": ["use", "distract"]
+        }
+      ]
+    },
+    {
+      "goal": "pressure Col while Borin holds the center line",
+      "steps": [
+        "use the handcart as cover and a choke point",
+        "push forward with Borin to keep Col pinned near the torch",
+        "if they try to spread out, collapse the line to stay together"
+      ],
+      "atoms": [
+        {
+          "strategy": "hold the center",
+          "capability": "block-path",
+          "text": "Borin and I move up to the cart—we hold this line and don't let them past",
+          "expect": ["move", "dash"]
+        },
+        {
+          "strategy": "lock down the brute",
+          "capability": "focus-fire",
+          "text": "Col won't leave the road—Pip, circle left and get him cornered with us",
+          "expect": ["social", "move"]
+        },
+        {
+          "strategy": "react to archer threat",
+          "capability": "take-cover",
+          "text": "Nell's up north—if she has a clear shot, I duck behind the cart and ready my shield",
+          "expect": ["defend", "block", "ready"]
+        },
+        {
+          "strategy": "manage resources",
+          "capability": "guard-ally",
+          "text": "Maud, stay back and heal anyone who takes a beating—I'll drag them to you if needed",
+          "expect": ["social", "guard"]
+        },
+        {
+          "strategy": "punish overreach",
+          "capability": "shove-hazard",
+          "text": "If Fitch gets close, I shove him into the barrel—he's slow and exposed",
+          "expect": ["shove", "push"]
+        }
+      ]
+    },
+    {
+      "goal": "use the terrain to split and defeat them one at a time",
+      "steps": [
+        "set the stacked logs rolling to scatter their formation",
+        "funnel them through the water and brush where Pip can outmaneuver them",
+        "keep Maud safely north of the trees where she can see and heal"
+      ],
+      "atoms": [
+        {
+          "strategy": "environmental control",
+          "capability": "fell-tree",
+          "text": "Cut the log-pile loose—it rolls west and smashes whoever is in the way",
+          "expect": ["use", "shove"]
+        },
+        {
+          "strategy": "scatter and regroup",
+          "capability": "block-path",
+          "text": "Borin, hold the center after the logs hit—keep them from regrouping",
+          "expect": ["social", "block", "defend"]
+        },
+        {
+          "strategy": "flank after chaos",
+          "capability": "flank",
+          "text": "Pip moves through the trees while they're scattered—pin Nell against the north ridge",
+          "expect": ["move", "dash", "social"]
+        },
+        {
+          "strategy": "protect healer",
+          "capability": "guard-ally",
+          "text": "Maud, hold north behind the trees—if anyone comes for you, we pull back and regroup",
+          "expect": ["social", "guard", "move"]
+        },
+        {
+          "strategy": "finish isolated foes",
+          "capability": "focus-fire",
+          "text": "Once they're split, everyone hits whoever is closest—Borin and I follow up on each one",
+          "expect": ["social", "attack"]
+        }
+      ]
+    }
+  ]
+}

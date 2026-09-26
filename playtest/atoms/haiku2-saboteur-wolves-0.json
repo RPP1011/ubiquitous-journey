@@ -1,0 +1,149 @@
+{
+  "persona": "saboteur",
+  "plans": [
+    {
+      "goal": "Light the gorse before the gate to create a wall of fire that frightens the pack back",
+      "steps": [
+        "Secure a fire source—the torch at the camp or steal from the main campfire",
+        "Push forward through the fold toward the gorse thicket north of the gate",
+        "Light the gorse to create a barrier of flame",
+        "The pack flinches and recoils from the burning wall",
+        "Close and secure the fold gates against their retreat"
+      ],
+      "atoms": [
+        {
+          "strategy": "Grab fire tool",
+          "capability": "grab-fire-source",
+          "text": "Grab the torch, we need fire for the gorse patch",
+          "expect": ["pickup"]
+        },
+        {
+          "strategy": "Navigate to target",
+          "capability": "cross-fold",
+          "text": "Moving through the fold toward the gorse thicket",
+          "expect": ["dash", "move"]
+        },
+        {
+          "strategy": "Ignite the gorse",
+          "capability": "ignite-gorse",
+          "text": "Fire the gorse before the gate—now",
+          "expect": ["ignite", "use"]
+        },
+        {
+          "strategy": "Exploit fear",
+          "capability": "scare-with-fire",
+          "text": "That wall of flame will send them running",
+          "expect": ["distract"]
+        },
+        {
+          "strategy": "Hold the perimeter",
+          "capability": "guard-fold",
+          "text": "Borin, hold the fold wall, keep them from breaking back in",
+          "expect": ["guard", "defend"]
+        },
+        {
+          "strategy": "Final push",
+          "capability": "drive-off-pack",
+          "text": "Push them back hard into the open—they won't stand",
+          "expect": ["attack", "shove"]
+        }
+      ]
+    },
+    {
+      "goal": "Heave the loose fold wall over to crush and block the wolves' escape route",
+      "steps": [
+        "Reach the loose stretch of wall on the northwest section",
+        "Heave the wall over outward across 3 rows",
+        "Wolves are crushed or blocked by the falling stone",
+        "Use the rubble and gap as a tactical advantage",
+        "Drive any survivors back out into the brush with nowhere to hide"
+      ],
+      "atoms": [
+        {
+          "strategy": "Reach the structure",
+          "capability": "navigate-fold",
+          "text": "Moving to the loose wall section, northwest side of the fold",
+          "expect": ["dash", "move"]
+        },
+        {
+          "strategy": "Destroy the barrier",
+          "capability": "topple-wall",
+          "text": "Heave the fold wall over",
+          "expect": ["use"]
+        },
+        {
+          "strategy": "Control the zone",
+          "capability": "create-barrier",
+          "text": "The wall crush zone blocks their escape route north",
+          "expect": ["block", "defend"]
+        },
+        {
+          "strategy": "Aggressive pursuit",
+          "capability": "drive-wolves",
+          "text": "Push them against the fallen wall, don't let them regroup",
+          "expect": ["attack", "shove"]
+        },
+        {
+          "strategy": "Seal the gap",
+          "capability": "fortify-fold",
+          "text": "We've got them trapped—between the wall and our blades",
+          "expect": ["defend", "block"]
+        },
+        {
+          "strategy": "Finish the pack",
+          "capability": "drive-off-pack",
+          "text": "Drive them out into the brush—they won't come back to this fold",
+          "expect": ["attack", "shove", "escape"]
+        }
+      ]
+    },
+    {
+      "goal": "Combine both set-pieces—fire and wall collapse—to trap the pack and force them into complete retreat",
+      "steps": [
+        "Coordinate Pip to light the gorse while you ready the wall",
+        "Heave the wall and ring the bell simultaneously for triple chaos",
+        "Wolves trapped between flame on north and rubble on south",
+        "No escape route, enemies panicked and disoriented",
+        "All companions drive them decisively away from the fold"
+      ],
+      "atoms": [
+        {
+          "strategy": "Prepare multi-trap setup",
+          "capability": "prepare-defense",
+          "text": "Everyone positions: I'll hit the wall, Pip lights the gorse",
+          "expect": ["social", "ready"]
+        },
+        {
+          "strategy": "Destroy wall barrier",
+          "capability": "topple-wall",
+          "text": "Heave the fold wall over now",
+          "expect": ["use"]
+        },
+        {
+          "strategy": "Add fire element",
+          "capability": "ignite-gorse",
+          "text": "Fire the gorse, trap them between flame and rubble",
+          "expect": ["ignite", "use"]
+        },
+        {
+          "strategy": "Seal the encirclement",
+          "capability": "block-escape",
+          "text": "The corner is sealed: fire on the north, wall rubble south—nowhere to run",
+          "expect": ["defend", "block"]
+        },
+        {
+          "strategy": "Coordinate pack harassment",
+          "capability": "herd-wolves",
+          "text": "Borin, keep them from breaking through the gap—push hard",
+          "expect": ["guard", "defend", "attack"]
+        },
+        {
+          "strategy": "Decisive final push",
+          "capability": "drive-off-pack",
+          "text": "All of us together now—drive them out through the brush, they won't return",
+          "expect": ["attack", "shove", "escape"]
+        }
+      ]
+    }
+  ]
+}

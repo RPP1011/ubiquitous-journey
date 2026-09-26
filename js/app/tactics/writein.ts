@@ -68,7 +68,7 @@ const dist = (a: Spot, b: Spot) => Math.abs(a.x - b.x) + Math.abs(a.z - b.z);
 
 const V: Record<Exclude<Verb, 'move'>, string[]> = {
   attack: ['hit', 'strike', 'attack', 'slash', 'stab', 'swing', 'punch', 'bash', 'lunge', 'kill', 'shoot', 'thrust', 'cleave',
-    'go for', 'charge', 'rush', 'engage', 'finish off', 'take down', 'cut down', 'run through', 'fight'],
+    'go for', 'charge', 'rush', 'engage', 'finish off', 'take down', 'cut down', 'run through', 'fight', 'focus', 'focus on', 'take out', 'drop'],
   shove: ['shove', 'push', 'barge', 'tackle', 'ram', 'bowl', 'knock', 'heave', 'roll', 'shoulder', 'drive'],
   kick: ['kick', 'boot', 'tip', 'topple', 'overturn', 'knock over', 'flip'],
   hew: ['cut down', 'chop', 'chop down', 'fell', 'hew', 'hack down', 'hack apart', 'axe', 'break', 'smash', 'splinter', 'timber'],
@@ -177,7 +177,7 @@ export function addressee(b: Battle, u: Unit, raw: string): { who: Unit | null; 
 
 export function interpretRegex(b: Battle, u: Unit, raw: string, speaker?: Unit): Intent[] {
   // the verb comes from the first sentence ("Strike it down. Show them what happens to those who flee.")
-  const text = norm(raw.split(/[.!?;](?:\s|$)/)[0] || raw)
+  const text = norm(raw.split(/[.!?;](?:\s|$)|\s[—–]\s|\s-\s/)[0] || raw)
     // a passive hit is not an order to hit ("if we're hit", "whoever is worst hit")
     .replace(/ (we're|we are|is|are|gets|get|got|been|takes a|take a|worst|badly) hit /g, ' hurt ');
   if (text.trim().length < 2) return [];
@@ -256,7 +256,12 @@ export function interpretRegex(b: Battle, u: Unit, raw: string, speaker?: Unit):
     const noun = pc.nouns.filter((n) => text.includes(` ${n} `)).sort((x, y) => y.length - x.length)[0];
     if (!noun) continue;
     const verbed = pc.verbs.some((v) => c.includes(` ${v} `));
-    out.push({ verb: 'use', piece: pc.id, score: 2.5 + (verbed ? 2 : 0) + noun.length / 20 });
+    // a plain place-word ("the rocks", "the wall") is only the piece when it's being done to
+    if (!verbed && !noun.includes(' ') && noun.length < 7) continue;
+    // somewhere to be, not something to do: "hold the fold wall", "fall back to the wall", "by the pillar"
+    if (!verbed && new RegExp(` (hold|to|at|by|near|behind|beside|from|toward|towards|around) (the )?${noun} `).test(text)) continue;
+    // named but not acted on ("hold the fold wall"): only a weak reading, any real verb beats it
+    out.push({ verb: 'use', piece: pc.id, score: (verbed ? 4.5 : 1.2) + noun.length / 20 });
   }
   if (out.length > 1 && !has(text, 'overwatch', 'keep watch')) { const i = out.findIndex((I) => I.verb === 'overwatch'); if (i >= 0) out.splice(i, 1); }
   if (!out.length && dest) out.push({ verb: 'move', dest, destProp: prop?.id, destFoe: namedFoes[0]?.u.id, score: 1 });
@@ -425,7 +430,10 @@ export function resolveIntents(b: Battle, u: Unit, intents: Intent[], model = fa
     }
   }
   const seen = new Set<string>();
-  return out.sort((a, c) => (a.deferred ? 1 : 0) - (c.deferred ? 1 : 0) || c.score - a.score)
+  // a reading you can't reach this turn still wins when it's clearly what was meant
+  const topNow = Math.max(-Infinity, ...out.filter((r) => !r.deferred).map((r) => r.score));
+  const late = (r: GridReading) => (r.deferred && r.score < topNow + 1.5 ? 1 : 0);
+  return out.sort((a, c) => late(a) - late(c) || c.score - a.score)
     .filter((r) => { const k = JSON.stringify([r.to, r.action]); if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 4);
 }
 
@@ -433,6 +441,20 @@ export function resolveIntents(b: Battle, u: Unit, intents: Intent[], model = fa
 
 /** The instant path: regex interpretation, deterministic resolution. Conditionals become READY. */
 export function readWriteIn(b: Battle, u: Unit, raw: string): GridReading[] {
+  // a long order in clauses ("Nell's dangerous — everyone, focus the archer"; "I'll guard — if Col
+  // charges Maud, I shove him"): a conditional clause readies; else the first clause that says
+  // something doable carries it
+  const clauses = raw.split(/(?<=[.!?;])\s+|\s*[—–]\s*|\s-\s/).map((s) => s.trim()).filter((s) => s.length > 2);
+  if (clauses.length > 1) {
+    for (const cl of clauses) {
+      const cond = splitConditional(cl);
+      if (cond && readTrigger(b, u, norm(cond.when))) { const r = readWriteIn(b, u, cl); if (r.length) return r; }
+    }
+    for (const cl of clauses) {
+      const r = readWriteIn(b, u, cl);
+      if (r.length && (r[0].call || !/^Move and brace/.test(r[0].label))) return r;
+    }
+  }
   const said = callReadings(b, u, raw);
   if (said) return said;
   // "Borin, …" is only an order for Borin (read on his turn, when he's yours to command)

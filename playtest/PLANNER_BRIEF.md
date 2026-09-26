@@ -16,8 +16,28 @@ would from the screen. Do not edit anything except the one output file you are t
 - The grid is 16×16 tiles. "You" is the player; companions (Borin, Wren, Pip, Maud) are on your side.
   You can address a companion by name ("Borin, guard Maud") in high-stakes moments.
 
+## How this game works (read before planning)
+- **You control only yourself.** Companions (Borin the shield-bearer, Wren the archer, Pip the
+  rogue, Maud the healer) decide for themselves. You coordinate by **talking**, which is free,
+  once a turn:
+  - ask someone: "Borin, block Fitch", "Pip and Wren, on the archer", "everyone, focus Garrick"
+  - announce your own plan: "I'll shove Garrick into the fire — follow up!"
+
+  They may or may not go along with it (trust, character, whether it's sensible).
+- **The ground matters.** The situation's `map` shows it row by row (z = 0 first):
+  - `#` wall: blocks movement and sight, full cover
+  - `"` brush: hides you from far archers and overwatch; it burns
+  - `~` water: slow, puts out fire
+  - `%` mud: slow
+  - `=` stone and `*` snow: don't burn
+- **Set-pieces.** `pieces` are the place's one-shot features (a log-pile, a bell, a sluice…).
+  Anyone in reach can set one off: "cut the log-pile loose", "ring the bell".
+- **Ordinary moves combine.** A foe knocked prone, exposed or stunned by one person takes extra
+  damage from the next (follow-through). An ally on the far side of a foe makes it easier to hit
+  (pincer). Trip and disarm are basic moves.
+
 ## Output
-Write **one** JSON file `playtest/atoms/haiku-<persona>-<quest>-<stage>.json`:
+Write **one** JSON file `playtest/atoms/<prefix>-<persona>-<quest>-<stage>.json` (the prefix you are told, default `haiku`):
 
 ```json
 {

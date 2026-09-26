@@ -1,0 +1,137 @@
+{
+  "persona": "shepherd",
+  "plans": [
+    {
+      "goal": "wall off the wolves with fire and keep everyone behind the barricade",
+      "steps": [
+        "set the gorse ablaze to create a fire barrier between us and the pack",
+        "hold the fold wall as a strongpoint and keep Maud safe inside",
+        "use the campfire as a second line of defense"
+      ],
+      "atoms": [
+        {
+          "strategy": "ignite the gorse",
+          "capability": "scare-with-fire",
+          "text": "Fire the gorse before the gate—that wall of flame keeps them at bay while we regroup",
+          "expect": ["ignite", "distract"]
+        },
+        {
+          "strategy": "rally to the fold",
+          "capability": "block-path",
+          "text": "Everyone falls back to the fold wall—Borin and I hold the gap, Maud stays at the center",
+          "expect": ["move", "social"]
+        },
+        {
+          "strategy": "guard the healer",
+          "capability": "guard-ally",
+          "text": "Maud, stay in the middle of the fold where you can see and heal—nothing gets in here",
+          "expect": ["social", "guard", "move"]
+        },
+        {
+          "strategy": "flank defense",
+          "capability": "guard-ally",
+          "text": "Pip, watch the east side of the fold—if a wolf tries to circle around the fire, stop it",
+          "expect": ["social", "guard", "move"]
+        },
+        {
+          "strategy": "secondary fire barrier",
+          "capability": "ready-strike",
+          "text": "I'm ready at the gap—if the fire burns down, we use the campfire to hold them back",
+          "expect": ["ready", "defend"]
+        },
+        {
+          "strategy": "drive them off",
+          "capability": "shove-hazard",
+          "text": "If anyone gets close to the wall, Borin and I shove them back into the fire",
+          "expect": ["shove", "defend"]
+        }
+      ]
+    },
+    {
+      "goal": "use the fold wall and terrain to split the pack and defeat them piecemeal",
+      "steps": [
+        "knock the fold wall over to crush the Gaunt wolf and create a new barrier",
+        "spread the pack's attention across multiple fronts",
+        "coordinate hits on each wolf while they're separated"
+      ],
+      "atoms": [
+        {
+          "strategy": "knock down the wall",
+          "capability": "fell-tree",
+          "text": "Heave the fold wall over—it crushes and creates a gap, leaving the Gaunt wolf pinned",
+          "expect": ["use", "shove"]
+        },
+        {
+          "strategy": "attack split pack",
+          "capability": "focus-fire",
+          "text": "Pip and Borin, take the Young wolf on the right—I'm moving to the Scarred one in the middle",
+          "expect": ["social", "attack"]
+        },
+        {
+          "strategy": "protect the healer",
+          "capability": "guard-ally",
+          "text": "Maud, you're with the fallen logs as cover—heal whoever needs it, stay safe back there",
+          "expect": ["social", "guard", "move"]
+        },
+        {
+          "strategy": "steady pressure",
+          "capability": "block-path",
+          "text": "Borin, hold the line by the logs—don't let any wolf get past you to Maud",
+          "expect": ["social", "block", "guard"]
+        },
+        {
+          "strategy": "finish wounded",
+          "capability": "focus-fire",
+          "text": "The Gaunt wolf is already hurting—Pip, once you finish the Young one, we all pile on it",
+          "expect": ["social", "attack"]
+        }
+      ]
+    },
+    {
+      "goal": "aggressive defense—use fire and our bodies to drive the pack away from the fold",
+      "steps": [
+        "position ourselves between the wolves and the sheepfold",
+        "use fire sparingly to scare, not to trap ourselves",
+        "push forward and drive them north, away from the livestock"
+      ],
+      "atoms": [
+        {
+          "strategy": "take the field",
+          "capability": "block-path",
+          "text": "We're moving out in front of the fold—between the wolves and the sheep, we're the only thing they see",
+          "expect": ["move", "social"]
+        },
+        {
+          "strategy": "defensive line",
+          "capability": "block-path",
+          "text": "Borin on the left, me in the center, Pip on the right—Maud is well back healing and watching",
+          "expect": ["social", "block", "move"]
+        },
+        {
+          "strategy": "fire is a last resort",
+          "capability": "scare-with-fire",
+          "text": "If we're getting overwhelmed, I use fire to back them up, not to burn the fold down",
+          "expect": ["ignite", "distract"]
+        },
+        {
+          "strategy": "coordinated pressure",
+          "capability": "focus-fire",
+          "text": "Pip, circle the Scarred wolf—once you're behind it, we all hit it at once",
+          "expect": ["social", "move", "attack"]
+        },
+        {
+          "strategy": "ready to retreat",
+          "capability": "ready-strike",
+          "text": "If they get too close to Maud or the fold, we fall back and regroup—holding the fold is the mission",
+          "expect": ["ready", "move", "defend"]
+        },
+        {
+          "strategy": "herd them north",
+          "capability": "shove-hazard",
+          "text": "Every wolf we push is one that's not near the sheep—shove and drive them to the gates",
+          "expect": ["shove", "social"]
+        }
+      ]
+    }
+  ]
+}

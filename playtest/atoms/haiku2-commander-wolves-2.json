@@ -1,0 +1,137 @@
+{
+  "persona": "commander",
+  "plans": [
+    {
+      "goal": "Collapse the entire pack with environmental hazards: rockslide and avalanche",
+      "steps": [
+        "Trigger the rockslide from the west to scatter the wolves",
+        "Bring down the snow cornice to crush the Grey Mother in her own den",
+        "Clean up any survivors from the chaos"
+      ],
+      "atoms": [
+        {
+          "strategy": "activate western rockslide for area denial",
+          "capability": "fell-tree",
+          "text": "Start the rockslide on the west — send those boulders rolling south and break their formation",
+          "expect": ["use", "attack"]
+        },
+        {
+          "strategy": "flank while pack is scattered",
+          "capability": "flank",
+          "text": "Pip, move left through the high ground while they're dodging rocks — get around the Pale wolf",
+          "expect": ["dash", "attack"]
+        },
+        {
+          "strategy": "bait alpha into avalanche",
+          "capability": "lure-foe",
+          "text": "I'll move up the center toward the den — Mother will come to me, and that's when we drop the cornice",
+          "expect": ["move", "attack"]
+        },
+        {
+          "strategy": "trigger avalanche on Grey Mother",
+          "capability": "shove-hazard",
+          "text": "Once Mother charges in, bring down the snow cornice from above — bury her and anything else in the den",
+          "expect": ["use", "attack"]
+        },
+        {
+          "strategy": "mop up survivors after environmental damage",
+          "capability": "follow-through",
+          "text": "Borin and Maud, once the snow settles, we finish anything still moving — quick and clean",
+          "expect": ["attack", "social"]
+        }
+      ]
+    },
+    {
+      "goal": "Isolate and kill the Grey Mother first, then hunt down the scattered pack",
+      "steps": [
+        "Force the Alpha away from her pack mates into open ground",
+        "Pour everything into the Grey Mother's defeat",
+        "Hunt the remaining wolves before they can regroup"
+      ],
+      "atoms": [
+        {
+          "strategy": "threaten alpha to provoke charge",
+          "capability": "taunt",
+          "text": "I'm moving straight up the center — Grey Mother, come and take what you think is yours",
+          "expect": ["move", "social"]
+        },
+        {
+          "strategy": "separate alpha from smaller pack",
+          "capability": "block-path",
+          "text": "Borin, hold the line — don't let the Pale wolf or Torn-ear help their mother",
+          "expect": ["guard", "block"]
+        },
+        {
+          "strategy": "focus fire on priority target",
+          "capability": "focus-fire",
+          "text": "Everyone, the Grey Mother is our target — if she falls, the pack loses teeth and will",
+          "expect": ["social", "attack"]
+        },
+        {
+          "strategy": "exploit terrain advantage",
+          "capability": "high-ground",
+          "text": "Pip, move to the high rocks — hit her flank while Maud readies healing for when she hits back",
+          "expect": ["dash", "attack"]
+        },
+        {
+          "strategy": "finish weakened target relentlessly",
+          "capability": "follow-through",
+          "text": "When Mother staggers, I drive the blade home — finish this before her packmates can save her",
+          "expect": ["attack", "ability"]
+        },
+        {
+          "strategy": "pursue scattered survivors",
+          "capability": "focus-fire",
+          "text": "Once the Grey Mother falls, we hunt the rest — don't let them rally or escape",
+          "expect": ["attack", "social"]
+        }
+      ]
+    },
+    {
+      "goal": "Hold the high ground and use terrain to grind down their numbers advantage",
+      "steps": [
+        "Position on the elevated tor and make them come uphill",
+        "Use fallen logs for cover and choke points",
+        "Trade our superior positioning for their superior strength"
+      ],
+      "atoms": [
+        {
+          "strategy": "anchor position on high ground",
+          "capability": "high-ground",
+          "text": "Everyone, move to the elevated tor — we hold the high ground and they come uphill to meet us",
+          "expect": ["move", "dash"]
+        },
+        {
+          "strategy": "create defensive fortification",
+          "capability": "barricade",
+          "text": "Use the fallen logs as barriers — stack them between us and the approaching pack",
+          "expect": ["use", "ready"]
+        },
+        {
+          "strategy": "channel enemy movement",
+          "capability": "block-path",
+          "text": "Borin, anchor on the left log — make them funnel through the center where we can hit them concentrated",
+          "expect": ["guard", "block"]
+        },
+        {
+          "strategy": "pressure lead wolf to keep momentum",
+          "capability": "focus-fire",
+          "text": "I'll keep forward pressure on the Pale wolf — keep it coming so it doesn't think",
+          "expect": ["attack", "social"]
+        },
+        {
+          "strategy": "protect healer behind fortification",
+          "capability": "guard-ally",
+          "text": "Maud, position behind the logs — stay ready to heal, but don't expose yourself if they breach",
+          "expect": ["move", "guard"]
+        },
+        {
+          "strategy": "exploit flanking opportunity from height",
+          "capability": "flank",
+          "text": "Pip, from your high position, watch for any wolf trying to outflank us around the rocks — hit them hard",
+          "expect": ["attack", "dash"]
+        }
+      ]
+    }
+  ]
+}

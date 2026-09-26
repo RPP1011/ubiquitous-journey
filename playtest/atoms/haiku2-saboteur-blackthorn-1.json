@@ -1,0 +1,149 @@
+{
+  "persona": "saboteur",
+  "plans": [
+    {
+      "goal": "Open the sluice gate to flood the mill and control enemy movement with water",
+      "steps": [
+        "Pip cuts Elsie free while we hold defensive positions",
+        "Work toward the sluice gate on the eastern flank",
+        "Trigger the sluice to flood the mill-race",
+        "Use the slowed, water-bogged enemies to coordinate retreat",
+        "Escort Elsie west toward the water passage"
+      ],
+      "atoms": [
+        {
+          "strategy": "Free the captive",
+          "capability": "extract-ally",
+          "text": "Pip, cut Elsie out of those bonds",
+          "expect": ["free"]
+        },
+        {
+          "strategy": "Secure position near objective",
+          "capability": "take-cover",
+          "text": "I'm moving up behind the hay bales for cover",
+          "expect": ["dash", "move"]
+        },
+        {
+          "strategy": "Navigate toward control mechanism",
+          "capability": "navigate-hazard",
+          "text": "Heading for the sluice gate, east side",
+          "expect": ["dash"]
+        },
+        {
+          "strategy": "Activate water defense",
+          "capability": "use-sluice",
+          "text": "Open the sluice gate and flood the mill-race",
+          "expect": ["use"]
+        },
+        {
+          "strategy": "Coordinate escort through hazard",
+          "capability": "guard-ally",
+          "text": "Borin, guard Elsie as we move through the water",
+          "expect": ["guard"]
+        },
+        {
+          "strategy": "Final escape with objective",
+          "capability": "escape-route",
+          "text": "Everyone out west, away from the raiders",
+          "expect": ["escape"]
+        }
+      ]
+    },
+    {
+      "goal": "Collapse the charred roof section to block enemies and create confusion for Elsie's rescue",
+      "steps": [
+        "Push forward toward the corner post at the mill's edge",
+        "Trigger the roof collapse to block the doorway with rubble",
+        "The dust and chaos gives Pip the opening to reach Elsie",
+        "Use fallen debris as improvised barricade against pursuit",
+        "Escape west with Elsie while enemies navigate the wreckage"
+      ],
+      "atoms": [
+        {
+          "strategy": "Advance aggressively toward target",
+          "capability": "advance-position",
+          "text": "Moving up hard toward that charred corner post",
+          "expect": ["dash"]
+        },
+        {
+          "strategy": "Collapse structure as weapon",
+          "capability": "bring-down-roof",
+          "text": "Bring the burnt roof down",
+          "expect": ["use"]
+        },
+        {
+          "strategy": "Exploit the chaos",
+          "capability": "distract-enemies",
+          "text": "The collapse covers your approach, Pip—go now",
+          "expect": ["social"]
+        },
+        {
+          "strategy": "Extract under cover of debris",
+          "capability": "extract-ally",
+          "text": "Cut Elsie free while they're dealing with the dust",
+          "expect": ["free"]
+        },
+        {
+          "strategy": "Hold rubble position",
+          "capability": "barricade",
+          "text": "Use the fallen stone and timber, hold the line here",
+          "expect": ["defend"]
+        },
+        {
+          "strategy": "Carry and retreat",
+          "capability": "carry-person",
+          "text": "Borin, help Elsie move—I'm covering the rear",
+          "expect": ["carry", "escape"]
+        }
+      ]
+    },
+    {
+      "goal": "Ignite the oil barrels and collapse the roof in sequence to overwhelm the raiders",
+      "steps": [
+        "Position near the oil barrels stacked by the mill door",
+        "Ignite them when enemies close in for maximum disruption",
+        "Immediately trigger the roof collapse while they're scattered",
+        "Pip moves in to cut Elsie free during the twin chaos",
+        "Retreat west with Elsie using created obstacles as shields"
+      ],
+      "atoms": [
+        {
+          "strategy": "Set environmental trap",
+          "capability": "ignite-hazard",
+          "text": "Ignite the lamp-oil barrels by the door",
+          "expect": ["ignite"]
+        },
+        {
+          "strategy": "Secondary collapse",
+          "capability": "bring-down-roof",
+          "text": "Bring the burnt roof down",
+          "expect": ["use"]
+        },
+        {
+          "strategy": "Signal timing for rescue",
+          "capability": "distract-enemies",
+          "text": "With the fire and collapse both going, Pip—move on Elsie",
+          "expect": ["social"]
+        },
+        {
+          "strategy": "Cut bonds in chaos",
+          "capability": "extract-ally",
+          "text": "Cut her loose, fast",
+          "expect": ["free"]
+        },
+        {
+          "strategy": "Defensive group formation",
+          "capability": "guard-formation",
+          "text": "Get around her on both sides, shield her from attacks",
+          "expect": ["guard", "defend"]
+        },
+        {
+          "strategy": "Speed escape with objective",
+          "capability": "carry-person",
+          "text": "Move fast west to the water, everyone now",
+          "expect": ["escape", "carry"]
+        }
+      ]
+    }
+  ]
+}

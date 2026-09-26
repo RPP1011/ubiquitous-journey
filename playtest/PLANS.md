@@ -62,28 +62,25 @@
   - MISREAD scare-with-fire: “Thrust burning branches at the Scarred wolf” → Attack → Scarred wolf (after moving) [attack]
 - **haiku-runner-wolves-0.json** (runner) — Use companions to herd the wolves away from the sheep — 3/4 steps executable
   - MISSING escape: “Chase after them to make sure both wolves flee far away”
-- **haiku-silvertongue-blackthorn-2.json** (silvertongue) — Break Garrick's will with intimidation and a call to surrender. — 1/3 steps executable
-  - MISSING intimidate: “Garrick the Red, you're surrounded. Lay down your arms and I'll let you walk.”
+- **haiku-silvertongue-blackthorn-2.json** (silvertongue) — Break Garrick's will with intimidation and a call to surrender. — 2/3 steps executable
   - MISSING intimidate: “You want to burn with your camp, or walk free and live to raid another day?”
 - **haiku-silvertongue-blackthorn-2.json** (silvertongue) — Turn Garrick's lieutenants against him by exploiting divisions. — 0/0 steps executable
 - **haiku-silvertongue-blackthorn-2.json** (silvertongue) — Interrogate a captive to learn Garrick's weaknesses, then exploit them. — 1/2 steps executable
   - MISSING interrogate: “What does Garrick fear? Who's he planning to betray? Talk and you live.”
-- **haiku-silvertongue-reliquary-0.json** (silvertongue) — Intercept and silence the scouts before they sound an alarm. — 0/1 steps executable
-  - MISSING demand-surrender: “Jory Crowe, you're surrounded. One whistle and your friends die. Stand down now.”
+- **haiku-silvertongue-reliquary-0.json** (silvertongue) — Intercept and silence the scouts before they sound an alarm. — 1/2 steps executable
+  - MISSING grab: “Grab him before he reaches his horse.”
 - **haiku-silvertongue-reliquary-0.json** (silvertongue) — Turn Jory into a willing informant by threatening or bribing him. — 2/2 steps executable
 - **haiku-silvertongue-reliquary-0.json** (silvertongue) — Convince Big Aud and Tamsin that fighting is pointless without Garrick backing them. — 0/2 steps executable
   - MISSING turncoat: “Take Tamsin and ride out of here with double what Crowe promised. This job's over.”
   - MISSING subdue: “If they draw steel, Pip moves on Tamsin. We take Aud down first.”
 - **haiku-silvertongue-wolves-1.json** (silvertongue) — Scare the pack away by using fire and noise as intimidation. — 1/2 steps executable
   - MISSING intimidate: “Old wolf looks done for. If the pack sees one of their own fall, they'll run. End it.”
-- **haiku-silvertongue-wolves-1.json** (silvertongue) — Finish the Old wolf quickly, then use its death to break the pack's will. — 1/2 steps executable
-  - MISSING focus-fire: “The old one's nearly dead. Everyone strike it down now.”
-- **haiku-silvertongue-wolves-1.json** (silvertongue) — Lure the wolves into the fire hazards to weaken them without direct combat. — 0/1 steps executable
+- **haiku-silvertongue-wolves-1.json** (silvertongue) — Finish the Old wolf quickly, then use its death to break the pack's will. — 2/2 steps executable
+- **haiku-silvertongue-wolves-1.json** (silvertongue) — Lure the wolves into the fire hazards to weaken them without direct combat. — 1/2 steps executable
   - MISREAD distract-animals: “Pip, swing the torch in wide arcs. Make them fear the fire more than they want our blood.” → 📣 Ask Pip: attack [attack]
 - **haiku-tactician-blackthorn-0.json** (tactician) — Control the crossroads with overlapping fire and deny enemy advance — 3/3 steps executable
-- **haiku-tactician-blackthorn-0.json** (tactician) — Disrupt enemy coordination by seizing initiative and attacking scattered forces — 1/4 steps executable
+- **haiku-tactician-blackthorn-0.json** (tactician) — Disrupt enemy coordination by seizing initiative and attacking scattered forces — 1/3 steps executable
   - MISREAD focus-fire: “Borin and I move toward Col, ready weapons and stay together” → Overwatch [overwatch]
-  - MISSING focus-fire: “Focus all fire on Col Garrow, take him down fast”
   - MISREAD dodge: “If arrows come our way, dash to cover or dodge” → Brace [defend]
 - **haiku-tactician-blackthorn-0.json** (tactician) — Establish strong defensive perimeter with coordinated overwatch and elimination from prepared positions — 1/2 steps executable
   - MISSING trip: “If Fitch charges in, trip him to disrupt his attack”
@@ -92,11 +89,9 @@
   - MISSING focus-fire: “Shift fire to isolate and eliminate each enemy one by one”
 - **haiku-tactician-reliquary-1.json** (tactician) — Break through the barricade with aggressive assault before enemies organize defense — 1/2 steps executable
   - MISSING suppress: “Keep Grist and Pell suppressed with covering fire”
-- **haiku-tactician-reliquary-1.json** (tactician) — Use fire and explosives to force enemies out of position and eliminate them isolated — 0/2 steps executable
-  - MISSING focus-fire: “As they scatter from the flames, focus fire on isolated targets”
+- **haiku-tactician-reliquary-1.json** (tactician) — Use fire and explosives to force enemies out of position and eliminate them isolated — 0/1 steps executable
   - MISSING focus-fire: “Target Edda Crowe before she can regroup her forces”
-- **haiku-tactician-wolves-2.json** (tactician) — Eliminate the Pale and Torn-ear wolves quickly, then focus overwhelming force on the Grey Mother — 1/4 steps executable
-  - MISSING focus-fire: “Focus fire on the Pale wolf to eliminate it quickly”
+- **haiku-tactician-wolves-2.json** (tactician) — Eliminate the Pale and Torn-ear wolves quickly, then focus overwhelming force on the Grey Mother — 1/3 steps executable
   - MISSING suppress: “Keep the Torn-ear wolf suppressed while we deal with the Pale wolf”
   - MISSING focus-fire: “Shift to the Torn-ear wolf and take it down before facing the Grey Mother”
 - **haiku-tactician-wolves-2.json** (tactician) — Suppress the wolves while hammering the Grey Mother with coordinated focus fire — 0/2 steps executable
@@ -116,6 +111,88 @@
 - **haiku-trickster-wolves-2.json** (trickster) — Coordinate a flanking assault with Pip and Borin while I hold the center — 3/4 steps executable
   - MISREAD block-path: “Borin, move around and get ready to strike” → 📣 Ask Borin: attack → pale wolf [attack]
 - **haiku-trickster-wolves-2.json** (trickster) — Use terrain and mobility to avoid the pack's coordinated attack while wearing them down — 3/3 steps executable
+- **haiku2-commander-blackthorn-0.json** (commander) — Burn the ambush and drive them into our blades with fire and chaos — 3/3 steps executable
+- **haiku2-commander-blackthorn-0.json** (commander) — Isolate and eliminate Nell the archer, then crush the brutes in detail — 1/2 steps executable
+  - MISREAD guard-ally: “Maud, don't move from where you are — Borin and I will keep the chaos away from you” → Block Col Garrow from reaching Borin Ashgrove [block]
+- **haiku2-commander-blackthorn-0.json** (commander) — Provoke the bees nest to scatter their formation, then pick off isolated targets — 0/2 steps executable
+  - MISREAD guard-ally: “Maud, if the fight comes your way, Borin shields you — don't get separated” → 📣 Ask Maud: attack → nell sparrow [attack]
+  - MISREAD follow-through: “If any of them are rattled or slowed, I push hard before they rally” → Rally [social]
+- **haiku2-commander-reliquary-1.json** (commander) — Ignite the lamp oil and use the ore cart as a battering ram to breach the barricade — 1/1 steps executable
+- **haiku2-commander-reliquary-1.json** (commander) — Overwhelm the barricade with coordinated assault: break the center while flanking — 2/2 steps executable
+- **haiku2-commander-reliquary-1.json** (commander) — Divide their forces and eliminate them in detail: separate Crowe from her brutes — 0/2 steps executable
+  - MISREAD block-path: “I'll position by the cart and the oil barrel — block Grist from supporting Crowe if she retreats” → Block Grist [block]
+  - MISREAD flank: “Pip and Borin, when Grist is isolated, pin him between us — don't let him break and rally” → 📣 Ask Pip and Borin: subdue grist [subdue]
+- **haiku2-commander-wolves-2.json** (commander) — Collapse the entire pack with environmental hazards: rockslide and avalanche — 0/1 steps executable
+  - MISSING shove-hazard: “Once Mother charges in, bring down the snow cornice from above — bury her and anything else in the den”
+- **haiku2-commander-wolves-2.json** (commander) — Isolate and kill the Grey Mother first, then hunt down the scattered pack — 2/4 steps executable
+  - MISSING focus-fire: “Everyone, the Grey Mother is our target — if she falls, the pack loses teeth and will”
+  - MISREAD follow-through: “When Mother staggers, I drive the blade home — finish this before her packmates can save her” → Intimidate the Grey Mother [social]
+- **haiku2-commander-wolves-2.json** (commander) — Hold the high ground and use terrain to grind down their numbers advantage — 0/2 steps executable
+  - MISSING focus-fire: “I'll keep forward pressure on the Pale wolf — keep it coming so it doesn't think”
+  - MISREAD flank: “Pip, from your high position, watch for any wolf trying to outflank us around the rocks — hit them hard” → 📣 Ask Pip: overwatch [overwatch]
+- **haiku2-duelist-blackthorn-2.json** (duelist) — Trip and isolate Brann, then focus fire on Garrick with Pip following up — 1/4 steps executable
+  - MISSING dash: “advance on Brann, make him chase”
+  - MISSING guard-ally: “I'll keep Brann down — Pip, finish him”
+  - MISSING flank: “move up the rise toward Garrick while Pip's on Brann”
+- **haiku2-duelist-blackthorn-2.json** (duelist) — Use high ground and cover against Hollis and Sella, collapse on them — 2/2 steps executable
+- **haiku2-duelist-blackthorn-2.json** (duelist) — Disarm Sella the archer, neutralize ranged threat, then isolate Garrick — 0/1 steps executable
+  - MISSING guard-ally: “Sella's disarmed — Pip, take her down”
+- **haiku2-duelist-reliquary-0.json** (duelist) — Sprint straight at Jory, trip the skirmisher fast, coordinate with Pip for the kill — 0/2 steps executable
+  - MISSING guard-ally: “Jory's down — Pip, now! Finish him”
+  - MISSING flank: “pivot left to flank Big Aud with Borin”
+- **haiku2-duelist-reliquary-0.json** (duelist) — Use brush cover for ambush on Tamsin, disarm the archer, eliminate ranged threat — 2/3 steps executable
+  - MISSING flank: “fall back, let Borin anchor while we surround Big Aud”
+- **haiku2-duelist-reliquary-0.json** (duelist) — Close on Big Aud, trip or disarm, exploit size disadvantage with positioning — 1/1 steps executable
+- **haiku2-duelist-wolves-1.json** (duelist) — Stand ground at camp center using log and fire as cover, trip charging wolves, coordinate kill — 2/4 steps executable
+  - MISREAD high-ground: “get behind the fallen log with Borin, make it our line” → Move and brace (after moving) [defend]
+  - MISREAD block-path: “hold the line, Borin — next one won't get through” → Block Black wolf from reaching Borin Ashgrove [block]
+- **haiku2-duelist-wolves-1.json** (duelist) — Lure wolves into pincer attack with Borin, trip on one side while he hits from other — 0/3 steps executable
+  - MISSING taunt: “lead Old wolf between me and Borin”
+  - MISREAD flank: “I'll trip Lean wolf next — Borin, be ready on the right side” → 📣 Tell your side: you'll trip lean wolf [trip]
+  - MISSING dash: “rotate left, hunt the Grey wolf”
+- **haiku2-duelist-wolves-1.json** (duelist) — Use deadfall trap strategically to disable wolves, collapse quickly on trapped target — 0/2 steps executable
+  - MISREAD trap: “get to the deadfall at the post, wait for the pack to commit” → Overwatch [overwatch]
+  - MISSING flank: “don't let them regroup, keep them falling one by one”
+- **haiku2-saboteur-blackthorn-1.json** (saboteur) — Open the sluice gate to flood the mill and control enemy movement with water — 2/2 steps executable
+- **haiku2-saboteur-blackthorn-1.json** (saboteur) — Collapse the charred roof section to block enemies and create confusion for Elsie's rescue — 0/1 steps executable
+  - MISREAD barricade: “Use the fallen stone and timber, hold the line here” → Block Wick [block]
+- **haiku2-saboteur-blackthorn-1.json** (saboteur) — Ignite the oil barrels and collapse the roof in sequence to overwhelm the raiders — 0/2 steps executable
+  - MISSING extract-ally: “Cut her loose, fast”
+  - MISSING guard-formation: “Get around her on both sides, shield her from attacks”
+- **haiku2-saboteur-reliquary-2.json** (saboteur) — Ring the chapel bell to stun all enemies within range, then grab the reliquary unopposed — 2/2 steps executable
+- **haiku2-saboteur-reliquary-2.json** (saboteur) — Topple the leaning pillar to create a mobile barrier and crushing zone between you and the foes — 0/1 steps executable
+  - MISREAD use-environment: “The fallen pillar blocks their advance—hold here” → Overwatch [overwatch]
+- **haiku2-saboteur-reliquary-2.json** (saboteur) — Ring the bell and topple the pillar together for overwhelming chaos—then calmly take the reliquary — 1/2 steps executable
+  - MISSING carry-relic: “I've got it, moving out fast with it”
+- **haiku2-saboteur-wolves-0.json** (saboteur) — Light the gorse before the gate to create a wall of fire that frightens the pack back — 1/1 steps executable
+- **haiku2-saboteur-wolves-0.json** (saboteur) — Heave the loose fold wall over to crush and block the wolves' escape route — 1/1 steps executable
+- **haiku2-saboteur-wolves-0.json** (saboteur) — Combine both set-pieces—fire and wall collapse—to trap the pack and force them into complete retreat — 1/3 steps executable
+  - MISREAD prepare-defense: “Everyone positions: I'll hit the wall, Pip lights the gorse” → 📣 Ask everyone: attack → young wolf [attack]
+  - MISREAD herd-wolves: “Borin, keep them from breaking through the gap—push hard” → Shove Scarred wolf (after moving) [shove]
+- **haiku2-shepherd-blackthorn-0.json** (shepherd) — block the road and keep Maud safe behind the cart — 2/3 steps executable
+  - MISREAD block-path: “I'm moving to block the road between Col and Maud—no one gets past me” → Block Col Garrow [block]
+- **haiku2-shepherd-blackthorn-0.json** (shepherd) — pressure Col while Borin holds the center line — 1/4 steps executable
+  - MISSING focus-fire: “Col won't leave the road—Pip, circle left and get him cornered with us”
+  - MISREAD take-cover: “Nell's up north—if she has a clear shot, I duck behind the cart and ready my shield” → Overwatch (after moving) [overwatch]
+  - MISREAD guard-ally: “Maud, stay back and heal anyone who takes a beating—I'll drag them to you if needed” → 📣 Ask Maud: aid [aid]
+- **haiku2-shepherd-blackthorn-0.json** (shepherd) — use the terrain to split and defeat them one at a time — 1/2 steps executable
+  - MISSING focus-fire: “Once they're split, everyone hits whoever is closest—Borin and I follow up on each one”
+- **haiku2-shepherd-reliquary-2.json** (shepherd) — seal Maud in the back chapel where she can heal without interruption — 2/2 steps executable
+- **haiku2-shepherd-reliquary-2.json** (shepherd) — use the pillar to crush Marl and control the central altar — 0/2 steps executable
+  - MISREAD focus-fire: “Pip, if Dace or Silas breaks left, hit them from the flank—we're all watching the same exits” → 📣 Ask Pip: attack → dace [attack]
+  - MISREAD ready-strike: “Once we have the relic, we're moving south fast—I'll ready to block any pursuit” → 📣 Tell your side: you'll overwatch [overwatch]
+- **haiku2-shepherd-reliquary-2.json** (shepherd) — aggressive rush—Pip gets the relic while we overwhelm them — 0/3 steps executable
+  - MISREAD shove-hazard: “Dace will try to intercept Pip—I shove him into the brazier, he's out for a moment” → Block Dace from reaching Pip Marrow (after moving) [block]
+  - MISSING block-path: “Once Pip has it, we're moving south together—tight formation, shields up, no one breaks rank”
+  - MISREAD ready-strike: “I'm ready to block anyone who gets between us and the exit” → Overwatch [overwatch]
+- **haiku2-shepherd-wolves-0.json** (shepherd) — wall off the wolves with fire and keep everyone behind the barricade — 1/4 steps executable
+  - MISREAD block-path: “Everyone falls back to the fold wall—Borin and I hold the gap, Maud stays at the center” → Block Scarred wolf from reaching Borin Ashgrove (after moving) [block]
+  - MISREAD guard-ally: “Pip, watch the east side of the fold—if a wolf tries to circle around the fire, stop it” → 📣 Ask Pip: overwatch [overwatch]
+  - MISREAD ready-strike: “I'm ready at the gap—if the fire burns down, we use the campfire to hold them back” → Overwatch [overwatch]
+- **haiku2-shepherd-wolves-0.json** (shepherd) — use the fold wall and terrain to split the pack and defeat them piecemeal — 1/3 steps executable
+  - MISREAD guard-ally: “Maud, you're with the fallen logs as cover—heal whoever needs it, stay safe back there” → 📣 Ask Maud: aid [aid]
+  - MISSING focus-fire: “The Gaunt wolf is already hurting—Pip, once you finish the Young one, we all pile on it”
+- **haiku2-shepherd-wolves-0.json** (shepherd) — aggressive defense—use fire and our bodies to drive the pack away from the fold — 1/1 steps executable
 - **reliquary-0.json** — plan — 1/3 steps executable
   - MISSING disguise: “pull on Jory's cloak and wave the others over like a scout”
   - MISSING drag-ally: “pull Pip back away from Jory”
@@ -126,6 +203,7 @@
 - **wolves-0.json** — plan — 5/7 steps executable
   - MISSING howl-down: “bang my shield and shout to scare the wolves off”
   - MISREAD climb-prop: “hop up on the hay bale out of reach” → Move and brace (after moving) [defend]
-- **wolves-1.json** — plan — 7/7 steps executable
+- **wolves-1.json** — plan — 7/8 steps executable
+  - MISSING trap: “set a snare between the trees for the Grey wolf”
 - **wolves-2.json** — plan — 6/7 steps executable
   - MISREAD throw-fire: “grab the torch and fling it at the Grey Mother” → Pick up a torch (after moving) [pickup]

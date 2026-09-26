@@ -1,0 +1,125 @@
+{
+  "persona": "duelist",
+  "plans": [
+    {
+      "goal": "Stand ground at camp center using log and fire as cover, trip charging wolves, coordinate kill",
+      "steps": [
+        "Hold the log perimeter with Borin",
+        "Let wolves charge into kill zone",
+        "Trip each one and finish with follow-up"
+      ],
+      "atoms": [
+        {
+          "strategy": "Anchor to defensible cover",
+          "capability": "high-ground",
+          "text": "get behind the fallen log with Borin, make it our line",
+          "expect": ["dash", "use"]
+        },
+        {
+          "strategy": "Bait charging wolf",
+          "capability": "taunt",
+          "text": "call the Black wolf in, let him charge the log",
+          "expect": ["social", "attack"]
+        },
+        {
+          "strategy": "Trip incoming attacker",
+          "capability": "trip",
+          "text": "trip Black wolf as he charges over the log",
+          "expect": ["trip", "kick"]
+        },
+        {
+          "strategy": "Call coordinated finish",
+          "capability": "guard-ally",
+          "text": "he's prone on the log — Pip, strike now",
+          "expect": ["social", "attack"]
+        },
+        {
+          "strategy": "Maintain line against next wolf",
+          "capability": "block-path",
+          "text": "hold the line, Borin — next one won't get through",
+          "expect": ["attack", "defend"]
+        }
+      ]
+    },
+    {
+      "goal": "Lure wolves into pincer attack with Borin, trip on one side while he hits from other",
+      "steps": [
+        "Split the pack by moving unpredictably",
+        "Get one wolf between me and Borin",
+        "Trip and attack simultaneously"
+      ],
+      "atoms": [
+        {
+          "strategy": "Separate one wolf from the pack",
+          "capability": "dash",
+          "text": "dart away from the group, isolate Old wolf",
+          "expect": ["dash", "attack"]
+        },
+        {
+          "strategy": "Bait wolf into pincer zone",
+          "capability": "taunt",
+          "text": "lead Old wolf between me and Borin",
+          "expect": ["social", "attack"]
+        },
+        {
+          "strategy": "Trip while Borin blocks",
+          "capability": "trip",
+          "text": "trip Old wolf and Borin closes in — we have him",
+          "expect": ["trip", "attack"]
+        },
+        {
+          "strategy": "Announce coordinated strike",
+          "capability": "flank",
+          "text": "I'll trip Lean wolf next — Borin, be ready on the right side",
+          "expect": ["social", "attack"]
+        },
+        {
+          "strategy": "Move to next target",
+          "capability": "dash",
+          "text": "rotate left, hunt the Grey wolf",
+          "expect": ["dash", "attack"]
+        }
+      ]
+    },
+    {
+      "goal": "Use deadfall trap strategically to disable wolves, collapse quickly on trapped target",
+      "steps": [
+        "Spring the deadfall when wolf is in kill zone",
+        "Follow up with maximum focus fire",
+        "Use the confusion to press other wolves"
+      ],
+      "atoms": [
+        {
+          "strategy": "Set up trap zone",
+          "capability": "trap",
+          "text": "get to the deadfall at the post, wait for the pack to commit",
+          "expect": ["dash", "use"]
+        },
+        {
+          "strategy": "Trigger trap at right moment",
+          "capability": "use-rope",
+          "text": "spring the deadfall when Black wolf crosses the post",
+          "expect": ["use", "attack"]
+        },
+        {
+          "strategy": "Announce kill opportunity",
+          "capability": "guard-ally",
+          "text": "deadfall's down — everyone, pile on Black wolf now",
+          "expect": ["social", "attack"]
+        },
+        {
+          "strategy": "Trip the next closest wolf",
+          "capability": "trip",
+          "text": "trip Grey wolf while the others press the first",
+          "expect": ["trip", "attack"]
+        },
+        {
+          "strategy": "Keep momentum",
+          "capability": "flank",
+          "text": "don't let them regroup, keep them falling one by one",
+          "expect": ["attack", "dash"]
+        }
+      ]
+    }
+  ]
+}

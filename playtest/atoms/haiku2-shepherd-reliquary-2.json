@@ -1,0 +1,143 @@
+{
+  "persona": "shepherd",
+  "plans": [
+    {
+      "goal": "seal Maud in the back chapel where she can heal without interruption",
+      "steps": [
+        "push through the stone corridors and claim the inner chamber",
+        "ring the bell to rattle them and disrupt their coordination",
+        "hold the doorways while Pip grabs the reliquary"
+      ],
+      "atoms": [
+        {
+          "strategy": "advance together",
+          "capability": "block-path",
+          "text": "All of us move up through the chapel—we stay tight and don't let them separate us",
+          "expect": ["move", "dash"]
+        },
+        {
+          "strategy": "use sound as a weapon",
+          "capability": "distract-animals",
+          "text": "Ring the chapel bell—Silas and his crew are rattled, we use the confusion to push forward",
+          "expect": ["use", "social", "distract"]
+        },
+        {
+          "strategy": "establish healer sanctuary",
+          "capability": "block-path",
+          "text": "Maud, hold the inner chamber—Borin and I stand in the doorways so nothing gets to you",
+          "expect": ["social", "guard", "move"]
+        },
+        {
+          "strategy": "grab the objective",
+          "capability": "take-cover",
+          "text": "Pip, slide in and grab the reliquary while we hold them off—it's light, you can move fast",
+          "expect": ["social", "pickup", "move"]
+        },
+        {
+          "strategy": "create a wall",
+          "capability": "guard-ally",
+          "text": "Borin, stand on the left passage—no one comes through without going through you",
+          "expect": ["social", "guard", "block"]
+        },
+        {
+          "strategy": "ready for the counterattack",
+          "capability": "ready-strike",
+          "text": "I'm braced in the main doorway, shield ready—if Marl or Dace charges, they hit solid ground",
+          "expect": ["ready", "defend", "block"]
+        }
+      ]
+    },
+    {
+      "goal": "use the pillar to crush Marl and control the central altar",
+      "steps": [
+        "maneuver Marl into position near the leaning pillar",
+        "topple it and crush him, then hold the altar as a strongpoint",
+        "keep Maud healing from safety while we control the high ground"
+      ],
+      "atoms": [
+        {
+          "strategy": "draw the brute in",
+          "capability": "focus-fire",
+          "text": "Borin and I move to the altar—we want Marl charging at us, not at Maud",
+          "expect": ["move", "social"]
+        },
+        {
+          "strategy": "environmental execution",
+          "capability": "fell-tree",
+          "text": "Topple the pillar—Marl goes flat, and we have crushing cover on the high altar",
+          "expect": ["use", "shove"]
+        },
+        {
+          "strategy": "hold the altar",
+          "capability": "block-path",
+          "text": "This altar is ours—Pip, flank left. Borin, take the right. I'm in the middle, no one passes",
+          "expect": ["social", "block", "move"]
+        },
+        {
+          "strategy": "archer suppression",
+          "capability": "take-cover",
+          "text": "Ivo's got us in the open—Maud, stay behind that crate and keep your head down while healing",
+          "expect": ["social", "defend", "guard"]
+        },
+        {
+          "strategy": "coordinated pressure",
+          "capability": "focus-fire",
+          "text": "Pip, if Dace or Silas breaks left, hit them from the flank—we're all watching the same exits",
+          "expect": ["social", "move"]
+        },
+        {
+          "strategy": "ready for escape",
+          "capability": "ready-strike",
+          "text": "Once we have the relic, we're moving south fast—I'll ready to block any pursuit",
+          "expect": ["ready", "defend", "move"]
+        }
+      ]
+    },
+    {
+      "goal": "aggressive rush—Pip gets the relic while we overwhelm them",
+      "steps": [
+        "Borin and I charge the archer and leader to distract them",
+        "Pip darts in and grabs the reliquary during the confusion",
+        "we form a wedge and push out together"
+      ],
+      "atoms": [
+        {
+          "strategy": "commit to the attack",
+          "capability": "focus-fire",
+          "text": "Borin, we're going straight at Silas and Ivo—no mercy, full pressure",
+          "expect": ["social", "attack", "dash"]
+        },
+        {
+          "strategy": "grab and run",
+          "capability": "dash",
+          "text": "Pip, the relic is yours—dash to the altar and grab it, we'll cover you",
+          "expect": ["social", "dash", "pickup"]
+        },
+        {
+          "strategy": "protect the runner",
+          "capability": "guard-ally",
+          "text": "Maud, follow Pip but stay behind—if anyone gets near her, I'm there",
+          "expect": ["social", "guard", "move"]
+        },
+        {
+          "strategy": "shove the skirmisher",
+          "capability": "shove-hazard",
+          "text": "Dace will try to intercept Pip—I shove him into the brazier, he's out for a moment",
+          "expect": ["shove", "move"]
+        },
+        {
+          "strategy": "wedge formation",
+          "capability": "block-path",
+          "text": "Once Pip has it, we're moving south together—tight formation, shields up, no one breaks rank",
+          "expect": ["social", "move", "defend"]
+        },
+        {
+          "strategy": "ready reaction",
+          "capability": "ready-strike",
+          "text": "I'm ready to block anyone who gets between us and the exit",
+          "expect": ["ready", "defend", "block"]
+        }
+      ]
+    }
+  ]
+}

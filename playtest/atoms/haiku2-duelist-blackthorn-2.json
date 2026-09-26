@@ -1,0 +1,125 @@
+{
+  "persona": "duelist",
+  "plans": [
+    {
+      "goal": "Trip and isolate Brann, then focus fire on Garrick with Pip following up",
+      "steps": [
+        "Move forward and bait Brann away from his allies",
+        "Trip Brann when he closes in",
+        "Announce kill and have Pip finish him while I press toward Garrick"
+      ],
+      "atoms": [
+        {
+          "strategy": "Close distance to force engagement",
+          "capability": "dash",
+          "text": "advance on Brann, make him chase",
+          "expect": ["dash", "attack"]
+        },
+        {
+          "strategy": "Trip the brute mid-charge",
+          "capability": "trip",
+          "text": "trip Brann as he comes at me",
+          "expect": ["trip", "kick"]
+        },
+        {
+          "strategy": "Announce coordination for follow-through",
+          "capability": "guard-ally",
+          "text": "I'll keep Brann down — Pip, finish him",
+          "expect": ["social", "attack"]
+        },
+        {
+          "strategy": "Press advantage toward Garrick",
+          "capability": "flank",
+          "text": "move up the rise toward Garrick while Pip's on Brann",
+          "expect": ["dash", "attack"]
+        },
+        {
+          "strategy": "Disarm the leader at range",
+          "capability": "disarm",
+          "text": "disarm Garrick before he can plant himself",
+          "expect": ["disarm", "attack"]
+        }
+      ]
+    },
+    {
+      "goal": "Use high ground and cover against Hollis and Sella, collapse on them",
+      "steps": [
+        "Climb the log for high ground advantage",
+        "Bait Hollis up the rise while staying elevated",
+        "Trip him on slopes and follow with allies"
+      ],
+      "atoms": [
+        {
+          "strategy": "Gain elevation for combat superiority",
+          "capability": "climb-tree",
+          "text": "climb the fallen log to get high ground",
+          "expect": ["climb", "use"]
+        },
+        {
+          "strategy": "Draw melee brute toward me",
+          "capability": "taunt",
+          "text": "challenge Hollis to come up",
+          "expect": ["social", "attack"]
+        },
+        {
+          "strategy": "Trip descending enemy",
+          "capability": "trip",
+          "text": "trip Hollis as he climbs toward me",
+          "expect": ["trip", "kick"]
+        },
+        {
+          "strategy": "Coordinate pincer attack",
+          "capability": "flank",
+          "text": "Borin, hit him from below while he's tripped — he's yours",
+          "expect": ["social", "attack"]
+        },
+        {
+          "strategy": "Fall back to center camp",
+          "capability": "high-ground",
+          "text": "drop down and reposition toward Garrick",
+          "expect": ["dash", "attack"]
+        }
+      ]
+    },
+    {
+      "goal": "Disarm Sella the archer, neutralize ranged threat, then isolate Garrick",
+      "steps": [
+        "Rush the archer before she can volley",
+        "Disarm her bow or trip her",
+        "Leave her for Pip, pivot to Garrick with Borin"
+      ],
+      "atoms": [
+        {
+          "strategy": "Close rapidly on the archer",
+          "capability": "dash",
+          "text": "dash straight at Sella, don't give her time to shoot",
+          "expect": ["dash", "attack"]
+        },
+        {
+          "strategy": "Disarm her weapon",
+          "capability": "disarm",
+          "text": "disarm Sella — knock her bow away",
+          "expect": ["disarm", "attack"]
+        },
+        {
+          "strategy": "Announce follow-up",
+          "capability": "guard-ally",
+          "text": "Sella's disarmed — Pip, take her down",
+          "expect": ["social", "attack"]
+        },
+        {
+          "strategy": "Pivot to main threat with shield-bearer",
+          "capability": "flank",
+          "text": "fall back to Borin, we'll hit Garrick together from both sides",
+          "expect": ["dash", "social"]
+        },
+        {
+          "strategy": "Pincer attack on leader",
+          "capability": "flank",
+          "text": "Borin on one side, me on the other — Garrick between us",
+          "expect": ["attack", "social"]
+        }
+      ]
+    }
+  ]
+}

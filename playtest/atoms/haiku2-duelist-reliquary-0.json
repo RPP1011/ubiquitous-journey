@@ -1,0 +1,119 @@
+{
+  "persona": "duelist",
+  "plans": [
+    {
+      "goal": "Sprint straight at Jory, trip the skirmisher fast, coordinate with Pip for the kill",
+      "steps": [
+        "Close distance on Jory before he can reposition",
+        "Trip him mid-stride",
+        "Signal Pip to finish while I pivot to next target"
+      ],
+      "atoms": [
+        {
+          "strategy": "Aggressive opening dash",
+          "capability": "dash",
+          "text": "charge straight at Jory, close the gap fast",
+          "expect": ["dash", "attack"]
+        },
+        {
+          "strategy": "Trip the mobile skirmisher",
+          "capability": "trip",
+          "text": "trip Jory before he can slip away",
+          "expect": ["trip", "kick"]
+        },
+        {
+          "strategy": "Call for immediate follow-through",
+          "capability": "guard-ally",
+          "text": "Jory's down — Pip, now! Finish him",
+          "expect": ["social", "attack"]
+        },
+        {
+          "strategy": "Turn on next target",
+          "capability": "flank",
+          "text": "pivot left to flank Big Aud with Borin",
+          "expect": ["dash", "attack"]
+        }
+      ]
+    },
+    {
+      "goal": "Use brush cover for ambush on Tamsin, disarm the archer, eliminate ranged threat",
+      "steps": [
+        "Hide in northern brush, wait for Tamsin to reposition",
+        "Spring ambush from concealment",
+        "Disarm or trip her before she can retreat"
+      ],
+      "atoms": [
+        {
+          "strategy": "Take cover in brush unseen",
+          "capability": "hide",
+          "text": "move into the brush up north, stay out of sight",
+          "expect": ["hide", "dash"]
+        },
+        {
+          "strategy": "Spring ambush on archer",
+          "capability": "flank",
+          "text": "when Tamsin moves closer, burst out and hit her from the side",
+          "expect": ["attack", "dash"]
+        },
+        {
+          "strategy": "Disarm weapon or trip",
+          "capability": "disarm",
+          "text": "disarm her bow before she can volley",
+          "expect": ["disarm", "attack"]
+        },
+        {
+          "strategy": "Call for coordinated focus",
+          "capability": "guard-ally",
+          "text": "Tamsin's exposed — everyone, focus her down",
+          "expect": ["social", "attack"]
+        },
+        {
+          "strategy": "Reposition against Big Aud",
+          "capability": "flank",
+          "text": "fall back, let Borin anchor while we surround Big Aud",
+          "expect": ["dash", "social"]
+        }
+      ]
+    },
+    {
+      "goal": "Close on Big Aud, trip or disarm, exploit size disadvantage with positioning",
+      "steps": [
+        "Bait the brute into committed charge",
+        "Trip or disarm mid-swing",
+        "Use pincer with Borin to control the fight"
+      ],
+      "atoms": [
+        {
+          "strategy": "Draw charge by moving threateningly",
+          "capability": "taunt",
+          "text": "challenge Big Aud, make him come at me",
+          "expect": ["social", "attack"]
+        },
+        {
+          "strategy": "Trip brute mid-charge",
+          "capability": "trip",
+          "text": "trip Big Aud as he charges — drop him hard",
+          "expect": ["trip", "kick"]
+        },
+        {
+          "strategy": "Disarm or keep control",
+          "capability": "disarm",
+          "text": "if he keeps his footing, disarm him with the trip",
+          "expect": ["disarm", "trip"]
+        },
+        {
+          "strategy": "Coordinate with Borin",
+          "capability": "flank",
+          "text": "Borin, he's pinned between us — lock him down",
+          "expect": ["social", "attack"]
+        },
+        {
+          "strategy": "Finish the brute",
+          "capability": "block-path",
+          "text": "don't let him escape, hem him in the well",
+          "expect": ["attack", "dash"]
+        }
+      ]
+    }
+  ]
+}
