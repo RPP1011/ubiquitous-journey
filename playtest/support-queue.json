@@ -6,7 +6,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 21,
+   "passes": 25,
    "strategies": [
     "make cover",
     "deny the archer her perch",
@@ -56,15 +56,16 @@
   },
   "take-cover": {
    "capability": "take-cover",
-   "status": "open",
+   "status": "supported",
    "kind": "mixed",
    "demand": 10,
-   "passes": 19,
+   "passes": 21,
    "strategies": [
     "make cover",
     "reposition-defense",
     "fortify",
-    "fortify-with-table"
+    "fortify-with-table",
+    "cover"
    ],
    "examples": [
     {
@@ -129,8 +130,8 @@
    "capability": "block-path",
    "status": "open",
    "kind": "mixed",
-   "demand": 54,
-   "passes": 40,
+   "demand": 66,
+   "passes": 56,
    "strategies": [
     "deny ground",
     "cut off escape",
@@ -208,7 +209,7 @@
    "capability": "trip",
    "status": "open",
    "kind": "mixed",
-   "demand": 41,
+   "demand": 43,
    "passes": 8,
    "strategies": [
     "melee craft",
@@ -298,7 +299,7 @@
    "capability": "throw-weapon",
    "status": "open",
    "kind": "unsupported",
-   "demand": 49,
+   "demand": 53,
    "passes": 1,
    "strategies": [
     "melee craft",
@@ -344,8 +345,8 @@
    "capability": "ready-strike",
    "status": "open",
    "kind": "mixed",
-   "demand": 33,
-   "passes": 118,
+   "demand": 37,
+   "passes": 140,
    "strategies": [
     "melee craft",
     "overwatch",
@@ -369,7 +370,8 @@
     "I watch and attack",
     "I ready for the Mother",
     "I watch and strike",
-    "ready"
+    "ready",
+    "Borin attacks Big Aud"
    ],
    "examples": [
     {
@@ -411,7 +413,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 56,
+   "passes": 62,
    "strategies": [
     "talk",
     "take him alive",
@@ -427,7 +429,7 @@
    "status": "supported",
    "kind": "mixed",
    "demand": 36,
-   "passes": 13,
+   "passes": 17,
    "strategies": [
     "talk",
     "buy the captive",
@@ -472,7 +474,7 @@
    "capability": "turncoat",
    "status": "open",
    "kind": "unsupported",
-   "demand": 12,
+   "demand": 16,
    "passes": 36,
    "strategies": [
     "talk",
@@ -499,7 +501,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 43,
+   "passes": 45,
    "strategies": [
     "talk",
     "deceive"
@@ -512,8 +514,8 @@
    "capability": "intimidate",
    "status": "open",
    "kind": "unsupported",
-   "demand": 19,
-   "passes": 51,
+   "demand": 25,
+   "passes": 57,
    "strategies": [
     "talk",
     "make them panic",
@@ -521,7 +523,8 @@
     "Close the distance while asserting dominance.",
     "Drive the point home.",
     "Press the advantage and drive them back.",
-    "Make the kill decisive and visible."
+    "Make the kill decisive and visible.",
+    "Finish any stragglers who press through."
    ],
    "examples": [
     {
@@ -547,8 +550,8 @@
    "capability": "guard-ally",
    "status": "open",
    "kind": "mixed",
-   "demand": 56,
-   "passes": 142,
+   "demand": 70,
+   "passes": 168,
    "strategies": [
     "look after the company",
     "protect the healer",
@@ -621,7 +624,7 @@
    "capability": "drag-ally",
    "status": "open",
    "kind": "mixed",
-   "demand": 42,
+   "demand": 44,
    "passes": 0,
    "strategies": [
     "look after the company",
@@ -646,8 +649,8 @@
    "capability": "give-item",
    "status": "open",
    "kind": "mixed",
-   "demand": 10,
-   "passes": 38,
+   "demand": 12,
+   "passes": 40,
    "strategies": [
     "look after the company",
     "arm the captive",
@@ -715,12 +718,13 @@
    "capability": "hide",
    "status": "open",
    "kind": "unsupported",
-   "demand": 44,
+   "demand": 48,
    "passes": 5,
    "strategies": [
     "stealth",
     "hide in the trees and ambush the ambushers",
-    "I move in quietly"
+    "I move in quietly",
+    "sneak round"
    ],
    "examples": [
     {
@@ -737,6 +741,11 @@
      "text": "I slip around and keep low",
      "stage": "plans",
      "outcome": "refused: the GM couldn't turn that into an action"
+    },
+    {
+     "text": "Pip, creep along behind the barrel unseen",
+     "stage": "plans",
+     "outcome": "refused: there is no brush or tall grass within reach to hide in"
     }
    ],
    "firstSeen": "2026-09-26",
@@ -746,7 +755,7 @@
    "capability": "disguise",
    "status": "open",
    "kind": "unsupported",
-   "demand": 43,
+   "demand": 45,
    "passes": 0,
    "strategies": [
     "stealth",
@@ -769,13 +778,14 @@
   },
   "push-cover": {
    "capability": "push-cover",
-   "status": "open",
+   "status": "supported",
    "kind": "misread",
    "demand": 1,
-   "passes": 4,
+   "passes": 6,
    "strategies": [
     "make cover",
-    "block the archer's line"
+    "block the archer's line",
+    "use the handcart as a rolling shield"
    ],
    "examples": [
     {
@@ -791,7 +801,7 @@
    "capability": "flank",
    "status": "open",
    "kind": "mixed",
-   "demand": 14,
+   "demand": 18,
    "passes": 10,
    "strategies": [
     "take position",
@@ -825,7 +835,7 @@
    "status": "supported",
    "kind": "misread",
    "demand": 5,
-   "passes": 10,
+   "passes": 12,
    "strategies": [
     "make cover",
     "cover the rescue"
@@ -869,7 +879,7 @@
    "capability": "carry-person",
    "status": "open",
    "kind": "unsupported",
-   "demand": 10,
+   "demand": 12,
    "passes": 0,
    "strategies": [
     "rescue",
@@ -894,7 +904,7 @@
    "capability": "escort",
    "status": "open",
    "kind": "unsupported",
-   "demand": 12,
+   "demand": 16,
    "passes": 4,
    "strategies": [
     "rescue",
@@ -934,7 +944,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 46,
+   "passes": 56,
    "strategies": [
     "melee craft",
     "push brute into obstacle",
@@ -972,8 +982,8 @@
    "capability": "throw-fire",
    "status": "open",
    "kind": "misread",
-   "demand": 19,
-   "passes": 9,
+   "demand": 21,
+   "passes": 11,
    "strategies": [
     "use fire",
     "fire",
@@ -1013,8 +1023,8 @@
    "capability": "scare-with-fire",
    "status": "open",
    "kind": "misread",
-   "demand": 18,
-   "passes": 42,
+   "demand": 24,
+   "passes": 54,
    "strategies": [
     "beasts",
     "fire scares wolves",
@@ -1024,7 +1034,9 @@
     "Final push",
     "terrify the beasts",
     "Seize the nearby torch and brandish it.",
-    "Ignite the tent to create an obstacle."
+    "Ignite the tent to create an obstacle.",
+    "scare it into running",
+    "pursue and scare"
    ],
    "examples": [
     {
@@ -1051,6 +1063,11 @@
      "text": "Throw burning hay at the Gaunt wolf to scare it away",
      "stage": "plans",
      "outcome": "misread as Intimidate Gaunt wolf [social]"
+    },
+    {
+     "text": "Thrust burning branches at the Scarred wolf",
+     "stage": "plans",
+     "outcome": "misread as Attack → Scarred wolf (after moving) [attack]"
     }
    ],
    "firstSeen": "2026-09-26",
@@ -1058,13 +1075,14 @@
   },
   "distract-animals": {
    "capability": "distract-animals",
-   "status": "open",
+   "status": "supported",
    "kind": "mixed",
    "demand": 8,
-   "passes": 0,
+   "passes": 2,
    "strategies": [
     "beasts",
-    "Use the torch to threaten and guide wolf movement."
+    "Use the torch to threaten and guide wolf movement.",
+    "chase them out"
    ],
    "examples": [
     {
@@ -1085,8 +1103,8 @@
    "capability": "howl-down",
    "status": "open",
    "kind": "mixed",
-   "demand": 6,
-   "passes": 33,
+   "demand": 8,
+   "passes": 39,
    "strategies": [
     "beasts",
     "noise",
@@ -1113,7 +1131,7 @@
    "capability": "climb-prop",
    "status": "open",
    "kind": "misread",
-   "demand": 7,
+   "demand": 9,
    "passes": 3,
    "strategies": [
     "take position",
@@ -1134,7 +1152,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 7,
+   "passes": 9,
    "strategies": [
     "put out fire near captive"
    ],
@@ -1145,8 +1163,8 @@
   "use-rope": {
    "capability": "use-rope",
    "status": "open",
-   "kind": "misread",
-   "demand": 7,
+   "kind": "mixed",
+   "demand": 9,
    "passes": 0,
    "strategies": [
     "rope the chief"
@@ -1165,7 +1183,7 @@
    "capability": "heal-ally",
    "status": "open",
    "kind": "unsupported",
-   "demand": 10,
+   "demand": 12,
    "passes": 3,
    "strategies": [
     "heal before assault",
@@ -1228,7 +1246,7 @@
    "capability": "interrogate",
    "status": "open",
    "kind": "unsupported",
-   "demand": 6,
+   "demand": 8,
    "passes": 7,
    "strategies": [
     "take a prisoner for info",
@@ -1267,8 +1285,8 @@
    "capability": "suppress",
    "status": "open",
    "kind": "unsupported",
-   "demand": 26,
-   "passes": 9,
+   "demand": 34,
+   "passes": 11,
    "strategies": [
     "archer suppression",
     "shut down the archer",
@@ -1312,7 +1330,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 7,
+   "passes": 9,
    "strategies": [
     "lure"
    ],
@@ -1325,7 +1343,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 43,
+   "passes": 51,
    "strategies": [
     "fire ring",
     "Use it to ignite logs",
@@ -1343,8 +1361,8 @@
    "capability": "focus-fire",
    "status": "open",
    "kind": "mixed",
-   "demand": 57,
-   "passes": 11,
+   "demand": 76,
+   "passes": 14,
    "strategies": [
     "cull the weak",
     "Focus fire on the weakest link.",
@@ -1358,7 +1376,8 @@
     "eliminate-second-add",
     "boss-focus",
     "maintain-assault",
-    "focus the weak wolf"
+    "focus the weak wolf",
+    "kill the mother"
    ],
    "examples": [
     {
@@ -1419,7 +1438,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 7,
+   "passes": 9,
    "strategies": [
     "barrel roll"
    ],
@@ -1432,7 +1451,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 7,
+   "passes": 9,
    "strategies": [
     "brace for charge"
    ],
@@ -1445,7 +1464,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 6,
+   "passes": 8,
    "strategies": [
     "duel"
    ],
@@ -1458,7 +1477,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 6,
+   "passes": 8,
    "strategies": [
     "draw-aggro"
    ],
@@ -1489,7 +1508,7 @@
    "capability": "break-contact",
    "status": "open",
    "kind": "mixed",
-   "demand": 8,
+   "demand": 10,
    "passes": 0,
    "strategies": [
     "Flee through the smoke",
@@ -1520,7 +1539,7 @@
    "capability": "carry-away",
    "status": "open",
    "kind": "mixed",
-   "demand": 7,
+   "demand": 9,
    "passes": 0,
    "strategies": [
     "Carry and escape through the flames",
@@ -1546,7 +1565,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 6,
+   "passes": 8,
    "strategies": [
     "Take the torch"
    ],
@@ -1572,7 +1591,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 6,
+   "passes": 8,
    "strategies": [
     "Chase to the edge"
    ],
@@ -1584,8 +1603,8 @@
    "capability": "dash",
    "status": "open",
    "kind": "mixed",
-   "demand": 35,
-   "passes": 2,
+   "demand": 47,
+   "passes": 4,
    "strategies": [
     "move straight to the chief",
     "move to Garrick while distracted",
@@ -1634,7 +1653,7 @@
    "capability": "escape",
    "status": "open",
    "kind": "mixed",
-   "demand": 24,
+   "demand": 28,
    "passes": 0,
    "strategies": [
     "run for freedom",
@@ -1677,8 +1696,8 @@
    "capability": "subdue",
    "status": "open",
    "kind": "mixed",
-   "demand": 8,
-   "passes": 0,
+   "demand": 10,
+   "passes": 2,
    "strategies": [
     "Subdue Jory and make him face reality.",
     "If Aud refuses, subdue him before Tamsin can support."
@@ -1702,7 +1721,7 @@
    "capability": "dodge",
    "status": "open",
    "kind": "mixed",
-   "demand": 6,
+   "demand": 8,
    "passes": 0,
    "strategies": [
     "reactive-defense"
@@ -1759,7 +1778,7 @@
    "capability": "shield-wall",
    "status": "open",
    "kind": "unsupported",
-   "demand": 6,
+   "demand": 8,
    "passes": 0,
    "strategies": [
     "shielded advance"
@@ -1779,14 +1798,33 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 6,
+   "passes": 8,
    "strategies": [
     "burning barrier"
    ],
    "examples": [],
    "firstSeen": "2026-09-26",
    "lastSeen": "2026-09-26"
+  },
+  "grab-objective": {
+   "capability": "grab-objective",
+   "status": "open",
+   "kind": "misread",
+   "demand": 2,
+   "passes": 0,
+   "strategies": [
+    "snatch the relic"
+   ],
+   "examples": [
+    {
+     "text": "snatch up the silver reliquary",
+     "stage": "plans",
+     "outcome": "misread as Move and brace (after moving) [defend]"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
   }
  },
- "runs": 16
+ "runs": 18
 }

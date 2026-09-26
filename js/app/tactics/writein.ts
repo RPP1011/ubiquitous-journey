@@ -540,7 +540,7 @@ const KINDS: Partial<Record<Verb, string[]>> = {
   block: ['block'], hide: ['defend'], use: ['use'], overwatch: ['overwatch', 'ready'], escape: ['escape'],
   intimidate: ['social'], taunt: ['social'], bluff: ['social'], rally: ['social'], parley: ['social'],
 };
-const GROUP = /^\s*(everyone|everybody|all of you|all|both of you|lads|friends|you lot|company)\s*[,:;!]?\s+(.+)$/i;
+const GROUP = /^\s*(everyone|everybody|all of you|all units|all of us|us all|all|both of you|lads|friends|you lot|company|team)\s*[,:;!]?\s+(.+)$/i;
 const ANNOUNCE = /^\s*(?:i'?ll|i will|i'?m going to|im going to|i'?m gonna|i'?m going for|watch me|i've got|i got)\s+(.+)$/i;
 const MINE = /^\s*leave (.+?) to me\b/i;
 

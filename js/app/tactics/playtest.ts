@@ -63,7 +63,7 @@ export function probe(b: Battle, u: Unit, atoms: Atom[]): ProbeResult[] {
 export function judge(atom: Atom, rs: GridReading[], why: () => string, b: Battle, u: Unit): ProbeResult {
   {
     const top = rs[0];
-    const kind = top ? (top.action.kind === 'ready' ? `ready:${top.action.response.kind}` : top.action.kind) : null;
+    const kind = top ? top.call ? top.call.want.kinds[0] : (top.action.kind === 'ready' ? `ready:${top.action.response.kind}` : top.action.kind) : null;
     if (top && !top.deferred && (atom.expect.includes(kind!) || atom.expect.includes(kind!.split(':')[0]) || (kind!.startsWith('ready:') && atom.expect.includes(kind!.slice(6)))))
       return { atom, status: 'supported', got: kind, reason: null };
     if (top && top.deferred) return { atom, status: 'unreachable', got: top.label, reason: 'out of reach this turn' };

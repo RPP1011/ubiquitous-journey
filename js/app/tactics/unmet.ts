@@ -32,7 +32,7 @@ const UNSUPPORTED: Array<[RegExp, string]> = [
 
 /** Reasons that describe the circumstances, not a missing capability. */
 export function isSituational(reason: string): boolean {
-  return /out of reach|there's no |nobody |already acted|not hurt/.test(reason);
+  return /out of reach|there's no |there is no |nobody |already acted|not hurt|makes their own choices/.test(reason);
 }
 
 /** Why the GM can't read this. */
