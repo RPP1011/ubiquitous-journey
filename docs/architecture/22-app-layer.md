@@ -50,6 +50,39 @@ main.js (run mode)                 RunUI (screens, autoplay script)
   (best odds, then fewest steps), each with a **forecast** (plain words + the tiles it touches + who
   it catches) and the **risks** of the walk (opportunity swings, overwatch — the movement rules
   replayed dry). `verbOf`/`aimOf` drive the verb-first turn UI.
+- `intents.ts` — **telegraphed intents**. As your turn begins, every other unit commits to its next
+  move (`planTurn(…, {predict:true})`) and it is drawn as arrows plus a "Coming" list.
+  - Foes share their plans with friends in earshot as `plan` calls, so their theory of mind is exact.
+    The notable plans are shouted aloud.
+  - On its turn a unit `honour`s its intent if it still can. Move the target, block the lane or knock
+    it down, and the plan is foiled.
+  - Our side's AI reads the telegraphs too: it steps out of committed attacks, braces, and blocks
+    the lane to a threatened friend.
+- **Enemy signature abilities** (battle.ts):
+  - brute **charge**: a straight line that bowls the target over, and breaks on a braced shield;
+  - archer **pinning shot**: slows;
+  - pack-leader **howl**;
+  - wolves' **pack hunting**: isolated targets are easier to hit, and a bite beside another wolf
+    drags them down;
+  - **hold the line**: leaders and guardians swing at full strength at anyone breaking away;
+  - skirmisher **hit-and-run**.
+
+  Fear spreads through comms: a broken foe's shout makes the friends who hear it waver.
+- `items.ts` — **consumables** everyone carries and spends once:
+  - bandage, draught
+  - oil flask: a slick that goes up all at once when fire touches it
+  - smoke pot, caltrops, flash powder, bola
+  - wolfsbane
+
+  Kits by role; they persist across stages and runs (`SaveData.kits`). Beaten foes' kits are loot,
+  and the hub sells more.
+- **Fog of war** (battle.ts `spots`/`visibleTo`/`lastSeen`):
+  - Each side sees only what its people see: line of sight in range, 6 at night unless lit.
+  - Brush and smoke hide anyone who isn't next to a foe.
+  - Striking, throwing or shouting reveals you until your next turn.
+  - A side shares what it sees, so a spotter serves its archers.
+  - No one aims at, or plans against, what their side can't see. Striking unseen is an ambush.
+  - Unseen foes aren't drawn; a "?" marks where they were last seen.
 - `director.ts` — opens a battle around a real-time fight (sandbox mode).
 
 **The turn UI (`ui/tacticsView.ts`) is verb-first.** The panel lists verbs with a count of how many
