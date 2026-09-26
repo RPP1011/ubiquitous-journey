@@ -110,6 +110,8 @@ export interface Unit {
   spoke: boolean;
   boon: Boon | null;
   burning: number; prone: boolean; exposed: boolean; defending: boolean; overwatch: boolean;
+  /** Rounds left without a weapon in hand (disarm): blows land at half strength, no weapon arts. */
+  disarmed: number;
   /** Holding ground: a foe that steps next to this unit must stop there (zone of control). */
   blocking: boolean;
   stunned: boolean; slowed: number; shield: number;
@@ -154,6 +156,8 @@ export type Action =
   | { kind: 'pickup'; prop: string }
   | { kind: 'grab'; target: Unit['id'] }
   | { kind: 'subdue'; target: Unit['id'] }
+  | { kind: 'trip'; target: Unit['id'] }                     // sweep their legs: prone
+  | { kind: 'disarm'; target: Unit['id'] }                   // knock the weapon away: weak blows a while
   | { kind: 'aid'; target: Unit['id'] }
   | { kind: 'free'; target: Unit['id'] }                      // cut a captive's bonds
   | { kind: 'guard'; target: Unit['id'] }
@@ -237,7 +241,7 @@ export class Battle {
       x: at.x, z: at.z, facing: [0, 1], init: check(sheet.finesse, 0).total,
       move: 4 + (sheet.finesse >= 3 ? 1 : 0), out: null,
       moved: false, acted: false, reacted: false, setBy: {}, boon: null, spoke: false,
-      burning: 0, prone: false, exposed: false, defending: false, overwatch: false, blocking: false, stunned: false, slowed: 0, shield: 0,
+      burning: 0, prone: false, exposed: false, defending: false, overwatch: false, blocking: false, disarmed: 0, stunned: false, slowed: 0, shield: 0,
       morale: 'steady', guardedBy: null, tauntedBy: null, turnedOn: null, lastHitBy: null, carrying: null, readied: null, surprised: false,
       tactic: extra.tactic ?? (agent.faction === 'monster' ? 'beast' : role === 'foe' ? 'brute' : 'guardian'),
       traits: extra.traits ?? null, tags: new Set(extra.tags ?? []), bound: !!extra.bound,
@@ -413,6 +417,7 @@ export class Battle {
     u.defending = false; u.overwatch = false; u.blocking = false; u.moved = false; u.acted = false;
     for (const o of this.units) if (o.boon && this.round > o.boon.until) o.boon = null;
     u.spoke = false;
+    if (u.disarmed > 0) { u.disarmed--; if (u.disarmed === 0) this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'snatch' : 'snatches'} up a weapon again.`); }
     if (u.readied) { u.readied = null; }
     if (u.bound) { u.moved = true; u.acted = true; return; }
     if (u.surprised) { this.cue({ k: 'icon', u: u.id, icon: '?' }); u.surprised = false; u.moved = true; u.acted = true; this.note('info', `${this.nm(u, true)} ${u.agent.controlled ? 'are' : 'is'} caught off guard!`); return; }
@@ -611,6 +616,8 @@ export class Battle {
       }
       case 'grab': return t ? roll('finesse', 10 + t.sheet.finesse + (t.defending ? 2 : 0)) : { p: 0, notes: [] };
       case 'subdue': { if (!t) return { p: 0, notes: [] }; const h = this.hitDC(u, t, from, false); return roll('might', h.dc + 2, h.notes); }
+      case 'trip': { if (!t) return { p: 0, notes: [] }; const face = this.facingOf(from, t); return roll('finesse', 10 + Math.max(t.sheet.finesse, t.sheet.might) + (t.defending ? 2 : 0) - (face === 'back' ? 3 : face === 'side' ? 1 : 0), face !== 'front' ? [face === 'back' ? 'from behind' : 'flank'] : []); }
+      case 'disarm': { if (!t) return { p: 0, notes: [] }; return roll('finesse', 12 + t.sheet.might + (t.defending ? 2 : 0) - (t.prone ? 3 : 0), t.prone ? ['prone'] : []); }
       case 'aid': { const w = t ?? u; return w.out === 'downed' ? roll('finesse', 10) : ((u.agent.inventory as Record<string, number> | undefined)?.potion ?? 0) > 0 ? { p: 1, notes: ['potion'] } : roll('finesse', 11); }
       case 'social': return this.socialOdds(u, a, t);
       case 'use': { const p = this.pieces.get(a.piece); return p?.check ? roll(p.check.stat, p.check.dc) : { p: 1, notes: [] }; }
@@ -625,9 +632,12 @@ export class Battle {
     for (const f of foes) {
       if (this.adjacent(from, f)) {
         out.push({ kind: 'attack', target: f.id }, { kind: 'shove', target: f.id }, { kind: 'subdue', target: f.id });
+        if (!f.prone && f.tactic !== 'beast') out.push({ kind: 'trip', target: f.id });
+        if (!f.disarmed && f.tactic !== 'beast') out.push({ kind: 'disarm', target: f.id });
         if ((f.agent.gold || 0) > 0) out.push({ kind: 'grab', target: f.id });
       }
       for (const ab of u.agent.abilities?.values?.() ?? []) {
+        if (u.disarmed > 0) continue;
         if ((u.readyRound.get(ab.id) ?? 0) > this.round || !ab.effects.some((e) => e.op === 'damage' || e.op === 'stun' || e.op === 'expose')) continue;
         const reach = Math.max(1, Math.ceil(ab.header.range / TILE));
         if (reach > 1 && dist(from, f) > 2 && this.hidden(f)) continue;       // can't shoot what you can't see
@@ -690,6 +700,20 @@ export class Battle {
       case 'pickup': { const p = this.map.props.get(a.prop)!; u.carrying = p; this.cue({ k: 'anim', u: u.id, clip: 'PickUp' }); if (p.kind === 'relic') this.ev('relic', u); this.map.removeProp(p); this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'pick' : 'picks'} up ${p.name}.`); u.acted = false; break; }
       case 'grab': this.grab(u, t!); break;
       case 'subdue': this.subdue(u, t!); break;
+      case 'trip': {
+        const ok = check(u.sheet.finesse, 10 + Math.max(t!.sheet.finesse, t!.sheet.might) + (t!.defending ? 2 : 0) - (this.facingOf(u, t!) === 'back' ? 3 : this.facingOf(u, t!) === 'side' ? 1 : 0)).ok;
+        this.cue({ k: 'strike', u: u.id, t: t!.id, res: ok ? 'hit' : 'miss', style: 'shove' });
+        if (ok) { t!.prone = true; this.cue({ k: 'fall', t: t!.id }); this.note('hit', `${this.nm(u, true)} ${u.agent.controlled ? 'sweep' : 'sweeps'} ${this.nm(t!)}'s legs${fl} — down they go!`); this.ev('shove', u, t, 'trip'); }
+        else this.note('miss', `${this.nm(t!, true)} ${t!.agent.controlled ? 'keep' : 'keeps'} ${t!.agent.controlled ? 'your' : 'their'} feet against ${this.nm(u)}'s trip.`);
+        break;
+      }
+      case 'disarm': {
+        const ok = check(u.sheet.finesse, 12 + t!.sheet.might + (t!.defending ? 2 : 0) - (t!.prone ? 3 : 0)).ok;
+        this.cue({ k: 'strike', u: u.id, t: t!.id, res: ok ? 'hit' : 'miss', style: 'pommel' });
+        if (ok) { t!.disarmed = 2; this.note('hit', `${this.nm(u, true)} ${u.agent.controlled ? 'knock' : 'knocks'} the weapon from ${this.nm(t!)}'s hand${fl}!`); }
+        else this.note('miss', `${this.nm(t!, true)} ${t!.agent.controlled ? 'keep' : 'keeps'} a grip on ${t!.agent.controlled ? 'your' : 'their'} weapon.`);
+        break;
+      }
       case 'aid': this.aid(u, t ?? u); break;
       case 'free':
         if (t && t.bound) { t.bound = false; this.ev('free', u, t); this.cue({ k: 'free', u: u.id, t: t.id }); this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'cut' : 'cuts'} ${this.nm(t)} free!`); }
@@ -743,7 +767,7 @@ export class Battle {
     this.cue({ k: 'strike', u: u.id, t: t.id, res: r.ok ? 'hit' : 'miss', style, crit: r.crit, back: this.facingOf(u, t) === 'back' });
     if (!r.ok) { this.note('miss', `${this.nm(u, true)} ${u.agent.controlled ? 'swing' : 'swings'} at ${this.nm(t)}${fl} — and ${u.agent.controlled ? 'miss' : 'misses'}.`); return; }
     const back = this.facingOf(u, t) === 'back';
-    let dmg = TUNE.damage * (0.75 + 0.08 * u.sheet.might) * (0.85 + rng() * 0.3) * mul;
+    let dmg = TUNE.damage * (0.75 + 0.08 * u.sheet.might) * (0.85 + rng() * 0.3) * mul * (u.disarmed > 0 ? 0.5 : 1);
     const ft = this.followThrough(u, t);
     let k = 1;
     if (r.crit || (back && rng() < 0.35)) k *= 1.5;

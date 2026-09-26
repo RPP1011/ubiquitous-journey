@@ -177,6 +177,8 @@ export function tacticsTest(ok, { stubScene, makeFighter }) {
       ['keep Garrick away from Borin', (r) => r.action.kind === 'block' && r.label.includes('Borin')],
       ['hit the first bandit that comes close', (r) => r.action.kind === 'ready' && r.action.trigger.on === 'reach' && r.action.response.kind === 'attack'],
       ['hit Garrick to push him back', (r) => r.action.kind === 'attack'],
+      ['sweep Garrick\'s legs', (r) => r.action.kind === 'trip' && r.action.target === g.id],
+      ['knock the weapon from Mira\'s hand', (r) => r.action.kind === 'disarm' && r.action.target === m.id],
     ];
     let pass = 0;
     for (const [t, pred] of cases) { const r = top(t); if (r && pred(r)) pass++; else console.log(`   write-in miss: "${t}" → ${JSON.stringify(r && { to: r.to, action: r.action })}`); }
@@ -285,6 +287,25 @@ export function tacticsTest(ok, { stubScene, makeFighter }) {
     b.order = [pip, you, maud, g, m]; b.turn = 0;
     b.speak(you, plan.call);
     ok((predictAllies(b, pip).get(m.id) ?? 0) === 1, 'talk: Pip, acting first, now knows exactly what you will do');
+    ss.dispose();
+  }
+
+  // --- 15. trip and disarm; a trip is a set-up a friend can follow through on --------------------
+  {
+    const { s: ss, b, mk } = arena(stubScene, makeFighter);
+    const you = b.add(ss.player, 'player', { x: 4, z: 5 });
+    const pipA = mk('Pip', 'townsfolk'); pipA.inParty = true;
+    const pip = b.add(pipA, 'companion', { x: 6, z: 5 }, { traits: { bravery: 0.6, compassion: 0.5, loyalty: 0.9, ruthlessness: 0.3 }, tactic: 'rogue' });
+    const g = b.add(mk('Garrick'), 'foe', { x: 5, z: 5 });
+    order(b, you, pip, g); b.start();
+    you.sheet.finesse = 30;
+    for (let i = 0; i < 6 && !g.prone; i++) { you.acted = false; b.act(you, { kind: 'trip', target: g.id }); }   // a natural 1 always fails
+    ok(g.prone && g.setBy.prone === you.id, 'trip: a clean sweep puts them down, credited to you');
+    ok(b.followThrough(pip, g)?.by === you, 'trip: Pip can follow through on your trip');
+    b.endTurn(you);
+    pip.sheet.finesse = 30;
+    for (let i = 0; i < 6 && !g.disarmed; i++) { pip.acted = false; b.act(pip, { kind: 'disarm', target: g.id }); }
+    ok(g.disarmed === 2 && !b.options(g).some((a) => a.kind === 'ability'), 'disarm: no weapon, no weapon arts for two rounds');
     ss.dispose();
   }
 

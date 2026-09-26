@@ -69,6 +69,7 @@ function setupOf(b: Battle, u: Unit, a: Action, s: Spot): Unit['id'] | null {
     }
     case 'ability': { const spec = u.agent.abilities.get(a.abilityId); return t && spec?.effects.some((e) => e.op === 'expose' || e.op === 'stun' || e.op === 'knockback') ? t.id : null; }
     case 'social': return t && a.verb === 'bluff' && a.claim === 'look_behind' ? t.id : null;
+    case 'trip': return t ? t.id : null;
     case 'throw': { const p = b.map.props.get(a.prop) ?? u.carrying; const tu = b.unitAt(a.at.x, a.at.z); return p?.blinding && tu ? tu.id : null; }
     case 'use': {
       const pc = b.pieces.get(a.piece); if (!pc) return null;
@@ -227,6 +228,14 @@ export function planTurn(b: Battle, u: Unit, opts: { predict?: boolean } = {}): 
         }
         case 'free': g = u.side === 'us' ? 2.0 + tr.compassion : 0; why = 'cut the captive free'; break;
         case 'grab': g = (o.kind === 'rob' && u.loot === 0 && t ? p * (t.id === o.targetId ? 1.8 : 0.9) : 0) + (u.traits || u.role === 'player' ? p * tr.ruthlessness * 0.5 * (1 - tr.compassion) : 0); break;
+        case 'trip': case 'disarm': {
+          if (!t) break;
+          // worth it as a set-up for friends (follow-through), or to blunt a heavy hitter
+          const heavy = t.tactic === 'brute' || t.tactic === 'leader' || t.tags.has('chief');
+          g = a.kind === 'trip' ? p * weight(t) * 0.25 : p * weight(t) * (heavy && !t.disarmed ? 0.4 : 0.1);
+          why = a.kind === 'trip' ? 'sweep their legs' : 'knock the weapon away';
+          break;
+        }
         case 'subdue': {
           if (!t) break;
           const want = (o.kind === 'capture' || o.kind === 'enforce') && t.id === o.targetId ? 1

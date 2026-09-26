@@ -38,7 +38,7 @@ export interface GridReading {
 }
 
 export type Verb = 'attack' | 'shove' | 'kick' | 'hew' | 'throw' | 'ignite' | 'douse' | 'pickup' | 'grab' | 'subdue' | 'aid'
-  | 'free' | 'guard' | 'defend' | 'block' | 'hide' | 'use' | 'overwatch' | 'escape' | 'intimidate' | 'taunt' | 'bluff' | 'rally' | 'parley' | 'move';
+  | 'free' | 'guard' | 'defend' | 'block' | 'hide' | 'use' | 'trip' | 'disarm' | 'overwatch' | 'escape' | 'intimidate' | 'taunt' | 'bluff' | 'rally' | 'parley' | 'move';
 
 /** What the player meant, independent of how it gets done on this field. */
 export interface Intent {
@@ -60,7 +60,7 @@ export interface Intent {
 }
 
 export const VERBS: readonly Verb[] = ['attack', 'shove', 'kick', 'hew', 'throw', 'ignite', 'douse', 'pickup', 'grab', 'subdue', 'aid',
-  'free', 'guard', 'defend', 'block', 'hide', 'use', 'overwatch', 'escape', 'intimidate', 'taunt', 'bluff', 'rally', 'parley', 'move'];
+  'free', 'guard', 'defend', 'block', 'hide', 'use', 'trip', 'disarm', 'overwatch', 'escape', 'intimidate', 'taunt', 'bluff', 'rally', 'parley', 'move'];
 
 const has = (t: string, ...ws: string[]) => ws.some((w) => new RegExp(`(^| )${w}( |$)`).test(t));
 export const norm = (s: string) => ` ${s.toLowerCase().replace(/[^a-z0-9' ]+/g, ' ').replace(/'s\b/g, '').replace(/\s+/g, ' ').trim()} `;
@@ -87,6 +87,8 @@ const V: Record<Exclude<Verb, 'move'>, string[]> = {
     'hold the right', 'hold the gap', 'hold the door', 'hold the pass', 'hold the bridge', 'stand between', 'get between', 'step between',
     'body block', 'plug the gap', 'stand in the way', 'in his way', 'in her way', 'in their way', 'intercept', 'bottleneck',
     'keep them away', 'keep them off', 'keep him away', 'keep her away', "can't get past", 'nobody gets past', 'no one gets past'],
+  trip: ['trip', 'sweep', 'sweep the leg', 'sweep his legs', 'sweep her legs', 'knock his legs', 'take out his legs', 'take his legs', 'hook his leg', 'bring him down', 'bring her down', 'trip up'],
+  disarm: ['disarm', 'knock the weapon', 'knock his weapon', 'knock her weapon', 'knock the sword', 'knock the axe', 'take his weapon', 'take her weapon', 'wrench the', 'strip his weapon', 'make him drop'],
   hide: ['hide', 'lie low', 'stay low', 'crouch in', 'duck into', 'into the brush', 'into the grass', 'into the wheat', 'into the gorse',
     'in the brush', 'in the grass', 'in the wheat', 'in the bracken', 'into the bracken', 'conceal', 'out of sight', 'sneak', 'creep'],
   // set-pieces are matched by their own nouns (below), not by a verb list
@@ -219,7 +221,7 @@ export function interpretRegex(b: Battle, u: Unit, raw: string, speaker?: Unit):
       case 'douse': I.ally = namedFriends[0]?.u.id; I.self = selfRef; if (prop) I.prop = prop.id; break;
       case 'pickup': if (prop && prop.weight === 0) I.prop = prop.id; else continue; break;
       case 'grab': if (prop && prop.weight === 0 && !has(text, 'purse', 'gold')) continue; I.target = target?.id; break;
-      case 'subdue': I.target = target?.id; break;
+      case 'subdue': case 'trip': case 'disarm': I.target = target?.id; break;
       case 'aid': I.ally = namedFriends[0]?.u.id ?? speakerRef?.id; I.self = I.ally == null; break;
       case 'free': I.ally = namedFriends.find((n) => n.u.bound)?.u.id ?? friends.find((f) => f.bound)?.id; if (I.ally == null) continue; I.score += 1; break;
       case 'guard': I.ally = namedFriends[0]?.u.id ?? speakerRef?.id; if (I.ally == null) continue; break;
@@ -356,6 +358,8 @@ export function resolveIntents(b: Battle, u: Unit, intents: Intent[], model = fa
       case 'pickup': if (pr) anywhere({ kind: 'pickup', prop: pr.id }, `Pick up ${pr.name}`, score, dest, pr); break;
       case 'grab': if (t) anywhere({ kind: 'grab', target: t.id }, `Grab ${b.nm(t)}'s purse`, score, dest, t); break;
       case 'subdue': if (t) anywhere({ kind: 'subdue', target: t.id }, `Subdue ${b.nm(t)}`, score, dest, t); break;
+      case 'trip': if (t) anywhere({ kind: 'trip', target: t.id }, `Trip ${b.nm(t)}`, score + 0.5, dest, t); break;
+      case 'disarm': if (t) anywhere({ kind: 'disarm', target: t.id }, `Disarm ${b.nm(t)}`, score + 0.5, dest, t); break;
       case 'aid': { const w = ally ?? u; anywhere({ kind: 'aid', target: w.id }, w === u ? 'Patch yourself up' : `Aid ${b.nm(w)}`, score, null, w); break; }
       case 'free': if (ally) anywhere({ kind: 'free', target: ally.id }, `Cut ${b.nm(ally)} free`, score, null, ally); break;
       case 'guard': if (ally) anywhere({ kind: 'guard', target: ally.id }, `Guard ${b.nm(ally)}`, score, null, ally); break;
@@ -532,7 +536,7 @@ export function describeTrigger(b: Battle, t: Trigger): string {
 
 const KINDS: Partial<Record<Verb, string[]>> = {
   attack: ['attack'], shove: ['shove'], kick: ['kick'], hew: ['hew'], throw: ['throw'], ignite: ['ignite'], douse: ['douse'],
-  pickup: ['pickup'], grab: ['grab'], subdue: ['subdue'], aid: ['aid'], free: ['free'], guard: ['guard'], defend: ['defend', 'block'],
+  pickup: ['pickup'], grab: ['grab'], subdue: ['subdue'], trip: ['trip'], disarm: ['disarm'], aid: ['aid'], free: ['free'], guard: ['guard'], defend: ['defend', 'block'],
   block: ['block'], hide: ['defend'], use: ['use'], overwatch: ['overwatch', 'ready'], escape: ['escape'],
   intimidate: ['social'], taunt: ['social'], bluff: ['social'], rally: ['social'], parley: ['social'],
 };

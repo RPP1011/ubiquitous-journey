@@ -26,8 +26,6 @@ const UNSUPPORTED: Array<[RegExp, string]> = [
   [/\b(disguise|cloak|pretend to be|dress as)\b/, 'disguises'],
   [/\b(swap|switch|trade) places\b/, 'swapping places'],
   [/\b(throw|hurl) (my|his|her|the) (sword|axe|blade|weapon|knife|spear)\b/, 'throwing your weapon'],
-  [/\bdisarm\b/, 'disarming'],
-  [/\btrip\b/, 'tripping'],
   [/\b(bribe|offer .* (purse|gold|coin|silver)|pay (him|her|them))\b/, 'bribes'],
   [/\b(carry|drag|haul) .* (out|away|to safety|clear)\b/, 'carrying people'],
 ];
