@@ -392,6 +392,11 @@ export class TacticsView {
     // words, not a deed: call out to your side (free; your turn goes on)
     if (reading.call) { this.err = b.speak(u, reading.call) || ''; this.draft = ''; this.readings = []; this.refresh(); return; }
     if (this.draft.trim() && !this.auto) this.fx?.setQuote(this.draft.trim());
+    if (reading.via) {
+      // a dash: your move to the waypoint, then your action carries you on
+      const e = b.moveTo(u, reading.via) || b.act(u, { kind: 'dash' }) || (reading.to ? b.moveTo(u, reading.to) : null);
+      this.err = e || ''; this.draft = ''; this.readings = []; if (b.current() === u) b.endTurn(u); this.refresh(); return;
+    }
     if (reading.to) { const e = b.moveTo(u, reading.to); if (e) { this.err = e; this.refresh(); return; } }
     if (b.current() === u && !u.acted) this.err = b.act(u, reading.action, this.draft.trim() || undefined) || '';
     this.draft = ''; this.readings = []; this.verb = null; this.aimAff = null; this.hoverAff = null;

@@ -228,6 +228,13 @@ export function planTurn(b: Battle, u: Unit, opts: { predict?: boolean } = {}): 
         }
         case 'free': g = u.side === 'us' ? 2.0 + tr.compassion : 0; why = 'cut the captive free'; break;
         case 'grab': g = (o.kind === 'rob' && u.loot === 0 && t ? p * (t.id === o.targetId ? 1.8 : 0.9) : 0) + (u.traits || u.role === 'player' ? p * tr.ruthlessness * 0.5 * (1 - tr.compassion) : 0); break;
+        case 'hurl': {
+          // a last resort at range: worth it on a fleeing chief or an archer you can't reach otherwise
+          if (!t) break;
+          g = p * weight(t) * (t.morale === 'broken' || t.tactic === 'archer' ? 0.45 : 0.15) * (tr.ruthlessness + 0.5);
+          why = 'throw a weapon';
+          break;
+        }
         case 'trip': case 'disarm': {
           if (!t) break;
           // worth it as a set-up for friends (follow-through), or to blunt a heavy hitter

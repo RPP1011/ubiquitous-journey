@@ -180,6 +180,7 @@ export function tacticsTest(ok, { stubScene, makeFighter }) {
       ['hit Garrick to push him back', (r) => r.action.kind === 'attack'],
       ['sweep Garrick\'s legs', (r) => r.action.kind === 'trip' && r.action.target === g.id],
       ['knock the weapon from Mira\'s hand', (r) => r.action.kind === 'disarm' && r.action.target === m.id],
+      ['throw my axe at Mira', (r) => r.action.kind === 'hurl' && r.action.target === m.id],
     ];
     let pass = 0;
     for (const [t, pred] of cases) { const r = top(t); if (r && pred(r)) pass++; else console.log(`   write-in miss: "${t}" → ${JSON.stringify(r && { to: r.to, action: r.action })}`); }
@@ -313,6 +314,20 @@ export function tacticsTest(ok, { stubScene, makeFighter }) {
     pip.sheet.finesse = 30;
     for (let i = 0; i < 6 && !g.disarmed; i++) { pip.acted = false; b.act(pip, { kind: 'disarm', target: g.id }); }
     ok(g.disarmed === 2 && !b.options(g).some((a) => a.kind === 'ability'), 'disarm: no weapon, no weapon arts for two rounds');
+    ss.dispose();
+  }
+
+  // --- 17. dash: twice as far, the move then the action ---------------------------------------
+  {
+    const { s: ss, b, mk } = arena(stubScene, makeFighter);
+    const you = b.add(ss.player, 'player', { x: 1, z: 1 });
+    const g = b.add(mk('Garrick'), 'foe', { x: 10, z: 10 });
+    order(b, you, g); b.start();
+    const r = readWriteIn(b, you, 'sprint toward Garrick')[0];
+    ok(r && r.action.kind === 'dash' && r.via && r.to, `dash: "sprint toward Garrick" plans a two-leg run (${r && r.label})`);
+    const d0 = Math.abs(you.x - g.x) + Math.abs(you.z - g.z);
+    ok(!b.moveTo(you, r.via) && !b.act(you, { kind: 'dash' }) && !b.moveTo(you, r.to), 'dash: move, dash, move again');
+    ok(d0 - (Math.abs(you.x - g.x) + Math.abs(you.z - g.z)) > you.move, `dash: covered more ground than one move (${d0} → ${Math.abs(you.x - g.x) + Math.abs(you.z - g.z)})`);
     ss.dispose();
   }
 

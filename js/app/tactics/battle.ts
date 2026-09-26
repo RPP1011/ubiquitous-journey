@@ -151,6 +151,7 @@ export type Action =
   | { kind: 'kick'; prop: string }                            // tip a table/cart, spill a brazier, roll a barrel
   | { kind: 'hew'; prop: string; toward?: Spot }              // chop at a tree / smash wooden gear; a felled tree drops toward `toward`
   | { kind: 'throw'; prop: string; at: Spot }                 // a light prop (adjacent or carried)
+  | { kind: 'hurl'; target: Unit['id'] }                     // throw your own weapon: a hit at range, then empty-handed
   | { kind: 'ignite'; at: Spot }                              // needs a flame to hand
   | { kind: 'douse'; at: Spot }                               // needs water to hand
   | { kind: 'pickup'; prop: string }
@@ -632,6 +633,7 @@ export class Battle {
       case 'grab': return t ? roll('finesse', 10 + t.sheet.finesse + (t.defending ? 2 : 0)) : { p: 0, notes: [] };
       case 'subdue': { if (!t) return { p: 0, notes: [] }; const h = this.hitDC(u, t, from, false); return roll('might', h.dc + 2, h.notes); }
       case 'trip': { if (!t) return { p: 0, notes: [] }; const face = this.facingOf(from, t); return roll('finesse', 10 + Math.max(t.sheet.finesse, t.sheet.might) + (t.defending ? 2 : 0) - (face === 'back' ? 3 : face === 'side' ? 1 : 0), face !== 'front' ? [face === 'back' ? 'from behind' : 'flank'] : []); }
+      case 'hurl': { if (!t) return { p: 0, notes: [] }; const h = this.hitDC(u, t, from, true); return roll('finesse', h.dc, h.notes); }
       case 'disarm': { if (!t) return { p: 0, notes: [] }; return roll('finesse', 12 + t.sheet.might + (t.defending ? 2 : 0) - (t.prone ? 3 : 0), t.prone ? ['prone'] : []); }
       case 'aid': { const w = t ?? u; return w.out === 'downed' ? roll('finesse', 10) : ((u.agent.inventory as Record<string, number> | undefined)?.potion ?? 0) > 0 ? { p: 1, notes: ['potion'] } : roll('finesse', 11); }
       case 'social': return this.socialOdds(u, a, t);
@@ -649,6 +651,9 @@ export class Battle {
         out.push({ kind: 'attack', target: f.id }, { kind: 'shove', target: f.id }, { kind: 'subdue', target: f.id });
         if (!f.prone && f.tactic !== 'beast') out.push({ kind: 'trip', target: f.id });
         if (!f.disarmed && f.tactic !== 'beast') out.push({ kind: 'disarm', target: f.id });
+      }
+      if (!u.disarmed && u.tactic !== 'beast' && dist(from, f) >= 2 && dist(from, f) <= 4 && this.map.sees(from.x, from.z, f.x, f.z)) out.push({ kind: 'hurl', target: f.id });
+      if (this.adjacent(from, f)) {
         if ((f.agent.gold || 0) > 0) out.push({ kind: 'grab', target: f.id });
       }
       for (const ab of u.agent.abilities?.values?.() ?? []) {
@@ -721,6 +726,16 @@ export class Battle {
         this.cue({ k: 'strike', u: u.id, t: t!.id, res: ok ? 'hit' : 'miss', style: 'shove' });
         if (ok) { t!.prone = true; this.cue({ k: 'fall', t: t!.id }); this.note('hit', `${this.nm(u, true)} ${u.agent.controlled ? 'sweep' : 'sweeps'} ${this.nm(t!)}'s legs${fl} — down they go!`); this.ev('shove', u, t, 'trip'); }
         else this.note('miss', `${this.nm(t!, true)} ${t!.agent.controlled ? 'keep' : 'keeps'} ${t!.agent.controlled ? 'your' : 'their'} feet against ${this.nm(u)}'s trip.`);
+        break;
+      }
+      case 'hurl': {
+        const h = this.hitDC(u, t!, u, true);
+        const r = check(u.sheet.finesse, h.dc);
+        this.cue({ k: 'throw', u: u.id, from: { x: u.x, z: u.z }, to: { x: t!.x, z: t!.z }, prop: 'weapon', effect: r.ok ? 'hit' : 'miss' });
+        u.disarmed = 2;                                    // it's over there now
+        if (!r.ok) { this.note('miss', `${this.nm(u, true)} ${u.agent.controlled ? 'hurl' : 'hurls'} a weapon at ${this.nm(t!)}${fl} — wide, and now empty-handed.`); break; }
+        const res = this.wound(u, t!, TUNE.damage * (0.8 + 0.08 * u.sheet.might) * (r.crit ? 1.5 : 1));
+        this.note('hit', `${this.nm(u, true)} ${u.agent.controlled ? 'hurl' : 'hurls'} a weapon into ${this.nm(t!)}${fl}${this.fellText(t!, res)} — empty-handed now.`);
         break;
       }
       case 'disarm': {

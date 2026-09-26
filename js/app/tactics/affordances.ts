@@ -56,6 +56,7 @@ export function verbOf(u: Unit, a: Action): Verb {
     case 'subdue': return V('subdue', 'Subdue', '⛓', 'Fight');
     case 'trip': return V('trip', 'Trip', '🦵', 'Fight');
     case 'disarm': return V('disarm', 'Disarm', '🗡', 'Fight');
+    case 'hurl': return V('hurl', 'Hurl weapon', '🪃', 'Fight');
     case 'grab': return V('grab', 'Pickpocket', '👛', 'Fight');
     case 'guard': return V('guard', 'Guard', '🛡', 'People');
     case 'aid': return V('aid', 'Aid', '✚', 'People');
@@ -94,6 +95,7 @@ export function actionLabel(b: Battle, u: Unit, a: Action): string {
     case 'subdue': return `Subdue ${T(a.target)}`;
     case 'trip': return `Trip ${T(a.target)}`;
     case 'disarm': return `Disarm ${T(a.target)}`;
+    case 'hurl': return `Hurl your weapon at ${T(a.target)}`;
     case 'aid': return a.target === u.id ? 'Patch yourself up' : `Aid ${T(a.target)}`;
     case 'free': return `Cut ${T(a.target)} free`;
     case 'guard': return `Guard ${T(a.target)}`;
@@ -107,7 +109,7 @@ export function actionLabel(b: Battle, u: Unit, a: Action): string {
 }
 
 function groupOf(b: Battle, a: Action): AffGroup {
-  if (['attack', 'ability', 'subdue', 'grab', 'trip', 'disarm'].includes(a.kind) || (a.kind === 'shove' && b.get(a.target as Unit['id']))) return 'Fight';
+  if (['attack', 'ability', 'subdue', 'grab', 'trip', 'disarm', 'hurl'].includes(a.kind) || (a.kind === 'shove' && b.get(a.target as Unit['id']))) return 'Fight';
   if (['kick', 'throw', 'ignite', 'douse', 'pickup', 'shove', 'hew', 'use'].includes(a.kind)) return 'Environment';
   if (a.kind === 'social' || a.kind === 'aid' || a.kind === 'guard' || a.kind === 'free') return 'People';
   return 'Stance';
@@ -222,6 +224,7 @@ export function forecast(b: Battle, u: Unit, a: Action, from: Spot = u): { effec
     case 'subdue': return { effect: 'beat them down to take them alive', footprint: [] };
     case 'trip': return { effect: 'they go down — easy to hit, and a friend can follow through', footprint: [] };
     case 'disarm': return { effect: 'their blows land at half strength for two rounds', footprint: [] };
+    case 'hurl': return { effect: 'a hit at range — then you fight empty-handed for two rounds', footprint: [] };
     case 'escape': return { effect: 'leave the fight', footprint: [] };
     default: break;
   }

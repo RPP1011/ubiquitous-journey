@@ -18,7 +18,7 @@ import type { Battle, Unit } from './battle.js';
 
 /** Action kinds a probe can expect. Kinds that don't exist yet (carry, trip…) mark wished-for verbs. */
 export const ACTION_KINDS = ['attack', 'ability', 'shove', 'kick', 'hew', 'throw', 'ignite', 'douse', 'pickup', 'grab', 'subdue',
-  'aid', 'free', 'guard', 'social', 'overwatch', 'defend', 'block', 'trip', 'disarm', 'use', 'dash', 'escape', 'ready',
+  'aid', 'free', 'guard', 'social', 'overwatch', 'defend', 'block', 'trip', 'disarm', 'use', 'hurl', 'dash', 'escape', 'ready',
   // not (yet) in the rules — expecting one of these always fails, which is the point
   'carry', 'trip', 'hide', 'dig', 'build', 'climb', 'give', 'disguise', 'trap', 'distract'] as const;
 
