@@ -65,6 +65,10 @@ export function act(a: Agent, dt: number, ctx: CognitionCtx): void {
   // CAPTIVE (the rescue arc): a held captive does not act — it stands fast where its captor left
   // it (no work, no wander, no flight). Only `free` (its bonds cut) lifts `_held`.
   if (a._held) { a.fighter.setMoving(0); a._updateLabel(); return; }
+  // TURN-BASED ENCOUNTER (js/app/combat): a combatant in a declared-round fight is moved and
+  // struck by the encounter's resolution, not by its own real-time executor. Cognition still
+  // runs (perceive/gossip/decide keep its beliefs live); only the body is held here.
+  if (a._encounter != null) { a.fighter.setMoving(0); a._updateLabel(); return; }
   a.priceGossip(ctx, dt);
   // THE SOCIAL CAST (doc 18 — the social dead-weight gap): on the talk/gossip path, a charmer /
   // schemer holding a ready social spec works a nearby target it has DESIGNS on (win over a

@@ -12,6 +12,9 @@ import { preloadCharacters } from './assets.js';
 import { Fighter } from './fighter.js';
 import { TUNE } from './constants.js';
 import { createSession } from './app/session.js';
+import { CombatDirector } from './app/combat/encounter.js';
+import { COMBAT } from './app/combat/rules.js';
+import { EncounterView } from './ui/encounterView.js';
 import { terrainHeight } from './arena.js';
 import { ABILITY_CATALOG } from './rpg/abilities/catalog.js';
 import { DungeonManager } from './world/dungeonManager.js';
@@ -24,6 +27,9 @@ const { renderer, scene, camera, orbitCam, input, commander } = boot();
 
 let dungeonMgr = null;             // built per-world in buildWorld()
 let session = null;                // the app-layer Session (js/app/session.ts) for the current run
+let combat = null;                 // CombatDirector: opens turn-based encounters around the player's fights
+let playback = 0;                  // real seconds left in the current round's playback
+const encView = new EncounterView();
 
 // ---- HUD (panels + readouts) -----------------------------------------------
 const hud = new Hud({
@@ -66,7 +72,9 @@ function buildWorld() {
   // the player's swing lands only on the body they were ordered to attack, so peaceful
   // villagers aren't friendly-fire pass-through once you choose a victim.
   session.playerStrikeGate = (tgt) => commander.targetFighter === tgt;
-  session.onRunEnd(showRunOver);
+  session.onRunEnd((summary) => { encView.close(); showRunOver(summary); });
+  combat = new CombatDirector(session);
+  encView.close();
 
   // dungeons: scatter cave-mouth portals in the wilds and expose the manager to
   // the quest board so it can mint "delve" radiant quests against real dungeons.
@@ -121,6 +129,22 @@ function togglePause() {
   }
 }
 
+// ---- turn-based encounters (js/app/combat) ---------------------------------
+encView.onReady = () => {
+  const enc = combat && combat.encounter;
+  if (!enc || enc.phase !== 'declare') return;
+  enc.resolve();
+  playback = COMBAT.playbackSec;
+  encView.render();
+  session.checkRunEnd();
+};
+encView.onContinue = () => {
+  combat.clear();
+  encView.close();
+  if (session.player) session.player.goal = { kind: 'idle' };   // don't chase a foe who fled or yielded
+  if (game.state === 'encounter') game.state = 'playing';
+};
+
 overlay.addEventListener('click', () => { if (game.state !== 'dialogue') togglePause(); });
 
 // ---- main loop -------------------------------------------------------------
@@ -166,7 +190,24 @@ function frame() {
         stage = 'castInput';     controls.pollCastKeys();
         stage = 'gather';        controls.pollGather(dt);
         if (hud.hpFill) hud.hpFill.style.width = `${Math.max(0, (game.playerFighter.health / TUNE.maxHealth) * 100)}%`;
+        // the player's side came to blows: switch to a turn-based encounter
+        stage = 'combat.watch';
+        const enc = game.state === 'playing' && combat ? combat.watch() : null;
+        if (enc) { game.state = 'encounter'; if (session.player) session.player.goal = { kind: 'idle' }; encView.open(enc); }
       }
+    } else if (game.state === 'encounter') {
+      const enc = combat.encounter;
+      if (enc && enc.phase === 'playback') {
+        // the world outside the bubble lives through the round (roundSec of sim time, shown in playbackSec)
+        const scaled = dt * COMBAT.roundSec / COMBAT.playbackSec;
+        for (let k = 0; k < 3; k++) session.step(scaled / 3, { stage: stageFn, beforeCombat: () => scene.updateMatrixWorld(true) });
+        playback -= dt;
+        if (playback <= 0) { enc.finishPlayback(); encView.render(); }
+      } else if (game.sim) {
+        stage = 'fighter.update'; for (const f of game.sim.fighters) f.update(dt);
+        scene.updateMatrixWorld(true);
+      }
+      if (hud.hpFill) hud.hpFill.style.width = `${Math.max(0, (game.playerFighter.health / TUNE.maxHealth) * 100)}%`;
     } else {
       // paused / start / over: the sim is frozen, bodies keep animating (as before), no blows
       if (game.sim) { stage = 'fighter.update'; for (const f of game.sim.fighters) f.update(dt); }

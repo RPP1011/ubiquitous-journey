@@ -274,6 +274,7 @@ export interface Agent {
   _obligations?: Obligation[];                                      // the commitment ledger (Phase 5)
   _toolQuality?: number;                                            // believed mean quality 0..1 of tools held (from a high-mastery smith; market.ts)
   _held?: boolean;                                                  // a captive's held state (capture sets it, free flips it)
+  _encounter?: number | null;                                       // app-layer turn-based encounter id: body is driven by the encounter, not act()
   _captorId?: EntityId;                                            // who captured this agent (CAPTIVE; ground truth, execution)
   _freedBy?: EntityId;                                              // who cut this agent's bonds (Affect: free)
   _courtingId?: EntityId | null;                                   // chosen sweetheart (romance trope/authoring); the court enactment reads it

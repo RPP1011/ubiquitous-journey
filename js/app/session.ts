@@ -73,6 +73,8 @@ export interface Session {
   step(dt: number, opts?: StepOptions): CombatEvent[];
   /** Subscribe to the run ending. Returns an unsubscribe fn. Fires once per run. */
   onRunEnd(fn: (s: RunSummary) => void): () => void;
+  /** Check whether the player has died outside a step (e.g. during a turn-based resolution). */
+  checkRunEnd(): void;
   /** End the run now (quit / abandon). No-op if already ended. */
   end(): void;
   /** Tear the world down: sim subsystems + bus subscriptions, every body, the world. */
@@ -142,13 +144,17 @@ export function createSession(opts: SessionOptions): Session {
         const gate = session.playerStrikeGate;
         const isHostile = (atk: Fighter, tgt: Fighter): boolean =>
           atk === pf && gate ? gate(tgt) : sim.isHostile(atk as never, tgt as never);
-        events = resolveCombat(fighters, isHostile, sim._ctx() as never);
+        // bodies inside a turn-based encounter are resolved by the encounter, never by real-time blows
+        const live = fighters.filter((f) => !(f.agent && (f.agent as { _encounter?: number | null })._encounter != null));
+        events = resolveCombat(live, isHostile, sim._ctx() as never);
         if (events.length) { stage('onCombatEvents'); sim.onCombatEvents(events as never); }
       }
 
-      if (runState === 'running' && player && !player.alive) finish('death');
+      session.checkRunEnd();
       return events;
     },
+
+    checkRunEnd() { if (runState === 'running' && player && !player.alive) finish('death'); },
 
     onRunEnd(fn) {
       endFns.push(fn);
