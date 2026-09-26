@@ -1,0 +1,15 @@
+[
+{"strategy":"stop the runner","capability":"stop-messenger","text":"cut down Jory Crowe before he can run off to warn them","expect":["attack"]},
+{"strategy":"stop the runner","capability":"grab","text":"grab hold of Jory Crowe so he can't escape","expect":["grab","subdue"]},
+{"strategy":"take a prisoner for info","capability":"interrogate","text":"pin Jory down and ask him where the others are camped","expect":["subdue","social"]},
+{"strategy":"use the well","capability":"shove-hazard","text":"shove Big Aud down the well","expect":["shove"]},
+{"strategy":"block the archer's line","capability":"push-cover","text":"push the handcart into the road to block Tamsin's line of fire","expect":["shove","kick"]},
+{"strategy":"flour blind","capability":"blind","text":"throw a handful of flour in Tamsin's eyes","expect":["throw","blind"]},
+{"strategy":"fire","capability":"throw-fire","text":"take a burning brand from the campfire and throw it at the table","expect":["throw","ignite"]},
+{"strategy":"water trick","capability":"throw-item","text":"throw the bucket of water at Big Aud","expect":["throw"]},
+{"strategy":"deceive","capability":"false-surrender","text":"pretend to surrender, then strike Big Aud when he lowers his guard","expect":["social"]},
+{"strategy":"deceive","capability":"disguise","text":"pull on Jory's cloak and wave the others over like a scout","expect":["disguise"]},
+{"strategy":"protect wounded","capability":"drag-ally","text":"pull Pip back away from Jory","expect":["carry","aid"]},
+{"strategy":"archer duel","capability":"climb-prop","text":"climb onto the trestle table and shoot at Tamsin","expect":["climb","attack"]},
+{"strategy":"rotate front line","capability":"swap-places","text":"trade places with Borin so he takes the front","expect":["swap"]}
+]

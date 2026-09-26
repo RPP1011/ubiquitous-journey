@@ -5,29 +5,39 @@
 > parser picked the wrong action (it thought it understood); **unsupported** = no reading at all.
 > Items close automatically when a later probe finds them supported.
 
-Probe passes folded in: 1. Open: 18. Supported: 19.
+Probe passes folded in: 10. Open: 28. Supported: 23.
 
 | # | capability | kind | demand | wanted by | examples |
 |---|---|---|---|---|---|
-| 1 | `dig` | unsupported | 36 | make cover | “dig in behind a mound of earth” → refused: the rules don't cover digging yet |
-| 2 | `tripwire` | unsupported | 36 | deny ground | “string a rope across the path to trip them” → refused: the rules don't cover rope-work yet |
-| 3 | `bribe` | mixed | 36 | talk | “offer Col my purse to walk away” → refused: the rules don't cover bribes yet<br>“offer Hob my purse to walk away” → refused: the rules don't cover bribes yet |
-| 4 | `drag-ally` | mixed | 36 | look after the company | “drag Borin to safety” → misread as Aid Borin Ashgrove [aid] |
-| 5 | `swap-places` | unsupported | 36 | look after the company | “swap places with Borin” → refused: the rules don't cover swapping places yet |
-| 6 | `disguise` | unsupported | 36 | stealth | “put on a dead bandit's cloak” → refused: the rules don't cover disguises yet |
-| 7 | `throw-weapon` | unsupported | 35 | melee craft | “throw my sword at Col” → refused: the rules don't cover throwing your weapon yet<br>“throw my sword at Hob” → refused: the rules don't cover throwing your weapon yet |
-| 8 | `hide` | unsupported | 31 | stealth | “hide behind the trees” → refused: the rules don't cover hiding yet |
-| 9 | `trip` | unsupported | 28 | melee craft | “trip Col and knock them down” → refused: the rules don't cover tripping yet<br>“trip Hob and knock them down” → refused: the rules don't cover tripping yet |
-| 10 | `disarm` | unsupported | 28 | melee craft | “disarm Col” → refused: the rules don't cover disarming yet<br>“disarm Hob” → refused: the rules don't cover disarming yet |
+| 1 | `throw-weapon` | unsupported | 37 | melee craft, hurl something at the archer, throw weapon | “throw my sword at Col” → refused: the rules don't cover throwing your weapon yet<br>“throw my sword at Hob” → refused: the rules don't cover throwing your weapon yet |
+| 2 | `swap-places` | unsupported | 37 | look after the company, rotate front line | “swap places with Borin” → refused: the rules don't cover swapping places yet<br>“trade places with Borin so he takes the front” → refused: the rules don't cover swapping places yet |
+| 3 | `disguise` | unsupported | 37 | stealth, deceive | “put on a dead bandit's cloak” → refused: the rules don't cover disguises yet<br>“pull on Jory's cloak and wave the others over like a scout” → refused: the rules don't cover disguises yet |
+| 4 | `hide` | unsupported | 32 | stealth, hide in the trees and ambush the ambushers | “hide behind the trees” → refused: the rules don't cover hiding yet<br>“slip into the trees and hide” → refused: the rules don't cover hiding yet |
+| 5 | `trip` | unsupported | 29 | melee craft, trip the brute | “trip Col and knock them down” → refused: the rules don't cover tripping yet<br>“trip Hob and knock them down” → refused: the rules don't cover tripping yet |
+| 6 | `dig` | unsupported | 36 | make cover | “dig in behind a mound of earth” → refused: the rules don't cover digging yet |
+| 7 | `tripwire` | unsupported | 36 | deny ground | “string a rope across the path to trip them” → refused: the rules don't cover rope-work yet |
+| 8 | `drag-ally` | mixed | 36 | look after the company | “drag Borin to safety” → misread as Aid Borin Ashgrove [aid] |
+| 9 | `disarm` | unsupported | 28 | melee craft | “disarm Col” → refused: the rules don't cover disarming yet<br>“disarm Hob” → refused: the rules don't cover disarming yet |
+| 10 | `block-path` | misread | 13 | deny ground, cut off escape | “block the path with the cart” → misread as Brace [defend]<br>“Borin, block the path behind the tents so Garrick can't flee” → misread as Run for the edge (after moving) [defend] |
 | 11 | `barricade` | unsupported | 24 | make cover | “build a barricade out of the crates” → refused: the rules don't cover building yet |
-| 12 | `ready-strike` | unsupported | 13 | melee craft | “if Col comes close, hit him” → refused: the GM couldn't turn that into an action<br>“if Hob comes close, hit him” → refused: the GM couldn't turn that into an action |
-| 13 | `block-path` | misread | 12 | deny ground | “block the path with the cart” → misread as Brace [defend] |
+| 12 | `throw-fire` | misread | 9 | use fire, fire | “throw the torch at Gaunt” → misread as Set a torch alight (after moving) [ignite]<br>“throw the torch at Black” → misread as Set a torch alight [ignite] |
+| 13 | `free-captive` | mixed | 5 | rescue, rescue first | “cut Elsie free” → misread as Attack → Wick (after moving) [attack]<br>“cut Elsie's ropes” → refused: the GM couldn't turn that into an action |
 | 14 | `climb-tree` | unsupported | 8 | take position | “climb the tree to get a better angle” → refused: the rules don't cover climbing trees yet |
-| 15 | `throw-fire` | misread | 8 | use fire | “throw the torch at Gaunt” → misread as Set a torch alight (after moving) [ignite]<br>“throw the torch at Black” → misread as Set a torch alight [ignite] |
-| 16 | `free-captive` | mixed | 4 | rescue | “cut Elsie free” → misread as Attack → Wick (after moving) [attack] |
-| 17 | `carry-person` | unsupported | 4 | rescue | “carry Elsie out of here” → refused: the rules don't cover carrying people yet |
-| 18 | `distract-animals` | unsupported | 2 | beasts | “throw them some meat to distract them” → refused: the GM couldn't turn that into an action |
+| 15 | `scare-with-fire` | misread | 2 | beasts, fire scares wolves, fire | “wave the torch at the Gaunt wolf to drive it off” → misread as Set a torch alight (after moving) [ignite]<br>“brandish the torch at the Black wolf” → misread as Set a torch alight [ignite] |
+| 16 | `carry-person` | unsupported | 4 | rescue | “carry Elsie out of here” → refused: the rules don't cover carrying people yet |
+| 17 | `intimidate` | unsupported | 1 | talk, make them panic, holy fear | “Sister Maud, curse them in the saint's name for defiling the chapel” → refused: the rules don't cover prayer yet |
+| 18 | `high-ground` | misread | 1 | take position, take the high ground | “charge up the rise at Garrick the Red” → misread as Move and brace (after moving) [defend] |
+| 19 | `give-item` | unsupported | 1 | look after the company, arm the captive | “hand Elsie my knife so she can cut herself loose” → refused: the GM couldn't turn that into an action |
+| 20 | `push-cover` | misread | 1 | make cover, block the archer's line | “push the handcart into the road to block Tamsin's line of fire” → misread as Brace [defend] |
+| 21 | `tip-furniture` | misread | 1 | make cover, cover the rescue | “flip the trestle table on its side for cover” → misread as Kick a trestle table at Hob Tanner (after moving) [kick] |
+| 22 | `throw-rock` | misread | 1 | melee craft, rockfall | “pick up the loose rocks and hurl them at Rook” → misread as Move and brace (after moving) [defend] |
+| 23 | `distract-animals` | unsupported | 2 | beasts | “throw them some meat to distract them” → refused: the GM couldn't turn that into an action |
+| 24 | `climb-prop` | misread | 1 | take position, stay high | “hop up on the hay bale out of reach” → misread as Move and brace (after moving) [defend] |
+| 25 | `use-rope` | misread | 1 | rope the chief | “lasso Garrick and drag him down off the rise” → misread as Patch yourself up [aid] |
+| 26 | `grab` | misread | 1 | stop the runner | “grab hold of Jory Crowe so he can't escape” → misread as Run for the edge (after moving) [defend] |
+| 27 | `break-barricade` | unsupported | 1 | break the barricade | “smash the handcart barricade apart” → refused: the rules don't cover building yet |
+| 28 | `trap` | unsupported | 1 | trap | “set a snare between the trees for the Grey wolf” → refused: the rules don't cover traps yet |
 
 ## Supported (closed)
 
-`fell-tree` · `take-cover` · `high-ground` · `demand-surrender` · `turncoat` · `false-surrender` · `intimidate` · `guard-ally` · `give-item` · `push-cover` · `flank` · `tip-furniture` · `escort` · `self-heal` · `shove-hazard` · `throw-rock` · `scare-with-fire` · `howl-down` · `climb-prop`
+`fell-tree` · `take-cover` · `ready-strike` · `demand-surrender` · `bribe` · `turncoat` · `false-surrender` · `guard-ally` · `flank` · `escort` · `self-heal` · `shove-hazard` · `howl-down` · `douse` · `heal-ally` · `stop-messenger` · `interrogate` · `suppress` · `lure-foe` · `ignite-prop` · `focus-fire` · `roll-barrel` · `brace`

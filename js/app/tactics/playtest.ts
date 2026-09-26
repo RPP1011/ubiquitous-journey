@@ -12,7 +12,7 @@
 //
 // Probing is read-only (the parser never mutates the battle), so it can run mid-fight.
 
-import { readWriteIn } from './writein.js';
+import { readWriteIn, type GridReading } from './writein.js';
 import { explainUnmet, isSituational } from './unmet.js';
 import type { Battle, Unit } from './battle.js';
 
@@ -53,18 +53,26 @@ export function situation(b: Battle, u: Unit, stage: string, objective: string):
 /** Read each atom with the real parser from the unit's position. */
 export function probe(b: Battle, u: Unit, atoms: Atom[]): ProbeResult[] {
   return atoms.map((atom) => {
-    const rs = readWriteIn(b, u, atom.text).slice(0, 2);
-    const kinds = rs.map((r) => (r.action.kind === 'ready' ? `ready:${r.action.response.kind}` : r.action.kind));
-    const hit = kinds.some((k) => atom.expect.includes(k) || atom.expect.includes(k.split(':')[0]) || (k.startsWith('ready:') && atom.expect.includes(k.slice(6))));
-    if (hit) return { atom, status: 'supported', got: kinds[0], reason: null };
-    if (rs.length) return { atom, status: 'misread', got: `${rs[0].label} [${kinds[0]}]`, reason: null };
-    const reason = explainUnmet(b, u, atom.text);
+    return judge(atom, readWriteIn(b, u, atom.text), () => explainUnmet(b, u, atom.text), b, u);
+  });
+}
+
+/** Judge one interpretation: only the TOP reading counts; a close-in is situational, not a gap. */
+export function judge(atom: Atom, rs: GridReading[], why: () => string, b: Battle, u: Unit): ProbeResult {
+  {
+    const top = rs[0];
+    const kind = top ? (top.action.kind === 'ready' ? `ready:${top.action.response.kind}` : top.action.kind) : null;
+    if (top && !top.deferred && (atom.expect.includes(kind!) || atom.expect.includes(kind!.split(':')[0]) || (kind!.startsWith('ready:') && atom.expect.includes(kind!.slice(6)))))
+      return { atom, status: 'supported', got: kind, reason: null };
+    if (top && top.deferred) return { atom, status: 'unreachable', got: top.label, reason: 'out of reach this turn' };
+    if (top) return { atom, status: 'misread', got: `${top.label} [${kind}]`, reason: null };
+    const reason = why();
     // the right kind of action exists on this field, just not from where you stand this turn
     const spots = [{ x: u.x, z: u.z }, ...[...b.reachable(u).keys()].map((k) => { const [x, z] = k.split(',').map(Number); return { x, z }; })];
     const existsHere = spots.some((sp) => b.options(u, sp).some((o) => atom.expect.includes(o.kind)));
-    const unreachable = isSituational(reason) || (existsHere && !/rules don't cover/.test(reason));
+    const unreachable = isSituational(reason) || (existsHere && /out of reach|nobody/.test(reason));
     return { atom, status: unreachable ? 'unreachable' : 'unsupported', got: null, reason };
-  });
+  }
 }
 
 // ---------------------------------------------------------------------------------------------

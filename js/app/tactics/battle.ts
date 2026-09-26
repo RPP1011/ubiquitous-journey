@@ -868,7 +868,11 @@ export class Battle {
   private socialOdds(u: Unit, a: Extract<Action, { kind: 'social' }>, t?: Unit): { p: number; notes: string[] } {
     const b = t ? t.agent.beliefs.get(u.id) : undefined;
     switch (a.verb) {
-      case 'intimidate': return t ? { p: chance(u.sheet.presence, 10 + t.sheet.nerve + (t.morale === 'steady' ? 1 : -2) - Math.round((b?.notoriety || 0) * 4) - (frac(t) < 0.4 ? 2 : 0)), notes: [] } : { p: 0, notes: [] };
+      case 'intimidate': {
+        if (!t) return { p: 0, notes: [] };
+        const fire = t.tactic === 'beast' && this.flameAt(u);            // beasts fear a brandished flame
+        return { p: chance(u.sheet.presence, 10 + t.sheet.nerve + (t.morale === 'steady' ? 1 : -2) - Math.round((b?.notoriety || 0) * 4) - (frac(t) < 0.4 ? 2 : 0) - (fire ? 5 : 0)), notes: fire ? ['fire in hand −5'] : [] };
+      }
       case 'taunt': return t ? { p: chance(u.sheet.presence, 10 + Math.round(t.sheet.nerve / 2) - Math.round(((t.agent.mood && t.agent.mood.anger) || 0) * 4)), notes: [] } : { p: 0, notes: [] };
       case 'bluff': {
         if (!t) return { p: 0, notes: [] };

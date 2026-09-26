@@ -17,7 +17,7 @@ const UNSUPPORTED: Array<[RegExp, string]> = [
   [/\b(hide|sneak|stealth|vanish)\b/, 'hiding'],
   [/\b(poison|drug)\b/, 'poison'],
   [/\b(trap|snare|tripwire)\b/, 'traps'],
-  [/\b(tie|rope|bind)\b/, 'rope-work'],
+  [/\b(tie|rope|lasso|bind (him|her|them))\b/, 'rope-work'],
   [/\b(climb (the |a )?tree|up the tree)\b/, 'climbing trees'],
   [/\b(jump over|vault|leap over)\b/, 'vaulting'],
   [/\b(fireball|lightning|teleport|summon)\b/, 'magic you don\'t have'],
@@ -48,8 +48,12 @@ export function explainUnmet(b: Battle, u: Unit, raw: string): string {
     const d = Math.abs(prop.x - u.x) + Math.abs(prop.z - u.z);
     return d > 1 ? `${prop.name} is out of reach this turn (${d} tiles away)` : `there's nothing that verb does to ${prop.name} here`;
   }
-  const noun = /\b(the|a|an|that|this) ([a-z]+)/.exec(text)?.[2];
-  if (noun && !['fight', 'enemy', 'enemies', 'foe', 'bandit', 'wolf', 'man', 'woman', 'way'].includes(noun)) return `there's no ${noun} on this field`;
+  // a noun that isn't a unit's name, a scene word, or a prop: the field genuinely lacks it
+  const names = new Set(b.units.flatMap((x) => x.agent.name.toLowerCase().replace(/[^a-z ]/g, ' ').split(/\s+/)));
+  const scene = new Set(['fight', 'enemy', 'enemies', 'foe', 'foes', 'bandit', 'bandits', 'wolf', 'wolves', 'man', 'woman', 'way', 'hill', 'rise', 'ground', 'road', 'path', 'field',
+    'hand', 'hands', 'weapon', 'blade', 'sword', 'axe', 'gate', 'line', 'front', 'back', 'side', 'edge', 'mine', 'camp', 'fire', 'flames', 'pack', 'others', 'rest', 'lot', 'handful', 'moment', 'turn']);
+  const nouns = [...text.matchAll(/\b(the|a|an|that|this) ([a-z]+)/g)].map((m) => m[2]).filter((n) => !names.has(n) && !scene.has(n));
+  if (nouns[0]) return `there's no ${nouns[0]} on this field`;
   if (u.acted) return 'you have already acted this turn';
   return 'the GM couldn\'t turn that into an action';
 }

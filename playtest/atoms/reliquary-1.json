@@ -1,0 +1,16 @@
+[
+{"strategy":"break the barricade","capability":"break-barricade","text":"smash the handcart barricade apart","expect":["hew","attack"]},
+{"strategy":"cart ram","capability":"push-cover","text":"shove the handcart into Grist","expect":["shove","kick"]},
+{"strategy":"blow the oil","capability":"throw-fire","text":"throw the torch at the lamp-oil barrel","expect":["throw","ignite"]},
+{"strategy":"blow the oil","capability":"ignite-prop","text":"set the oil barrel alight while Edda Crowe is standing next to it","expect":["ignite"]},
+{"strategy":"rockfall","capability":"throw-rock","text":"pick up the loose rocks and hurl them at Rook","expect":["throw","pickup"]},
+{"strategy":"cave-in","capability":"collapse-tunnel","text":"bring down the mine mouth timbers on top of them","expect":["hew","collapse"]},
+{"strategy":"smoke them out","capability":"smoke-out","text":"light the crate and let the smoke choke the mine entrance","expect":["ignite"]},
+{"strategy":"decapitate","capability":"demand-surrender","text":"tell Edda Crowe to call off her men or she dies first","expect":["social"]},
+{"strategy":"archer suppression","capability":"suppress","text":"keep watch on Rook and shoot if she raises her bow","expect":["overwatch"]},
+{"strategy":"disarm the leader","capability":"disarm","text":"knock the weapon out of Edda's hand","expect":["disarm"]},
+{"strategy":"douse their torches","capability":"douse","text":"snuff out the torch by Pell","expect":["douse"]},
+{"strategy":"shove brute into fire","capability":"shove-hazard","text":"barge Pell into the burning torch","expect":["shove"]},
+{"strategy":"sneak round","capability":"hide","text":"Pip, creep along behind the barrel unseen","expect":["hide"]},
+{"strategy":"shielded advance","capability":"shield-wall","text":"Borin and I lock shields and advance together","expect":["defend","guard"]}
+]

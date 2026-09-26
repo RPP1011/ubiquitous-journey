@@ -1,0 +1,16 @@
+[
+{"strategy":"take the high ground","capability":"high-ground","text":"charge up the rise at Garrick the Red","expect":["attack","dash"]},
+{"strategy":"brazier weapon","capability":"kick-hazard","text":"kick the brazier over onto Sella","expect":["kick"]},
+{"strategy":"burn the camp","capability":"ignite-prop","text":"torch the tent by Garrick with the brazier","expect":["ignite"]},
+{"strategy":"blow the oil near the chief","capability":"ignite-prop","text":"light the lamp-oil barrel near the tent","expect":["ignite"]},
+{"strategy":"take him alive","capability":"subdue","text":"knock Garrick the Red senseless so we can take him alive","expect":["subdue"]},
+{"strategy":"take him alive","capability":"demand-surrender","text":"call on Garrick to throw down his sword and yield","expect":["social"]},
+{"strategy":"turn the men","capability":"turncoat","text":"shout to Hollis that Garrick will sell them all out to save his neck","expect":["social"]},
+{"strategy":"duel","capability":"challenge-duel","text":"challenge Garrick to single combat, man to man","expect":["social","duel"]},
+{"strategy":"cut off escape","capability":"block-path","text":"Borin, block the path behind the tents so Garrick can't flee","expect":["guard","block"]},
+{"strategy":"push brute into obstacle","capability":"shove-hazard","text":"shove Brann back into the fallen log","expect":["shove"]},
+{"strategy":"hurl something at the archer","capability":"throw-weapon","text":"throw my axe at Sella","expect":["throw"]},
+{"strategy":"rope the chief","capability":"use-rope","text":"lasso Garrick and drag him down off the rise","expect":["grab","trap"]},
+{"strategy":"heal before assault","capability":"heal-ally","text":"Sister Maud, patch up my wounds","expect":["aid","ability"]},
+{"strategy":"climb up the crates","capability":"climb-prop","text":"climb the crate to see over the camp","expect":["climb"]}
+]

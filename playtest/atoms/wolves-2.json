@@ -1,0 +1,16 @@
+[
+{"strategy":"kill the mother","capability":"focus-fire","text":"everyone go for the Grey Mother","expect":["attack"]},
+{"strategy":"rockslide","capability":"throw-rock","text":"hurl the loose rocks down on the Pale wolf","expect":["throw"]},
+{"strategy":"rockslide","capability":"rockslide","text":"kick the loose rocks down the rise onto the Grey Mother","expect":["kick"]},
+{"strategy":"fire","capability":"throw-fire","text":"grab the torch and fling it at the Grey Mother","expect":["throw"]},
+{"strategy":"fire","capability":"ignite-prop","text":"light the hay bale and push it toward the den","expect":["ignite","kick"]},
+{"strategy":"smoke out","capability":"smoke-out","text":"smoke the wolves out of their den with burning hay","expect":["ignite"]},
+{"strategy":"take the rise","capability":"high-ground","text":"charge up the rise at the Grey Mother","expect":["attack","dash"]},
+{"strategy":"split pack","capability":"lure-foe","text":"Pip, draw the Torn-ear wolf off to the right","expect":["distract","social"]},
+{"strategy":"cover","capability":"take-cover","text":"hunker down behind the fallen log","expect":["defend"]},
+{"strategy":"brace for charge","capability":"brace","text":"plant my spear and brace for the Grey Mother's charge","expect":["defend","ready"]},
+{"strategy":"cub leverage","capability":"threaten-cubs","text":"grab one of the cubs to draw the Grey Mother out","expect":["grab"]},
+{"strategy":"protect","capability":"guard-ally","text":"Borin, guard Sister Maud","expect":["guard"]},
+{"strategy":"cow the pack","capability":"howl-down","text":"roar at the Pale wolf to send it running","expect":["social"]},
+{"strategy":"ready","capability":"ready-strike","text":"if the Torn-ear wolf comes close, hit it","expect":["ready","overwatch"]}
+]

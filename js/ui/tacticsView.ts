@@ -5,7 +5,9 @@
 import { TUNE } from '../constants.js';
 import { runTurn, planTurn } from '../app/tactics/ai.js';
 import { phrase } from '../app/run/autopilot.js';
-import { readWriteIn, describeTrigger, type GridReading } from '../app/tactics/writein.js';
+import { readWriteIn, describeTrigger, resolveIntents, splitConditional, readTrigger, readyReadings, norm, type GridReading } from '../app/tactics/writein.js';
+import { interpretLLM } from '../app/tactics/llmParse.js';
+import { isEnabled as llmEnabled } from '../ai/llm.js';
 import { explainUnmet, recordUnmet } from '../app/tactics/unmet.js';
 import { key } from '../app/tactics/map.js';
 import type { Action, Battle, Spot, Unit } from '../app/tactics/battle.js';
@@ -67,6 +69,8 @@ export class TacticsView {
   private autoPlan: ReturnType<typeof planTurn> | null = null;
   private autoUnit: Unit | null = null;
   pace = 0.65;
+  private llmTimer: ReturnType<typeof setTimeout> | null = null;
+  private llmUnsupported: string | null = null;
   /** Where this fight is (for the unmet-request record). */
   where = '';
   private cap: HTMLDivElement | null = null;
@@ -160,6 +164,34 @@ export class TacticsView {
     if (b.current() === u && !u.acted && u.out === null) b.act(u, plan.action);
     if (b.current() === u) b.endTurn(u);
     this.refresh();
+  }
+
+  /**
+   * The model interpreter (when enabled): after a short pause in typing, ask the local model and
+   * put its reading first (marked ✦). The instant regex reading is already on screen; a slow or
+   * absent model changes nothing.
+   */
+  private askModel(b: Battle, m: Unit, text: string): void {
+    if (!llmEnabled()) return;
+    if (this.llmTimer) clearTimeout(this.llmTimer);
+    this.llmTimer = setTimeout(async () => {
+      const cond = splitConditional(text);
+      const trig = cond ? readTrigger(b, m, norm(cond.when)) : null;
+      const r = await interpretLLM(b, m, cond && trig ? cond.then : text);
+      if (!r || this.draft !== text || this.mine() !== m) return;
+      if (r.unsupported) {
+        this.llmUnsupported = r.unsupported;
+        if (!this.readings.length) { this.err = `Not possible: the rules don't cover ${r.unsupported} yet.`; this.refresh(); }
+        return;
+      }
+      const rs = cond && trig ? readyReadings(b, m, trig, cond.then, r.intents, true) : resolveIntents(b, m, r.intents, true);
+      if (!rs.length) return;
+      const top = rs[0];
+      top.label = `✦ ${top.label}`;
+      this.readings = [top, ...this.readings.filter((x) => JSON.stringify(x.action) !== JSON.stringify(top.action))].slice(0, 4);
+      this.err = '';
+      this.refresh();
+    }, 350);
   }
 
   /** A click on the grid: move to a reachable tile, or strike a foe you can reach. */
@@ -284,13 +316,20 @@ export class TacticsView {
     });
     const inp = root.querySelector<HTMLInputElement>('#tac-in');
     if (inp) {
-      inp.oninput = () => { this.draft = inp.value; const m = this.mine(); this.readings = m ? readWriteIn(b, m, this.draft) : []; this.err = this.draft.trim() && !this.readings.length && m ? `Not possible: ${explainUnmet(b, m, this.draft)}.` : ''; this.refresh(); };
+      inp.oninput = () => {
+        this.draft = inp.value; const m = this.mine();
+        this.readings = m ? readWriteIn(b, m, this.draft) : [];
+        this.llmUnsupported = null;
+        this.err = this.draft.trim() && !this.readings.length && m ? `Not possible: ${explainUnmet(b, m, this.draft)}.` : '';
+        this.refresh();
+        if (m && this.draft.trim()) this.askModel(b, m, this.draft);
+      };
       inp.onkeydown = (e) => {
         const m = this.mine(); if (e.key !== 'Enter' || !m) return;
         if (this.readings[0]) { this.run(m, this.readings[0]); return; }
         if (!this.draft.trim()) return;
         // can't be done — say why, and keep it: it's the list of things players want that the rules lack
-        const reason = explainUnmet(b, m, this.draft);
+        const reason = this.llmUnsupported ? `the rules don't cover ${this.llmUnsupported} yet` : explainUnmet(b, m, this.draft);
         recordUnmet(b, m, this.draft.trim(), reason, this.where);
         this.err = `Not possible: ${reason}. The GM has noted the request.`;
         this.draft = ''; this.refresh();

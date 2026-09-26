@@ -6,9 +6,10 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 8,
+   "passes": 9,
    "strategies": [
-    "make cover"
+    "make cover",
+    "deny the archer her perch"
    ],
    "examples": [],
    "firstSeen": "2026-09-26",
@@ -86,14 +87,21 @@
   },
   "high-ground": {
    "capability": "high-ground",
-   "status": "supported",
-   "kind": "unsupported",
-   "demand": 0,
+   "status": "open",
+   "kind": "misread",
+   "demand": 1,
    "passes": 30,
    "strategies": [
-    "take position"
+    "take position",
+    "take the high ground"
    ],
-   "examples": [],
+   "examples": [
+    {
+     "text": "charge up the rise at Garrick the Red",
+     "stage": "Blackthorn Camp",
+     "outcome": "misread as Move and brace (after moving) [defend]"
+    }
+   ],
    "firstSeen": "2026-09-26",
    "lastSeen": "2026-09-26"
   },
@@ -101,16 +109,22 @@
    "capability": "block-path",
    "status": "open",
    "kind": "misread",
-   "demand": 12,
+   "demand": 13,
    "passes": 0,
    "strategies": [
-    "deny ground"
+    "deny ground",
+    "cut off escape"
    ],
    "examples": [
     {
      "text": "block the path with the cart",
      "stage": "the Old Road",
      "outcome": "misread as Brace [defend]"
+    },
+    {
+     "text": "Borin, block the path behind the tents so Garrick can't flee",
+     "stage": "Blackthorn Camp",
+     "outcome": "misread as Run for the edge (after moving) [defend]"
     }
    ],
    "firstSeen": "2026-09-26",
@@ -139,10 +153,11 @@
    "capability": "trip",
    "status": "open",
    "kind": "unsupported",
-   "demand": 28,
+   "demand": 29,
    "passes": 8,
    "strategies": [
-    "melee craft"
+    "melee craft",
+    "trip the brute"
    ],
    "examples": [
     {
@@ -227,10 +242,12 @@
    "capability": "throw-weapon",
    "status": "open",
    "kind": "unsupported",
-   "demand": 35,
+   "demand": 37,
    "passes": 1,
    "strategies": [
-    "melee craft"
+    "melee craft",
+    "hurl something at the archer",
+    "throw weapon"
    ],
    "examples": [
     {
@@ -269,12 +286,13 @@
   },
   "ready-strike": {
    "capability": "ready-strike",
-   "status": "open",
+   "status": "supported",
    "kind": "unsupported",
    "demand": 13,
-   "passes": 19,
+   "passes": 20,
    "strategies": [
-    "melee craft"
+    "melee craft",
+    "overwatch"
    ],
    "examples": [
     {
@@ -316,9 +334,11 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 36,
+   "passes": 38,
    "strategies": [
-    "talk"
+    "talk",
+    "take him alive",
+    "decapitate"
    ],
    "examples": [],
    "firstSeen": "2026-09-26",
@@ -326,12 +346,13 @@
   },
   "bribe": {
    "capability": "bribe",
-   "status": "open",
+   "status": "supported",
    "kind": "mixed",
    "demand": 36,
-   "passes": 0,
+   "passes": 1,
    "strategies": [
-    "talk"
+    "talk",
+    "buy the captive"
    ],
    "examples": [
     {
@@ -386,9 +407,10 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 36,
+   "passes": 37,
    "strategies": [
-    "talk"
+    "talk",
+    "deceive"
    ],
    "examples": [],
    "firstSeen": "2026-09-26",
@@ -396,14 +418,22 @@
   },
   "intimidate": {
    "capability": "intimidate",
-   "status": "supported",
+   "status": "open",
    "kind": "unsupported",
-   "demand": 0,
-   "passes": 36,
+   "demand": 1,
+   "passes": 37,
    "strategies": [
-    "talk"
+    "talk",
+    "make them panic",
+    "holy fear"
    ],
-   "examples": [],
+   "examples": [
+    {
+     "text": "Sister Maud, curse them in the saint's name for defiling the chapel",
+     "stage": "the Chapel Ruin",
+     "outcome": "refused: the rules don't cover prayer yet"
+    }
+   ],
    "firstSeen": "2026-09-26",
    "lastSeen": "2026-09-26"
   },
@@ -412,9 +442,12 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 35,
+   "passes": 38,
    "strategies": [
-    "look after the company"
+    "look after the company",
+    "protect the healer",
+    "protect carrier",
+    "protect"
    ],
    "examples": [],
    "firstSeen": "2026-09-26",
@@ -441,14 +474,21 @@
   },
   "give-item": {
    "capability": "give-item",
-   "status": "supported",
+   "status": "open",
    "kind": "unsupported",
-   "demand": 0,
+   "demand": 1,
    "passes": 35,
    "strategies": [
-    "look after the company"
+    "look after the company",
+    "arm the captive"
    ],
-   "examples": [],
+   "examples": [
+    {
+     "text": "hand Elsie my knife so she can cut herself loose",
+     "stage": "the Burnt Mill",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    }
+   ],
    "firstSeen": "2026-09-26",
    "lastSeen": "2026-09-26"
   },
@@ -456,15 +496,21 @@
    "capability": "swap-places",
    "status": "open",
    "kind": "unsupported",
-   "demand": 36,
+   "demand": 37,
    "passes": 0,
    "strategies": [
-    "look after the company"
+    "look after the company",
+    "rotate front line"
    ],
    "examples": [
     {
      "text": "swap places with Borin",
      "stage": "the Old Road",
+     "outcome": "refused: the rules don't cover swapping places yet"
+    },
+    {
+     "text": "trade places with Borin so he takes the front",
+     "stage": "the Crossroads",
      "outcome": "refused: the rules don't cover swapping places yet"
     }
    ],
@@ -475,14 +521,20 @@
    "capability": "hide",
    "status": "open",
    "kind": "unsupported",
-   "demand": 31,
+   "demand": 32,
    "passes": 5,
    "strategies": [
-    "stealth"
+    "stealth",
+    "hide in the trees and ambush the ambushers"
    ],
    "examples": [
     {
      "text": "hide behind the trees",
+     "stage": "the Old Road",
+     "outcome": "refused: the rules don't cover hiding yet"
+    },
+    {
+     "text": "slip into the trees and hide",
      "stage": "the Old Road",
      "outcome": "refused: the rules don't cover hiding yet"
     }
@@ -494,15 +546,21 @@
    "capability": "disguise",
    "status": "open",
    "kind": "unsupported",
-   "demand": 36,
+   "demand": 37,
    "passes": 0,
    "strategies": [
-    "stealth"
+    "stealth",
+    "deceive"
    ],
    "examples": [
     {
      "text": "put on a dead bandit's cloak",
      "stage": "the Old Road",
+     "outcome": "refused: the rules don't cover disguises yet"
+    },
+    {
+     "text": "pull on Jory's cloak and wave the others over like a scout",
+     "stage": "the Crossroads",
      "outcome": "refused: the rules don't cover disguises yet"
     }
    ],
@@ -511,14 +569,21 @@
   },
   "push-cover": {
    "capability": "push-cover",
-   "status": "supported",
-   "kind": "unsupported",
-   "demand": 0,
+   "status": "open",
+   "kind": "misread",
+   "demand": 1,
    "passes": 4,
    "strategies": [
-    "make cover"
+    "make cover",
+    "block the archer's line"
    ],
-   "examples": [],
+   "examples": [
+    {
+     "text": "push the handcart into the road to block Tamsin's line of fire",
+     "stage": "the Crossroads",
+     "outcome": "misread as Brace [defend]"
+    }
+   ],
    "firstSeen": "2026-09-26",
    "lastSeen": "2026-09-26"
   },
@@ -537,14 +602,21 @@
   },
   "tip-furniture": {
    "capability": "tip-furniture",
-   "status": "supported",
-   "kind": "unsupported",
-   "demand": 0,
+   "status": "open",
+   "kind": "misread",
+   "demand": 1,
    "passes": 8,
    "strategies": [
-    "make cover"
+    "make cover",
+    "cover the rescue"
    ],
-   "examples": [],
+   "examples": [
+    {
+     "text": "flip the trestle table on its side for cover",
+     "stage": "the Burnt Mill",
+     "outcome": "misread as Kick a trestle table at Hob Tanner (after moving) [kick]"
+    }
+   ],
    "firstSeen": "2026-09-26",
    "lastSeen": "2026-09-26"
   },
@@ -552,16 +624,22 @@
    "capability": "free-captive",
    "status": "open",
    "kind": "mixed",
-   "demand": 4,
+   "demand": 5,
    "passes": 0,
    "strategies": [
-    "rescue"
+    "rescue",
+    "rescue first"
    ],
    "examples": [
     {
      "text": "cut Elsie free",
      "stage": "the Burnt Mill",
      "outcome": "misread as Attack → Wick (after moving) [attack]"
+    },
+    {
+     "text": "cut Elsie's ropes",
+     "stage": "the Burnt Mill",
+     "outcome": "refused: the GM couldn't turn that into an action"
     }
    ],
    "firstSeen": "2026-09-26",
@@ -617,9 +695,12 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 7,
+   "passes": 10,
    "strategies": [
-    "melee craft"
+    "melee craft",
+    "push brute into obstacle",
+    "shove into fire",
+    "fire"
    ],
    "examples": [],
    "firstSeen": "2026-09-26",
@@ -627,14 +708,21 @@
   },
   "throw-rock": {
    "capability": "throw-rock",
-   "status": "supported",
-   "kind": "unsupported",
-   "demand": 0,
+   "status": "open",
+   "kind": "misread",
+   "demand": 1,
    "passes": 4,
    "strategies": [
-    "melee craft"
+    "melee craft",
+    "rockfall"
    ],
-   "examples": [],
+   "examples": [
+    {
+     "text": "pick up the loose rocks and hurl them at Rook",
+     "stage": "the Mine Mouth",
+     "outcome": "misread as Move and brace (after moving) [defend]"
+    }
+   ],
    "firstSeen": "2026-09-26",
    "lastSeen": "2026-09-26"
   },
@@ -642,10 +730,11 @@
    "capability": "throw-fire",
    "status": "open",
    "kind": "misread",
-   "demand": 8,
-   "passes": 2,
+   "demand": 9,
+   "passes": 3,
    "strategies": [
-    "use fire"
+    "use fire",
+    "fire"
    ],
    "examples": [
     {
@@ -662,6 +751,11 @@
      "text": "throw the torch at the",
      "stage": "the Grey Mother's Den",
      "outcome": "misread as Set a torch alight (after moving) [ignite]"
+    },
+    {
+     "text": "grab the torch and fling it at the Grey Mother",
+     "stage": "the Grey Mother's Den",
+     "outcome": "misread as Set a torch alight [ignite]"
     }
    ],
    "firstSeen": "2026-09-26",
@@ -669,14 +763,27 @@
   },
   "scare-with-fire": {
    "capability": "scare-with-fire",
-   "status": "supported",
-   "kind": "unsupported",
-   "demand": 0,
+   "status": "open",
+   "kind": "misread",
+   "demand": 2,
    "passes": 12,
    "strategies": [
-    "beasts"
+    "beasts",
+    "fire scares wolves",
+    "fire"
    ],
-   "examples": [],
+   "examples": [
+    {
+     "text": "wave the torch at the Gaunt wolf to drive it off",
+     "stage": "the Sheepfold",
+     "outcome": "misread as Set a torch alight (after moving) [ignite]"
+    },
+    {
+     "text": "brandish the torch at the Black wolf",
+     "stage": "Hollow Wood",
+     "outcome": "misread as Set a torch alight [ignite]"
+    }
+   ],
    "firstSeen": "2026-09-26",
    "lastSeen": "2026-09-26"
   },
@@ -704,9 +811,12 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 12,
+   "passes": 15,
    "strategies": [
-    "beasts"
+    "beasts",
+    "noise",
+    "alpha-break",
+    "cow the pack"
    ],
    "examples": [],
    "firstSeen": "2026-09-26",
@@ -714,17 +824,230 @@
   },
   "climb-prop": {
    "capability": "climb-prop",
+   "status": "open",
+   "kind": "misread",
+   "demand": 1,
+   "passes": 3,
+   "strategies": [
+    "take position",
+    "stay high"
+   ],
+   "examples": [
+    {
+     "text": "hop up on the hay bale out of reach",
+     "stage": "the Sheepfold",
+     "outcome": "misread as Move and brace (after moving) [defend]"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "douse": {
+   "capability": "douse",
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 3,
+   "passes": 1,
    "strategies": [
-    "take position"
+    "put out fire near captive"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "use-rope": {
+   "capability": "use-rope",
+   "status": "open",
+   "kind": "misread",
+   "demand": 1,
+   "passes": 0,
+   "strategies": [
+    "rope the chief"
+   ],
+   "examples": [
+    {
+     "text": "lasso Garrick and drag him down off the rise",
+     "stage": "Blackthorn Camp",
+     "outcome": "misread as Patch yourself up [aid]"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "heal-ally": {
+   "capability": "heal-ally",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 1,
+   "strategies": [
+    "heal before assault"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "stop-messenger": {
+   "capability": "stop-messenger",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 1,
+   "strategies": [
+    "stop the runner"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "grab": {
+   "capability": "grab",
+   "status": "open",
+   "kind": "misread",
+   "demand": 1,
+   "passes": 0,
+   "strategies": [
+    "stop the runner"
+   ],
+   "examples": [
+    {
+     "text": "grab hold of Jory Crowe so he can't escape",
+     "stage": "the Crossroads",
+     "outcome": "misread as Run for the edge (after moving) [defend]"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "interrogate": {
+   "capability": "interrogate",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 1,
+   "strategies": [
+    "take a prisoner for info"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "break-barricade": {
+   "capability": "break-barricade",
+   "status": "open",
+   "kind": "unsupported",
+   "demand": 1,
+   "passes": 0,
+   "strategies": [
+    "break the barricade"
+   ],
+   "examples": [
+    {
+     "text": "smash the handcart barricade apart",
+     "stage": "the Mine Mouth",
+     "outcome": "refused: the rules don't cover building yet"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "suppress": {
+   "capability": "suppress",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 1,
+   "strategies": [
+    "archer suppression"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "lure-foe": {
+   "capability": "lure-foe",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 1,
+   "strategies": [
+    "lure"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "ignite-prop": {
+   "capability": "ignite-prop",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 1,
+   "strategies": [
+    "fire ring"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "focus-fire": {
+   "capability": "focus-fire",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 1,
+   "strategies": [
+    "cull the weak"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "trap": {
+   "capability": "trap",
+   "status": "open",
+   "kind": "unsupported",
+   "demand": 1,
+   "passes": 0,
+   "strategies": [
+    "trap"
+   ],
+   "examples": [
+    {
+     "text": "set a snare between the trees for the Grey wolf",
+     "stage": "Hollow Wood",
+     "outcome": "refused: the rules don't cover traps yet"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "roll-barrel": {
+   "capability": "roll-barrel",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 1,
+   "strategies": [
+    "barrel roll"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "brace": {
+   "capability": "brace",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 1,
+   "strategies": [
+    "brace for charge"
    ],
    "examples": [],
    "firstSeen": "2026-09-26",
    "lastSeen": "2026-09-26"
   }
  },
- "runs": 1
+ "runs": 10
 }

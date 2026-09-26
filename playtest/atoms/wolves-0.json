@@ -1,0 +1,15 @@
+[
+{"strategy":"fire scares wolves","capability":"scare-with-fire","text":"wave the torch at the Gaunt wolf to drive it off","expect":["social","ability","throw"]},
+{"strategy":"fire scares wolves","capability":"throw-fire","text":"hurl a burning branch from the campfire at the Scarred wolf","expect":["throw"]},
+{"strategy":"shove into fire","capability":"shove-hazard","text":"kick the Gaunt wolf into the campfire","expect":["shove","kick"]},
+{"strategy":"fire ring","capability":"fire-barrier","text":"set the fallen logs burning to make a firebreak","expect":["ignite"]},
+{"strategy":"fire ring","capability":"ignite-prop","text":"light the hay bale","expect":["ignite"]},
+{"strategy":"guard the sheep","capability":"protect-livestock","text":"stand in the gate of the fold so the wolves can't reach the sheep","expect":["guard","defend"]},
+{"strategy":"noise","capability":"howl-down","text":"bang my shield and shout to scare the wolves off","expect":["social"]},
+{"strategy":"bait","capability":"distract-animals","text":"toss a dead lamb away from the fold to lure the wolves off","expect":["distract","throw"]},
+{"strategy":"close ranks","capability":"shield-wall","text":"everyone back to back around the campfire","expect":["defend","guard"]},
+{"strategy":"heal","capability":"heal-ally","text":"Maud, look after Borin","expect":["aid","ability"]},
+{"strategy":"focus the weak wolf","capability":"focus-fire","text":"Pip, finish off the Gaunt wolf","expect":["attack"]},
+{"strategy":"overwatch","capability":"ready-strike","text":"hold my spear ready and stab the first wolf that lunges","expect":["ready","overwatch"]},
+{"strategy":"stay high","capability":"climb-prop","text":"hop up on the hay bale out of reach","expect":["climb"]}
+]

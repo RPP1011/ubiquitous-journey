@@ -148,12 +148,17 @@ obituaryTest(ok, helpers);
 // full deterministic scenario suite (docs/goal-system-tests.md): A1–A4, B1–B7,
 // C1–C4, D1–D4, E1/E3, and the whole-system G1–G4/G6. Folds into the same tally.
 runScenarios(ok);
+// APP LAYER suites run ISOLATED on their own seed, then restore the ambient stream exactly — so
+// changing game rules/AI/parsing never shifts the draws the engine suites below depend on.
+const _appRngState = getState();
+setSeed(0xA11A7);   // APP_SEED
 // App layer: the Session (canonical frame step + run lifecycle, js/app/session.ts).
 sessionTest(ok, helpers);
 // App layer: tactical grid battles — terrain, environment chains, readied actions, AI battles.
 tacticsTest(ok, helpers);
 // App layer: the run loop — three quests, nine battles, companion growth, hub gossip with provenance.
 runsTest(ok, helpers);
+setState(_appRngState);
 // Phase-1 emergent buildings: homes + tavern, gold-neutral, headless-safe. ISOLATED on its OWN seed
 // (it has two residual RNG-edge gates — builder-housed + guildhall-converge — that the author's
 // frame-pinning can't fully tame): snapshot the ambient stream, run construction from CONSTRUCTION_SEED

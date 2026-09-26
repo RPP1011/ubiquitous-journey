@@ -1,0 +1,16 @@
+[
+{"strategy":"use the handcart as a rolling shield","capability":"push-cover","text":"push the handcart forward toward Col Garrow and advance behind it","expect":["shove","kick"]},
+{"strategy":"burn the ambushers out","capability":"throw-fire","text":"grab the torch and hurl it into the hay bale","expect":["throw","ignite"]},
+{"strategy":"burn the ambushers out","capability":"ignite-prop","text":"set fire to the crate Col is hiding behind","expect":["ignite"]},
+{"strategy":"topple a barrel onto the brute","capability":"roll-barrel","text":"roll the barrel down at Col Garrow","expect":["kick","shove"]},
+{"strategy":"shut down the archer","capability":"suppress","text":"Pip, keep Nell Sparrow's head down with covering fire","expect":["overwatch","attack"]},
+{"strategy":"flank the skirmisher","capability":"flank","text":"circle round the fallen log and hit Fitch from the side","expect":["attack"]},
+{"strategy":"protect the healer","capability":"guard-ally","text":"stand in front of Sister Maud and shield her","expect":["guard"]},
+{"strategy":"hide in the trees and ambush the ambushers","capability":"hide","text":"slip into the trees and hide","expect":["hide"]},
+{"strategy":"take cover","capability":"take-cover","text":"duck behind the fallen log","expect":["defend","dash"]},
+{"strategy":"make them panic","capability":"intimidate","text":"roar at Fitch that his friends are already dead","expect":["social"]},
+{"strategy":"trip the brute","capability":"trip","text":"sweep Col's legs out from under him","expect":["trip"]},
+{"strategy":"get the drop on them","capability":"ready-strike","text":"wait by the tree and strike Fitch when he steps out","expect":["ready","overwatch"]},
+{"strategy":"deny the archer her perch","capability":"fell-tree","text":"chop down the tree next to Nell Sparrow","expect":["hew"]},
+{"strategy":"climb for a better angle","capability":"climb-prop","text":"clamber up on the handcart and fight from on top of it","expect":["climb"]}
+]
