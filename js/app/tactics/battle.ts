@@ -28,6 +28,7 @@ import { BattleMap, DIRS, JUMP, FALL_SAFE, TILE, key, type Prop, type Tile } fro
 import { areaTiles, inReach, type PieceDef, type PieceState } from './pieces.js';
 import { answers, hears, type Call, type Want } from './comms.js';
 import { telegraph, type Intent } from './intents.js';
+import { ITEMS, type ItemId, type Kit } from './items.js';
 
 export type Side = 'us' | 'them';
 export type Role = 'player' | 'companion' | 'ally' | 'foe';
@@ -107,6 +108,8 @@ export interface Unit {
   moved: boolean; acted: boolean; reacted: boolean;
   /** Who laid a foe open: follow-through credits the setter (docs 23). */
   setBy: { prone?: Unit['id']; exposed?: Unit['id']; stunned?: Unit['id'] };
+  /** What they carry into the fight and can spend once (items.ts). */
+  kit: Kit;
   /** Has this unit called out this turn (talk is free, once a turn)? */
   spoke: boolean;
   boon: Boon | null;
@@ -156,6 +159,7 @@ export type Action =
   | { kind: 'charge'; target: Unit['id'] }                   // a brute's straight-line rush: bowls them over (telegraphed)
   | { kind: 'pin'; target: Unit['id'] }                      // an archer's pinning shot: a lighter hit that slows
   | { kind: 'howl' }                                          // a pack leader: the pack steadies, the timid quail
+  | { kind: 'item'; item: ItemId; target?: Unit['id']; at?: Spot }   // spend a consumable (items.ts)
   | { kind: 'ignite'; at: Spot }                              // needs a flame to hand
   | { kind: 'douse'; at: Spot }                               // needs water to hand
   | { kind: 'pickup'; prop: string }
@@ -229,6 +233,93 @@ export class Battle {
     return p;
   }
 
+  /** Consumables u could spend from `from`: mend yourself or a friend beside you, or throw at a foe / a spot. */
+  private itemOptions(u: Unit, from: Spot): Action[] {
+    const out: Action[] = [];
+    const foes = this.foesOf(u);
+    for (const id of Object.keys(u.kit) as ItemId[]) {
+      if (!u.kit[id]) continue;
+      const def = ITEMS[id];
+      if (def.aim === 'mend') {
+        for (const w of [u, ...this.friendsOf(u), ...this.downed(u.side)]) {
+          if (w !== u && !this.adjacent(from, w)) continue;
+          if (w.out === 'downed' || w.agent.fighter.health < TUNE.maxHealth * 0.75 || (id === 'draught' && w.burning > 0)) out.push({ kind: 'item', item: id, target: w.id });
+        }
+      } else if (def.aim === 'foe') {
+        for (const f of foes) if (dist(from, f) <= def.range && dist(from, f) >= 1 && this.map.sees(from.x, from.z, f.x, f.z)) out.push({ kind: 'item', item: id, target: f.id });
+      } else if (id === 'caltrops') {
+        for (const [dx, dz] of DIRS) { const s = { x: from.x + dx, z: from.z + dz }; if (this.map.standable(s.x, s.z) && !this.unitAt(s.x, s.z) && !this.map.tile(s.x, s.z)!.caltrops) out.push({ kind: 'item', item: id, at: s }); }
+      } else {
+        // thrown at where the foes are (a handful of sensible spots, not every tile)
+        for (const f of foes) if (dist(from, f) <= def.range && this.map.sees(from.x, from.z, f.x, f.z) && (id !== 'wolfsbane' || f.tactic === 'beast')) out.push({ kind: 'item', item: id, at: { x: f.x, z: f.z } });
+      }
+    }
+    return out;
+  }
+
+  /** Spend one of what you carry (items.ts). */
+  useItem(u: Unit, id: ItemId, t: Unit | undefined, at: Spot | undefined, fl = ''): void {
+    if (!u.kit[id]) return;
+    u.kit[id]!--;
+    const def = ITEMS[id];
+    const area = (c: Spot) => [[0, 0], ...DIRS, [1, 1], [1, -1], [-1, 1], [-1, -1]].map(([dx, dz]) => this.map.tile(c.x + dx, c.z + dz)).filter((x): x is Tile => !!x);
+    const nm = this.nm(u, true), v = (a: string, bb: string) => (u.agent.controlled ? a : bb);
+    switch (id) {
+      case 'bandage': case 'draught': {
+        const w = t ?? u;
+        this.cue({ k: 'anim', u: u.id, clip: 'Interact' });
+        if (w.out === 'downed') { w.out = null; w.agent.fighter.health = id === 'draught' ? 35 : 18; this.cue({ k: 'getup', t: w.id }); this.ev('revive', u, w); this.note('move', `${nm} ${v('get', 'gets')} ${w === u ? 'back up' : `${this.nm(w)} back on their feet`} with ${def.name}${fl}.`); break; }
+        const f = w.agent.fighter, before = f.health;
+        f.health = Math.min(TUNE.maxHealth, f.health + (id === 'draught' ? 40 : 20));
+        if (id === 'draught') w.burning = 0;
+        this.cue({ k: 'heal', t: w.id, amt: Math.round(f.health - before), hp: f.health });
+        this.note('move', `${nm} ${id === 'draught' ? v('drink', 'drinks') : v('bind', 'binds')} ${w === u ? (id === 'draught' ? 'a healing draught' : 'a wound') : `${this.nm(w)}'s wound`}${fl}.`);
+        break;
+      }
+      case 'oilflask': case 'smokepot': case 'flash': case 'wolfsbane': {
+        const c = at ?? (t ? { x: t.x, z: t.z } : { x: u.x, z: u.z });
+        this.face(u, c);
+        this.cue({ k: 'throw', u: u.id, from: { x: u.x, z: u.z }, to: c, prop: id === 'oilflask' ? 'oil' : 'flour', effect: id === 'oilflask' ? 'splash' : 'cloud' });
+        const tiles = area(c);
+        if (id === 'oilflask') {
+          for (const x of tiles) if (!x.wall && x.ground !== 'water') x.oil = Math.max(x.oil, 4);
+          this.note('env', `${nm} ${v('smash', 'smashes')} a flask of lamp oil${fl} — the ground is slick with it.`);
+          if (tiles.some((x) => x.burning > 0) || tiles.some((x) => this.map.propAt(x.x, x.z)?.fireSource)) { const hot = tiles.find((x) => x.burning > 0 || this.map.propAt(x.x, x.z)?.fireSource)!; this.ignite(hot.x, hot.z, u, '', true); }
+        } else if (id === 'smokepot') {
+          for (const x of tiles) x.smoke = Math.max(x.smoke, 3);
+          this.note('env', `${nm} ${v('smash', 'smashes')} a smoke pot${fl} — thick grey smoke rolls out.`);
+        } else if (id === 'flash') {
+          for (const x of tiles) x.smoke = Math.max(x.smoke, 1);
+          const hit = this.active().filter((w) => w.side !== u.side && tiles.some((x) => x.x === w.x && x.z === w.z));
+          for (const w of hit) { w.exposed = true; if (rng() < 0.35) w.stunned = true; }
+          this.note('env', `${nm} ${v('throw', 'throws')} flash powder${fl} — a white burst${hit.length ? `: ${hit.map((w) => this.nm(w)).join(', ')} blinded` : ''}.`);
+        } else {
+          const beasts = this.active().filter((w) => w.side !== u.side && w.tactic === 'beast' && dist(w, c) <= 1);
+          for (const w of beasts) { if (w.tags.has('chief')) w.morale = 'shaken'; else { w.morale = 'broken'; this.ev('broken', w); } this.cue({ k: 'icon', u: w.id, icon: '!!' }); }
+          for (const x of tiles) x.smoke = Math.max(x.smoke, 1);
+          this.note('env', `${nm} ${v('throw', 'throws')} burning wolfsbane${fl}${beasts.length ? ` — ${beasts.map((w) => this.nm(w)).join(', ')} ${beasts.length > 1 ? 'recoil' : 'recoils'} from the reek` : ''}.`);
+        }
+        break;
+      }
+      case 'caltrops': {
+        const c = at ?? { x: u.x, z: u.z };
+        const x = this.map.tile(c.x, c.z); if (x) x.caltrops = true;
+        this.cue({ k: 'anim', u: u.id, clip: 'Interact' });
+        this.note('move', `${nm} ${v('scatter', 'scatters')} caltrops${fl}.`);
+        break;
+      }
+      case 'bola': {
+        if (!t) break;
+        this.face(u, t);
+        const ok = check(u.sheet.finesse, 10 + t.sheet.finesse + (t.defending ? 2 : 0)).ok;
+        this.cue({ k: 'throw', u: u.id, from: { x: u.x, z: u.z }, to: { x: t.x, z: t.z }, prop: 'rocks', effect: ok ? 'hit' : 'miss' });
+        if (ok) { t.slowed = Math.max(t.slowed, 3); this.note('hit', `${nm} ${v('tangle', 'tangles')} ${this.nm(t)}'s legs with a bola${fl}!`); }
+        else this.note('miss', `${nm}'s bola whirls past ${this.nm(t)}.`);
+        break;
+      }
+    }
+  }
+
   /**
    * A brute's charge at t: a straight run along a row or column, 2 to move+2 tiles, every tile
    * before t clear and no sudden climb. Returns the tiles it will cross (ending beside t), or null.
@@ -266,7 +357,7 @@ export class Battle {
   // ---- setup ----------------------------------------------------------------------------------
 
   /** Place an engine agent on the grid. Snaps its body to the tile. */
-  add(agent: Agent, role: Role, at: Spot, extra: { tactic?: Tactic; traits?: Traits | null; tags?: string[]; bound?: boolean } = {}): Unit {
+  add(agent: Agent, role: Role, at: Spot, extra: { tactic?: Tactic; traits?: Traits | null; tags?: string[]; bound?: boolean; kit?: Kit } = {}): Unit {
     const sheet = sheetOf(agent);
     const u: Unit = {
       id: agent.id, agent, side: role === 'foe' ? 'them' : 'us', role, sheet,
@@ -277,7 +368,7 @@ export class Battle {
       morale: 'steady', guardedBy: null, tauntedBy: null, turnedOn: null, lastHitBy: null, carrying: null, readied: null, surprised: false,
       tactic: extra.tactic ?? (agent.faction === 'monster' ? 'beast' : role === 'foe' ? 'brute' : 'guardian'),
       traits: extra.traits ?? null, tags: new Set(extra.tags ?? []), bound: !!extra.bound,
-      readyRound: new Map(), bluffHeat: 0, deathSaves: { ok: 0, fail: 0 }, loot: 0,
+      readyRound: new Map(), bluffHeat: 0, deathSaves: { ok: 0, fail: 0 }, loot: 0, kit: { ...(extra.kit ?? {}) },
     };
     agent._encounter = 1;
     try { agent.fighter.stopBlock(); agent.fighter.setMoving(0); } catch { /* stub body */ }
@@ -361,7 +452,7 @@ export class Battle {
         const path = [...cur.path, { x: nx, z: nz }];
         q.push({ s: { x: nx, z: nz }, c, path });
         if (!occ) out.set(k, { cost: c, path });
-        if (this.pinnedAt(nx, nz, u)) q.pop();
+        if (this.pinnedAt(nx, nz, u) || t.caltrops) q.pop();   // pinned by a blocker, or stopped dead by caltrops
       }
     }
     return out;
@@ -536,6 +627,13 @@ export class Battle {
       if (u.out !== null) return null;
       this.enterTile(u);
       if (u.out !== null) return null;
+      const here = this.map.tile(u.x, u.z)!;
+      if (here.caltrops) {
+        here.caltrops = false;
+        this.wound(u.lastHitBy ?? u, u, 6, 'caltrops');
+        this.note('env', `${this.nm(u, true)} ${u.agent.controlled ? 'step' : 'steps'} on caltrops and ${u.agent.controlled ? 'stop' : 'stops'} dead!`);
+        return null;
+      }
     }
     return null;
   }
@@ -667,6 +765,7 @@ export class Battle {
       case 'hurl': { if (!t) return { p: 0, notes: [] }; const h = this.hitDC(u, t, from, true); return roll('finesse', h.dc, h.notes); }
       case 'charge': { if (!t) return { p: 0, notes: [] }; const line = this.chargeLine(u, t); const h = this.hitDC(u, t, line ? line[line.length - 1] : from, false); return roll('might', h.dc - 1, ['charge', ...h.notes]); }
       case 'pin': { if (!t) return { p: 0, notes: [] }; const h = this.hitDC(u, t, from, true); return roll('finesse', h.dc, h.notes); }
+      case 'item': { if (a.item === 'bola' && t) return roll('finesse', 10 + t.sheet.finesse + (t.defending ? 2 : 0)); return { p: 1, notes: [] }; }
       case 'disarm': { if (!t) return { p: 0, notes: [] }; return roll('finesse', 12 + t.sheet.might + (t.defending ? 2 : 0) - (t.prone ? 3 : 0), t.prone ? ['prone'] : []); }
       case 'aid': { const w = t ?? u; return w.out === 'downed' ? roll('finesse', 10) : ((u.agent.inventory as Record<string, number> | undefined)?.potion ?? 0) > 0 ? { p: 1, notes: ['potion'] } : roll('finesse', 11); }
       case 'social': return this.socialOdds(u, a, t);
@@ -721,6 +820,7 @@ export class Battle {
     if (this.flameAt(u, from)) for (const [dx, dz] of DIRS) { const t = this.map.tile(from.x + dx, from.z + dz); if (t && this.flammable(t.x, t.z)) out.push({ kind: 'ignite', at: { x: t.x, z: t.z } }); }
     if (this.waterAt(u, from)) for (const [dx, dz] of [[0, 0], ...DIRS]) { const t = this.map.tile(from.x + dx, from.z + dz); if (t && (t.burning || this.unitAt(t.x, t.z)?.burning)) out.push({ kind: 'douse', at: { x: t.x, z: t.z } }); }
     if (u.tactic === 'beast' && u.tags.has('chief') && (u.readyRound.get('howl') ?? 0) <= this.round) out.push({ kind: 'howl' });
+    out.push(...this.itemOptions(u, from));
     for (const p of this.pieces.values()) if (!p.used && inReach(p, from) && (!p.needsFire || this.flameAt(u, from))) out.push({ kind: 'use', piece: p.id });
     out.push({ kind: 'defend' }, { kind: 'overwatch' }, { kind: 'block' }, { kind: 'social', verb: 'rally' }, { kind: 'social', verb: 'parley' });
     if (this.map.edge(from.x, from.z)) out.push({ kind: 'escape' });
@@ -842,6 +942,7 @@ export class Battle {
         this.note('move', `${this.nm(u, true)} ${u.agent.controlled ? 'slip' : 'slips'} away from the fight${u.carrying ? ` with ${u.carrying.name}` : ''}.`); break;
       case 'social': this.social(u, a, t, fl); break;
       case 'use': { const p = this.pieces.get(a.piece); if (p && !p.used) this.usePiece(u, p, fl); break; }
+      case 'item': this.useItem(u, a.item, t, a.at, fl); break;
       case 'wait': break;
     }
     for (const [x, [pr, ex, st]] of before) {
@@ -1264,7 +1365,7 @@ export class Battle {
   flammable(x: number, z: number): boolean {
     const t = this.map.tile(x, z); if (!t || t.wet > 0 || t.ground === 'water') return false;
     const p = this.map.propAt(x, z);
-    return t.ground === 'grass' || t.ground === 'brush' || t.ground === 'mud' || !!(p && p.flammable);
+    return t.ground === 'grass' || t.ground === 'brush' || t.ground === 'mud' || t.oil > 0 || !!(p && p.flammable);
   }
 
   /** A flame within reach: an adjacent fire source, a burning neighbour, a carried torch, a fire ability. */
@@ -1295,6 +1396,13 @@ export class Battle {
       for (const [dx, dz] of DIRS) { const n = this.map.tile(x + dx, z + dz); if (n && n.ground !== 'water') { n.burning = Math.max(n.burning, 2); } }
       for (const u of this.active()) if (dist(u, { x, z }) <= 1) { this.wound(by ?? u, u, 14, 'fire'); u.burning = 2; }
       this.note('env', `The oil barrel bursts into flame!`);
+    }
+    // a spilled-oil slick goes up all at once, and whoever stands in it
+    if (t.oil > 0) {
+      const slick: Tile[] = [], seen = new Set<string>(), q = [t];
+      while (q.length) { const c = q.pop()!; const k = key(c.x, c.z); if (seen.has(k)) continue; seen.add(k); if (c.oil <= 0) continue; slick.push(c); for (const [dx, dz] of DIRS) { const n = this.map.tile(c.x + dx, c.z + dz); if (n) q.push(n); } }
+      for (const c of slick) { c.oil = 0; c.burning = Math.max(c.burning, 3); this.cue({ k: 'fire', at: { x: c.x, z: c.z }, oil: true }); const w = this.unitAt(c.x, c.z); if (w && w.out === null) { this.wound(by ?? w, w, 10, 'fire'); w.burning = 2; } }
+      this.note('env', `The spilled oil goes up with a whoomp!`);
     }
     const u = this.unitAt(x, z);
     if (u && u.burning === 0) { u.burning = 2; if (by) u.lastHitBy = by; }
@@ -1331,6 +1439,7 @@ export class Battle {
       if (t.burning > 0) { t.burning--; if (t.burning === 0 && (t.ground === 'grass' || t.ground === 'brush')) t.ground = 'ash'; }
       if (t.smoke > 0) t.smoke--;
       if (t.wet > 0) t.wet--;
+      if (t.oil > 0) t.oil--;
     }
     for (const p of [...this.map.props.values()]) {
       if (p.burning <= 0) continue;
@@ -1588,7 +1697,7 @@ export const HEWABLE = ['tree', 'crate', 'barrel', 'table', 'cart', 'tent'];
 export function sameAction(a: Action, b: Action): boolean {
   if (a.kind !== b.kind) return false;
   const A = a as Record<string, unknown>, B = b as Record<string, unknown>;
-  for (const k of ['target', 'abilityId', 'prop', 'verb', 'piece']) if (A[k] !== undefined && B[k] !== undefined && A[k] !== B[k]) return false;
+  for (const k of ['target', 'abilityId', 'prop', 'verb', 'piece', 'item']) if (A[k] !== undefined && B[k] !== undefined && A[k] !== B[k]) return false;
   if ('at' in a && 'at' in b && a.at && b.at) return a.at.x === b.at.x && a.at.z === b.at.z;
   return true;
 }

@@ -352,6 +352,31 @@ export function tacticsTest(ok, { stubScene, makeFighter }) {
     ss.dispose();
   }
 
+  // --- 19. consumables: oil then fire, caltrops, bandaging a friend back up, the parser -------------
+  {
+    const { s: ss, b, mk } = arena(stubScene, makeFighter);
+    const you = b.add(ss.player, 'player', { x: 3, z: 5 }, { kit: { oilflask: 1, bandage: 1, caltrops: 1 } });
+    const pipA = mk('Pip', 'townsfolk'); pipA.inParty = true;
+    const pip = b.add(pipA, 'companion', { x: 3, z: 6 }, { traits: { bravery: 0.6, compassion: 0.5, loyalty: 0.9, ruthlessness: 0.3 }, tactic: 'rogue' });
+    const g = b.add(mk('Garrick'), 'foe', { x: 6, z: 5 });
+    order(b, you, pip, g); b.start();
+    const r = readWriteIn(b, you, 'throw the oil flask at Garrick')[0];
+    ok(r && r.action.kind === 'item' && r.action.item === 'oilflask', `items: "throw the oil flask at Garrick" (${r && r.label})`);
+    b.act(you, { kind: 'item', item: 'oilflask', at: { x: 6, z: 5 } });
+    ok(b.map.tile(6, 5).oil > 0 && you.kit.oilflask === 0, 'items: the flask is spent and the ground is slick');
+    const hp = g.agent.fighter.health;
+    b.ignite(5, 5, you);
+    ok(b.map.tile(6, 5).burning > 0 && g.agent.fighter.health < hp && g.burning > 0, 'items: fire touches the slick and it all goes up, Garrick with it');
+    b.map.tile(4, 5).caltrops = true;
+    g.x = 7; g.z = 5; b.place(g); b.map.tile(6, 5).burning = 0; b.map.tile(5, 5).burning = 0; b.map.tile(7, 5).burning = 0;
+    pip.out = 'downed'; pip.agent.fighter.health = 0.5;
+    const bd = readWriteIn(b, you, 'bandage Pip')[0];
+    ok(bd && bd.action.kind === 'item' && bd.action.item === 'bandage' && bd.action.target === pip.id, `items: "bandage Pip" (${bd && bd.label})`);
+    you.acted = false; b.act(you, { kind: 'item', item: 'bandage', target: pip.id });
+    ok(pip.out === null && pip.agent.fighter.health > 1, 'items: a bandage gets a downed friend back on their feet');
+    ss.dispose();
+  }
+
   // --- 16. bonds: friction sours a pair into rivals; a rival won't dive in -------------------------
   {
     const { s: ss, b, mk } = arena(stubScene, makeFighter);

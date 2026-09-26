@@ -25,7 +25,7 @@ const o3 = (m: unknown) => m as Obj3;
 const COL = {
   base: new THREE.Color(0x1d2a33), reach: new THREE.Color(0x3d7fd6), target: new THREE.Color(0xd65a4a),
   path: new THREE.Color(0x7fb6ff), current: new THREE.Color(0xe8c879), fire: new THREE.Color(0xff7a1a),
-  smoke: new THREE.Color(0x9a9a9a), usable: new THREE.Color(0xb98a3a), subject: new THREE.Color(0xffe066), effect: new THREE.Color(0xff6a1a), pathHi: new THREE.Color(0x6ff0ff), wet: new THREE.Color(0x3ec7d6), ash: new THREE.Color(0x3a3a3a), hover: new THREE.Color(0xffffff),
+  smoke: new THREE.Color(0x9a9a9a), oil: new THREE.Color(0x2a2418), caltrops: new THREE.Color(0x8a8f98), usable: new THREE.Color(0xb98a3a), subject: new THREE.Color(0xffe066), effect: new THREE.Color(0xff6a1a), pathHi: new THREE.Color(0x6ff0ff), wet: new THREE.Color(0x3ec7d6), ash: new THREE.Color(0x3a3a3a), hover: new THREE.Color(0xffffff),
 };
 
 const PROP_LOOK: Record<string, { geo: () => THREE.BufferGeometry; color: number; y: number }> = {
@@ -164,6 +164,8 @@ export class BattleRender {
       if (t.ground === 'ash') c = COL.ash;
       if (t.wet > 0) c = COL.wet;
       if (t.smoke > 0) c = COL.smoke;
+      if (t.oil > 0) c = COL.oil;
+      if (t.caltrops) c = COL.caltrops;
       if (this.reach.has(k)) c = COL.reach;
       if (pathSet.has(k)) c = COL.path;
       if (this.usable.has(k)) c = COL.usable;

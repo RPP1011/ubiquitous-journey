@@ -30,6 +30,8 @@ export interface Tile {
   burning: number;                // rounds of fire left on this tile
   wet: number;                    // rounds it stays doused (cannot burn)
   smoke: number;                  // rounds of a blinding cloud (flour, thick smoke)
+  oil: number;                    // rounds a spilled-oil slick lasts (goes up the moment fire touches it)
+  caltrops: boolean;              // scattered spikes: whoever steps here is hurt and stopped
   wall: boolean;                  // impassable, full cover (a building)
 }
 
@@ -113,7 +115,7 @@ export class BattleMap {
         const bar = safe(() => barrierAt(wx, wz), 0);
         const biome = safe(() => biomeAt(wx, wz), BIOME.PLAINS);
         const ground: Ground = bar === 1 ? 'water' : bar === 2 ? 'stone' : biome === BIOME.VILLAGE ? 'dirt' : biome === BIOME.HILLS ? 'stone' : 'grass';
-        this.tiles.push({ x, z, wx, wz, h: Math.round(safe(() => terrainHeight(wx, wz), 0) / LEVEL), ground, burning: 0, wet: 0, smoke: 0, wall: false });
+        this.tiles.push({ x, z, wx, wz, h: Math.round(safe(() => terrainHeight(wx, wz), 0) / LEVEL), ground, burning: 0, wet: 0, smoke: 0, oil: 0, caltrops: false, wall: false });
       }
     }
     if (opts.bare) return;

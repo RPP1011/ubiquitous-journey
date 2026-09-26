@@ -230,6 +230,45 @@ export function planTurn(b: Battle, u: Unit, opts: { predict?: boolean } = {}): 
         }
         case 'free': g = u.side === 'us' ? 2.0 + tr.compassion : 0; why = 'cut the captive free'; break;
         case 'grab': g = (o.kind === 'rob' && u.loot === 0 && t ? p * (t.id === o.targetId ? 1.8 : 0.9) : 0) + (u.traits || u.role === 'player' ? p * tr.ruthlessness * 0.5 * (1 - tr.compassion) : 0); break;
+        case 'item': {
+          // what you carry is scarce: spend it when it clearly pays
+          const near = (c: Spot, r = 1) => foes.filter((f) => Math.max(Math.abs(f.x - c.x), Math.abs(f.z - c.z)) <= r);
+          switch (a.item) {
+            case 'bandage': case 'draught': {
+              const w = t ?? u;
+              const care = w === u ? 1.1 : 0.5 + tr.compassion + (u.tactic === 'healer' ? 0.6 : 0);
+              g = w.out === 'downed' ? 1.4 * care : frac(w) < 0.45 ? (1 - frac(w)) * care * (a.item === 'draught' ? 1 : 0.7) : w.burning > 0 && a.item === 'draught' ? 0.6 : 0;
+              why = w.out === 'downed' ? `get ${b.nm(w)} up` : `mend ${w === u ? 'myself' : b.nm(w)}`;
+              break;
+            }
+            case 'oilflask': {
+              if (!a.at) break;
+              const hit = near(a.at).length, fire = b.flameAt(u, s) || b.map.tiles.some((x) => x.burning > 0 && Math.abs(x.x - a.at!.x) <= 2 && Math.abs(x.z - a.at!.z) <= 2);
+              g = hit * (fire ? 0.6 : 0.06) * (0.5 + tr.ruthlessness) - friends.filter((f) => Math.max(Math.abs(f.x - a.at!.x), Math.abs(f.z - a.at!.z)) <= 1).length * 0.8 - (Math.max(Math.abs(s.x - a.at!.x), Math.abs(s.z - a.at!.z)) <= 1 ? 1.5 : 0);
+              why = 'slick them with oil';
+              break;
+            }
+            case 'smokepot': {
+              // cover the soft ones from archers who can see them
+              const archers = foes.filter((f) => f.tactic === 'archer' || b.rangedReach(f) > 2);
+              const exposed = friends.filter((f) => (f.tactic === 'healer' || frac(f) < 0.5) && archers.some((x) => b.map.sees(x.x, x.z, f.x, f.z)));
+              g = archers.length && a.at ? exposed.length * 0.35 + (archers.some((x) => dist(x, a.at!) <= 1) ? 0.3 : 0) : 0;
+              why = 'blind their archers';
+              break;
+            }
+            case 'flash': { g = a.at ? near(a.at).length * 0.32 : 0; why = 'blind them'; break; }
+            case 'wolfsbane': { g = a.at ? foes.filter((f) => f.tactic === 'beast' && dist(f, a.at!) <= 1).length * 0.6 : 0; why = 'drive the beasts off'; break; }
+            case 'bola': { if (t) g = p * weight(t) * (t.tactic === 'rogue' || t.tactic === 'skirmisher' || t.tactic === 'beast' || t.tactic === 'leader' || t.carrying?.kind === 'relic' ? 0.4 : 0.15); why = 'tangle their legs'; break; }
+            case 'caltrops': {
+              // across the lane a foe will come down, near someone soft
+              const soft = friends.some((f) => (f.tactic === 'healer' || f.tactic === 'archer') && a.at && dist(f, a.at) <= 2);
+              g = a.at && soft && foes.some((f) => dist(f, a.at!) <= f.move + 1 && dist(f, a.at!) > 1) ? 0.25 : 0;
+              why = 'caltrops across their path';
+              break;
+            }
+          }
+          break;
+        }
         case 'charge': {
           if (!t) break;
           const dmg = TUNE.damage * (0.75 + 0.08 * u.sheet.might) * 1.3;
@@ -425,6 +464,8 @@ function positionValue(b: Battle, u: Unit, s: Spot): number {
   let v = 0;
   const t = b.map.tile(s.x, s.z)!;
   if (t.burning) v -= 1.5;
+  if (t.caltrops) v -= 0.6;
+  if (t.oil > 0) v -= b.map.tiles.some((x) => x.burning > 0 && Math.abs(x.x - s.x) + Math.abs(x.z - s.z) <= 3) || b.foesOf(u).some((f) => f.carrying?.fireSource) ? 0.9 : 0.25;
   const foes = b.foesOf(u);
   const nearest = Math.min(...foes.map((f) => dist(f, s)), 12);
   const role = u.tactic;

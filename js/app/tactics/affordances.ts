@@ -9,6 +9,7 @@
 import { DIRS, FALL_SAFE, key, type Prop } from './map.js';
 import type { Action, Battle, Spot, Unit } from './battle.js';
 import { pieceFootprint } from './pieces.js';
+import { ITEMS } from './items.js';
 
 export type AffGroup = 'Environment' | 'Fight' | 'People' | 'Stance';
 export type Subject = { kind: 'prop'; id: string } | { kind: 'unit'; id: Unit['id'] } | { kind: 'piece'; id: string } | null;
@@ -60,6 +61,7 @@ export function verbOf(u: Unit, a: Action): Verb {
     case 'charge': return V('charge', 'Charge', '🐂', 'Fight');
     case 'pin': return V('pin', 'Pinning shot', '📌', 'Fight');
     case 'howl': return V('howl', 'Howl', '🐺', 'Stance');
+    case 'item': { const d = ITEMS[a.item]; return V(`item:${a.item}`, d.name.replace(/^an? (bag of |pouch of |sprig of |flask of )?/, '').replace(/^./, (c) => c.toUpperCase()), d.icon, 'Environment', true); }
     case 'grab': return V('grab', 'Pickpocket', '👛', 'Fight');
     case 'guard': return V('guard', 'Guard', '🛡', 'People');
     case 'aid': return V('aid', 'Aid', '✚', 'People');
@@ -108,6 +110,7 @@ export function actionLabel(b: Battle, u: Unit, a: Action): string {
     case 'ready': return 'Ready';
     case 'block': return 'Block (hold the ground)';
     case 'use': return b.pieces.get(a.piece)?.label ?? 'Use it';
+    case 'item': { const d = ITEMS[a.item]; const w = a.target != null ? b.get(a.target) : undefined; return `${d.name[0].toUpperCase() + d.name.slice(1)}${w ? (d.aim === 'mend' ? (w === u ? ' (yourself)' : ` for ${b.nm(w)}`) : ` at ${b.nm(w)}`) : a.at ? (b.unitAt(a.at.x, a.at.z) ? ` at ${b.nm(b.unitAt(a.at.x, a.at.z)!)}` : '') : ''}`; }
     case 'defend': return 'Brace';
     default: return a.kind[0].toUpperCase() + a.kind.slice(1);
   }
@@ -115,7 +118,7 @@ export function actionLabel(b: Battle, u: Unit, a: Action): string {
 
 function groupOf(b: Battle, a: Action): AffGroup {
   if (['attack', 'ability', 'subdue', 'grab', 'trip', 'disarm', 'hurl', 'charge', 'pin'].includes(a.kind) || (a.kind === 'shove' && b.get(a.target as Unit['id']))) return 'Fight';
-  if (['kick', 'throw', 'ignite', 'douse', 'pickup', 'shove', 'hew', 'use'].includes(a.kind)) return 'Environment';
+  if (['kick', 'throw', 'ignite', 'douse', 'pickup', 'shove', 'hew', 'use', 'item'].includes(a.kind)) return 'Environment';
   if (a.kind === 'social' || a.kind === 'aid' || a.kind === 'guard' || a.kind === 'free') return 'People';
   return 'Stance';
 }
@@ -217,6 +220,12 @@ export function forecast(b: Battle, u: Unit, a: Action, from: Spot = u): { effec
     }
     case 'douse': return { effect: 'puts out the fire', footprint: [{ x: a.at.x, z: a.at.z }] };
     case 'pickup': { const p = prop(a.prop); return { effect: p?.fireSource ? 'carry a flame — beasts fear it; light things' : p?.kind === 'relic' ? 'take the objective' : 'carry it (costs no action)', footprint: [] }; }
+    case 'item': {
+      const d = ITEMS[a.item];
+      const c = a.at ?? (a.target != null ? b.get(a.target) : undefined);
+      const fp = c && d.aim === 'ground' && a.item !== 'caltrops' ? [[0, 0], ...DIRS, [1, 1], [1, -1], [-1, 1], [-1, -1]].map(([dx, dz]) => ({ x: c.x + dx, z: c.z + dz })).filter((s) => b.map.tile(s.x, s.z)) : c ? [{ x: c.x, z: c.z }] : [];
+      return { effect: d.describe, footprint: fp };
+    }
     case 'use': {
       const pc = b.pieces.get(a.piece); if (!pc) break;
       const fp = pieceFootprint(pc, from, (s) => !!b.map.tile(s.x, s.z), (s) => { const w = b.unitAt(s.x, s.z); return !!w && w.out === null && w !== u; });

@@ -21,6 +21,7 @@ import { DIRS, key, type Prop } from './map.js';
 import type { Action, Battle, Claim, Spot, Trigger, Unit } from './battle.js';
 import { HEWABLE } from './battle.js';
 import { callName, likelihood, type Want } from './comms.js';
+import { ITEMS, type ItemId } from './items.js';
 
 export interface GridReading {
   to: Spot | null;
@@ -40,12 +41,14 @@ export interface GridReading {
 }
 
 export type Verb = 'attack' | 'shove' | 'kick' | 'hew' | 'throw' | 'ignite' | 'douse' | 'pickup' | 'grab' | 'subdue' | 'aid'
-  | 'free' | 'guard' | 'defend' | 'block' | 'hide' | 'use' | 'trip' | 'disarm' | 'hurl' | 'dash' | 'overwatch' | 'escape' | 'intimidate' | 'taunt' | 'bluff' | 'rally' | 'parley' | 'move';
+  | 'free' | 'guard' | 'defend' | 'block' | 'hide' | 'use' | 'trip' | 'disarm' | 'hurl' | 'dash' | 'item' | 'overwatch' | 'escape' | 'intimidate' | 'taunt' | 'bluff' | 'rally' | 'parley' | 'move';
 
 /** What the player meant, independent of how it gets done on this field. */
 export interface Intent {
   /** A set-piece of the place (pieces.ts), by id. */
   piece?: string;
+  /** A consumable from your kit (items.ts). */
+  item?: ItemId;
   verb: Verb;
   target?: Unit['id'];              // a foe (or the listener of a bluff)
   ally?: Unit['id'];                // a friend (aid, guard, free)
@@ -62,7 +65,7 @@ export interface Intent {
 }
 
 export const VERBS: readonly Verb[] = ['attack', 'shove', 'kick', 'hew', 'throw', 'ignite', 'douse', 'pickup', 'grab', 'subdue', 'aid',
-  'free', 'guard', 'defend', 'block', 'hide', 'use', 'trip', 'disarm', 'hurl', 'dash', 'overwatch', 'escape', 'intimidate', 'taunt', 'bluff', 'rally', 'parley', 'move'];
+  'free', 'guard', 'defend', 'block', 'hide', 'use', 'trip', 'disarm', 'hurl', 'dash', 'item', 'overwatch', 'escape', 'intimidate', 'taunt', 'bluff', 'rally', 'parley', 'move'];
 
 const has = (t: string, ...ws: string[]) => ws.some((w) => new RegExp(`(^| )${w}( |$)`).test(t));
 export const norm = (s: string) => ` ${s.toLowerCase().replace(/[^a-z0-9' ]+/g, ' ').replace(/'s\b/g, '').replace(/\s+/g, ' ').trim()} `;
@@ -95,8 +98,9 @@ const V: Record<Exclude<Verb, 'move'>, string[]> = {
   dash: ['dash', 'sprint', 'run to', 'race to', 'rush to', 'hurry to', 'make for', 'bolt to', 'double time', 'double-time', 'run up', 'run over'],
   hide: ['hide', 'lie low', 'stay low', 'crouch in', 'duck into', 'into the brush', 'into the grass', 'into the wheat', 'into the gorse',
     'in the brush', 'in the grass', 'in the wheat', 'in the bracken', 'into the bracken', 'conceal', 'out of sight', 'sneak', 'creep'],
-  // set-pieces are matched by their own nouns (below), not by a verb list
+  // set-pieces and consumables are matched by their own nouns (below), not by a verb list
   use: [],
+  item: [],
   // weak words ("ready", "watch") only win when no other verb is in the order: "ready to heal" heals
   overwatch: ['overwatch', 'watch', 'wait for', 'hold position', 'hold here', 'hold fire', 'ready', 'keep watch', 'stand ready'],
   escape: ['flee', 'run away', 'escape', 'retreat', 'withdraw', 'get out'],
@@ -255,6 +259,13 @@ export function interpretRegex(b: Battle, u: Unit, raw: string, speaker?: Unit):
     out.push(I);
   }
   // the weak readiness words give way to any real verb ("stay ready to heal" heals, "get ready to strike" strikes)
+  // what you carry, by its name ("throw the oil flask at Hob", "bandage Pip", "drink a draught")
+  for (const id of Object.keys(u.kit ?? {}) as ItemId[]) {
+    if (!u.kit[id]) continue;
+    const noun = ITEMS[id].nouns.filter((n) => text.includes(` ${n} `)).sort((x, y) => y.length - x.length)[0];
+    if (!noun) continue;
+    out.push({ verb: 'item', item: id, target: namedFoes[0]?.u.id, ally: namedFriends[0]?.u.id ?? speakerRef?.id, self: selfRef, score: 3.6 + noun.length / 20 });
+  }
   // the place's set-pieces, by their nouns ("cut the logs loose", "ring the bell", "open the sluice")
   for (const pc of b.pieces.values()) {
     if (pc.used) continue;
@@ -395,6 +406,17 @@ export function resolveIntents(b: Battle, u: Unit, intents: Intent[], model = fa
       case 'guard': if (ally) anywhere({ kind: 'guard', target: ally.id }, `Guard ${b.nm(ally)}`, score, null, ally); break;
       case 'defend': push(dest, { kind: 'defend' }, 'Brace', score); break;
       case 'overwatch': push(dest, { kind: 'overwatch' }, 'Overwatch', score); break;
+      case 'item': {
+        if (!I.item) break;
+        const def = ITEMS[I.item];
+        // find a use of it that matches who or where you named: a friend, yourself, a foe
+        const want = (o: Action) => o.kind === 'item' && o.item === I.item && (def.aim === 'mend' ? (ally ? o.target === ally.id : I.self || !ally ? o.target === u.id || o.target == null : true) : t ? (o.target === t.id || (o.at && o.at.x === t.x && o.at.z === t.z)) : true);
+        const spots = [{ x: u.x, z: u.z }, ...[...reach.keys()].map((k) => { const [x, z] = k.split(',').map(Number); return { x, z }; })];
+        let done = false;
+        for (const s of spots) { const o = b.options(u, s).find(want); if (o) { push(s.x === u.x && s.z === u.z ? null : s, o, `${ITEMS[I.item].icon} ${def.name[0].toUpperCase() + def.name.slice(1)}${t && def.aim !== 'mend' ? ` at ${b.nm(t)}` : ally ? ` on ${b.nm(ally)}` : ''}`, score); done = true; break; } }
+        if (!done && t) closeIn(t, `use ${def.name}`, score - 1);
+        break;
+      }
       case 'use': {
         const pc = I.piece ? b.pieces.get(I.piece) : undefined;
         if (pc && !pc.used) anywhere({ kind: 'use', piece: pc.id }, pc.label, score, null, { x: pc.at[0][0], z: pc.at[0][1] });
@@ -527,7 +549,7 @@ export function readyReadings(b: Battle, u: Unit, trig: Trigger, thenText: strin
 export function sameKind(a: Action, c: Action): boolean {
   if (a.kind !== c.kind) return false;
   const A = a as Record<string, unknown>, C = c as Record<string, unknown>;
-  for (const k of ['target', 'prop', 'abilityId', 'piece']) if (A[k] !== undefined && C[k] !== undefined && A[k] !== C[k]) return false;
+  for (const k of ['target', 'prop', 'abilityId', 'piece', 'item']) if (A[k] !== undefined && C[k] !== undefined && A[k] !== C[k]) return false;
   if ('at' in a && 'at' in c && a.at && c.at) return a.at.x === c.at.x && a.at.z === c.at.z;
   return true;
 }
@@ -583,7 +605,7 @@ export function describeTrigger(b: Battle, t: Trigger): string {
 
 const KINDS: Partial<Record<Verb, string[]>> = {
   attack: ['attack'], shove: ['shove'], kick: ['kick'], hew: ['hew'], throw: ['throw'], ignite: ['ignite'], douse: ['douse'],
-  pickup: ['pickup'], grab: ['grab'], subdue: ['subdue'], trip: ['trip'], disarm: ['disarm'], hurl: ['hurl'], dash: ['dash'], aid: ['aid'], free: ['free'], guard: ['guard'], defend: ['defend', 'block'],
+  pickup: ['pickup'], grab: ['grab'], subdue: ['subdue'], trip: ['trip'], disarm: ['disarm'], hurl: ['hurl'], dash: ['dash'], item: ['item'], aid: ['aid'], free: ['free'], guard: ['guard'], defend: ['defend', 'block'],
   block: ['block'], hide: ['hide', 'defend'], use: ['use'], overwatch: ['overwatch', 'ready'], escape: ['escape'],
   intimidate: ['social'], taunt: ['social'], bluff: ['social'], rally: ['social'], parley: ['social'],
 };

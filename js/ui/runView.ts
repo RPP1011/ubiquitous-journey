@@ -10,12 +10,14 @@ import { HUB_NPCS } from '../app/run/hub.js';
 import { plan } from '../app/run/autopilot.js';
 import type { RunController, RunReport, StageResult } from '../app/run/run.js';
 import type { Battle } from '../app/tactics/battle.js';
+import { ITEMS, ITEM_ORDER, type ItemId } from '../app/tactics/items.js';
 
 const CSS = `
 #run { position: fixed; inset: 0; z-index: 40; pointer-events: none; font-family: "Segoe UI", system-ui, sans-serif; color: #e6ecf2; }
 #run .panel { pointer-events: auto; position: absolute; background: rgba(9,12,17,.93); border: 1px solid rgba(255,255,255,.14); border-radius: 12px; box-shadow: 0 12px 50px rgba(0,0,0,.6); }
 #run .people { left: 14px; top: 14px; width: 300px; max-height: calc(100% - 28px); overflow-y: auto; padding: 12px; }
 #run h2 { margin: 0 0 6px; font-size: 18px; letter-spacing: .4px; } #run h3 { margin: 10px 0 4px; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: #8d99a6; }
+#run .store { display: flex; justify-content: space-between; align-items: center; font-size: 12px; padding: 2px 4px; } #run .store button { padding: 1px 8px; font-size: 11px; }
 #run .who { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 7px; cursor: pointer; border: 1px solid transparent; }
 #run .who:hover, #run .who.sel { background: rgba(232,200,121,.12); border-color: rgba(232,200,121,.4); }
 #run .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
@@ -63,6 +65,7 @@ export class RunUI {
   private root: HTMLDivElement;
   private o: RunUIOpts;
   private talking: string | null = null;
+  private storeErr = '';
   private heardView = false;
   private picked = new Set<CompanionKey>();
   private report: RunReport | null = null;
@@ -130,7 +133,10 @@ export class RunUI {
         <button data-a="heard">${this.heardView ? 'Hide' : 'What have you heard about me?'}</button>${giver ? `<button data-a="accept">Take the job: ${esc(next!.title)}</button>` : ''}</div>`;
     }
     this.root.innerHTML = `<div class="panel people"><h2>Market Town</h2><div style="font-size:12px;color:#8d99a6">Run ${rc.save.runs + 1}${next ? ` · work: ${esc(next.title)}` : ' · no work left'}</div>
-      <h3>People</h3>${people}<h3>Your company (at the inn)</h3>${comp}<button data-a="journal">Company journal</button></div>${talk}`;
+      <h3>People</h3>${people}<h3>Your company (at the inn)</h3>${comp}<button data-a="journal">Company journal</button>
+      <h3>Stores — ${Math.round(rc.save.gold ?? 0)} silver</h3>${ITEM_ORDER.map((id) => { const d = ITEMS[id], n = rc.kitOf('player')[id] ?? 0;
+        return `<div class="store" title="${esc(d.describe)}"><span>${d.icon} ${esc(d.name)}${n ? ` <b>×${n}</b>` : ''}</span><button data-buy="${id}" ${(rc.save.gold ?? 0) < d.price ? 'disabled' : ''}>${d.price}s</button></div>`; }).join('')}
+      ${this.storeErr ? `<div style="color:#e89090;font-size:11px">${esc(this.storeErr)}</div>` : ''}</div>${talk}`;
     this.bind();
   }
 
@@ -276,6 +282,7 @@ export class RunUI {
   private bind(): void {
     this.root.querySelectorAll<HTMLElement>('[data-a]').forEach((el) => el.onclick = () => this.act(el.dataset.a!));
     this.root.querySelectorAll<HTMLElement>('[data-talk]').forEach((el) => el.onclick = () => this.talkTo(el.dataset.talk!));
+    this.root.querySelectorAll<HTMLElement>('[data-buy]').forEach((el) => el.onclick = () => { this.storeErr = this.o.rc.buy(el.dataset.buy as ItemId) ?? ''; this.hub(); });
     this.root.querySelectorAll<HTMLElement>('[data-comp]').forEach((el) => el.onclick = () => this.talkTo(el.dataset.comp!));
     this.root.querySelectorAll<HTMLElement>('[data-pick]').forEach((el) => el.onclick = () => {
       const k = el.dataset.pick as CompanionKey;

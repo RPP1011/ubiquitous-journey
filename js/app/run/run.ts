@@ -26,6 +26,7 @@ import { QUESTS, QUEST_ORDER, type QuestDef, type StageDef } from './quests.js';
 import { SETS, setTile, stageCenter } from './sets.js';
 import { PIECES } from './setPieces.js';
 import { installBonds, foldBonds, type BondRec } from './bonds.js';
+import { ITEMS, KITS, addKit, kitCount, kitWords, type ItemId, type Kit } from '../tactics/items.js';
 import { HUB_NPCS, HUB_SPOTS, COMPANY_SPOTS, PLAYER_SPOT, freshHub, tellTales, speak, type Deed, type HubLine, type HubState } from './hub.js';
 
 /** Turn a body to look at a point (visual). */
@@ -45,6 +46,8 @@ export interface SaveData {
   gold: number;
   /** How close the people on your side have grown (bonds.ts); absent in older saves. */
   bonds: Record<string, BondRec>;
+  /** What you and each companion carry between fights ('player' / companion keys). */
+  kits: Record<string, Kit>;
 }
 
 export interface SaveStore { load(): SaveData | null; save(d: SaveData): void; }
@@ -63,7 +66,7 @@ export function localStore(key = 'hearsay.save.v1'): SaveStore {
 
 function freshSave(): SaveData {
   return {
-    version: 1, runs: 0, hub: freshHub(), deeds: [], questsDone: [], kinHome: [], lastSeen: {}, gold: 40, bonds: {},
+    version: 1, runs: 0, hub: freshHub(), deeds: [], questsDone: [], kinHome: [], lastSeen: {}, gold: 40, bonds: {}, kits: {},
     profiles: Object.fromEntries((Object.keys(COMPANIONS) as CompanionKey[]).map((k) => [k, freshProfile(k)])) as Record<CompanionKey, CompanionProfile>,
   };
 }
@@ -118,6 +121,20 @@ export class RunController {
     this.store = store;
     this.save = store.load() ?? freshSave();
     this.save.bonds ??= {};
+    this.save.kits ??= {};
+  }
+
+  /** The kit someone carries (their role's default the first time). */
+  kitOf(k: string): Kit { return this.save.kits[k] ??= { ...(KITS[k] ?? {}) }; }
+
+  /** Buy something in town for your own kit. */
+  buy(id: ItemId): string | null {
+    const def = ITEMS[id];
+    if ((this.save.gold ?? 0) < def.price) return `you can't afford ${def.name} (${def.price} silver)`;
+    this.save.gold -= def.price;
+    const k = this.kitOf('player'); k[id] = (k[id] ?? 0) + 1;
+    this.store.save(this.save);
+    return null;
   }
 
   name(k: string): string {
@@ -310,7 +327,7 @@ export class RunController {
     // your side
     const player = this.session.player!;
     player._held = false;
-    const pu = b.add(player, 'player', seat(st.partyAt[0]), { traits: DISPOSITION_TRAITS[this.disposition], tactic: 'guardian' });
+    const pu = b.add(player, 'player', seat(st.partyAt[0]), { traits: DISPOSITION_TRAITS[this.disposition], tactic: 'guardian', kit: this.kitOf('player') });
     pu.traits = { ...DISPOSITION_TRAITS[this.disposition] };
     if (this.disposition === 'ruthless') {
       // the ruthless come with a torch in hand
@@ -321,7 +338,7 @@ export class RunController {
       const a = this.companion(k);
       a._held = false;
       const def = COMPANIONS[k];
-      const u = b.add(a, 'companion', seat(st.partyAt[i + 1] ?? st.partyAt[0]), { traits: this.save.profiles[k].traits, tactic: def.tactic });
+      const u = b.add(a, 'companion', seat(st.partyAt[i + 1] ?? st.partyAt[0]), { traits: this.save.profiles[k].traits, tactic: def.tactic, kit: this.kitOf(k) });
       u.sheet.presence = Math.max(u.sheet.presence, Math.round(def.social * 4));
       if (def.tactic === 'archer') u.sheet.finesse += 1;
       if (def.tactic === 'guardian') u.sheet.might += 1;
@@ -334,7 +351,7 @@ export class RunController {
       a.gold = f.gold ?? 0;
       if (f.epithet) a.epithet = f.epithet;
       for (const id of f.abilities ?? []) { const s = abilityById(id); if (s) a.grantAbility(s); }
-      const u = b.add(a, 'foe', seat(f.at), { tactic: f.tactic, tags: f.tags ?? [] });
+      const u = b.add(a, 'foe', seat(f.at), { tactic: f.tactic, tags: f.tags ?? [], kit: { ...(KITS[f.tactic] ?? {}) } });
       for (const [k, v] of Object.entries(f.bonus ?? {})) u.sheet[k as 'might'] += v as number;
       if (f.move) u.move = f.move;
       if (f.hp) a.fighter.health = f.hp;
@@ -392,6 +409,15 @@ export class RunController {
     const deeds = this.deedsFrom(b, st, objectiveMet);
     this.runDeeds.push(...deeds);
     const growth = developFromBattle(b, new Map(this.party.map((k) => [k, this.save.profiles[k]])), this.companionOf, this.session.player!.id, this.save.runs + 1, st.name);
+    // what's left in everyone's kit goes on with them; the beaten foes' kits are yours
+    const pu = b.units.find((x) => x.role === 'player');
+    if (pu) this.save.kits.player = { ...pu.kit };
+    for (const [uid, k] of this.companionOf) { const cu = b.get(uid); if (cu) this.save.kits[k] = { ...cu.kit }; }
+    if (won) {
+      const spoils: Kit = {};
+      for (const f of b.units) if (f.side === 'them' && f.out !== null && f.out !== 'fled') addKit(spoils, f.kit);
+      if (kitCount(spoils)) { addKit(this.kitOf('player'), spoils); growth.push(`You take from the fallen: ${kitWords(spoils)}`); }
+    }
     const members = new Map<Unit['id'], string>([[this.session.player!.id, 'player'], ...this.companionOf]);
     growth.push(...foldBonds(b, this.save.bonds, members, (k) => this.name(k), won, (k) => (k in this.save.profiles ? this.save.profiles[k as CompanionKey].traits : undefined)));
     // the dead stay dead; the rest are patched up for the road
