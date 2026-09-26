@@ -36,6 +36,7 @@ let tactics = null;                // BattleDirector: opens a tactical grid batt
 let battleRender = null;           // the grid/props/fire drawn for the current battle
 let battleFX = null;               // the choreographer: plays each action as animation + effects
 const tacView = new TacticsView();
+tacView.camera = camera;
 // RUN MODE (the game): hub → quests → tactical stages → home. `?sandbox` keeps the old free-roam
 // town; `?autoplay` plays runs by itself (for recordings); `?fresh` wipes the save first.
 const PARAMS = new URLSearchParams(location.search);
@@ -70,7 +71,7 @@ const hud = new Hud({
 // ---- game state ------------------------------------------------------------
 const game = { state: 'start', world: null, sim: null, player: null, playerFighter: null };
 // devtools handle (read-only inspection; the UI never reads it)
-window.__hearsay = { game, get session() { return session; }, get tactics() { return tactics; }, get rc() { return rc; } };
+window.__hearsay = { game, view: tacView, get session() { return session; }, get tactics() { return tactics; }, get rc() { return rc; } };
 
 // ---- player input ----------------------------------------------------------
 const controls = new PlayerControls({

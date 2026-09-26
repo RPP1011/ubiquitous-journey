@@ -2,7 +2,8 @@
 // picks tiles under the cursor. Read-only over the battle — it never mutates it.
 //
 //   tiles   one InstancedMesh of flat quads at each tile's standing height, tinted per state:
-//           reachable (blue), targetable (red), the acting unit (gold), fire, smoke, wet
+//           reachable (blue), targetable (red), the acting unit (gold), fire, smoke, wet; objects you
+//           can use this turn (amber); a hovered option's preview (its object gold, what it touches orange)
 //   props   simple primitive meshes per kind (crate, barrel, hay, brazier, cart, tree, …)
 //   fire    flickering flame cones on burning tiles and props
 
@@ -24,7 +25,7 @@ const o3 = (m: unknown) => m as Obj3;
 const COL = {
   base: new THREE.Color(0x1d2a33), reach: new THREE.Color(0x3d7fd6), target: new THREE.Color(0xd65a4a),
   path: new THREE.Color(0x7fb6ff), current: new THREE.Color(0xe8c879), fire: new THREE.Color(0xff7a1a),
-  smoke: new THREE.Color(0x9a9a9a), wet: new THREE.Color(0x3ec7d6), ash: new THREE.Color(0x3a3a3a), hover: new THREE.Color(0xffffff),
+  smoke: new THREE.Color(0x9a9a9a), usable: new THREE.Color(0xb98a3a), subject: new THREE.Color(0xffe066), effect: new THREE.Color(0xff6a1a), pathHi: new THREE.Color(0x6ff0ff), wet: new THREE.Color(0x3ec7d6), ash: new THREE.Color(0x3a3a3a), hover: new THREE.Color(0xffffff),
 };
 
 const PROP_LOOK: Record<string, { geo: () => THREE.BufferGeometry; color: number; y: number }> = {
@@ -52,6 +53,9 @@ export class BattleRender {
   private battle: Battle;
   private map: BattleMap;
   private tiles: THREE.InstancedMesh;
+  /** The hovered option drawn bright on its own layer: path (cyan), its object (yellow), what it touches (orange). */
+  private hi: THREE.InstancedMesh;
+  private hiMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide });
   private propMeshes = new Map<string, THREE.Object3D>();
   private propState = new Map<string, { pos: THREE.Vector3; tip: number; roll: number; dying: number }>();
   private flames: THREE.Mesh[] = [];
@@ -63,6 +67,10 @@ export class BattleRender {
   reach = new Set<string>();
   targets = new Set<string>();
   path: Spot[] = [];
+  /** Tiles holding an object the acting unit can use this turn. */
+  usable = new Set<string>();
+  /** A hovered option: its object, and the tiles it will touch. */
+  preview: { subject: Set<string>; effect: Set<string> } | null = null;
 
   constructor(scene: { add(o: unknown): void; remove(o: unknown): void }, battle: Battle) {
     this.scene = scene; this.battle = battle; this.map = battle.map;
@@ -78,6 +86,10 @@ export class BattleRender {
     });
     o3(this.tiles).renderOrder = 5;
     scene.add(this.tiles);
+    this.hi = new THREE.InstancedMesh(new THREE.PlaneGeometry(TILE * 0.8, TILE * 0.8), this.hiMat, 64);
+    this.hi.count = 0;
+    o3(this.hi).renderOrder = 6;
+    scene.add(this.hi);
     this.sync();
   }
 
@@ -88,6 +100,12 @@ export class BattleRender {
     if (!hit || hit.instanceId == null) return null;
     const t = this.map.tiles[hit.instanceId];
     return { x: t.x, z: t.z };
+  }
+
+  /** World position of a tile's surface (for screen-space markers). */
+  worldOf(s: Spot, lift = 0, onProp = true): THREE.Vector3 {
+    const t = this.map.tile(s.x, s.z)!;
+    return new THREE.Vector3(t.wx, this.map.surfaceY(s.x, s.z, onProp) + lift, t.wz);
   }
 
   /** Refresh tints, props and flames from the battle's current state. Cheap (≤ 256 tiles). */
@@ -103,6 +121,7 @@ export class BattleRender {
       if (t.smoke > 0) c = COL.smoke;
       if (this.reach.has(k)) c = COL.reach;
       if (pathSet.has(k)) c = COL.path;
+      if (this.usable.has(k)) c = COL.usable;
       if (this.targets.has(k)) c = COL.target;
       if (cur && cur.x === t.x && cur.z === t.z) c = COL.current;
       if (t.burning > 0) c = COL.fire;
@@ -110,6 +129,26 @@ export class BattleRender {
       this.tiles.setColorAt(i, c);
     });
     if (this.tiles.instanceColor) this.tiles.instanceColor.needsUpdate = true;
+
+    // the preview layer
+    const marks: Array<[string, THREE.Color]> = [];
+    if (this.preview) {
+      for (const p of this.path) marks.push([`${p.x},${p.z}`, COL.pathHi]);
+      for (const k of this.preview.effect) marks.push([k, COL.effect]);
+      for (const k of this.preview.subject) marks.push([k, COL.subject]);
+    }
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0)), one = new THREE.Vector3(1, 1, 1);
+    let n = 0;
+    for (const [k, c] of marks.slice(0, 64)) {
+      const [x, z] = k.split(',').map(Number);
+      const t = this.map.tile(x, z); if (!t) continue;
+      m.compose(new THREE.Vector3(t.wx, this.map.surfaceY(x, z, false) + 0.09, t.wz), q, one);
+      this.hi.setMatrixAt(n, m); this.hi.setColorAt(n, c); n++;
+    }
+    this.hi.count = n;
+    this.hi.instanceMatrix.needsUpdate = true;
+    if (this.hi.instanceColor) this.hi.instanceColor.needsUpdate = true;
+    this.hiMat.opacity = 0.62 + 0.25 * Math.sin(this.t * 6);
 
     // props: add new; ease existing toward where the rules put them (a kicked barrel ROLLS, a
     // tipped table FALLS); the removed shrink away (burnt, thrown, picked up)
@@ -165,7 +204,7 @@ export class BattleRender {
   }
 
   dispose(): void {
-    this.scene.remove(this.tiles);
+    this.scene.remove(this.tiles); this.scene.remove(this.hi);
     for (const m of this.propMeshes.values()) this.scene.remove(m);
     for (const f of this.flames) this.scene.remove(f);
     this.propMeshes.clear(); this.flames = [];

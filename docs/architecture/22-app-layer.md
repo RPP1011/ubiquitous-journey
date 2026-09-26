@@ -46,7 +46,18 @@ main.js (run mode)                 RunUI (screens, autoplay script)
 - `ai.ts` — utility over (tile, action): role-shaped positioning (archer, beast, leader, healer,
   guardian, rogue, civilian) + EU weighted by objective, battle goals and **traits**.
 - `writein.ts` — free text → `{move?, action}` with GM positioning; conditionals become Ready.
+- `affordances.ts` — everything the acting unit can do this turn, from here or any reachable tile
+  (best odds, then fewest steps), each with a **forecast** (plain words + the tiles it touches + who
+  it catches) and the **risks** of the walk (opportunity swings, overwatch — the movement rules
+  replayed dry). `verbOf`/`aimOf` drive the verb-first turn UI.
 - `director.ts` — opens a battle around a real-time fight (sandbox mode).
+
+**The turn UI (`ui/tacticsView.ts`) is verb-first.** The panel lists verbs with a count of how many
+things you can do each to this turn (environment verbs first, amber; orange when one would catch a
+foe) — never every verb × target. Pick a verb: its targets light up on the grid; hover one for the
+preview (path cyan, object yellow, footprint orange) and a card with the forecast and risks; click
+it to move and act. Objects you can use carry a small icon marker; hovering anything shows what it is.
+Stances are one-click. The write-in box works alongside.
 
 ## Presentation: cues and choreography
 

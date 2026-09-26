@@ -7,6 +7,7 @@ import { BattleMap } from '../../js/app/tactics/map.js';
 import { Battle } from '../../js/app/tactics/battle.js';
 import { runTurn } from '../../js/app/tactics/ai.js';
 import { readWriteIn } from '../../js/app/tactics/writein.js';
+import { affordances, pathRisks } from '../../js/app/tactics/affordances.js';
 import { Agent } from '../../js/sim/agent.js';
 import { HeadlessFighter } from '../../js/headlessFighter.js';
 
@@ -186,6 +187,27 @@ export function tacticsTest(ok, { stubScene, makeFighter }) {
     ok(bg && bg.action.kind === 'guard' && bg.action.target === you.id, `tactics: "Borin, guard me" read on Borin's turn guards you (${bg && bg.label})`);
     const tm = readWriteIn(b, borin, 'tell Borin to cover you')[0];
     ok(tm && tm.action.kind === 'guard' && tm.action.target === you.id, `tactics: "tell Borin to cover you" — "you" is the teller (${tm && tm.label})`);
+    ss.dispose();
+  }
+
+  // --- 11. affordances: what you can do this turn from anywhere you can reach, with a forecast ---
+  {
+    const { s: ss, map, b, mk } = arena(stubScene, makeFighter);
+    const you = b.add(ss.player, 'player', { x: 2, z: 5 });
+    const g = b.add(mk('Garrick'), 'foe', { x: 7, z: 5 });
+    const br = map.addProp('brazier', 5, 5);
+    map.addProp('flour', 2, 3);
+    order(b, you, g); b.start();
+    const affs = affordances(b, you);
+    const kick = affs.find((a) => a.action.kind === 'kick' && a.action.prop === br.id);
+    ok(kick && kick.steps > 0 && kick.to && kick.to.x === 4 && kick.to.z === 5, `affordances: the brazier is offered from the tile that lines it up (${kick && JSON.stringify(kick.to)})`);
+    ok(kick && kick.catches.includes(g) && /coals/.test(kick.effect), `affordances: the forecast says the coals reach Garrick (${kick && kick.effect})`);
+    ok(affs[0] === kick, `affordances: an option that hurts a foe ranks first (${affs[0] && affs[0].label})`);
+    ok(affs.some((a) => a.action.kind === 'pickup'), 'affordances: the flour sack two steps away is on the list');
+    ok(affs.filter((a) => a.group === 'Stance').every((a) => a.steps === 0), 'affordances: stances are offered from here only');
+    g.overwatch = true; g.x = 4; g.z = 6;
+    const risks = pathRisks(b, you, [{ x: 3, z: 5 }, { x: 4, z: 5 }]);
+    ok(risks.some((r) => /overwatch/.test(r)), `affordances: the walk warns of a foe's overwatch (${risks.join('; ')})`);
     ss.dispose();
   }
 
