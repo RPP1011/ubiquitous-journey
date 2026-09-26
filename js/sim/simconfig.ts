@@ -90,7 +90,8 @@ export const RECIPES = {
 // starter kit (see ECON.starterKit) and CHOOSES what to do from GOODS each work
 // decision. Same headcount as the old profession roster (23 souls).
 export const ROSTER = [
-  { n: 300 },                 // MEGATOWN: one dense core of 300 townsfolk (× TOWNS.centers.length = 1 town)
+  { n: 60 },                  // one town of 60 townsfolk (× TOWNS.centers.length = 1 town). Was a 300-soul
+                              // megatown; the game targets a responsive town, not crowd scale.
 ];
 
 // --- economy tuning ---------------------------------------------------------

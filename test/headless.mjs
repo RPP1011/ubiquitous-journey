@@ -52,6 +52,7 @@ import { roadsTest } from './suites/roads.mjs';
 import { soak } from './suites/soak.mjs';
 import { runScenarios } from './scenarios.mjs';
 import { sessionTest } from './suites/session.mjs';
+import { encounterTest } from './suites/encounter.mjs';
 
 const { ok, failures } = makeOk();
 const helpers = { makeFighter, stubScene };
@@ -148,13 +149,15 @@ obituaryTest(ok, helpers);
 runScenarios(ok);
 // App layer: the Session (canonical frame step + run lifecycle, js/app/session.ts).
 sessionTest(ok, helpers);
+// App layer: tabletop encounters — write-in parser, full fights, command/autonomy, lasting beliefs.
+encounterTest(ok, helpers);
 // Phase-1 emergent buildings: homes + tavern, gold-neutral, headless-safe. ISOLATED on its OWN seed
 // (it has two residual RNG-edge gates — builder-housed + guildhall-converge — that the author's
 // frame-pinning can't fully tame): snapshot the ambient stream, run construction from CONSTRUCTION_SEED
 // (chosen so both gates land), then RESTORE the exact ambient position so every later suite is
 // byte-identical to a run without this isolation. (getState/setState in rng.js.)
 const _coordRngState = getState();
-setSeed(2024);   // CONSTRUCTION_SEED — verified to clear the builder-housed + guildhall-converge gates
+setSeed(42);     // CONSTRUCTION_SEED — verified to clear the builder-housed + guildhall-converge gates (re-picked for the 60-soul town; 2024 cleared them at 300)
 await constructionTest(ok, helpers);
 setState(_coordRngState);
 // Phase-2a homecoming gate: a miner's home is torched while he's away — he walks home on his
