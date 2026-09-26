@@ -36,8 +36,8 @@
    "tactic": "rogue",
    "hp": 100,
    "at": [
-    11,
-    9
+    9,
+    11
    ],
    "status": []
   },
@@ -61,7 +61,7 @@
    "hp": 60,
    "at": [
     4,
-    8
+    3
    ],
    "status": []
   },
@@ -73,7 +73,19 @@
    "hp": 70,
    "at": [
     8,
-    2
+    6
+   ],
+   "status": []
+  },
+  {
+   "name": "Young wolf",
+   "side": "them",
+   "role": "foe",
+   "tactic": "beast",
+   "hp": 50,
+   "at": [
+    12,
+    4
    ],
    "status": []
   }
@@ -186,107 +198,48 @@
    ]
   }
  ],
- "high": [
-  [
-   0,
-   9
-  ],
-  [
-   1,
-   9
-  ],
-  [
-   0,
-   10
-  ],
-  [
-   1,
-   10
-  ],
-  [
-   2,
-   10
-  ],
-  [
-   0,
-   11
-  ],
-  [
-   1,
-   11
-  ],
-  [
-   2,
-   11
-  ],
-  [
-   3,
-   11
-  ],
-  [
-   0,
-   12
-  ],
-  [
-   1,
-   12
-  ],
-  [
-   2,
-   12
-  ],
-  [
-   3,
-   12
-  ],
-  [
-   0,
-   13
-  ],
-  [
-   1,
-   13
-  ],
-  [
-   2,
-   13
-  ],
-  [
-   3,
-   13
-  ],
-  [
-   0,
-   14
-  ],
-  [
-   1,
-   14
-  ],
-  [
-   2,
-   14
-  ],
-  [
-   3,
-   14
-  ],
-  [
-   0,
-   15
-  ],
-  [
-   1,
-   15
-  ],
-  [
-   2,
-   15
-  ],
-  [
-   3,
-   15
-  ]
+ "high": [],
+ "map": [
+  "................",
+  "................",
+  "................",
+  "......\"\"\"\"\".....",
+  "......\"\"\"\"\".....",
+  "................",
+  "...####,,####...",
+  "...#,,,,,,,,#...",
+  "...#,,,,,,,,#...",
+  "...#,,,,,,,,#...",
+  "...#,,,,,,,,#...",
+  "....,,,,,,,,....",
+  "...#,,,,,,,,#...",
+  "...#,,,,,,,,#...",
+  "...##########...",
+  "................"
+ ],
+ "pieces": [
+  {
+   "name": "the loose stretch of the fold wall",
+   "label": "Heave the fold wall over",
+   "at": [
+    4,
+    6
+   ],
+   "reach": 1,
+   "needsFire": false,
+   "describe": "the wall falls outward 3 rows, crushing — and leaves a gap in the fold"
+  },
+  {
+   "name": "the gorse before the gate",
+   "label": "Fire the gorse",
+   "at": [
+    8,
+    4
+   ],
+   "reach": 2,
+   "needsFire": true,
+   "describe": "a wall of fire before the gate — and the pack flinches from it"
+  }
  ],
  "actionKinds": [
   "attack",
@@ -306,6 +259,10 @@
   "social",
   "overwatch",
   "defend",
+  "block",
+  "trip",
+  "disarm",
+  "use",
   "dash",
   "escape",
   "ready",

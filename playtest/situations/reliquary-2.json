@@ -3,7 +3,7 @@
  "stage": "the Chapel Ruin",
  "intro": "Silas Crowe waits in a roofless old chapel with the reliquary on the altar stone. He smiles like a man who has already been paid.",
  "objective": "Recover the reliquary and carry it out.",
- "you": "Borin Ashgrove",
+ "you": "You",
  "units": [
   {
    "name": "You",
@@ -25,7 +25,7 @@
    "hp": 100,
    "at": [
     8,
-    13
+    9
    ],
    "status": []
   },
@@ -72,8 +72,8 @@
    "tactic": "brute",
    "hp": 100,
    "at": [
-    6,
-    3
+    8,
+    4
    ],
    "status": []
   },
@@ -96,7 +96,7 @@
    "tactic": "skirmisher",
    "hp": 100,
    "at": [
-    4,
+    8,
     5
    ],
    "status": []
@@ -208,43 +208,48 @@
    ]
   }
  ],
- "high": [
-  [
-   0,
-   0
-  ],
-  [
-   1,
-   0
-  ],
-  [
-   0,
-   1
-  ],
-  [
-   0,
-   2
-  ],
-  [
-   0,
-   3
-  ],
-  [
-   0,
-   4
-  ],
-  [
-   0,
-   5
-  ],
-  [
-   0,
-   6
-  ],
-  [
-   0,
-   7
-  ]
+ "high": [],
+ "map": [
+  "..############..",
+  "..#==========#..",
+  "..#==========#..",
+  "..#=========##..",
+  "..===========#..",
+  "..===========#..",
+  "..#===========..",
+  "..#===========..",
+  "..#==========#..",
+  "..#==========#..",
+  "..####====####..",
+  "................",
+  "................",
+  "................",
+  "................",
+  "................"
+ ],
+ "pieces": [
+  {
+   "name": "the leaning pillar",
+   "label": "Topple the pillar",
+   "at": [
+    12,
+    3
+   ],
+   "reach": 1,
+   "needsFire": false,
+   "describe": "it falls 3 tiles away from you — crushing, then lying there as cover"
+  },
+  {
+   "name": "the chapel bell-rope",
+   "label": "Ring the chapel bell",
+   "at": [
+    3,
+    1
+   ],
+   "reach": 1,
+   "needsFire": false,
+   "describe": "every foe within 7 tiles is rattled, and loses whatever they were waiting to do"
+  }
  ],
  "actionKinds": [
   "attack",
@@ -264,6 +269,10 @@
   "social",
   "overwatch",
   "defend",
+  "block",
+  "trip",
+  "disarm",
+  "use",
   "dash",
   "escape",
   "ready",

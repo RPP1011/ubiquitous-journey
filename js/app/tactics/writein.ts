@@ -75,11 +75,11 @@ const V: Record<Exclude<Verb, 'move'>, string[]> = {
   throw: ['throw', 'hurl', 'fling', 'toss', 'lob', 'chuck', 'pelt'],
   ignite: ['light', 'ignite', 'burn', 'set fire', 'set alight', 'kindle', 'on fire'],
   douse: ['douse', 'splash', 'extinguish', 'put out', 'soak', 'drench'],
-  pickup: ['pick up', 'grab the', 'take the', 'lift the', 'snatch the', 'take up'],
+  pickup: ['pick up', 'grab the', 'take the', 'lift the', 'snatch the', 'take up', 'snatch up', 'grab up', 'scoop up', 'seize the', 'take hold of', 'collect the'],
   grab: ['steal', 'rob', 'pickpocket', 'purse', 'cut his purse', 'cut her purse', 'gold'],
   subdue: ['subdue', 'knock out', 'pin', 'wrestle', 'restrain', 'arrest', 'alive', 'choke', 'grapple', 'take him alive',
     'hold him', 'hold her', 'hold him down', 'hold her down', 'hold down', 'grab hold', 'hold on to', 'seize him', 'seize her'],
-  aid: ['heal', 'bandage', 'potion', 'tend', 'patch', 'help up', 'revive', 'bind my', 'bind his', 'bind her'],
+  aid: ['heal', 'bandage', 'potion', 'tend', 'patch', 'help up', 'revive', 'bind my', 'bind his', 'bind her', 'aid', 'mend', 'tend to', 'look after'],
   free: ['free', 'cut free', 'cut loose', 'untie', 'ropes', 'bonds', 'release', 'unbind', 'cut the ropes', 'rescue'],
   guard: ['protect', 'guard', 'cover', 'shield', 'watch over', 'stand over'],
   defend: ['defend', 'parry', 'brace', 'hold my ground', 'hold your ground', 'dodge', 'take cover', 'block the blow', 'block his', 'block her'],
@@ -148,7 +148,7 @@ function behind(thing: Spot, toward: Spot): Spot {
 
 /** Drop purpose clauses ("…so he can't escape", "…to block their line") before reading the verb. */
 function core(text: string): string {
-  const cut = text.search(/ (so that|so|to stop|to keep|in order to|to block|to make|to scare|to drive|to push|to disrupt|to threaten|to shield|to cover|to protect|before|while) /);
+  const cut = text.search(/ (so that|so|to stop|to keep|in order to|to block|to make|to scare|to drive|to push|to disrupt|to threaten|to shield|to cover|to protect|before|while|if|when|whenever|where) /);
   return cut > 4 ? `${text.slice(0, cut)} ` : text;
 }
 
@@ -176,7 +176,10 @@ export function addressee(b: Battle, u: Unit, raw: string): { who: Unit | null; 
 }
 
 export function interpretRegex(b: Battle, u: Unit, raw: string, speaker?: Unit): Intent[] {
-  const text = norm(raw);
+  // the verb comes from the first sentence ("Strike it down. Show them what happens to those who flee.")
+  const text = norm(raw.split(/[.!?;](?:\s|$)/)[0] || raw)
+    // a passive hit is not an order to hit ("if we're hit", "whoever is worst hit")
+    .replace(/ (we're|we are|is|are|gets|get|got|been|takes a|take a|worst|badly) hit /g, ' hurt ');
   if (text.trim().length < 2) return [];
   const c = core(text);
   const foes = b.foesOf(u), friends = [...b.friendsOf(u), ...b.downed(u.side)];
@@ -537,7 +540,7 @@ export function describeTrigger(b: Battle, t: Trigger): string {
 const KINDS: Partial<Record<Verb, string[]>> = {
   attack: ['attack'], shove: ['shove'], kick: ['kick'], hew: ['hew'], throw: ['throw'], ignite: ['ignite'], douse: ['douse'],
   pickup: ['pickup'], grab: ['grab'], subdue: ['subdue'], trip: ['trip'], disarm: ['disarm'], aid: ['aid'], free: ['free'], guard: ['guard'], defend: ['defend', 'block'],
-  block: ['block'], hide: ['defend'], use: ['use'], overwatch: ['overwatch', 'ready'], escape: ['escape'],
+  block: ['block'], hide: ['hide', 'defend'], use: ['use'], overwatch: ['overwatch', 'ready'], escape: ['escape'],
   intimidate: ['social'], taunt: ['social'], bluff: ['social'], rally: ['social'], parley: ['social'],
 };
 const GROUP = /^\s*(everyone|everybody|all of you|all units|all of us|us all|all|both of you|lads|friends|you lot|company|team)\s*[,:;!]?\s+(.+)$/i;

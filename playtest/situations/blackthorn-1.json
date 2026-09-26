@@ -24,8 +24,8 @@
    "tactic": "guardian",
    "hp": 100,
    "at": [
-    9,
-    10
+    10,
+    13
    ],
    "status": []
   },
@@ -36,8 +36,8 @@
    "tactic": "rogue",
    "hp": 100,
    "at": [
-    9,
-    13
+    6,
+    14
    ],
    "status": []
   },
@@ -61,7 +61,7 @@
    "hp": 100,
    "at": [
     7,
-    5
+    3
    ],
    "status": []
   },
@@ -72,8 +72,8 @@
    "tactic": "archer",
    "hp": 100,
    "at": [
-    8,
-    3
+    12,
+    4
    ],
    "status": []
   },
@@ -84,8 +84,8 @@
    "tactic": "brute",
    "hp": 100,
    "at": [
-    6,
-    6
+    4,
+    5
    ],
    "status": []
   },
@@ -106,7 +106,7 @@
    "side": "us",
    "role": "ally",
    "tactic": "civilian",
-   "hp": 80,
+   "hp": 69,
    "at": [
     7,
     6
@@ -191,7 +191,7 @@
    "name": "a lamp-oil barrel",
    "at": [
     7,
-    4
+    5
    ],
    "tags": [
     "flammable",
@@ -246,7 +246,8 @@
    "tags": [
     "flammable",
     "heavy",
-    "cover1"
+    "cover1",
+    "climbable"
    ]
   },
   {
@@ -264,159 +265,48 @@
    ]
   }
  ],
- "high": [
-  [
-   3,
-   12
-  ],
-  [
-   4,
-   12
-  ],
-  [
-   5,
-   12
-  ],
-  [
-   6,
-   12
-  ],
-  [
-   7,
-   12
-  ],
-  [
-   0,
-   13
-  ],
-  [
-   1,
-   13
-  ],
-  [
-   2,
-   13
-  ],
-  [
-   3,
-   13
-  ],
-  [
-   4,
-   13
-  ],
-  [
-   5,
-   13
-  ],
-  [
-   6,
-   13
-  ],
-  [
-   7,
-   13
-  ],
-  [
-   8,
-   13
-  ],
-  [
-   9,
-   13
-  ],
-  [
-   0,
-   14
-  ],
-  [
-   1,
-   14
-  ],
-  [
-   2,
-   14
-  ],
-  [
-   3,
-   14
-  ],
-  [
-   4,
-   14
-  ],
-  [
-   5,
-   14
-  ],
-  [
-   6,
-   14
-  ],
-  [
-   7,
-   14
-  ],
-  [
-   8,
-   14
-  ],
-  [
-   9,
-   14
-  ],
-  [
-   10,
-   14
-  ],
-  [
-   0,
-   15
-  ],
-  [
-   1,
-   15
-  ],
-  [
-   2,
-   15
-  ],
-  [
-   3,
-   15
-  ],
-  [
-   4,
-   15
-  ],
-  [
-   5,
-   15
-  ],
-  [
-   6,
-   15
-  ],
-  [
-   7,
-   15
-  ],
-  [
-   8,
-   15
-  ],
-  [
-   9,
-   15
-  ],
-  [
-   10,
-   15
-  ],
-  [
-   11,
-   15
-  ]
+ "high": [],
+ "map": [
+  "....########..~~",
+  "....#______#..~~",
+  "....###__###.#~~",
+  "....#..,,.....~~",
+  ".......,,.....~~",
+  "...._..,,.....~~",
+  ".......,,.....~~",
+  "....__.,,.....~~",
+  ".......,,.....~~",
+  ".......,,.._..~~",
+  ".......,,.....~~",
+  "......,,......~~",
+  "......,,......~~",
+  "......,,......~~",
+  "......,,......~~",
+  "......,,......~~"
+ ],
+ "pieces": [
+  {
+   "name": "the sluice gate",
+   "label": "Open the sluice",
+   "at": [
+    13,
+    2
+   ],
+   "reach": 1,
+   "needsFire": false,
+   "describe": "floods the mill-race across the yard: puts out fire, and the water slows anyone in it"
+  },
+  {
+   "name": "the charred corner post",
+   "label": "Bring the burnt roof down",
+   "at": [
+    4,
+    3
+   ],
+   "reach": 1,
+   "needsFire": false,
+   "describe": "the roof falls into the mill and out over the door — crushing, choking dust, and rubble in the doorway"
+  }
  ],
  "actionKinds": [
   "attack",
@@ -436,6 +326,10 @@
   "social",
   "overwatch",
   "defend",
+  "block",
+  "trip",
+  "disarm",
+  "use",
   "dash",
   "escape",
   "ready",

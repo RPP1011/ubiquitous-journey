@@ -10,7 +10,7 @@
    "side": "us",
    "role": "player",
    "tactic": "guardian",
-   "hp": 89,
+   "hp": 100,
    "at": [
     7,
     10
@@ -24,8 +24,8 @@
    "tactic": "guardian",
    "hp": 100,
    "at": [
-    6,
-    9
+    8,
+    10
    ],
    "status": []
   },
@@ -36,8 +36,8 @@
    "tactic": "rogue",
    "hp": 100,
    "at": [
-    11,
-    11
+    9,
+    9
    ],
    "status": []
   },
@@ -48,7 +48,7 @@
    "tactic": "healer",
    "hp": 100,
    "at": [
-    10,
+    8,
     11
    ],
    "status": []
@@ -60,7 +60,7 @@
    "tactic": "beast",
    "hp": 70,
    "at": [
-    2,
+    3,
     8
    ],
    "status": []
@@ -73,7 +73,7 @@
    "hp": 60,
    "at": [
     12,
-    7
+    3
    ],
    "status": []
   },
@@ -84,8 +84,8 @@
    "tactic": "beast",
    "hp": 55,
    "at": [
-    6,
-    7
+    2,
+    9
    ],
    "status": []
   },
@@ -94,10 +94,10 @@
    "side": "them",
    "role": "foe",
    "tactic": "beast",
-   "hp": 1,
+   "hp": 65,
    "at": [
-    10,
-    10
+    11,
+    8
    ],
    "status": []
   }
@@ -158,7 +158,7 @@
    "kind": "barrel",
    "name": "a barrel",
    "at": [
-    8,
+    9,
     10
    ],
    "tags": [
@@ -171,7 +171,7 @@
    "kind": "tree",
    "name": "a tree",
    "at": [
-    1,
+    2,
     0
    ],
    "tags": [
@@ -184,7 +184,7 @@
    "kind": "tree",
    "name": "a tree",
    "at": [
-    9,
+    5,
     0
    ],
    "tags": [
@@ -197,190 +197,8 @@
    "kind": "tree",
    "name": "a tree",
    "at": [
-    2,
-    1
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    9,
-    1
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    3,
-    2
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    4,
-    2
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    10,
-    2
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    14,
-    3
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    1,
-    4
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    2,
-    4
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
     7,
-    4
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    11,
-    4
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    7,
-    5
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    10,
-    5
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    14,
-    5
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    6,
-    6
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    14,
-    6
+    0
    ],
    "tags": [
     "flammable",
@@ -393,7 +211,150 @@
    "name": "a tree",
    "at": [
     15,
-    6
+    0
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    8,
+    1
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    15,
+    1
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    9,
+    2
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    10,
+    2
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    0,
+    3
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    5,
+    4
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    8,
+    4
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    9,
+    4
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    6,
+    5
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    10,
+    5
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    9,
+    7
    ],
    "tags": [
     "flammable",
@@ -406,7 +367,7 @@
    "name": "a tree",
    "at": [
     4,
-    7
+    8
    ],
    "tags": [
     "flammable",
@@ -418,20 +379,7 @@
    "kind": "tree",
    "name": "a tree",
    "at": [
-    11,
-    7
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    3,
+    9,
     8
    ],
    "tags": [
@@ -445,32 +393,6 @@
    "name": "a tree",
    "at": [
     6,
-    8
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    10,
-    8
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    14,
     9
    ],
    "tags": [
@@ -483,7 +405,33 @@
    "kind": "tree",
    "name": "a tree",
    "at": [
-    14,
+    2,
+    10
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    3,
+    10
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    11,
     10
    ],
    "tags": [
@@ -509,7 +457,7 @@
    "kind": "tree",
    "name": "a tree",
    "at": [
-    3,
+    12,
     11
    ],
    "tags": [
@@ -522,8 +470,8 @@
    "kind": "tree",
    "name": "a tree",
    "at": [
-    1,
-    12
+    15,
+    11
    ],
    "tags": [
     "flammable",
@@ -548,8 +496,8 @@
    "kind": "tree",
    "name": "a tree",
    "at": [
-    14,
-    12
+    2,
+    13
    ],
    "tags": [
     "flammable",
@@ -562,71 +510,6 @@
    "name": "a tree",
    "at": [
     0,
-    13
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    1,
-    13
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    4,
-    13
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    7,
-    13
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    14,
-    13
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    2,
     14
    ],
    "tags": [
@@ -639,8 +522,21 @@
    "kind": "tree",
    "name": "a tree",
    "at": [
-    1,
-    15
+    4,
+    14
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    5,
+    14
    ],
    "tags": [
     "flammable",
@@ -665,72 +561,7 @@
    "kind": "tree",
    "name": "a tree",
    "at": [
-    7,
-    15
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    8,
-    15
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    10,
-    15
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    12,
-    15
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    13,
-    15
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    14,
+    4,
     15
    ],
    "tags": [
@@ -740,167 +571,48 @@
    ]
   }
  ],
- "high": [
-  [
-   0,
-   3
-  ],
-  [
-   1,
-   3
-  ],
-  [
-   0,
-   4
-  ],
-  [
-   1,
-   4
-  ],
-  [
-   2,
-   4
-  ],
-  [
-   0,
-   5
-  ],
-  [
-   1,
-   5
-  ],
-  [
-   2,
-   5
-  ],
-  [
-   3,
-   5
-  ],
-  [
-   0,
-   6
-  ],
-  [
-   1,
-   6
-  ],
-  [
-   2,
-   6
-  ],
-  [
-   3,
-   6
-  ],
-  [
-   4,
-   6
-  ],
-  [
-   0,
-   7
-  ],
-  [
-   1,
-   7
-  ],
-  [
-   2,
-   7
-  ],
-  [
-   3,
-   7
-  ],
-  [
-   4,
-   7
-  ],
-  [
-   5,
-   7
-  ],
-  [
-   0,
-   8
-  ],
-  [
-   1,
-   8
-  ],
-  [
-   2,
-   8
-  ],
-  [
-   3,
-   8
-  ],
-  [
-   4,
-   8
-  ],
-  [
-   5,
-   8
-  ],
-  [
-   0,
-   9
-  ],
-  [
-   1,
-   9
-  ],
-  [
-   2,
-   9
-  ],
-  [
-   3,
-   9
-  ],
-  [
-   4,
-   9
-  ],
-  [
-   5,
-   9
-  ],
-  [
-   6,
-   9
-  ],
-  [
-   0,
-   10
-  ],
-  [
-   1,
-   10
-  ],
-  [
-   2,
-   10
-  ],
-  [
-   3,
-   10
-  ],
-  [
-   4,
-   10
-  ],
-  [
-   5,
-   10
-  ],
-  [
-   6,
-   10
-  ]
+ "high": [],
+ "map": [
+  "................",
+  "................",
+  "................",
+  ".....#..........",
+  "..........%%....",
+  "\"\"\"\"%%......\"\"\"\"",
+  "\"\"\"\"\"%......\"\"\"\"",
+  "\"\"\"\"........\"\"\"\"",
+  "\"\"\"\"........\"\"\"\"",
+  "...........#....",
+  "................",
+  "................",
+  "................",
+  "............~~..",
+  "............~~..",
+  "................"
+ ],
+ "pieces": [
+  {
+   "name": "the hunter's deadfall",
+   "label": "Spring the deadfall",
+   "at": [
+    5,
+    3
+   ],
+   "reach": 1,
+   "needsFire": false,
+   "describe": "the log slams across 3 tiles west of the post"
+  },
+  {
+   "name": "the rotten oak",
+   "label": "Push the rotten oak over",
+   "at": [
+    11,
+    9
+   ],
+   "reach": 1,
+   "needsFire": false,
+   "describe": "it falls 3 tiles away from you, crushing, and leaves a trunk for cover"
+  }
  ],
  "actionKinds": [
   "attack",
@@ -920,6 +632,10 @@
   "social",
   "overwatch",
   "defend",
+  "block",
+  "trip",
+  "disarm",
+  "use",
   "dash",
   "escape",
   "ready",

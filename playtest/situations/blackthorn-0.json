@@ -24,7 +24,7 @@
    "tactic": "guardian",
    "hp": 100,
    "at": [
-    5,
+    8,
     13
    ],
    "status": []
@@ -37,7 +37,7 @@
    "hp": 100,
    "at": [
     6,
-    11
+    14
    ],
    "status": []
   },
@@ -48,7 +48,7 @@
    "tactic": "healer",
    "hp": 100,
    "at": [
-    9,
+    13,
     14
    ],
    "status": []
@@ -72,8 +72,8 @@
    "tactic": "archer",
    "hp": 100,
    "at": [
-    12,
-    4
+    11,
+    3
    ],
    "status": []
   },
@@ -84,8 +84,8 @@
    "tactic": "skirmisher",
    "hp": 100,
    "at": [
-    4,
-    8
+    2,
+    6
    ],
    "status": []
   }
@@ -204,7 +204,7 @@
    "kind": "tree",
    "name": "a tree",
    "at": [
-    3,
+    2,
     0
    ],
    "tags": [
@@ -217,7 +217,7 @@
    "kind": "tree",
    "name": "a tree",
    "at": [
-    13,
+    5,
     0
    ],
    "tags": [
@@ -230,20 +230,7 @@
    "kind": "tree",
    "name": "a tree",
    "at": [
-    14,
-    0
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    4,
+    12,
     1
    ],
    "tags": [
@@ -256,7 +243,7 @@
    "kind": "tree",
    "name": "a tree",
    "at": [
-    6,
+    3,
     2
    ],
    "tags": [
@@ -270,7 +257,7 @@
    "name": "a tree",
    "at": [
     0,
-    4
+    3
    ],
    "tags": [
     "flammable",
@@ -282,8 +269,8 @@
    "kind": "tree",
    "name": "a tree",
    "at": [
-    3,
-    4
+    1,
+    3
    ],
    "tags": [
     "flammable",
@@ -295,34 +282,8 @@
    "kind": "tree",
    "name": "a tree",
    "at": [
-    11,
-    5
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    12,
-    5
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    7,
-    6
+    10,
+    3
    ],
    "tags": [
     "flammable",
@@ -335,6 +296,19 @@
    "name": "a tree",
    "at": [
     0,
+    5
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    2,
     7
    ],
    "tags": [
@@ -347,86 +321,8 @@
    "kind": "tree",
    "name": "a tree",
    "at": [
-    10,
-    9
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    8,
-    10
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    9,
-    10
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    7,
-    11
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    8,
-    11
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
     5,
-    12
-   ],
-   "tags": [
-    "flammable",
-    "fixed",
-    "cover1"
-   ]
-  },
-  {
-   "kind": "tree",
-   "name": "a tree",
-   "at": [
-    12,
-    13
+    7
    ],
    "tags": [
     "flammable",
@@ -439,7 +335,7 @@
    "name": "a tree",
    "at": [
     3,
-    14
+    9
    ],
    "tags": [
     "flammable",
@@ -451,8 +347,8 @@
    "kind": "tree",
    "name": "a tree",
    "at": [
-    7,
-    14
+    5,
+    9
    ],
    "tags": [
     "flammable",
@@ -464,8 +360,8 @@
    "kind": "tree",
    "name": "a tree",
    "at": [
-    10,
-    14
+    5,
+    10
    ],
    "tags": [
     "flammable",
@@ -477,8 +373,8 @@
    "kind": "tree",
    "name": "a tree",
    "at": [
-    12,
-    14
+    15,
+    10
    ],
    "tags": [
     "flammable",
@@ -490,7 +386,33 @@
    "kind": "tree",
    "name": "a tree",
    "at": [
-    12,
+    15,
+    13
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    0,
+    15
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    1,
     15
    ],
    "tags": [
@@ -501,6 +423,48 @@
   }
  ],
  "high": [],
+ "map": [
+  ".......,,.......",
+  ".......,,.......",
+  ".....%.,,.......",
+  ".....%.,,.......",
+  ".......,,.......",
+  ".......,,..%.#..",
+  "....#..,,..%....",
+  ".......,,.......",
+  ".\"\"....,,.......",
+  ".\"\"....,,.......",
+  ".\"\"....,,.......",
+  ".\"\"....,,.......",
+  ".\"\"....,,.......",
+  ".......,,.......",
+  ".......,,.......",
+  ".......,,......."
+ ],
+ "pieces": [
+  {
+   "name": "the stacked logs on the bank",
+   "label": "Cut the log-pile loose",
+   "at": [
+    13,
+    5
+   ],
+   "reach": 1,
+   "needsFire": false,
+   "describe": "logs roll 6 tiles west along the road, knocking flat whoever is in the way"
+  },
+  {
+   "name": "the wild bees' nest",
+   "label": "Knock down the bees' nest",
+   "at": [
+    4,
+    6
+   ],
+   "reach": 4,
+   "needsFire": false,
+   "describe": "a swarm stings everyone within 2 tiles of the nest — exposed and rattled, friend or foe"
+  }
+ ],
  "actionKinds": [
   "attack",
   "ability",
@@ -519,6 +483,10 @@
   "social",
   "overwatch",
   "defend",
+  "block",
+  "trip",
+  "disarm",
+  "use",
   "dash",
   "escape",
   "ready",

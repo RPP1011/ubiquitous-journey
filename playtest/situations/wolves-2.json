@@ -3,7 +3,7 @@
  "stage": "the Grey Mother's Den",
  "intro": "Bones among the rocks below a rise. The Grey Mother is the size of a pony, and she is not afraid of you.",
  "objective": "Kill the Grey Mother.",
- "you": "Borin Ashgrove",
+ "you": "You",
  "units": [
   {
    "name": "You",
@@ -25,7 +25,7 @@
    "hp": 100,
    "at": [
     8,
-    13
+    9
    ],
    "status": []
   },
@@ -72,8 +72,8 @@
    "tactic": "beast",
    "hp": 55,
    "at": [
-    5,
-    3
+    8,
+    5
    ],
    "status": []
   },
@@ -170,26 +170,6 @@
  ],
  "high": [
   [
-   0,
-   0
-  ],
-  [
-   1,
-   0
-  ],
-  [
-   0,
-   1
-  ],
-  [
-   8,
-   1
-  ],
-  [
-   0,
-   2
-  ],
-  [
    7,
    2
   ],
@@ -200,14 +180,6 @@
   [
    9,
    2
-  ],
-  [
-   0,
-   3
-  ],
-  [
-   6,
-   3
   ],
   [
    7,
@@ -222,14 +194,6 @@
    3
   ],
   [
-   10,
-   3
-  ],
-  [
-   0,
-   4
-  ],
-  [
    7,
    4
   ],
@@ -240,23 +204,49 @@
   [
    9,
    4
-  ],
-  [
-   0,
-   5
-  ],
-  [
-   8,
-   5
-  ],
-  [
-   0,
-   6
-  ],
-  [
-   0,
-   7
   ]
+ ],
+ "map": [
+  "#######===######",
+  "#######===######",
+  "****#***=*******",
+  "*******===******",
+  "********=*******",
+  "****************",
+  "****************",
+  "****************",
+  "****************",
+  "****************",
+  "****************",
+  "****************",
+  "****************",
+  "****************",
+  "****************",
+  "****************"
+ ],
+ "pieces": [
+  {
+   "name": "the loose boulders",
+   "label": "Start the rockslide",
+   "at": [
+    4,
+    2
+   ],
+   "reach": 1,
+   "needsFire": false,
+   "describe": "a rockslide 3 wide rolls south 7 tiles"
+  },
+  {
+   "name": "the snow cornice over the den",
+   "label": "Bring down the cornice",
+   "at": [
+    8,
+    1
+   ],
+   "reach": 5,
+   "needsFire": false,
+   "describe": "the snow comes down on the den mouth and the tor below it"
+  }
  ],
  "actionKinds": [
   "attack",
@@ -276,6 +266,10 @@
   "social",
   "overwatch",
   "defend",
+  "block",
+  "trip",
+  "disarm",
+  "use",
   "dash",
   "escape",
   "ready",

@@ -12,7 +12,7 @@
 //
 // Probing is read-only (the parser never mutates the battle), so it can run mid-fight.
 
-import { readWriteIn, addressee, type GridReading } from './writein.js';
+import { readWriteIn, type GridReading } from './writein.js';
 import { explainUnmet, isSituational } from './unmet.js';
 import type { Battle, Unit } from './battle.js';
 
@@ -31,6 +31,10 @@ export interface Situation {
   units: Array<{ name: string; side: string; role: string; tactic: string; hp: number; at: [number, number]; status: string[] }>;
   props: Array<{ kind: string; name: string; at: [number, number]; tags: string[] }>;
   high: Array<[number, number]>;
+  /** The ground, row by row (z = 0 first): . grass , dirt = stone ~ water % mud _ ash * snow " brush # wall */
+  map: string[];
+  /** The place's one-shot set-pieces. */
+  pieces: Array<{ name: string; label: string; at: [number, number]; reach: number; needsFire: boolean; describe: string }>;
   actionKinds: readonly string[];
 }
 
@@ -46,6 +50,8 @@ export function situation(b: Battle, u: Unit, stage: string, objective: string):
     props: [...b.map.props.values()].map((p) => ({ kind: p.kind, name: p.name, at: [p.x, p.z],
       tags: [p.flammable ? 'flammable' : '', p.fireSource ? 'fire' : '', p.liquid ? 'water' : '', p.weight === 0 ? 'light' : p.weight === 1 ? 'heavy' : 'fixed', p.cover ? `cover${p.cover}` : '', p.climbable ? 'climbable' : ''].filter(Boolean) })),
     high: high.slice(0, 40),
+    map: Array.from({ length: b.map.n }, (_, z) => Array.from({ length: b.map.n }, (_, x) => { const t = b.map.tile(x, z)!; return t.wall ? '#' : ({ grass: '.', dirt: ',', stone: '=', water: '~', mud: '%', ash: '_', snow: '*', brush: '"' } as Record<string, string>)[t.ground] ?? '.'; }).join('')),
+    pieces: [...b.pieces.values()].filter((q) => !q.used).map((q) => ({ name: q.name, label: q.label, at: q.at[0], reach: q.reach ?? 1, needsFire: !!q.needsFire, describe: q.describe })),
     actionKinds: ACTION_KINDS,
   };
 }
@@ -54,8 +60,8 @@ export function situation(b: Battle, u: Unit, stage: string, objective: string):
 export function probe(b: Battle, u: Unit, atoms: Atom[]): ProbeResult[] {
   // an atom must expect at least one real action kind, or it can't be judged (a planner's slip, not a gap)
   return atoms.filter((atom) => atom.expect.some((k) => (ACTION_KINDS as readonly string[]).includes(k))).map((atom) => {
-    const who = addressee(b, u, atom.text).who ?? u;
-    return judge(atom, readWriteIn(b, who, atom.text), () => explainUnmet(b, who, atom.text), b, who);
+    // spoken as the player would: an order to a companion is now a CALL (judged by what it asks for)
+    return judge(atom, readWriteIn(b, u, atom.text), () => explainUnmet(b, u, atom.text), b, u);
   });
 }
 
