@@ -41,7 +41,7 @@ export interface Traits { bravery: number; compassion: number; loyalty: number; 
 export interface BattleEvent {
   round: number;
   kind: 'hit' | 'kill' | 'down' | 'revive' | 'flee' | 'escape' | 'ignite' | 'burned' | 'shove' | 'hazard' | 'social' | 'bluffed'
-    | 'grab' | 'yield' | 'parley' | 'heal' | 'guard' | 'reaction' | 'free' | 'rescued' | 'relic' | 'broken' | 'finish' | 'refuse';
+    | 'grab' | 'yield' | 'parley' | 'heal' | 'guard' | 'reaction' | 'free' | 'rescued' | 'relic' | 'broken' | 'finish' | 'refuse' | 'fell';
   actor?: Unit['id'];
   target?: Unit['id'];
   detail?: string;
@@ -77,7 +77,9 @@ export type CueSpec =
   | { k: 'coins'; u: Id; t: Id; amt: number }
   | { k: 'yield'; t: Id }
   | { k: 'escape'; u: Id; to: Spot }
-  | { k: 'icon'; u: Id; icon: '!' | '!!' | '?' | 'zzz' };
+  | { k: 'icon'; u: Id; icon: '!' | '!!' | '?' | 'zzz' }
+  | { k: 'hew'; u: Id; at: Spot; kind: string; left: number; max: number }
+  | { k: 'topple'; at: Spot; dir: [number, number]; kind: string; log: Spot | null };
 export type Cue = CueSpec & { logAt: number };
 
 export interface Unit {
@@ -128,6 +130,7 @@ export type Action =
   | { kind: 'ability'; abilityId: string; target: Unit['id'] }
   | { kind: 'shove'; target: Unit['id'] | string }            // a unit id, or a prop id
   | { kind: 'kick'; prop: string }                            // tip a table/cart, spill a brazier, roll a barrel
+  | { kind: 'hew'; prop: string; toward?: Spot }              // chop at a tree / smash wooden gear; a felled tree drops toward `toward`
   | { kind: 'throw'; prop: string; at: Spot }                 // a light prop (adjacent or carried)
   | { kind: 'ignite'; at: Spot }                              // needs a flame to hand
   | { kind: 'douse'; at: Spot }                               // needs water to hand
@@ -572,6 +575,7 @@ export class Battle {
     for (const p of this.map.props.values()) {
       const d = dist(from, p);
       if (d === 1 && p.weight === 1) out.push({ kind: 'kick', prop: p.id }, { kind: 'shove', target: p.id });
+      if (d === 1 && HEWABLE.includes(p.kind)) out.push({ kind: 'hew', prop: p.id });
       if (d <= 1 && p.weight === 0) out.push({ kind: 'pickup', prop: p.id });
       if (d <= 1 && p.weight === 0) for (const f of foes) if (dist(from, f) <= 5 && this.map.sees(from.x, from.z, f.x, f.z)) out.push({ kind: 'throw', prop: p.id, at: { x: f.x, z: f.z } });
     }
@@ -605,6 +609,7 @@ export class Battle {
       case 'ability': { const spec = u.agent.abilities.get(a.abilityId); if (spec) this.useAbility(u, spec, t!); break; }
       case 'shove': t ? this.shoveUnit(u, t, fl) : this.shoveProp(u, this.map.props.get(String(a.target))!, fl); break;
       case 'kick': this.kick(u, this.map.props.get(a.prop)!, fl); break;
+      case 'hew': this.hew(u, this.map.props.get(a.prop)!, a.toward, fl); break;
       case 'throw': this.throwProp(u, this.map.props.get(a.prop) ?? u.carrying!, a.at, fl); break;
       case 'ignite': this.ignite(a.at.x, a.at.z, u, fl); break;
       case 'douse': this.douse(a.at.x, a.at.z, u); break;
@@ -714,6 +719,47 @@ export class Battle {
     const d = this.dirFrom(u, p);
     this.note('env', `${this.nm(u, true)} ${u.agent.controlled ? 'heave' : 'heaves'} ${p.name}${fl}.`);
     this.slideProp(p, d, p.kind === 'barrel' || p.kind === 'oil' ? 4 : 2, u);
+  }
+
+  /** Damage a blow does to wood (no roll: a tree doesn't dodge). */
+  hewDamage(u: Unit): number { return Math.round(TUNE.damage * (0.75 + 0.08 * u.sheet.might)); }
+
+  /**
+   * Chop at a tree or smash wooden gear. A tree takes a few blows (its damage persists between
+   * turns); when it goes it falls — away from you, or toward `toward` (a neighbouring tile of the
+   * trunk) — crushing whoever stands in the fall line, and leaves a log: half cover you can climb.
+   */
+  private hew(u: Unit, p: Prop, toward: Spot | undefined, fl: string): void {
+    const dmg = this.hewDamage(u);
+    const max = p.kind === 'tree' ? 60 : 20;
+    p.hp = Math.max(0, Math.min(p.hp, max) - dmg);
+    this.face(u, p);
+    this.cue({ k: 'hew', u: u.id, at: { x: p.x, z: p.z }, kind: p.kind, left: p.hp, max });
+    if (p.hp > 0) {
+      const blows = Math.ceil(p.hp / dmg);
+      this.note('env', `${this.nm(u, true)} ${u.agent.controlled ? 'hack' : 'hacks'} at ${p.name}${fl} — ${blows} more blow${blows === 1 ? '' : 's'}.`);
+      return;
+    }
+    this.map.removeProp(p);
+    if (p.kind !== 'tree') {
+      this.note('env', `${this.nm(u, true)} ${u.agent.controlled ? 'smash' : 'smashes'} ${p.name} to kindling${fl}.`);
+      return;
+    }
+    // which way it falls: toward the named side if that's a neighbour of the trunk, else away from the axe
+    let d: [number, number] = this.dirFrom(u, p);
+    if (toward && Math.abs(toward.x - p.x) + Math.abs(toward.z - p.z) >= 1) d = this.dirFrom(p, toward);
+    const crushed: string[] = [];
+    for (let i = 1; i <= 2; i++) {
+      const v = this.unitAt(p.x + d[0] * i, p.z + d[1] * i);
+      if (v && v.out === null && v !== u) { this.wound(u, v, 18, 'crushed'); v.prone = true; crushed.push(this.nm(v)); }
+    }
+    const lx = p.x + d[0], lz = p.z + d[1];
+    const spot = this.map.tile(lx, lz) && !this.map.tile(lx, lz)!.wall && !this.map.propAt(lx, lz) ? { x: lx, z: lz } : { x: p.x, z: p.z };
+    const log = this.map.addProp('log', spot.x, spot.z);
+    log.name = 'a felled trunk';
+    this.cue({ k: 'topple', at: { x: p.x, z: p.z }, dir: d, kind: p.kind, log: spot });
+    this.ev('fell', u, undefined, crushed.join(','));
+    this.note('env', `${this.nm(u, true)} ${u.agent.controlled ? 'fell' : 'fells'} ${p.name}${fl} — timber!${crushed.length ? ` It comes down on ${crushed.join(' and ')}.` : ''} A trunk lies there now: half cover.`);
   }
 
   private kick(u: Unit, p: Prop, fl: string): void {
@@ -1200,6 +1246,9 @@ export class Battle {
   }
   note(kind: LogLine['kind'], text: string): void { this.log.push({ round: this.round, kind, text }); if (this.log.length > 300) this.log.splice(0, 100); }
 }
+
+/** Props an axe (or a sword, badly) can take apart. */
+export const HEWABLE = ['tree', 'crate', 'barrel', 'table', 'cart', 'tent'];
 
 export function sameAction(a: Action, b: Action): boolean {
   if (a.kind !== b.kind) return false;

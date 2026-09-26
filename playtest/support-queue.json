@@ -1,0 +1,730 @@
+{
+ "version": 1,
+ "items": {
+  "fell-tree": {
+   "capability": "fell-tree",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 8,
+   "strategies": [
+    "make cover"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "barricade": {
+   "capability": "barricade",
+   "status": "open",
+   "kind": "unsupported",
+   "demand": 24,
+   "passes": 0,
+   "strategies": [
+    "make cover"
+   ],
+   "examples": [
+    {
+     "text": "build a barricade out of the crates",
+     "stage": "the Old Road",
+     "outcome": "refused: the rules don't cover building yet"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "dig": {
+   "capability": "dig",
+   "status": "open",
+   "kind": "unsupported",
+   "demand": 36,
+   "passes": 0,
+   "strategies": [
+    "make cover"
+   ],
+   "examples": [
+    {
+     "text": "dig in behind a mound of earth",
+     "stage": "the Old Road",
+     "outcome": "refused: the rules don't cover digging yet"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "take-cover": {
+   "capability": "take-cover",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 19,
+   "strategies": [
+    "make cover"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "climb-tree": {
+   "capability": "climb-tree",
+   "status": "open",
+   "kind": "unsupported",
+   "demand": 8,
+   "passes": 0,
+   "strategies": [
+    "take position"
+   ],
+   "examples": [
+    {
+     "text": "climb the tree to get a better angle",
+     "stage": "the Old Road",
+     "outcome": "refused: the rules don't cover climbing trees yet"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "high-ground": {
+   "capability": "high-ground",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 30,
+   "strategies": [
+    "take position"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "block-path": {
+   "capability": "block-path",
+   "status": "open",
+   "kind": "misread",
+   "demand": 12,
+   "passes": 0,
+   "strategies": [
+    "deny ground"
+   ],
+   "examples": [
+    {
+     "text": "block the path with the cart",
+     "stage": "the Old Road",
+     "outcome": "misread as Brace [defend]"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "tripwire": {
+   "capability": "tripwire",
+   "status": "open",
+   "kind": "unsupported",
+   "demand": 36,
+   "passes": 0,
+   "strategies": [
+    "deny ground"
+   ],
+   "examples": [
+    {
+     "text": "string a rope across the path to trip them",
+     "stage": "the Old Road",
+     "outcome": "refused: the rules don't cover rope-work yet"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "trip": {
+   "capability": "trip",
+   "status": "open",
+   "kind": "unsupported",
+   "demand": 28,
+   "passes": 8,
+   "strategies": [
+    "melee craft"
+   ],
+   "examples": [
+    {
+     "text": "trip Col and knock them down",
+     "stage": "the Old Road",
+     "outcome": "refused: the rules don't cover tripping yet"
+    },
+    {
+     "text": "trip Hob and knock them down",
+     "stage": "the Burnt Mill",
+     "outcome": "refused: the rules don't cover tripping yet"
+    },
+    {
+     "text": "trip Garrick and knock them down",
+     "stage": "Blackthorn Camp",
+     "outcome": "refused: the rules don't cover tripping yet"
+    },
+    {
+     "text": "trip Jory and knock them down",
+     "stage": "the Crossroads",
+     "outcome": "refused: the rules don't cover tripping yet"
+    },
+    {
+     "text": "trip Edda and knock them down",
+     "stage": "the Mine Mouth",
+     "outcome": "refused: the rules don't cover tripping yet"
+    },
+    {
+     "text": "trip Silas and knock them down",
+     "stage": "the Chapel Ruin",
+     "outcome": "refused: the rules don't cover tripping yet"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "disarm": {
+   "capability": "disarm",
+   "status": "open",
+   "kind": "unsupported",
+   "demand": 28,
+   "passes": 8,
+   "strategies": [
+    "melee craft"
+   ],
+   "examples": [
+    {
+     "text": "disarm Col",
+     "stage": "the Old Road",
+     "outcome": "refused: the rules don't cover disarming yet"
+    },
+    {
+     "text": "disarm Hob",
+     "stage": "the Burnt Mill",
+     "outcome": "refused: the rules don't cover disarming yet"
+    },
+    {
+     "text": "disarm Garrick",
+     "stage": "Blackthorn Camp",
+     "outcome": "refused: the rules don't cover disarming yet"
+    },
+    {
+     "text": "disarm Jory",
+     "stage": "the Crossroads",
+     "outcome": "refused: the rules don't cover disarming yet"
+    },
+    {
+     "text": "disarm Edda",
+     "stage": "the Mine Mouth",
+     "outcome": "refused: the rules don't cover disarming yet"
+    },
+    {
+     "text": "disarm Silas",
+     "stage": "the Chapel Ruin",
+     "outcome": "refused: the rules don't cover disarming yet"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "throw-weapon": {
+   "capability": "throw-weapon",
+   "status": "open",
+   "kind": "unsupported",
+   "demand": 35,
+   "passes": 1,
+   "strategies": [
+    "melee craft"
+   ],
+   "examples": [
+    {
+     "text": "throw my sword at Col",
+     "stage": "the Old Road",
+     "outcome": "refused: the rules don't cover throwing your weapon yet"
+    },
+    {
+     "text": "throw my sword at Hob",
+     "stage": "the Burnt Mill",
+     "outcome": "refused: the rules don't cover throwing your weapon yet"
+    },
+    {
+     "text": "throw my sword at Garrick",
+     "stage": "Blackthorn Camp",
+     "outcome": "refused: the rules don't cover throwing your weapon yet"
+    },
+    {
+     "text": "throw my sword at Jory",
+     "stage": "the Crossroads",
+     "outcome": "refused: the rules don't cover throwing your weapon yet"
+    },
+    {
+     "text": "throw my sword at Edda",
+     "stage": "the Mine Mouth",
+     "outcome": "refused: the rules don't cover throwing your weapon yet"
+    },
+    {
+     "text": "throw my sword at Silas",
+     "stage": "the Chapel Ruin",
+     "outcome": "refused: the rules don't cover throwing your weapon yet"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "ready-strike": {
+   "capability": "ready-strike",
+   "status": "open",
+   "kind": "unsupported",
+   "demand": 13,
+   "passes": 19,
+   "strategies": [
+    "melee craft"
+   ],
+   "examples": [
+    {
+     "text": "if Col comes close, hit him",
+     "stage": "the Old Road",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    },
+    {
+     "text": "if Hob comes close, hit him",
+     "stage": "the Burnt Mill",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    },
+    {
+     "text": "if Jory comes close, hit him",
+     "stage": "the Crossroads",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    },
+    {
+     "text": "if Edda comes close, hit him",
+     "stage": "the Mine Mouth",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    },
+    {
+     "text": "if Silas comes close, hit him",
+     "stage": "the Chapel Ruin",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    },
+    {
+     "text": "if Gaunt comes close, hit him",
+     "stage": "the Sheepfold",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "demand-surrender": {
+   "capability": "demand-surrender",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 36,
+   "strategies": [
+    "talk"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "bribe": {
+   "capability": "bribe",
+   "status": "open",
+   "kind": "mixed",
+   "demand": 36,
+   "passes": 0,
+   "strategies": [
+    "talk"
+   ],
+   "examples": [
+    {
+     "text": "offer Col my purse to walk away",
+     "stage": "the Old Road",
+     "outcome": "refused: the rules don't cover bribes yet"
+    },
+    {
+     "text": "offer Hob my purse to walk away",
+     "stage": "the Burnt Mill",
+     "outcome": "refused: the rules don't cover bribes yet"
+    },
+    {
+     "text": "offer Garrick my purse to walk away",
+     "stage": "Blackthorn Camp",
+     "outcome": "refused: the rules don't cover bribes yet"
+    },
+    {
+     "text": "offer Jory my purse to walk away",
+     "stage": "the Crossroads",
+     "outcome": "refused: the rules don't cover bribes yet"
+    },
+    {
+     "text": "offer Edda my purse to walk away",
+     "stage": "the Mine Mouth",
+     "outcome": "refused: the rules don't cover bribes yet"
+    },
+    {
+     "text": "offer Silas my purse to walk away",
+     "stage": "the Chapel Ruin",
+     "outcome": "refused: the rules don't cover bribes yet"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "turncoat": {
+   "capability": "turncoat",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 36,
+   "strategies": [
+    "talk"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "false-surrender": {
+   "capability": "false-surrender",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 36,
+   "strategies": [
+    "talk"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "intimidate": {
+   "capability": "intimidate",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 36,
+   "strategies": [
+    "talk"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "guard-ally": {
+   "capability": "guard-ally",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 35,
+   "strategies": [
+    "look after the company"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "drag-ally": {
+   "capability": "drag-ally",
+   "status": "open",
+   "kind": "mixed",
+   "demand": 36,
+   "passes": 0,
+   "strategies": [
+    "look after the company"
+   ],
+   "examples": [
+    {
+     "text": "drag Borin to safety",
+     "stage": "the Old Road",
+     "outcome": "misread as Aid Borin Ashgrove [aid]"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "give-item": {
+   "capability": "give-item",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 35,
+   "strategies": [
+    "look after the company"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "swap-places": {
+   "capability": "swap-places",
+   "status": "open",
+   "kind": "unsupported",
+   "demand": 36,
+   "passes": 0,
+   "strategies": [
+    "look after the company"
+   ],
+   "examples": [
+    {
+     "text": "swap places with Borin",
+     "stage": "the Old Road",
+     "outcome": "refused: the rules don't cover swapping places yet"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "hide": {
+   "capability": "hide",
+   "status": "open",
+   "kind": "unsupported",
+   "demand": 31,
+   "passes": 5,
+   "strategies": [
+    "stealth"
+   ],
+   "examples": [
+    {
+     "text": "hide behind the trees",
+     "stage": "the Old Road",
+     "outcome": "refused: the rules don't cover hiding yet"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "disguise": {
+   "capability": "disguise",
+   "status": "open",
+   "kind": "unsupported",
+   "demand": 36,
+   "passes": 0,
+   "strategies": [
+    "stealth"
+   ],
+   "examples": [
+    {
+     "text": "put on a dead bandit's cloak",
+     "stage": "the Old Road",
+     "outcome": "refused: the rules don't cover disguises yet"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "push-cover": {
+   "capability": "push-cover",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 4,
+   "strategies": [
+    "make cover"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "flank": {
+   "capability": "flank",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 6,
+   "strategies": [
+    "take position"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "tip-furniture": {
+   "capability": "tip-furniture",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 8,
+   "strategies": [
+    "make cover"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "free-captive": {
+   "capability": "free-captive",
+   "status": "open",
+   "kind": "mixed",
+   "demand": 4,
+   "passes": 0,
+   "strategies": [
+    "rescue"
+   ],
+   "examples": [
+    {
+     "text": "cut Elsie free",
+     "stage": "the Burnt Mill",
+     "outcome": "misread as Attack → Wick (after moving) [attack]"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "carry-person": {
+   "capability": "carry-person",
+   "status": "open",
+   "kind": "unsupported",
+   "demand": 4,
+   "passes": 0,
+   "strategies": [
+    "rescue"
+   ],
+   "examples": [
+    {
+     "text": "carry Elsie out of here",
+     "stage": "the Burnt Mill",
+     "outcome": "refused: the rules don't cover carrying people yet"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "escort": {
+   "capability": "escort",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 4,
+   "strategies": [
+    "rescue"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "self-heal": {
+   "capability": "self-heal",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 7,
+   "strategies": [
+    "look after the company"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "shove-hazard": {
+   "capability": "shove-hazard",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 7,
+   "strategies": [
+    "melee craft"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "throw-rock": {
+   "capability": "throw-rock",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 4,
+   "strategies": [
+    "melee craft"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "throw-fire": {
+   "capability": "throw-fire",
+   "status": "open",
+   "kind": "misread",
+   "demand": 8,
+   "passes": 2,
+   "strategies": [
+    "use fire"
+   ],
+   "examples": [
+    {
+     "text": "throw the torch at Gaunt",
+     "stage": "the Sheepfold",
+     "outcome": "misread as Set a torch alight (after moving) [ignite]"
+    },
+    {
+     "text": "throw the torch at Black",
+     "stage": "Hollow Wood",
+     "outcome": "misread as Set a torch alight [ignite]"
+    },
+    {
+     "text": "throw the torch at the",
+     "stage": "the Grey Mother's Den",
+     "outcome": "misread as Set a torch alight (after moving) [ignite]"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "scare-with-fire": {
+   "capability": "scare-with-fire",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 12,
+   "strategies": [
+    "beasts"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "distract-animals": {
+   "capability": "distract-animals",
+   "status": "open",
+   "kind": "unsupported",
+   "demand": 2,
+   "passes": 0,
+   "strategies": [
+    "beasts"
+   ],
+   "examples": [
+    {
+     "text": "throw them some meat to distract them",
+     "stage": "the Sheepfold",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "howl-down": {
+   "capability": "howl-down",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 12,
+   "strategies": [
+    "beasts"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "climb-prop": {
+   "capability": "climb-prop",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 3,
+   "strategies": [
+    "take position"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  }
+ },
+ "runs": 1
+}

@@ -126,6 +126,14 @@ export function planTurn(b: Battle, u: Unit): Plan {
           else if ((pr.kind === 'table' || pr.kind === 'cart') && !pr.tipped) { g = foes.some((f) => f.tactic === 'archer') ? 0.3 : 0.1; why = 'make cover'; }
           break;
         }
+        case 'hew': {
+          const pr = b.map.props.get(a.prop);
+          if (!pr || pr.kind !== 'tree' || pr.hp > b.hewDamage(u)) break;
+          const d = b.dirFrom(s, pr);
+          const under = foes.filter((f) => [1, 2].some((i) => f.x === pr.x + d[0] * i && f.z === pr.z + d[1] * i));
+          g = under.length * 0.85; why = 'fell the tree on them';
+          break;
+        }
         case 'ignite': {
           const near = foes.filter((f) => dist(f, a.at) <= 1);
           const ours = friends.filter((f) => dist(f, a.at) <= 2).length + (dist(s, a.at) <= 1 ? 1 : 0);

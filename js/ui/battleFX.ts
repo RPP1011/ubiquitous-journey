@@ -423,6 +423,34 @@ export class BattleFX {
         const v = this.views.get(c.u); if (v) v.gone = true;
         return { dur: 0.8, t: 0, tick: (_t, k) => f.root.position.lerpVectors(a, z, k), done: () => { f.setMoving(0); f.root.visible = false; } };
       }
+      case 'hew': {
+        const fi = this.fx(c.u); if (!fi) return null;
+        const at = this.at(c.at).add(new THREE.Vector3(0, 0.9, 0));
+        this.face(fi, at);
+        fi.playClip(this.clipIdx++ % 2 ? '1H_Melee_Attack_Chop' : '2H_Melee_Attack_Chop', { speed: 1.3 });
+        let chipped = false;
+        return { dur: 0.6, t: 0, tick: (tt) => {
+          if (chipped || tt < 0.3) return; chipped = true;
+          for (let i = 0; i < 12; i++) this.particle(at.clone(), new THREE.Vector3(Math.random() - 0.5, Math.random() * 1.2 + 0.4, Math.random() - 0.5).multiplyScalar(3), 0xc9a36a, 0.14, 0.6, 9);
+          if (c.left > 0) this.float(at.clone().add(new THREE.Vector3(0, 1.4, 0)), `${Math.round((c.left / c.max) * 100)}%`, '#e8c879', 34);
+        } };
+      }
+      case 'topple': {
+        if (c.kind !== 'tree') { this.dust(this.at(c.at), 16); return { dur: 0.3, t: 0 }; }
+        // a stand-in trunk swings down along the fall direction, then the log prop takes over
+        const base = this.at(c.at);
+        const g = new THREE.Group();
+        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.26, 2.2, 7), new THREE.MeshLambertMaterial({ color: 0x5a3e28 }) as unknown as THREE.MeshBasicMaterial);
+        o3(trunk).position.set(0, 1.1, 0); (g as unknown as { add(o: unknown): void }).add(trunk);
+        const crown = new THREE.Mesh(new THREE.ConeGeometry(0.9, 1.8, 8), new THREE.MeshLambertMaterial({ color: 0x2f5e2f }) as unknown as THREE.MeshBasicMaterial);
+        o3(crown).position.set(0, 2.8, 0); (g as unknown as { add(o: unknown): void }).add(crown);
+        o3(g).position.copy(base);
+        this.scene.add(g);
+        const [dx, dz] = c.dir;
+        return { dur: 0.9, t: 0,
+          tick: (_t, k) => { const ang = (Math.PI / 2) * k * k; o3(g).rotation.x = dz * ang; o3(g).rotation.z = -dx * ang; },
+          done: () => { this.scene.remove(g); this.dust(this.at({ x: c.at.x + dx, z: c.at.z + dz }), 22); this.dust(this.at({ x: c.at.x + 2 * dx, z: c.at.z + 2 * dz }), 14); this.ring(this.at({ x: c.at.x + dx, z: c.at.z + dz }), 0xb8a98c, 2.5); } };
+      }
       case 'icon': {
         const f = this.fx(c.u); if (!f) return null;
         this.float(this.head(f), c.icon === '!!' ? '!!' : c.icon, c.icon === '?' ? '#9ad0ff' : '#f0c674', 64);

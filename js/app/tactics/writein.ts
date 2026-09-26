@@ -12,6 +12,7 @@
 
 import { DIRS, key, type Prop } from './map.js';
 import type { Action, Battle, Claim, Spot, Trigger, Unit } from './battle.js';
+import { HEWABLE } from './battle.js';
 
 export interface GridReading {
   to: Spot | null;
@@ -30,6 +31,7 @@ const V = {
   attack: ['hit', 'strike', 'attack', 'slash', 'stab', 'swing', 'cut', 'punch', 'smash', 'bash', 'chop', 'lunge', 'hack', 'kill', 'shoot', 'thrust', 'cleave'],
   shove: ['shove', 'push', 'barge', 'tackle', 'ram', 'bowl', 'knock', 'heave', 'roll', 'shoulder'],
   kick: ['kick', 'boot', 'tip', 'topple', 'overturn', 'knock over', 'flip'],
+  hew: ['cut down', 'chop', 'chop down', 'fell', 'hew', 'hack down', 'hack apart', 'axe', 'break', 'smash', 'splinter', 'bring down the tree', 'timber'],
   throw: ['throw', 'hurl', 'fling', 'toss', 'lob', 'chuck'],
   ignite: ['light', 'ignite', 'burn', 'set fire', 'torch', 'set alight', 'kindle'],
   douse: ['douse', 'splash', 'extinguish', 'put out', 'soak', 'drench'],
@@ -143,6 +145,24 @@ export function readWriteIn(b: Battle, u: Unit, raw: string): GridReading[] {
             if (hz) at = behind(target, hz);
           }
           anywhere({ kind: 'shove', target: target.id }, `Shove ${b.nm(target)}${hazard ? (hazard === 'fire' ? ' into the fire' : ' off the edge') : ''}`, score + (hazard ? 1 : 0), at);
+        }
+        break;
+      }
+      case 'hew': {
+        const wood = prop && HEWABLE.includes(prop.kind) ? prop : b.map.propNamed(' tree trees ', u, 3);
+        if (!wood) break;
+        // where it should fall: onto a named foe, or toward the nearest foe when it's meant as cover
+        const onto = namedFoes[0]?.u ?? (has(text, 'cover', 'shield', 'wall', 'barrier', 'between') ? b.nearestFoe(u) : undefined);
+        const lined = onto ? lineSide(wood, onto, 2) : null;
+        const toward = onto ? (lined ? { x: 2 * wood.x - lined.x, z: 2 * wood.z - lined.z } : { x: wood.x + b.dirFrom(wood, onto)[0], z: wood.z + b.dirFrom(wood, onto)[1] }) : undefined;
+        const stand = onto ? lined ?? behind(wood, onto) : undefined;
+        const blows = Math.ceil(Math.min(wood.hp, wood.kind === 'tree' ? 60 : 20) / Math.max(1, b.hewDamage(u)));
+        const n0 = out.length;
+        const verb = wood.kind === 'tree' ? 'Fell' : 'Smash';
+        anywhere({ kind: 'hew', prop: wood.id, toward }, `${verb} ${wood.name}${onto && wood.kind === 'tree' ? (namedFoes[0] ? ` onto ${b.nm(onto)}` : ' toward the enemy, for cover') : ''}`, score + 1.5, stand);
+        for (let i = n0; i < out.length; i++) {
+          if (blows > 1) out[i].notes.push(`${blows} blows to bring it down — this is 1`);
+          else if (wood.kind === 'tree') out[i].notes.push('it will fall this turn — leaves a log (half cover)');
         }
         break;
       }

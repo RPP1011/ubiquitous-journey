@@ -6,6 +6,7 @@ import { TUNE } from '../constants.js';
 import { runTurn, planTurn } from '../app/tactics/ai.js';
 import { phrase } from '../app/run/autopilot.js';
 import { readWriteIn, describeTrigger, type GridReading } from '../app/tactics/writein.js';
+import { explainUnmet, recordUnmet } from '../app/tactics/unmet.js';
 import { key } from '../app/tactics/map.js';
 import type { Action, Battle, Spot, Unit } from '../app/tactics/battle.js';
 import type { BattleRender } from './battleRender.js';
@@ -66,6 +67,8 @@ export class TacticsView {
   private autoPlan: ReturnType<typeof planTurn> | null = null;
   private autoUnit: Unit | null = null;
   pace = 0.65;
+  /** Where this fight is (for the unmet-request record). */
+  where = '';
   private cap: HTMLDivElement | null = null;
   private capT = 0;
   private seenLog = 0;
@@ -202,6 +205,7 @@ export class TacticsView {
       case 'ability': return `${u.agent.abilities.get(a.abilityId)?.name ?? 'Ability'} → ${T(a.target)}`;
       case 'shove': return b.get(a.target as Unit['id']) ? `Shove ${T(a.target)}` : `Shove ${P(String(a.target))}`;
       case 'kick': return `Kick ${P(a.prop)}`;
+      case 'hew': return b.map.props.get(a.prop)?.kind === 'tree' ? `Chop ${P(a.prop)}` : `Smash ${P(a.prop)}`;
       case 'throw': return `Throw ${P(a.prop)} at ${b.unitAt(a.at.x, a.at.z) ? b.nm(b.unitAt(a.at.x, a.at.z)!) : 'there'}`;
       case 'ignite': return `Set ${b.map.propAt(a.at.x, a.at.z)?.name ?? 'the grass'} alight`;
       case 'douse': return 'Douse';
@@ -244,7 +248,7 @@ export class TacticsView {
         if (seen.has(lbl)) return; seen.add(lbl);
         const o = b.odds(mine, a);
         const g = ['attack', 'ability', 'subdue', 'grab'].includes(a.kind) || (a.kind === 'shove' && b.get(a.target as Unit['id'])) ? 'Fight'
-          : ['kick', 'throw', 'ignite', 'douse', 'pickup', 'shove'].includes(a.kind) ? 'Environment'
+          : ['kick', 'throw', 'ignite', 'douse', 'pickup', 'shove', 'hew'].includes(a.kind) ? 'Environment'
           : a.kind === 'social' || a.kind === 'aid' || a.kind === 'guard' ? 'People' : 'Stance';
         groups[g].push(`<button data-a='${esc(JSON.stringify(a))}' title="${esc(o.notes.join(', '))}">${esc(lbl)}${o.p < 1 ? `<span class="p">${pct(o.p)}</span>` : ''}</button>`);
       });
@@ -280,8 +284,17 @@ export class TacticsView {
     });
     const inp = root.querySelector<HTMLInputElement>('#tac-in');
     if (inp) {
-      inp.oninput = () => { this.draft = inp.value; const m = this.mine(); this.readings = m ? readWriteIn(b, m, this.draft) : []; this.err = this.draft.trim() && !this.readings.length ? "The GM can't place that — name something on the field." : ''; this.refresh(); };
-      inp.onkeydown = (e) => { const m = this.mine(); if (e.key === 'Enter' && m && this.readings[0]) this.run(m, this.readings[0]); };
+      inp.oninput = () => { this.draft = inp.value; const m = this.mine(); this.readings = m ? readWriteIn(b, m, this.draft) : []; this.err = this.draft.trim() && !this.readings.length && m ? `Not possible: ${explainUnmet(b, m, this.draft)}.` : ''; this.refresh(); };
+      inp.onkeydown = (e) => {
+        const m = this.mine(); if (e.key !== 'Enter' || !m) return;
+        if (this.readings[0]) { this.run(m, this.readings[0]); return; }
+        if (!this.draft.trim()) return;
+        // can't be done — say why, and keep it: it's the list of things players want that the rules lack
+        const reason = explainUnmet(b, m, this.draft);
+        recordUnmet(b, m, this.draft.trim(), reason, this.where);
+        this.err = `Not possible: ${reason}. The GM has noted the request.`;
+        this.draft = ''; this.refresh();
+      };
       if (this.draft) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
     }
   }

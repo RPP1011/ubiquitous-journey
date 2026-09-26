@@ -178,6 +178,24 @@ export function tacticsTest(ok, { stubScene, makeFighter }) {
     ss.dispose();
   }
 
+  // --- 9. fell a tree: it takes blows, falls away from the axe (or onto someone), leaves a log as cover
+  {
+    const { s: ss, map, b, mk } = arena(stubScene, makeFighter);
+    const you = b.add(ss.player, 'player', { x: 4, z: 5 });
+    const g = b.add(mk('Garrick'), 'foe', { x: 7, z: 5 });
+    const tree = map.addProp('tree', 5, 5);
+    order(b, you, g); b.start();
+    const r = readWriteIn(b, you, 'cut down the tree and use it as cover')[0];
+    ok(r && r.action.kind === 'hew' && r.action.prop === tree.id, `tactics: 'cut down the tree' reads as hew (${r && r.action.kind})`);
+    you.sheet.might = 30;                                    // one mighty blow
+    b.act(you, { kind: 'hew', prop: tree.id, toward: { x: 6, z: 5 } });
+    const log = [...map.props.values()].find((q) => q.kind === 'log');
+    ok(!map.props.has(tree.id) && !!log && log.x === 6 && log.cover === 1, `tactics: the tree falls toward the foe and leaves a log for half cover (${log && `${log.x},${log.z}`})`);
+    ok(g.prone && g.agent.fighter.health < 100, 'tactics: the falling trunk crushes the foe in its line');
+    ok(b.map.coverAgainst(5, 5, 8, 5) === 1, 'tactics: standing behind the trunk now gives half cover');
+    ss.dispose();
+  }
+
   // --- 7. whole battles, AI on every side: terminate, conserve gold, release every body -------
   {
     let ended = 0, conserved = 0, released = 0, nan = 0, envUsed = 0;
