@@ -48,6 +48,18 @@ main.js (run mode)                 RunUI (screens, autoplay script)
 - `writein.ts` — free text → `{move?, action}` with GM positioning; conditionals become Ready.
 - `director.ts` — opens a battle around a real-time fight (sandbox mode).
 
+## Presentation: cues and choreography
+
+The rules resolve an action instantly; the screen shows it over time. `Battle` appends **presentation
+cues** (`cues`: step, strike, shot, dmg, slide, spill, throw, fire, say, coins, yield, …) as pure data —
+the rules never read them and building them never draws from `rng()`, so headless runs are identical.
+`ui/battleFX.ts` plays them as timed beats: KayKit clips on the bodies (fighters are `fxLock`ed so
+logic-time hits don't animate early), procedural particles/projectiles/rings/tethers, speech bubbles with
+the actual words, floating numbers. Bodies are rewound so later beats don't spoil earlier ones; HP bars
+(`stagecraft.ts`) and captions follow the beats; NPC turns and battle-end wait while `fx.busy`.
+Props are primitive-built models (`ui/propModels.ts`) eased toward their logical tiles (barrels roll,
+tables tip, burnt props shrink away).
+
 ## The run (`js/app/run`)
 
 - `companions.ts` — Borin, Wren, Pip, Maud. Traits (bravery, compassion, loyalty, ruthlessness)
