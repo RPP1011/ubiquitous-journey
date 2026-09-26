@@ -12,9 +12,9 @@ import { preloadCharacters } from './assets.js';
 import { Fighter } from './fighter.js';
 import { TUNE } from './constants.js';
 import { createSession } from './app/session.js';
-import { CombatDirector } from './app/combat/encounter.js';
-import { COMBAT } from './app/combat/rules.js';
-import { EncounterView } from './ui/encounterView.js';
+import { BattleDirector } from './app/tactics/director.js';
+import { BattleRender } from './ui/battleRender.js';
+import { TacticsView } from './ui/tacticsView.js';
 import { terrainHeight } from './arena.js';
 import { ABILITY_CATALOG } from './rpg/abilities/catalog.js';
 import { DungeonManager } from './world/dungeonManager.js';
@@ -27,11 +27,9 @@ const { renderer, scene, camera, orbitCam, input, commander } = boot();
 
 let dungeonMgr = null;             // built per-world in buildWorld()
 let session = null;                // the app-layer Session (js/app/session.ts) for the current run
-let combat = null;                 // CombatDirector: opens turn-based encounters around the player's fights
-let playback = 0;                  // real seconds left in the current round's playback
-const encView = new EncounterView();
-// devtools handle (read-only inspection; the UI never reads it)
-window.__hearsay = { game, get session() { return session; }, get combat() { return combat; } };
+let tactics = null;                // BattleDirector: opens a tactical grid battle when the player's side comes to blows
+let battleRender = null;           // the grid/props/fire drawn for the current battle
+const tacView = new TacticsView();
 
 // ---- HUD (panels + readouts) -----------------------------------------------
 const hud = new Hud({
@@ -42,6 +40,8 @@ const hud = new Hud({
 
 // ---- game state ------------------------------------------------------------
 const game = { state: 'start', world: null, sim: null, player: null, playerFighter: null };
+// devtools handle (read-only inspection; the UI never reads it)
+window.__hearsay = { game, get session() { return session; }, get tactics() { return tactics; } };
 
 // ---- player input ----------------------------------------------------------
 const controls = new PlayerControls({
@@ -74,9 +74,9 @@ function buildWorld() {
   // the player's swing lands only on the body they were ordered to attack, so peaceful
   // villagers aren't friendly-fire pass-through once you choose a victim.
   session.playerStrikeGate = (tgt) => commander.targetFighter === tgt;
-  session.onRunEnd((summary) => { encView.close(); showRunOver(summary); });
-  combat = new CombatDirector(session);
-  encView.close();
+  session.onRunEnd((summary) => { endBattleView(); showRunOver(summary); });
+  endBattleView();
+  tactics = new BattleDirector(session);
 
   // dungeons: scatter cave-mouth portals in the wilds and expose the manager to
   // the quest board so it can mint "delve" radiant quests against real dungeons.
@@ -131,21 +131,34 @@ function togglePause() {
   }
 }
 
-// ---- turn-based encounters (js/app/combat) ---------------------------------
-encView.onReady = () => {
-  const enc = combat && combat.encounter;
-  if (!enc || enc.phase !== 'declare') return;
-  enc.resolve();
-  playback = COMBAT.playbackSec;
-  encView.render();
-  session.checkRunEnd();
-};
-encView.onContinue = () => {
-  combat.clear();
-  encView.close();
+// ---- tactical battles (js/app/tactics) ------------------------------------
+function endBattleView() {
+  tacView.close();
+  if (battleRender) { battleRender.dispose(); battleRender = null; }
+}
+function openBattle(b) {
+  game.state = 'battle';
+  if (session.player) session.player.goal = { kind: 'idle' };
+  b.start();
+  battleRender = new BattleRender(scene, b);
+  tacView.open(b, battleRender);
+}
+tacView.onEnd = () => {
+  endBattleView();
+  tactics.clear();
   if (session.player) session.player.goal = { kind: 'idle' };   // don't chase a foe who fled or yielded
-  if (game.state === 'encounter') game.state = 'playing';
+  session.checkRunEnd();
+  if (game.state === 'battle') game.state = 'playing';
 };
+renderer.domElement.addEventListener('mousedown', (e) => {
+  if (game.state !== 'battle' || !battleRender || e.button !== 0) return;
+  const t = battleRender.pick(camera, commander.mouseNDC);
+  if (t) tacView.clickTile(t);
+});
+renderer.domElement.addEventListener('mousemove', () => {
+  if (game.state !== 'battle' || !battleRender) return;
+  tacView.hoverTile(battleRender.pick(camera, commander.mouseNDC));
+});
 
 overlay.addEventListener('click', () => { if (game.state !== 'dialogue') togglePause(); });
 
@@ -192,23 +205,17 @@ function frame() {
         stage = 'castInput';     controls.pollCastKeys();
         stage = 'gather';        controls.pollGather(dt);
         if (hud.hpFill) hud.hpFill.style.width = `${Math.max(0, (game.playerFighter.health / TUNE.maxHealth) * 100)}%`;
-        // the player's side came to blows: switch to a turn-based encounter
-        stage = 'combat.watch';
-        const enc = game.state === 'playing' && combat ? combat.watch() : null;
-        if (enc) { game.state = 'encounter'; if (session.player) session.player.goal = { kind: 'idle' }; encView.open(enc); }
+        // the player's side came to blows: switch to a tactical battle
+        stage = 'tactics.watch';
+        const b = game.state === 'playing' && tactics ? tactics.watch() : null;
+        if (b) openBattle(b);
       }
-    } else if (game.state === 'encounter') {
-      const enc = combat.encounter;
-      if (enc && enc.phase === 'playback') {
-        // the world outside the bubble lives through the round (roundSec of sim time, shown in playbackSec)
-        const scaled = dt * COMBAT.roundSec / COMBAT.playbackSec;
-        for (let k = 0; k < 3; k++) session.step(scaled / 3, { stage: stageFn, beforeCombat: () => scene.updateMatrixWorld(true) });
-        playback -= dt;
-        if (playback <= 0) { enc.finishPlayback(); encView.render(); }
-      } else if (game.sim) {
-        stage = 'fighter.update'; for (const f of game.sim.fighters) f.update(dt);
-        scene.updateMatrixWorld(true);
-      }
+    } else if (game.state === 'battle') {
+      // the world holds its breath: only the battle advances (the town is not simulated mid-fight)
+      stage = 'battle.tick'; tacView.tick(dt);
+      if (game.sim) { stage = 'fighter.update'; for (const f of game.sim.fighters) f.update(dt); }
+      scene.updateMatrixWorld(true);
+      if (session.player && !session.player.alive) session.checkRunEnd();
       if (hud.hpFill) hud.hpFill.style.width = `${Math.max(0, (game.playerFighter.health / TUNE.maxHealth) * 100)}%`;
     } else {
       // paused / start / over: the sim is frozen, bodies keep animating (as before), no blows

@@ -627,7 +627,7 @@ export class Battle {
     if (p.kind === 'brazier') {
       this.note('env', `${this.nm(u, true)} ${u.agent.controlled ? 'kick' : 'kicks'} over ${p.name}${fl} — coals spill!`);
       this.map.removeProp(p);
-      for (let i = 0; i < 3; i++) this.ignite(p.x + d[0] * i, p.z + d[1] * i, u, '', true);
+      for (let i = 0; i < 4; i++) this.ignite(p.x + d[0] * i, p.z + d[1] * i, u, '', true);
       return;
     }
     if (p.kind === 'table' || p.kind === 'cart') {

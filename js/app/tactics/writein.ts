@@ -61,6 +61,17 @@ function units(b: Battle, text: string, pool: Unit[]): Array<{ u: Unit; at: numb
   return out.sort((a, c) => a.at - c.at);
 }
 
+/**
+ * Where to stand so that pushing/kicking `thing` sends it (or its spill) down a line that
+ * actually reaches `toward` within `len` tiles. Null when no side lines up.
+ */
+function lineSide(thing: Spot, toward: Spot, len: number): Spot | null {
+  for (const [dx, dz] of DIRS) {
+    for (let i = 1; i <= len; i++) if (thing.x + dx * i === toward.x && thing.z + dz * i === toward.z) return { x: thing.x - dx, z: thing.z - dz };
+  }
+  return null;
+}
+
 /** The tile from which pushing/kicking `thing` sends it toward `toward` (the opposite side). */
 function behind(thing: Spot, toward: Spot): Spot {
   const dx = toward.x - thing.x, dz = toward.z - thing.z;
@@ -121,7 +132,8 @@ export function readWriteIn(b: Battle, u: Unit, raw: string): GridReading[] {
       case 'attack': if (target) { const ab = abilityNamed(u, text); anywhere(ab ? { kind: 'ability', abilityId: ab, target: target.id } : { kind: 'attack', target: target.id }, `${ab ? u.agent.abilities.get(ab)!.name : 'Attack'} → ${b.nm(target)}`, score, dest ?? undefined); } break;
       case 'shove': {
         if (prop && prop.weight === 1 && (!namedFoes.length || text.indexOf(` ${prop.nouns[0]}`) < (namedFoes[0].at))) {
-          const at = target ? behind(prop, target) : null;
+          const lined = target ? lineSide(prop, target, prop.kind === 'barrel' || prop.kind === 'oil' ? 4 : 2) : null;
+          const at = target ? lined ?? behind(prop, target) : null;
           anywhere({ kind: 'shove', target: prop.id }, `Shove ${prop.name}${target ? ` toward ${b.nm(target)}` : ''}`, score + 1, at ?? undefined);
         } else if (target) {
           // into the fire / off the ledge: stand on the far side of the target from the hazard
@@ -136,8 +148,12 @@ export function readWriteIn(b: Battle, u: Unit, raw: string): GridReading[] {
       }
       case 'kick': {
         if (prop && prop.weight === 1) {
-          const at = target ? behind(prop, target) : undefined;
+          const len = prop.kind === 'brazier' ? 4 : prop.kind === 'barrel' || prop.kind === 'oil' ? 5 : 1;
+          const lined = target ? lineSide(prop, target, len) : null;
+          const at = target ? lined ?? behind(prop, target) : undefined;
+          const n0 = out.length;
           anywhere({ kind: 'kick', prop: prop.id }, `Kick ${prop.name}${target ? ` at ${b.nm(target)}` : ''}`, score + 1.5, at);
+          if (target && !lined) for (let i = n0; i < out.length; i++) out[i].notes.push(`${b.nm(target)} is not in line — it won't reach`);
         } else if (target) anywhere({ kind: 'shove', target: target.id }, `Kick ${b.nm(target)} back`, score);
         break;
       }

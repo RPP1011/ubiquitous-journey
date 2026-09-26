@@ -52,7 +52,6 @@ import { roadsTest } from './suites/roads.mjs';
 import { soak } from './suites/soak.mjs';
 import { runScenarios } from './scenarios.mjs';
 import { sessionTest } from './suites/session.mjs';
-import { encounterTest } from './suites/encounter.mjs';
 import { tacticsTest } from './suites/tactics.mjs';
 
 const { ok, failures } = makeOk();
@@ -150,8 +149,6 @@ obituaryTest(ok, helpers);
 runScenarios(ok);
 // App layer: the Session (canonical frame step + run lifecycle, js/app/session.ts).
 sessionTest(ok, helpers);
-// App layer: tabletop encounters — write-in parser, full fights, command/autonomy, lasting beliefs.
-encounterTest(ok, helpers);
 // App layer: tactical grid battles — terrain, environment chains, readied actions, AI battles.
 tacticsTest(ok, helpers);
 // Phase-1 emergent buildings: homes + tavern, gold-neutral, headless-safe. ISOLATED on its OWN seed

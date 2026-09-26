@@ -5,7 +5,7 @@
 // tries to END the fight, and a glory-hound seeks out the strongest blade on the field.
 
 import type { Agent } from '../../../types/sim.js';
-import type { EntityRef } from './intent.js';
+type EntityRef = number | string;
 
 export type ObjectiveKind =
   | 'avenge'    // kill one specific foe (a vendetta, a duel, a hunted killer); nothing else matters
