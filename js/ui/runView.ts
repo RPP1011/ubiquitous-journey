@@ -257,8 +257,13 @@ export class RunUI {
         const v = p.traits[t], b0 = before ? before[t] : v, d = v - b0;
         return `<div class="tr"><span>${t}</span><div class="tb"><i style="width:${v * 100}%"></i>${before ? `<s style="left:${b0 * 100}%"></s>` : ''}</div><span class="${d > 0.005 ? 'up' : d < -0.005 ? 'dn' : ''}">${v.toFixed(2)}${Math.abs(d) > 0.005 ? ` (${d > 0 ? '+' : ''}${d.toFixed(2)})` : ''}</span></div>`;
       }).join('');
+      // who they've grown close to — or come to resent — across the runs
+      const bonds = Object.entries(rc.save.bonds ?? {}).filter(([pk, b]) => pk.split('|').includes(k) && (b.lvl > 0 || b.kind === 'rival'))
+        .map(([pk, b]) => { const o = pk.split('|').find((m) => m !== k)!; const name = o === 'player' ? 'you' : COMPANIONS[o as CompanionKey]?.short ?? o;
+          return b.kind === 'rival' ? `<span class="bad">⚔ ${esc(name)}</span>` : `${esc(name)} <span style="color:#e8807a">${'♥'.repeat(b.lvl)}</span>`; });
       return `<div class="comp"><h4>${esc(def.name)} ${p.departed ? '<span class="bad">— left</span>' : !p.alive ? '<span class="bad">— fallen</span>' : ''}</h4>
         <div class="t">${p.stats.runs} runs · ${p.stats.battles} battles · ${p.stats.kills} kills · downed ${p.stats.downs}× · fled ${p.stats.fled}× · saved others ${p.stats.saves}×</div>
+        ${bonds.length ? `<div class="t">Bonds: ${bonds.join(' · ')}</div>` : ''}
         ${bars}${p.memories.slice(-3).map((m) => `<div class="mem">“${esc(m.text)}”</div>`).join('')}</div>`;
     }).join('');
     this.root.innerHTML = `<div class="panel card" style="width:min(900px,94vw)"><h1>The company</h1><div class="sub">Traits change with what happens to them — and with what they watch you do. The white tick is where they started this run.</div>
