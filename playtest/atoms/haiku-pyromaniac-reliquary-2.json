@@ -1,0 +1,129 @@
+{
+  "persona": "pyromaniac",
+  "plans": [
+    {
+      "goal": "Ignite the braziers to create a wall of fire, rush in and grab the reliquary under cover of smoke",
+      "steps": [
+        "Move down toward the braziers in the chapel",
+        "Light both braziers to create overlapping fire zones",
+        "Use the smoke and heat to advance unseen",
+        "Grab the reliquary from the altar",
+        "Escape through the flames"
+      ],
+      "atoms": [
+        {
+          "strategy": "Get into position",
+          "capability": "advance-to-hazard",
+          "text": "Rush down toward the left brazier",
+          "expect": ["dash", "attack"]
+        },
+        {
+          "strategy": "Ignite first fire source",
+          "capability": "ignite-prop",
+          "text": "Light the brazier on the left",
+          "expect": ["ignite"]
+        },
+        {
+          "strategy": "Double the inferno",
+          "capability": "ignite-prop",
+          "text": "Ignite the right brazier",
+          "expect": ["ignite"]
+        },
+        {
+          "strategy": "Grab while they're distracted",
+          "capability": "grab-objective",
+          "text": "Grab the reliquary from the altar stone",
+          "expect": ["grab", "pickup"]
+        },
+        {
+          "strategy": "Carry and escape through the flames",
+          "capability": "carry-away",
+          "text": "Carry the reliquary out through the burning chapel",
+          "expect": ["carry", "escape"]
+        }
+      ]
+    },
+    {
+      "goal": "Burn flammable props to create obstacles and traps, isolate enemies, then grab and run",
+      "steps": [
+        "Advance toward the chapel center",
+        "Ignite the table and crates to create a burning maze",
+        "Push Silas Crowe away from the reliquary",
+        "Grab the reliquary and dash for escape"
+      ],
+      "atoms": [
+        {
+          "strategy": "Move to central position",
+          "capability": "advance-to-center",
+          "text": "Dash toward the center of the chapel",
+          "expect": ["dash"]
+        },
+        {
+          "strategy": "Burn the table barrier",
+          "capability": "ignite-prop",
+          "text": "Ignite the trestle table",
+          "expect": ["ignite"]
+        },
+        {
+          "strategy": "Burn the escape routes",
+          "capability": "ignite-prop",
+          "text": "Light the crate on fire to block Marl's path",
+          "expect": ["ignite"]
+        },
+        {
+          "strategy": "Seize the moment",
+          "capability": "grab-objective",
+          "text": "Grab the silver reliquary",
+          "expect": ["grab", "pickup"]
+        },
+        {
+          "strategy": "Run with the prize",
+          "capability": "carry-away",
+          "text": "Escape with the reliquary through the burning chapel",
+          "expect": ["carry", "escape"]
+        }
+      ]
+    },
+    {
+      "goal": "Topple burning objects onto enemies, use fire walls to contain them, extract safely",
+      "steps": [
+        "Move close to the braziers",
+        "Shove a brazier at Silas to disrupt him",
+        "Burn the log to create a barrier on our escape route",
+        "Grab and carry the reliquary out"
+      ],
+      "atoms": [
+        {
+          "strategy": "Get close enough to push",
+          "capability": "advance-to-target",
+          "text": "Advance toward Silas Crowe and the brazier",
+          "expect": ["dash", "attack"]
+        },
+        {
+          "strategy": "Use fire as a weapon",
+          "capability": "shove-hazard",
+          "text": "Shove the blazing brazier at Silas",
+          "expect": ["shove"]
+        },
+        {
+          "strategy": "Burn the escape route",
+          "capability": "ignite-prop",
+          "text": "Ignite the fallen log to create a wall of fire",
+          "expect": ["ignite"]
+        },
+        {
+          "strategy": "Take the reliquary",
+          "capability": "grab-objective",
+          "text": "Grab the reliquary from Silas",
+          "expect": ["grab", "pickup"]
+        },
+        {
+          "strategy": "Break free with the prize",
+          "capability": "carry-away",
+          "text": "Carry the reliquary back through the burning chapel",
+          "expect": ["carry", "escape"]
+        }
+      ]
+    }
+  ]
+}

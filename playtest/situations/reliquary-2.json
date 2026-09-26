@@ -1,0 +1,281 @@
+{
+ "quest": "reliquary",
+ "stage": "the Chapel Ruin",
+ "intro": "Silas Crowe waits in a roofless old chapel with the reliquary on the altar stone. He smiles like a man who has already been paid.",
+ "objective": "Recover the reliquary and carry it out.",
+ "you": "Borin Ashgrove",
+ "units": [
+  {
+   "name": "You",
+   "side": "us",
+   "role": "player",
+   "tactic": "guardian",
+   "hp": 100,
+   "at": [
+    7,
+    13
+   ],
+   "status": []
+  },
+  {
+   "name": "Borin Ashgrove",
+   "side": "us",
+   "role": "companion",
+   "tactic": "guardian",
+   "hp": 100,
+   "at": [
+    8,
+    13
+   ],
+   "status": []
+  },
+  {
+   "name": "Pip Marrow",
+   "side": "us",
+   "role": "companion",
+   "tactic": "rogue",
+   "hp": 100,
+   "at": [
+    6,
+    14
+   ],
+   "status": []
+  },
+  {
+   "name": "Sister Maud",
+   "side": "us",
+   "role": "companion",
+   "tactic": "healer",
+   "hp": 100,
+   "at": [
+    9,
+    14
+   ],
+   "status": []
+  },
+  {
+   "name": "Silas Crowe",
+   "side": "them",
+   "role": "foe",
+   "tactic": "leader",
+   "hp": 100,
+   "at": [
+    8,
+    2
+   ],
+   "status": []
+  },
+  {
+   "name": "Marl",
+   "side": "them",
+   "role": "foe",
+   "tactic": "brute",
+   "hp": 100,
+   "at": [
+    6,
+    3
+   ],
+   "status": []
+  },
+  {
+   "name": "Ivo",
+   "side": "them",
+   "role": "foe",
+   "tactic": "archer",
+   "hp": 100,
+   "at": [
+    11,
+    2
+   ],
+   "status": []
+  },
+  {
+   "name": "Dace",
+   "side": "them",
+   "role": "foe",
+   "tactic": "skirmisher",
+   "hp": 100,
+   "at": [
+    4,
+    5
+   ],
+   "status": []
+  }
+ ],
+ "props": [
+  {
+   "kind": "brazier",
+   "name": "a brazier",
+   "at": [
+    6,
+    4
+   ],
+   "tags": [
+    "fire",
+    "heavy"
+   ]
+  },
+  {
+   "kind": "brazier",
+   "name": "a brazier",
+   "at": [
+    10,
+    4
+   ],
+   "tags": [
+    "fire",
+    "heavy"
+   ]
+  },
+  {
+   "kind": "table",
+   "name": "a trestle table",
+   "at": [
+    8,
+    5
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1",
+    "climbable"
+   ]
+  },
+  {
+   "kind": "crate",
+   "name": "a crate",
+   "at": [
+    4,
+    7
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1",
+    "climbable"
+   ]
+  },
+  {
+   "kind": "crate",
+   "name": "a crate",
+   "at": [
+    12,
+    7
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1",
+    "climbable"
+   ]
+  },
+  {
+   "kind": "log",
+   "name": "a fallen log",
+   "at": [
+    7,
+    10
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1",
+    "climbable"
+   ]
+  },
+  {
+   "kind": "barrel",
+   "name": "a barrel",
+   "at": [
+    3,
+    3
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "relic",
+   "name": "the silver reliquary",
+   "at": [
+    8,
+    3
+   ],
+   "tags": [
+    "light"
+   ]
+  }
+ ],
+ "high": [
+  [
+   0,
+   0
+  ],
+  [
+   1,
+   0
+  ],
+  [
+   0,
+   1
+  ],
+  [
+   0,
+   2
+  ],
+  [
+   0,
+   3
+  ],
+  [
+   0,
+   4
+  ],
+  [
+   0,
+   5
+  ],
+  [
+   0,
+   6
+  ],
+  [
+   0,
+   7
+  ]
+ ],
+ "actionKinds": [
+  "attack",
+  "ability",
+  "shove",
+  "kick",
+  "hew",
+  "throw",
+  "ignite",
+  "douse",
+  "pickup",
+  "grab",
+  "subdue",
+  "aid",
+  "free",
+  "guard",
+  "social",
+  "overwatch",
+  "defend",
+  "dash",
+  "escape",
+  "ready",
+  "carry",
+  "trip",
+  "hide",
+  "dig",
+  "build",
+  "climb",
+  "give",
+  "disguise",
+  "trap",
+  "distract"
+ ]
+}

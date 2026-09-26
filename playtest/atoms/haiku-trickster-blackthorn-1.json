@@ -1,0 +1,110 @@
+{
+  "persona": "trickster",
+  "plans": [
+    {
+      "goal": "Set up defensive positions and prepare for the approach to Elsie",
+      "steps": [
+        "Borin defends against Hob",
+        "Maud guards and readies aid",
+        "Pip watches for openings",
+        "I watch for the right moment to dash in"
+      ],
+      "atoms": [
+        {
+          "strategy": "Borin blocks Hob's advance",
+          "capability": "block-path",
+          "text": "Borin, defend against Hob",
+          "expect": ["defend", "guard"]
+        },
+        {
+          "strategy": "Maud stays ready with healing",
+          "capability": "guard-ally",
+          "text": "Maud, guard and aid if we're hit",
+          "expect": ["guard", "aid"]
+        },
+        {
+          "strategy": "Pip watches for weak spots",
+          "capability": "ready-strike",
+          "text": "Pip, watch the archers and be ready to move",
+          "expect": ["overwatch", "ready"]
+        },
+        {
+          "strategy": "I keep eyes on Elsie's position",
+          "capability": "ready-strike",
+          "text": "I keep watch and ready for my moment",
+          "expect": ["overwatch", "ready"]
+        }
+      ]
+    },
+    {
+      "goal": "Attack while divided enemy forces can't coordinate defense",
+      "steps": [
+        "Borin engages Hob to hold him",
+        "Maud prepares aid",
+        "Pip attacks Dun Crake",
+        "I watch for openings to Elsie"
+      ],
+      "atoms": [
+        {
+          "strategy": "Borin commits to Hob",
+          "capability": "ready-strike",
+          "text": "Borin, move in close to Hob and fight hard",
+          "expect": ["attack", "movement"]
+        },
+        {
+          "strategy": "Maud backs us up",
+          "capability": "guard-ally",
+          "text": "Maud, aid whoever gets hurt first",
+          "expect": ["aid", "guard"]
+        },
+        {
+          "strategy": "Pip strikes Dun Crake",
+          "capability": "ready-strike",
+          "text": "Pip, hit Dun Crake quick",
+          "expect": ["attack", "movement"]
+        },
+        {
+          "strategy": "I overwatch",
+          "capability": "ready-strike",
+          "text": "I watch everything and stay ready",
+          "expect": ["overwatch", "ready"]
+        }
+      ]
+    },
+    {
+      "goal": "Use trickery and positioning to steal the objective before enemies react",
+      "steps": [
+        "Pip creates a distraction",
+        "Borin makes noise and aggression",
+        "I slip in quietly",
+        "Maud covers the escape"
+      ],
+      "atoms": [
+        {
+          "strategy": "Pip attacks to distract",
+          "capability": "ready-strike",
+          "text": "Pip, strike at Wick to draw attention that way",
+          "expect": ["attack", "distract"]
+        },
+        {
+          "strategy": "Borin roars",
+          "capability": "ready-strike",
+          "text": "Borin, attack and make Hob focus on you",
+          "expect": ["attack", "social"]
+        },
+        {
+          "strategy": "I move in quietly",
+          "capability": "hide",
+          "text": "I slip around and keep low",
+          "expect": ["hide", "movement"]
+        },
+        {
+          "strategy": "Maud watches our flank",
+          "capability": "guard-ally",
+          "text": "Maud, watch our backs and defend",
+          "expect": ["guard", "defend"]
+        }
+      ]
+    }
+  ]
+}

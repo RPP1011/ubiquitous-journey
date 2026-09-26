@@ -1,0 +1,323 @@
+{
+ "quest": "wolves",
+ "stage": "the Sheepfold",
+ "intro": "Dusk at the high sheepfold. The flock is gone quiet. Eyes in the grass.",
+ "objective": "Drive off the pack.",
+ "you": "You",
+ "units": [
+  {
+   "name": "You",
+   "side": "us",
+   "role": "player",
+   "tactic": "guardian",
+   "hp": 100,
+   "at": [
+    7,
+    11
+   ],
+   "status": []
+  },
+  {
+   "name": "Borin Ashgrove",
+   "side": "us",
+   "role": "companion",
+   "tactic": "guardian",
+   "hp": 100,
+   "at": [
+    12,
+    11
+   ],
+   "status": []
+  },
+  {
+   "name": "Pip Marrow",
+   "side": "us",
+   "role": "companion",
+   "tactic": "rogue",
+   "hp": 100,
+   "at": [
+    11,
+    9
+   ],
+   "status": []
+  },
+  {
+   "name": "Sister Maud",
+   "side": "us",
+   "role": "companion",
+   "tactic": "healer",
+   "hp": 100,
+   "at": [
+    6,
+    12
+   ],
+   "status": []
+  },
+  {
+   "name": "Gaunt wolf",
+   "side": "them",
+   "role": "foe",
+   "tactic": "beast",
+   "hp": 60,
+   "at": [
+    4,
+    8
+   ],
+   "status": []
+  },
+  {
+   "name": "Scarred wolf",
+   "side": "them",
+   "role": "foe",
+   "tactic": "beast",
+   "hp": 70,
+   "at": [
+    8,
+    2
+   ],
+   "status": []
+  }
+ ],
+ "props": [
+  {
+   "kind": "log",
+   "name": "a fallen log",
+   "at": [
+    5,
+    8
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1",
+    "climbable"
+   ]
+  },
+  {
+   "kind": "log",
+   "name": "a fallen log",
+   "at": [
+    6,
+    8
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1",
+    "climbable"
+   ]
+  },
+  {
+   "kind": "log",
+   "name": "a fallen log",
+   "at": [
+    10,
+    8
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1",
+    "climbable"
+   ]
+  },
+  {
+   "kind": "log",
+   "name": "a fallen log",
+   "at": [
+    11,
+    8
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1",
+    "climbable"
+   ]
+  },
+  {
+   "kind": "hay",
+   "name": "a hay bale",
+   "at": [
+    8,
+    10
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1",
+    "climbable"
+   ]
+  },
+  {
+   "kind": "campfire",
+   "name": "the campfire",
+   "at": [
+    8,
+    9
+   ],
+   "tags": [
+    "fire",
+    "fixed"
+   ]
+  },
+  {
+   "kind": "torch",
+   "name": "a torch",
+   "at": [
+    3,
+    11
+   ],
+   "tags": [
+    "fire",
+    "light"
+   ]
+  },
+  {
+   "kind": "bucket",
+   "name": "a bucket of water",
+   "at": [
+    12,
+    11
+   ],
+   "tags": [
+    "water",
+    "light"
+   ]
+  }
+ ],
+ "high": [
+  [
+   0,
+   9
+  ],
+  [
+   1,
+   9
+  ],
+  [
+   0,
+   10
+  ],
+  [
+   1,
+   10
+  ],
+  [
+   2,
+   10
+  ],
+  [
+   0,
+   11
+  ],
+  [
+   1,
+   11
+  ],
+  [
+   2,
+   11
+  ],
+  [
+   3,
+   11
+  ],
+  [
+   0,
+   12
+  ],
+  [
+   1,
+   12
+  ],
+  [
+   2,
+   12
+  ],
+  [
+   3,
+   12
+  ],
+  [
+   0,
+   13
+  ],
+  [
+   1,
+   13
+  ],
+  [
+   2,
+   13
+  ],
+  [
+   3,
+   13
+  ],
+  [
+   0,
+   14
+  ],
+  [
+   1,
+   14
+  ],
+  [
+   2,
+   14
+  ],
+  [
+   3,
+   14
+  ],
+  [
+   0,
+   15
+  ],
+  [
+   1,
+   15
+  ],
+  [
+   2,
+   15
+  ],
+  [
+   3,
+   15
+  ]
+ ],
+ "actionKinds": [
+  "attack",
+  "ability",
+  "shove",
+  "kick",
+  "hew",
+  "throw",
+  "ignite",
+  "douse",
+  "pickup",
+  "grab",
+  "subdue",
+  "aid",
+  "free",
+  "guard",
+  "social",
+  "overwatch",
+  "defend",
+  "dash",
+  "escape",
+  "ready",
+  "carry",
+  "trip",
+  "hide",
+  "dig",
+  "build",
+  "climb",
+  "give",
+  "disguise",
+  "trap",
+  "distract"
+ ]
+}

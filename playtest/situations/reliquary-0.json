@@ -1,0 +1,381 @@
+{
+ "quest": "reliquary",
+ "stage": "the Crossroads",
+ "intro": "Two of Crowe's scouts and a hired thug are watering horses at the crossroads well.",
+ "objective": "Deal with the scouts before they warn the others.",
+ "you": "You",
+ "units": [
+  {
+   "name": "You",
+   "side": "us",
+   "role": "player",
+   "tactic": "guardian",
+   "hp": 100,
+   "at": [
+    7,
+    13
+   ],
+   "status": []
+  },
+  {
+   "name": "Borin Ashgrove",
+   "side": "us",
+   "role": "companion",
+   "tactic": "guardian",
+   "hp": 100,
+   "at": [
+    8,
+    9
+   ],
+   "status": []
+  },
+  {
+   "name": "Pip Marrow",
+   "side": "us",
+   "role": "companion",
+   "tactic": "rogue",
+   "hp": 70,
+   "at": [
+    7,
+    11
+   ],
+   "status": []
+  },
+  {
+   "name": "Sister Maud",
+   "side": "us",
+   "role": "companion",
+   "tactic": "healer",
+   "hp": 100,
+   "at": [
+    9,
+    14
+   ],
+   "status": []
+  },
+  {
+   "name": "Jory Crowe",
+   "side": "them",
+   "role": "foe",
+   "tactic": "skirmisher",
+   "hp": 31,
+   "at": [
+    6,
+    9
+   ],
+   "status": []
+  },
+  {
+   "name": "Tamsin",
+   "side": "them",
+   "role": "foe",
+   "tactic": "archer",
+   "hp": 100,
+   "at": [
+    10,
+    7
+   ],
+   "status": []
+  },
+  {
+   "name": "Big Aud",
+   "side": "them",
+   "role": "foe",
+   "tactic": "brute",
+   "hp": 120,
+   "at": [
+    8,
+    7
+   ],
+   "status": []
+  }
+ ],
+ "props": [
+  {
+   "kind": "well",
+   "name": "the well",
+   "at": [
+    8,
+    8
+   ],
+   "tags": [
+    "water",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "bucket",
+   "name": "a bucket of water",
+   "at": [
+    9,
+    8
+   ],
+   "tags": [
+    "water",
+    "light"
+   ]
+  },
+  {
+   "kind": "cart",
+   "name": "a handcart",
+   "at": [
+    5,
+    6
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover2",
+    "climbable"
+   ]
+  },
+  {
+   "kind": "crate",
+   "name": "a crate",
+   "at": [
+    11,
+    5
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1",
+    "climbable"
+   ]
+  },
+  {
+   "kind": "table",
+   "name": "a trestle table",
+   "at": [
+    10,
+    9
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1",
+    "climbable"
+   ]
+  },
+  {
+   "kind": "barrel",
+   "name": "a barrel",
+   "at": [
+    4,
+    9
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "campfire",
+   "name": "the campfire",
+   "at": [
+    12,
+    11
+   ],
+   "tags": [
+    "fire",
+    "fixed"
+   ]
+  }
+ ],
+ "high": [
+  [
+   2,
+   11
+  ],
+  [
+   3,
+   11
+  ],
+  [
+   4,
+   11
+  ],
+  [
+   5,
+   11
+  ],
+  [
+   6,
+   11
+  ],
+  [
+   7,
+   11
+  ],
+  [
+   0,
+   12
+  ],
+  [
+   1,
+   12
+  ],
+  [
+   2,
+   12
+  ],
+  [
+   3,
+   12
+  ],
+  [
+   4,
+   12
+  ],
+  [
+   5,
+   12
+  ],
+  [
+   6,
+   12
+  ],
+  [
+   7,
+   12
+  ],
+  [
+   8,
+   12
+  ],
+  [
+   9,
+   12
+  ],
+  [
+   10,
+   12
+  ],
+  [
+   0,
+   13
+  ],
+  [
+   1,
+   13
+  ],
+  [
+   2,
+   13
+  ],
+  [
+   3,
+   13
+  ],
+  [
+   4,
+   13
+  ],
+  [
+   5,
+   13
+  ],
+  [
+   6,
+   13
+  ],
+  [
+   7,
+   13
+  ],
+  [
+   8,
+   13
+  ],
+  [
+   9,
+   13
+  ],
+  [
+   10,
+   13
+  ],
+  [
+   11,
+   13
+  ],
+  [
+   0,
+   14
+  ],
+  [
+   1,
+   14
+  ],
+  [
+   2,
+   14
+  ],
+  [
+   3,
+   14
+  ],
+  [
+   4,
+   14
+  ],
+  [
+   5,
+   14
+  ],
+  [
+   6,
+   14
+  ],
+  [
+   7,
+   14
+  ],
+  [
+   8,
+   14
+  ],
+  [
+   9,
+   14
+  ],
+  [
+   10,
+   14
+  ]
+ ],
+ "actionKinds": [
+  "attack",
+  "ability",
+  "shove",
+  "kick",
+  "hew",
+  "throw",
+  "ignite",
+  "douse",
+  "pickup",
+  "grab",
+  "subdue",
+  "aid",
+  "free",
+  "guard",
+  "social",
+  "overwatch",
+  "defend",
+  "dash",
+  "escape",
+  "ready",
+  "carry",
+  "trip",
+  "hide",
+  "dig",
+  "build",
+  "climb",
+  "give",
+  "disguise",
+  "trap",
+  "distract"
+ ]
+}

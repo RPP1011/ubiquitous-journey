@@ -1,0 +1,536 @@
+{
+ "quest": "blackthorn",
+ "stage": "the Old Road",
+ "intro": "An overturned merchant cart blocks the forest road. Too neat. Someone is waiting in the trees.",
+ "objective": "Break the ambush.",
+ "you": "You",
+ "units": [
+  {
+   "name": "You",
+   "side": "us",
+   "role": "player",
+   "tactic": "guardian",
+   "hp": 100,
+   "at": [
+    7,
+    13
+   ],
+   "status": []
+  },
+  {
+   "name": "Borin Ashgrove",
+   "side": "us",
+   "role": "companion",
+   "tactic": "guardian",
+   "hp": 100,
+   "at": [
+    5,
+    13
+   ],
+   "status": []
+  },
+  {
+   "name": "Pip Marrow",
+   "side": "us",
+   "role": "companion",
+   "tactic": "rogue",
+   "hp": 100,
+   "at": [
+    6,
+    11
+   ],
+   "status": []
+  },
+  {
+   "name": "Sister Maud",
+   "side": "us",
+   "role": "companion",
+   "tactic": "healer",
+   "hp": 100,
+   "at": [
+    9,
+    14
+   ],
+   "status": []
+  },
+  {
+   "name": "Col Garrow",
+   "side": "them",
+   "role": "foe",
+   "tactic": "brute",
+   "hp": 100,
+   "at": [
+    7,
+    5
+   ],
+   "status": []
+  },
+  {
+   "name": "Nell Sparrow",
+   "side": "them",
+   "role": "foe",
+   "tactic": "archer",
+   "hp": 100,
+   "at": [
+    12,
+    4
+   ],
+   "status": []
+  },
+  {
+   "name": "Fitch",
+   "side": "them",
+   "role": "foe",
+   "tactic": "skirmisher",
+   "hp": 100,
+   "at": [
+    4,
+    8
+   ],
+   "status": []
+  }
+ ],
+ "props": [
+  {
+   "kind": "cart",
+   "name": "a handcart",
+   "at": [
+    7,
+    7
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover2",
+    "climbable"
+   ]
+  },
+  {
+   "kind": "crate",
+   "name": "a crate",
+   "at": [
+    6,
+    7
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1",
+    "climbable"
+   ]
+  },
+  {
+   "kind": "crate",
+   "name": "a crate",
+   "at": [
+    9,
+    8
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1",
+    "climbable"
+   ]
+  },
+  {
+   "kind": "log",
+   "name": "a fallen log",
+   "at": [
+    4,
+    9
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1",
+    "climbable"
+   ]
+  },
+  {
+   "kind": "log",
+   "name": "a fallen log",
+   "at": [
+    11,
+    6
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1",
+    "climbable"
+   ]
+  },
+  {
+   "kind": "hay",
+   "name": "a hay bale",
+   "at": [
+    12,
+    9
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1",
+    "climbable"
+   ]
+  },
+  {
+   "kind": "torch",
+   "name": "a torch",
+   "at": [
+    8,
+    5
+   ],
+   "tags": [
+    "fire",
+    "light"
+   ]
+  },
+  {
+   "kind": "barrel",
+   "name": "a barrel",
+   "at": [
+    5,
+    5
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    3,
+    0
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    13,
+    0
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    14,
+    0
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    4,
+    1
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    6,
+    2
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    0,
+    4
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    3,
+    4
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    11,
+    5
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    12,
+    5
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    7,
+    6
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    0,
+    7
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    10,
+    9
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    8,
+    10
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    9,
+    10
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    7,
+    11
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    8,
+    11
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    5,
+    12
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    12,
+    13
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    3,
+    14
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    7,
+    14
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    10,
+    14
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    12,
+    14
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tree",
+   "name": "a tree",
+   "at": [
+    12,
+    15
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  }
+ ],
+ "high": [],
+ "actionKinds": [
+  "attack",
+  "ability",
+  "shove",
+  "kick",
+  "hew",
+  "throw",
+  "ignite",
+  "douse",
+  "pickup",
+  "grab",
+  "subdue",
+  "aid",
+  "free",
+  "guard",
+  "social",
+  "overwatch",
+  "defend",
+  "dash",
+  "escape",
+  "ready",
+  "carry",
+  "trip",
+  "hide",
+  "dig",
+  "build",
+  "climb",
+  "give",
+  "disguise",
+  "trap",
+  "distract"
+ ]
+}

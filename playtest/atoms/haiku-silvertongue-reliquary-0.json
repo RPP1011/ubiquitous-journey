@@ -1,0 +1,89 @@
+{
+  "persona": "silvertongue",
+  "plans": [
+    {
+      "goal": "Intercept and silence the scouts before they sound an alarm.",
+      "steps": [
+        "Approach quietly and position companions to cut off escape routes.",
+        "Demand that Jory Crowe stand down, threatening his crew if he doesn't cooperate.",
+        "Take him alive to prevent a warning from spreading."
+      ],
+      "atoms": [
+        {
+          "strategy": "Flank Jory and speak before he can flee.",
+          "capability": "demand-surrender",
+          "text": "Jory Crowe, you're surrounded. One whistle and your friends die. Stand down now.",
+          "expect": ["social", "demand-surrender"]
+        },
+        {
+          "strategy": "Use the well as leverage for those trying to escape.",
+          "capability": "block-path",
+          "text": "Maud, position at the well. Anyone who runs dies trying.",
+          "expect": ["defend", "guard"]
+        },
+        {
+          "strategy": "Grab Jory and prevent any signal.",
+          "capability": "grab",
+          "text": "Grab him before he reaches his horse.",
+          "expect": ["grab", "subdue"]
+        }
+      ]
+    },
+    {
+      "goal": "Turn Jory into a willing informant by threatening or bribing him.",
+      "steps": [
+        "Subdue him quickly and make clear his situation is hopeless.",
+        "Offer him a choice: wealth and freedom, or information for his life.",
+        "Use his cooperation to gather intelligence about Crowe's larger operation."
+      ],
+      "atoms": [
+        {
+          "strategy": "Subdue Jory and make him face reality.",
+          "capability": "subdue",
+          "text": "Borin, hold him. Jory, you're outnumbered and Crowe doesn't pay enough to die.",
+          "expect": ["subdue", "grab"]
+        },
+        {
+          "strategy": "Offer a bribe or promise of clemency.",
+          "capability": "bribe",
+          "text": "Help me reach Crowe before he expects us, and I'll let you disappear. Gold and horses included.",
+          "expect": ["social"]
+        },
+        {
+          "strategy": "Interrogate about Crowe's plans.",
+          "capability": "interrogate",
+          "text": "Where is Crowe headed? What does he want from the reliquary? Give me names and details.",
+          "expect": ["social"]
+        }
+      ]
+    },
+    {
+      "goal": "Convince Big Aud and Tamsin that fighting is pointless without Garrick backing them.",
+      "steps": [
+        "Neutralize Jory first, then focus on the larger threat.",
+        "Appeal to Aud's pride and self-interest.",
+        "Drive wedges between the mercenaries through selective threats."
+      ],
+      "atoms": [
+        {
+          "strategy": "Single out Big Aud and challenge his allegiance.",
+          "capability": "intimidate",
+          "text": "Big Aud, Jory's already given up the whole operation. Crowe's a dead man walking. Why follow him into the grave?",
+          "expect": ["social", "demand-surrender"]
+        },
+        {
+          "strategy": "Make a direct offer to Aud.",
+          "capability": "turncoat",
+          "text": "Take Tamsin and ride out of here with double what Crowe promised. This job's over.",
+          "expect": ["social"]
+        },
+        {
+          "strategy": "If Aud refuses, subdue him before Tamsin can support.",
+          "capability": "subdue",
+          "text": "If they draw steel, Pip moves on Tamsin. We take Aud down first.",
+          "expect": ["subdue", "attack"]
+        }
+      ]
+    }
+  ]
+}

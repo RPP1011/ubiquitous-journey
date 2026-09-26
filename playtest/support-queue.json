@@ -6,10 +6,11 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 9,
+   "passes": 13,
    "strategies": [
     "make cover",
-    "deny the archer her perch"
+    "deny the archer her perch",
+    "finish the fight"
    ],
    "examples": [],
    "firstSeen": "2026-09-26",
@@ -55,14 +56,21 @@
   },
   "take-cover": {
    "capability": "take-cover",
-   "status": "supported",
+   "status": "open",
    "kind": "unsupported",
-   "demand": 0,
+   "demand": 2,
    "passes": 19,
    "strategies": [
-    "make cover"
+    "make cover",
+    "reposition-defense"
    ],
-   "examples": [],
+   "examples": [
+    {
+     "text": "Fall back to the trees, spread out for covering fields",
+     "stage": "plans",
+     "outcome": "refused: there's nothing that verb does to a tree here"
+    }
+   ],
    "firstSeen": "2026-09-26",
    "lastSeen": "2026-09-26"
   },
@@ -108,12 +116,27 @@
   "block-path": {
    "capability": "block-path",
    "status": "open",
-   "kind": "misread",
-   "demand": 13,
-   "passes": 0,
+   "kind": "mixed",
+   "demand": 37,
+   "passes": 8,
    "strategies": [
     "deny ground",
-    "cut off escape"
+    "cut off escape",
+    "intercept-brute",
+    "direct-fitch",
+    "body-block",
+    "block-dace",
+    "block-lean-wolf",
+    "shield-camp",
+    "body-block-wolves",
+    "block the brutes chasing me",
+    "delay the brutes",
+    "guard from the side",
+    "Borin blocks Hob's advance",
+    "Borin blocks the big guy",
+    "Borin holds Big Aud",
+    "Borin circles",
+    "Borin holds the line"
    ],
    "examples": [
     {
@@ -125,6 +148,26 @@
      "text": "Borin, block the path behind the tents so Garrick can't flee",
      "stage": "Blackthorn Camp",
      "outcome": "misread as Run for the edge (after moving) [defend]"
+    },
+    {
+     "text": "Move between Col Garrow and Sister Maud to block his advance.",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    },
+    {
+     "text": "Borin, block Fitch so he can't get to Maud.",
+     "stage": "plans",
+     "outcome": "misread as Brace [defend]"
+    },
+    {
+     "text": "Step in front of Sister Maud whenever Col or Fitch get close.",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    },
+    {
+     "text": "Block Dace's path so he can't get to the reliquary while Pip grabs it.",
+     "stage": "plans",
+     "outcome": "misread as Brace [defend]"
     }
    ],
    "firstSeen": "2026-09-26",
@@ -152,12 +195,13 @@
   "trip": {
    "capability": "trip",
    "status": "open",
-   "kind": "unsupported",
-   "demand": 29,
+   "kind": "mixed",
+   "demand": 33,
    "passes": 8,
    "strategies": [
     "melee craft",
-    "trip the brute"
+    "trip the brute",
+    "control-advance"
    ],
    "examples": [
     {
@@ -242,7 +286,7 @@
    "capability": "throw-weapon",
    "status": "open",
    "kind": "unsupported",
-   "demand": 37,
+   "demand": 41,
    "passes": 1,
    "strategies": [
     "melee craft",
@@ -286,13 +330,34 @@
   },
   "ready-strike": {
    "capability": "ready-strike",
-   "status": "supported",
-   "kind": "unsupported",
-   "demand": 13,
-   "passes": 20,
+   "status": "open",
+   "kind": "mixed",
+   "demand": 23,
+   "passes": 54,
    "strategies": [
     "melee craft",
-    "overwatch"
+    "overwatch",
+    "ready-rescue",
+    "finish-weak-foe",
+    "coordinate-defense",
+    "ready-defense",
+    "strike it down",
+    "charge the Gaunt wolf",
+    "establish-defense",
+    "establish-dominance",
+    "Pip watches for weak spots",
+    "I keep eyes on Elsie's position",
+    "I overwatch",
+    "I attack Jory directly",
+    "Pip hits Jory too",
+    "I strike Jory",
+    "Pip attacks Jory",
+    "I attack Jory",
+    "Pip attacks too",
+    "I watch and attack",
+    "I ready for the Mother",
+    "I watch and strike",
+    "ready"
    ],
    "examples": [
     {
@@ -334,11 +399,12 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 38,
+   "passes": 44,
    "strategies": [
     "talk",
     "take him alive",
-    "decapitate"
+    "decapitate",
+    "Flank Jory and speak before he can flee."
    ],
    "examples": [],
    "firstSeen": "2026-09-26",
@@ -349,10 +415,11 @@
    "status": "supported",
    "kind": "mixed",
    "demand": 36,
-   "passes": 1,
+   "passes": 5,
    "strategies": [
     "talk",
-    "buy the captive"
+    "buy the captive",
+    "Offer a bribe or promise of clemency."
    ],
    "examples": [
     {
@@ -391,14 +458,27 @@
   },
   "turncoat": {
    "capability": "turncoat",
-   "status": "supported",
+   "status": "open",
    "kind": "unsupported",
-   "demand": 0,
+   "demand": 4,
    "passes": 36,
    "strategies": [
-    "talk"
+    "talk",
+    "turn the men",
+    "Make a direct offer to Aud."
    ],
-   "examples": [],
+   "examples": [
+    {
+     "text": "shout to Hollis that Garrick will sell them all out to save his neck",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    },
+    {
+     "text": "Take Tamsin and ride out of here with double what Crowe promised. This job's over.",
+     "stage": "plans",
+     "outcome": "refused: the rules don't cover riding yet"
+    }
+   ],
    "firstSeen": "2026-09-26",
    "lastSeen": "2026-09-26"
   },
@@ -407,7 +487,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 37,
+   "passes": 39,
    "strategies": [
     "talk",
     "deceive"
@@ -420,18 +500,32 @@
    "capability": "intimidate",
    "status": "open",
    "kind": "unsupported",
-   "demand": 1,
-   "passes": 37,
+   "demand": 7,
+   "passes": 43,
    "strategies": [
     "talk",
     "make them panic",
-    "holy fear"
+    "holy fear",
+    "Close the distance while asserting dominance.",
+    "Drive the point home.",
+    "Press the advantage and drive them back.",
+    "Make the kill decisive and visible."
    ],
    "examples": [
     {
      "text": "Sister Maud, curse them in the saint's name for defiling the chapel",
      "stage": "the Chapel Ruin",
      "outcome": "refused: the rules don't cover prayer yet"
+    },
+    {
+     "text": "You want to burn with your camp, or walk free and live to raid another day?",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    },
+    {
+     "text": "Old wolf looks done for. If the pack sees one of their own fall, they'll run. End it.",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
     }
    ],
    "firstSeen": "2026-09-26",
@@ -439,17 +533,74 @@
   },
   "guard-ally": {
    "capability": "guard-ally",
-   "status": "supported",
-   "kind": "unsupported",
-   "demand": 0,
-   "passes": 38,
+   "status": "open",
+   "kind": "mixed",
+   "demand": 22,
+   "passes": 78,
    "strategies": [
     "look after the company",
     "protect the healer",
     "protect carrier",
-    "protect"
+    "protect",
+    "shield the captive",
+    "shield-healer",
+    "protect-formation",
+    "advance-guard",
+    "guard-pip-theft",
+    "guard-healer",
+    "heal-up",
+    "ready the guardian",
+    "cover the flanks",
+    "watch-flank",
+    "support-position",
+    "support-ready",
+    "support-anchor",
+    "maintain-support",
+    "maintain-discipline",
+    "heal-ready",
+    "Maud stays ready with healing",
+    "Maud backs us up",
+    "Maud watches our flank",
+    "Maud readies support",
+    "Maud supports",
+    "Maud watches for escape",
+    "Maud guards and prepares aid",
+    "Maud supports from back",
+    "Maud watches for openings",
+    "protect healer"
    ],
-   "examples": [],
+   "examples": [
+    {
+     "text": "Pip, watch for Rook's arrows from the left",
+     "stage": "plans",
+     "outcome": "misread as Overwatch [overwatch]"
+    },
+    {
+     "text": "Sister Maud, hold back and prepare to heal anyone who takes damage",
+     "stage": "plans",
+     "outcome": "misread as Overwatch [overwatch]"
+    },
+    {
+     "text": "Maud, position centrally where you can heal anyone quickly",
+     "stage": "plans",
+     "outcome": "misread as Aid Sister Maud (after moving) [aid]"
+    },
+    {
+     "text": "Maud, stay covered but ready to heal anyone who takes fire",
+     "stage": "plans",
+     "outcome": "misread as Overwatch [overwatch]"
+    },
+    {
+     "text": "Maud, move with us and be ready to heal on the move",
+     "stage": "plans",
+     "outcome": "misread as Overwatch [overwatch]"
+    },
+    {
+     "text": "Maud, stay back from the flames and prepare heals",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    }
+   ],
    "firstSeen": "2026-09-26",
    "lastSeen": "2026-09-26"
   },
@@ -457,16 +608,22 @@
    "capability": "drag-ally",
    "status": "open",
    "kind": "mixed",
-   "demand": 36,
+   "demand": 38,
    "passes": 0,
    "strategies": [
-    "look after the company"
+    "look after the company",
+    "protect wounded"
    ],
    "examples": [
     {
      "text": "drag Borin to safety",
      "stage": "the Old Road",
      "outcome": "misread as Aid Borin Ashgrove [aid]"
+    },
+    {
+     "text": "pull Pip back away from Jory",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
     }
    ],
    "firstSeen": "2026-09-26",
@@ -475,18 +632,24 @@
   "give-item": {
    "capability": "give-item",
    "status": "open",
-   "kind": "unsupported",
-   "demand": 1,
+   "kind": "mixed",
+   "demand": 5,
    "passes": 35,
    "strategies": [
     "look after the company",
-    "arm the captive"
+    "arm the captive",
+    "demand-healing"
    ],
    "examples": [
     {
      "text": "hand Elsie my knife so she can cut herself loose",
      "stage": "the Burnt Mill",
      "outcome": "refused: the GM couldn't turn that into an action"
+    },
+    {
+     "text": "Tell Sister Maud to heal you when the wolves press too hard.",
+     "stage": "plans",
+     "outcome": "misread as Bluff Old wolf (look behind) [social]"
     }
    ],
    "firstSeen": "2026-09-26",
@@ -496,11 +659,14 @@
    "capability": "swap-places",
    "status": "open",
    "kind": "unsupported",
-   "demand": 37,
+   "demand": 45,
    "passes": 0,
    "strategies": [
     "look after the company",
-    "rotate front line"
+    "rotate front line",
+    "swap-with-wounded",
+    "swap-with-maud",
+    "swap-with-hurt"
    ],
    "examples": [
     {
@@ -512,6 +678,21 @@
      "text": "trade places with Borin so he takes the front",
      "stage": "the Crossroads",
      "outcome": "refused: the rules don't cover swapping places yet"
+    },
+    {
+     "text": "If Borin takes a hard hit, swap places with him so you absorb the next attack.",
+     "stage": "plans",
+     "outcome": "refused: the rules don't cover swapping places yet"
+    },
+    {
+     "text": "If Sister Maud gets hurt, swap places so you take the next hit instead.",
+     "stage": "plans",
+     "outcome": "refused: the rules don't cover swapping places yet"
+    },
+    {
+     "text": "If Borin gets badly hurt, swap places so you take the next wolf bite.",
+     "stage": "plans",
+     "outcome": "refused: the rules don't cover swapping places yet"
     }
    ],
    "firstSeen": "2026-09-26",
@@ -521,11 +702,12 @@
    "capability": "hide",
    "status": "open",
    "kind": "unsupported",
-   "demand": 32,
+   "demand": 36,
    "passes": 5,
    "strategies": [
     "stealth",
-    "hide in the trees and ambush the ambushers"
+    "hide in the trees and ambush the ambushers",
+    "I move in quietly"
    ],
    "examples": [
     {
@@ -537,6 +719,11 @@
      "text": "slip into the trees and hide",
      "stage": "the Old Road",
      "outcome": "refused: the rules don't cover hiding yet"
+    },
+    {
+     "text": "I slip around and keep low",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
     }
    ],
    "firstSeen": "2026-09-26",
@@ -546,7 +733,7 @@
    "capability": "disguise",
    "status": "open",
    "kind": "unsupported",
-   "demand": 37,
+   "demand": 39,
    "passes": 0,
    "strategies": [
     "stealth",
@@ -589,14 +776,27 @@
   },
   "flank": {
    "capability": "flank",
-   "status": "supported",
-   "kind": "unsupported",
-   "demand": 0,
+   "status": "open",
+   "kind": "mixed",
+   "demand": 4,
    "passes": 6,
    "strategies": [
-    "take position"
+    "take position",
+    "move with the rogue",
+    "aggressive-advance"
    ],
-   "examples": [],
+   "examples": [
+    {
+     "text": "Pip, flank left while I rush Garrick",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    },
+    {
+     "text": "Pip, dash forward around the barricade to threaten them from the side",
+     "stage": "plans",
+     "outcome": "misread as Intimidate Grist [social]"
+    }
+   ],
    "firstSeen": "2026-09-26",
    "lastSeen": "2026-09-26"
   },
@@ -604,7 +804,7 @@
    "capability": "tip-furniture",
    "status": "open",
    "kind": "misread",
-   "demand": 1,
+   "demand": 3,
    "passes": 8,
    "strategies": [
     "make cover",
@@ -649,15 +849,21 @@
    "capability": "carry-person",
    "status": "open",
    "kind": "unsupported",
-   "demand": 4,
+   "demand": 6,
    "passes": 0,
    "strategies": [
-    "rescue"
+    "rescue",
+    "carry-injured"
    ],
    "examples": [
     {
      "text": "carry Elsie out of here",
      "stage": "the Burnt Mill",
+     "outcome": "refused: the rules don't cover carrying people yet"
+    },
+    {
+     "text": "If Pip gets badly wounded, carry Pip to safety behind Maud.",
+     "stage": "plans",
      "outcome": "refused: the rules don't cover carrying people yet"
     }
    ],
@@ -666,14 +872,27 @@
   },
   "escort": {
    "capability": "escort",
-   "status": "supported",
+   "status": "open",
    "kind": "unsupported",
-   "demand": 0,
+   "demand": 4,
    "passes": 4,
    "strategies": [
-    "rescue"
+    "rescue",
+    "get her out",
+    "carry-to-safety"
    ],
-   "examples": [],
+   "examples": [
+    {
+     "text": "take Elsie by the hand and lead her back to Sister Maud",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    },
+    {
+     "text": "Carry the reliquary out while Borin and Pip hold off the enemies.",
+     "stage": "plans",
+     "outcome": "refused: the rules don't cover carrying people yet"
+    }
+   ],
    "firstSeen": "2026-09-26",
    "lastSeen": "2026-09-26"
   },
@@ -695,12 +914,15 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 10,
+   "passes": 22,
    "strategies": [
     "melee craft",
     "push brute into obstacle",
     "shove into fire",
-    "fire"
+    "fire",
+    "shove-flanker",
+    "Use terrain as a club",
+    "Second wolf"
    ],
    "examples": [],
    "firstSeen": "2026-09-26",
@@ -730,11 +952,12 @@
    "capability": "throw-fire",
    "status": "open",
    "kind": "misread",
-   "demand": 9,
-   "passes": 3,
+   "demand": 13,
+   "passes": 5,
    "strategies": [
     "use fire",
-    "fire"
+    "fire",
+    "spread the chaos"
    ],
    "examples": [
     {
@@ -756,6 +979,11 @@
      "text": "grab the torch and fling it at the Grey Mother",
      "stage": "the Grey Mother's Den",
      "outcome": "misread as Set a torch alight [ignite]"
+    },
+    {
+     "text": "Throw burning debris to scare the brutes away",
+     "stage": "plans",
+     "outcome": "misread as Intimidate Brann [social]"
     }
    ],
    "firstSeen": "2026-09-26",
@@ -765,12 +993,18 @@
    "capability": "scare-with-fire",
    "status": "open",
    "kind": "misread",
-   "demand": 2,
-   "passes": 12,
+   "demand": 8,
+   "passes": 22,
    "strategies": [
     "beasts",
     "fire scares wolves",
-    "fire"
+    "fire",
+    "Scare them with fire",
+    "Chase them off",
+    "Final push",
+    "terrify the beasts",
+    "Seize the nearby torch and brandish it.",
+    "Ignite the tent to create an obstacle."
    ],
    "examples": [
     {
@@ -782,6 +1016,21 @@
      "text": "brandish the torch at the Black wolf",
      "stage": "Hollow Wood",
      "outcome": "misread as Set a torch alight [ignite]"
+    },
+    {
+     "text": "Drive the Gaunt wolf away by waving the torch at it",
+     "stage": "plans",
+     "outcome": "misread as Shove Gaunt wolf (after moving) [shove]"
+    },
+    {
+     "text": "Charge with the torch to drive them both away for good",
+     "stage": "plans",
+     "outcome": "misread as Shove Gaunt wolf (after moving) [shove]"
+    },
+    {
+     "text": "Throw burning hay at the Gaunt wolf to scare it away",
+     "stage": "plans",
+     "outcome": "misread as Intimidate Gaunt wolf [social]"
     }
    ],
    "firstSeen": "2026-09-26",
@@ -790,17 +1039,23 @@
   "distract-animals": {
    "capability": "distract-animals",
    "status": "open",
-   "kind": "unsupported",
-   "demand": 2,
+   "kind": "mixed",
+   "demand": 4,
    "passes": 0,
    "strategies": [
-    "beasts"
+    "beasts",
+    "Use the torch to threaten and guide wolf movement."
    ],
    "examples": [
     {
      "text": "throw them some meat to distract them",
      "stage": "the Sheepfold",
      "outcome": "refused: the GM couldn't turn that into an action"
+    },
+    {
+     "text": "Pip, swing the torch in wide arcs. Make them fear the fire more than they want our blood.",
+     "stage": "plans",
+     "outcome": "misread as Attack → Old wolf (after moving) [attack]"
     }
    ],
    "firstSeen": "2026-09-26",
@@ -808,17 +1063,24 @@
   },
   "howl-down": {
    "capability": "howl-down",
-   "status": "supported",
-   "kind": "unsupported",
-   "demand": 0,
-   "passes": 15,
+   "status": "open",
+   "kind": "misread",
+   "demand": 2,
+   "passes": 21,
    "strategies": [
     "beasts",
     "noise",
     "alpha-break",
-    "cow the pack"
+    "cow the pack",
+    "force them out"
    ],
-   "examples": [],
+   "examples": [
+    {
+     "text": "Shout and charge at the wolves to push them off the map edge",
+     "stage": "plans",
+     "outcome": "misread as Shove Gaunt wolf off the edge (after moving) [shove]"
+    }
+   ],
    "firstSeen": "2026-09-26",
    "lastSeen": "2026-09-26"
   },
@@ -826,7 +1088,7 @@
    "capability": "climb-prop",
    "status": "open",
    "kind": "misread",
-   "demand": 1,
+   "demand": 3,
    "passes": 3,
    "strategies": [
     "take position",
@@ -847,7 +1109,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 1,
+   "passes": 3,
    "strategies": [
     "put out fire near captive"
    ],
@@ -859,7 +1121,7 @@
    "capability": "use-rope",
    "status": "open",
    "kind": "misread",
-   "demand": 1,
+   "demand": 3,
    "passes": 0,
    "strategies": [
     "rope the chief"
@@ -876,14 +1138,21 @@
   },
   "heal-ally": {
    "capability": "heal-ally",
-   "status": "supported",
+   "status": "open",
    "kind": "unsupported",
-   "demand": 0,
-   "passes": 1,
+   "demand": 2,
+   "passes": 3,
    "strategies": [
-    "heal before assault"
+    "heal before assault",
+    "heal"
    ],
-   "examples": [],
+   "examples": [
+    {
+     "text": "Maud, look after Borin",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    }
+   ],
    "firstSeen": "2026-09-26",
    "lastSeen": "2026-09-26"
   },
@@ -892,7 +1161,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 1,
+   "passes": 3,
    "strategies": [
     "stop the runner"
    ],
@@ -903,17 +1172,23 @@
   "grab": {
    "capability": "grab",
    "status": "open",
-   "kind": "misread",
-   "demand": 1,
+   "kind": "mixed",
+   "demand": 5,
    "passes": 0,
    "strategies": [
-    "stop the runner"
+    "stop the runner",
+    "Grab Jory and prevent any signal."
    ],
    "examples": [
     {
      "text": "grab hold of Jory Crowe so he can't escape",
      "stage": "the Crossroads",
      "outcome": "misread as Run for the edge (after moving) [defend]"
+    },
+    {
+     "text": "Grab him before he reaches his horse.",
+     "stage": "plans",
+     "outcome": "refused: the rules don't cover riding yet"
     }
    ],
    "firstSeen": "2026-09-26",
@@ -921,14 +1196,21 @@
   },
   "interrogate": {
    "capability": "interrogate",
-   "status": "supported",
+   "status": "open",
    "kind": "unsupported",
-   "demand": 0,
-   "passes": 1,
+   "demand": 2,
+   "passes": 3,
    "strategies": [
-    "take a prisoner for info"
+    "take a prisoner for info",
+    "Interrogate for intelligence."
    ],
-   "examples": [],
+   "examples": [
+    {
+     "text": "What does Garrick fear? Who's he planning to betray? Talk and you live.",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    }
+   ],
    "firstSeen": "2026-09-26",
    "lastSeen": "2026-09-26"
   },
@@ -953,14 +1235,45 @@
   },
   "suppress": {
    "capability": "suppress",
-   "status": "supported",
+   "status": "open",
    "kind": "unsupported",
-   "demand": 0,
-   "passes": 1,
+   "demand": 10,
+   "passes": 5,
    "strategies": [
-    "archer suppression"
+    "archer suppression",
+    "shut down the archer",
+    "suppress-archer",
+    "suppress-brutes",
+    "suppress-second-add",
+    "wolf-suppression"
    ],
-   "examples": [],
+   "examples": [
+    {
+     "text": "Pip, keep Nell Sparrow's head down with covering fire",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    },
+    {
+     "text": "Maud, use what you have to suppress Nell's arrows if she fires",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    },
+    {
+     "text": "Suppress Rook's archer fire with coordinated attacks",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    },
+    {
+     "text": "Keep Grist and Pell suppressed with covering fire",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    },
+    {
+     "text": "Keep the Torn-ear wolf suppressed while we deal with the Pale wolf",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    }
+   ],
    "firstSeen": "2026-09-26",
    "lastSeen": "2026-09-26"
   },
@@ -969,7 +1282,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 1,
+   "passes": 3,
    "strategies": [
     "lure"
    ],
@@ -982,9 +1295,15 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 1,
+   "passes": 15,
    "strategies": [
-    "fire ring"
+    "fire ring",
+    "Use it to ignite logs",
+    "Expand the fire zone",
+    "Secondary barrier",
+    "Create a fire line",
+    "Expand with hay",
+    "make fire bigger"
    ],
    "examples": [],
    "firstSeen": "2026-09-26",
@@ -992,14 +1311,57 @@
   },
   "focus-fire": {
    "capability": "focus-fire",
-   "status": "supported",
-   "kind": "unsupported",
-   "demand": 0,
-   "passes": 1,
+   "status": "open",
+   "kind": "mixed",
+   "demand": 20,
+   "passes": 7,
    "strategies": [
-    "cull the weak"
+    "cull the weak",
+    "Focus fire on the weakest link.",
+    "focus-fire",
+    "coordinated-assault",
+    "eliminate-brute",
+    "eliminate-threats",
+    "exploit-dispersion",
+    "eliminate-leader",
+    "focus-add",
+    "eliminate-second-add",
+    "boss-focus",
+    "maintain-assault",
+    "focus the weak wolf"
    ],
-   "examples": [],
+   "examples": [
+    {
+     "text": "When ready, all units attack Col Garrow together",
+     "stage": "plans",
+     "outcome": "misread as Overwatch [overwatch]"
+    },
+    {
+     "text": "Borin and I move toward Col, ready weapons and stay together",
+     "stage": "plans",
+     "outcome": "misread as Overwatch [overwatch]"
+    },
+    {
+     "text": "Focus all fire on Col Garrow, take him down fast",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    },
+    {
+     "text": "Shift fire to isolate and eliminate each enemy one by one",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    },
+    {
+     "text": "As they scatter from the flames, focus fire on isolated targets",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    },
+    {
+     "text": "Target Edda Crowe before she can regroup her forces",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    }
+   ],
    "firstSeen": "2026-09-26",
    "lastSeen": "2026-09-26"
   },
@@ -1007,7 +1369,7 @@
    "capability": "trap",
    "status": "open",
    "kind": "unsupported",
-   "demand": 1,
+   "demand": 3,
    "passes": 0,
    "strategies": [
     "trap"
@@ -1027,7 +1389,7 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 1,
+   "passes": 3,
    "strategies": [
     "barrel roll"
    ],
@@ -1040,14 +1402,361 @@
    "status": "supported",
    "kind": "unsupported",
    "demand": 0,
-   "passes": 1,
+   "passes": 3,
    "strategies": [
     "brace for charge"
    ],
    "examples": [],
    "firstSeen": "2026-09-26",
    "lastSeen": "2026-09-26"
+  },
+  "challenge-duel": {
+   "capability": "challenge-duel",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 2,
+   "strategies": [
+    "duel"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "taunt": {
+   "capability": "taunt",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 2,
+   "strategies": [
+    "draw-aggro"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "body-block": {
+   "capability": "body-block",
+   "status": "open",
+   "kind": "misread",
+   "demand": 1,
+   "passes": 0,
+   "strategies": [
+    "protect-escape"
+   ],
+   "examples": [
+    {
+     "text": "Stay between the relic carrier and the enemies to cover their retreat.",
+     "stage": "plans",
+     "outcome": "misread as Run for the edge (after moving) [defend]"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "break-contact": {
+   "capability": "break-contact",
+   "status": "open",
+   "kind": "mixed",
+   "demand": 4,
+   "passes": 0,
+   "strategies": [
+    "Flee through the smoke",
+    "Violent extraction",
+    "Protected retreat"
+   ],
+   "examples": [
+    {
+     "text": "Run for the edge with Elsie",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    },
+    {
+     "text": "Grab Elsie and dash for escape",
+     "stage": "plans",
+     "outcome": "misread as Run for the edge (after moving) [defend]"
+    },
+    {
+     "text": "Escape with Elsie and let Borin cover",
+     "stage": "plans",
+     "outcome": "misread as Run for the edge (after moving) [defend]"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "carry-away": {
+   "capability": "carry-away",
+   "status": "open",
+   "kind": "mixed",
+   "demand": 3,
+   "passes": 0,
+   "strategies": [
+    "Carry and escape through the flames",
+    "Run with the prize"
+   ],
+   "examples": [
+    {
+     "text": "Carry the reliquary out through the burning chapel",
+     "stage": "plans",
+     "outcome": "refused: the rules don't cover carrying people yet"
+    },
+    {
+     "text": "Escape with the reliquary through the burning chapel",
+     "stage": "plans",
+     "outcome": "misread as Run for the edge (after moving) [defend]"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "grab-fire": {
+   "capability": "grab-fire",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 2,
+   "strategies": [
+    "Take the torch"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "command-ally": {
+   "capability": "command-ally",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 2,
+   "strategies": [
+    "Rally companion"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "drive-away": {
+   "capability": "drive-away",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 2,
+   "strategies": [
+    "Chase to the edge"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "dash": {
+   "capability": "dash",
+   "status": "open",
+   "kind": "mixed",
+   "demand": 13,
+   "passes": 0,
+   "strategies": [
+    "move straight to the chief",
+    "move to Garrick while distracted",
+    "close on the chief",
+    "continue through",
+    "tackle the Gaunt wolf",
+    "finish and chase the other",
+    "drive forward"
+   ],
+   "examples": [
+    {
+     "text": "Dash toward Garrick the Red",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    },
+    {
+     "text": "Dash up to Garrick while they're dealing with the fire",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    },
+    {
+     "text": "Dash up the rise to Garrick",
+     "stage": "plans",
+     "outcome": "misread as Move and brace (after moving) [defend]"
+    },
+    {
+     "text": "Sprint past the barricade into the mine",
+     "stage": "plans",
+     "outcome": "refused: the rules don't cover building yet"
+    },
+    {
+     "text": "Sprint at the Gaunt wolf at 4,8",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    },
+    {
+     "text": "Sprint to cut off the Scarred wolf's escape",
+     "stage": "plans",
+     "outcome": "misread as Run for the edge (after moving) [defend]"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "escape": {
+   "capability": "escape",
+   "status": "open",
+   "kind": "mixed",
+   "demand": 9,
+   "passes": 0,
+   "strategies": [
+    "run for freedom",
+    "escape through the breach",
+    "escape into darkness",
+    "confirm they're gone",
+    "Take advantage of their hesitation to escape."
+   ],
+   "examples": [
+    {
+     "text": "Escape off the map edge",
+     "stage": "plans",
+     "outcome": "misread as Run for the edge (after moving) [defend]"
+    },
+    {
+     "text": "Sprint into the mine mouth while the barricade burns",
+     "stage": "plans",
+     "outcome": "refused: the rules don't cover building yet"
+    },
+    {
+     "text": "Sprint into the mine and disappear",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    },
+    {
+     "text": "Chase after them to make sure both wolves flee far away",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    },
+    {
+     "text": "If the flames hold them back long enough, we retreat to higher ground. Let the fire be our wall.",
+     "stage": "plans",
+     "outcome": "misread as Overwatch (after moving) [overwatch]"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "subdue": {
+   "capability": "subdue",
+   "status": "open",
+   "kind": "mixed",
+   "demand": 4,
+   "passes": 0,
+   "strategies": [
+    "Subdue Jory and make him face reality.",
+    "If Aud refuses, subdue him before Tamsin can support."
+   ],
+   "examples": [
+    {
+     "text": "Borin, hold him. Jory, you're outnumbered and Crowe doesn't pay enough to die.",
+     "stage": "plans",
+     "outcome": "misread as Overwatch [overwatch]"
+    },
+    {
+     "text": "If they draw steel, Pip moves on Tamsin. We take Aud down first.",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "dodge": {
+   "capability": "dodge",
+   "status": "open",
+   "kind": "misread",
+   "demand": 2,
+   "passes": 0,
+   "strategies": [
+    "reactive-defense"
+   ],
+   "examples": [
+    {
+     "text": "If arrows come our way, dash to cover or dodge",
+     "stage": "plans",
+     "outcome": "misread as Brace [defend]"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "blind": {
+   "capability": "blind",
+   "status": "open",
+   "kind": "unsupported",
+   "demand": 2,
+   "passes": 0,
+   "strategies": [
+    "flour blind"
+   ],
+   "examples": [
+    {
+     "text": "throw a handful of flour in Tamsin's eyes",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "collapse-tunnel": {
+   "capability": "collapse-tunnel",
+   "status": "open",
+   "kind": "unsupported",
+   "demand": 2,
+   "passes": 0,
+   "strategies": [
+    "cave-in"
+   ],
+   "examples": [
+    {
+     "text": "bring down the mine mouth timbers on top of them",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "shield-wall": {
+   "capability": "shield-wall",
+   "status": "open",
+   "kind": "unsupported",
+   "demand": 2,
+   "passes": 0,
+   "strategies": [
+    "shielded advance"
+   ],
+   "examples": [
+    {
+     "text": "Borin and I lock shields and advance together",
+     "stage": "plans",
+     "outcome": "refused: the GM couldn't turn that into an action"
+    }
+   ],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
+  },
+  "fire-barrier": {
+   "capability": "fire-barrier",
+   "status": "supported",
+   "kind": "unsupported",
+   "demand": 0,
+   "passes": 2,
+   "strategies": [
+    "burning barrier"
+   ],
+   "examples": [],
+   "firstSeen": "2026-09-26",
+   "lastSeen": "2026-09-26"
   }
  },
- "runs": 10
+ "runs": 12
 }

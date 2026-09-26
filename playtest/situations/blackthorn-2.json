@@ -1,0 +1,405 @@
+{
+ "quest": "blackthorn",
+ "stage": "Blackthorn Camp",
+ "intro": "The raiders' camp sits on a rise between the rocks. Braziers, tents, and Garrick the Red watching from the high ground.",
+ "objective": "Take Garrick the Red — dead or alive.",
+ "you": "You",
+ "units": [
+  {
+   "name": "You",
+   "side": "us",
+   "role": "player",
+   "tactic": "guardian",
+   "hp": 88,
+   "at": [
+    7,
+    13
+   ],
+   "status": []
+  },
+  {
+   "name": "Borin Ashgrove",
+   "side": "us",
+   "role": "companion",
+   "tactic": "guardian",
+   "hp": 100,
+   "at": [
+    8,
+    13
+   ],
+   "status": []
+  },
+  {
+   "name": "Pip Marrow",
+   "side": "us",
+   "role": "companion",
+   "tactic": "rogue",
+   "hp": 100,
+   "at": [
+    6,
+    14
+   ],
+   "status": []
+  },
+  {
+   "name": "Sister Maud",
+   "side": "us",
+   "role": "companion",
+   "tactic": "healer",
+   "hp": 100,
+   "at": [
+    9,
+    14
+   ],
+   "status": []
+  },
+  {
+   "name": "Garrick the Red",
+   "side": "them",
+   "role": "foe",
+   "tactic": "leader",
+   "hp": 100,
+   "at": [
+    8,
+    3
+   ],
+   "status": []
+  },
+  {
+   "name": "Brann",
+   "side": "them",
+   "role": "foe",
+   "tactic": "brute",
+   "hp": 100,
+   "at": [
+    6,
+    9
+   ],
+   "status": []
+  },
+  {
+   "name": "Sella",
+   "side": "them",
+   "role": "foe",
+   "tactic": "archer",
+   "hp": 100,
+   "at": [
+    7,
+    3
+   ],
+   "status": []
+  },
+  {
+   "name": "Hollis",
+   "side": "them",
+   "role": "foe",
+   "tactic": "brute",
+   "hp": 100,
+   "at": [
+    10,
+    6
+   ],
+   "status": []
+  }
+ ],
+ "props": [
+  {
+   "kind": "tent",
+   "name": "a tent",
+   "at": [
+    4,
+    3
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "tent",
+   "name": "a tent",
+   "at": [
+    12,
+    3
+   ],
+   "tags": [
+    "flammable",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "brazier",
+   "name": "a brazier",
+   "at": [
+    6,
+    5
+   ],
+   "tags": [
+    "fire",
+    "heavy"
+   ]
+  },
+  {
+   "kind": "brazier",
+   "name": "a brazier",
+   "at": [
+    10,
+    5
+   ],
+   "tags": [
+    "fire",
+    "heavy"
+   ]
+  },
+  {
+   "kind": "crate",
+   "name": "a crate",
+   "at": [
+    3,
+    7
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1",
+    "climbable"
+   ]
+  },
+  {
+   "kind": "barrel",
+   "name": "a barrel",
+   "at": [
+    13,
+    7
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "oil",
+   "name": "a lamp-oil barrel",
+   "at": [
+    11,
+    2
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "log",
+   "name": "a fallen log",
+   "at": [
+    9,
+    10
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1",
+    "climbable"
+   ]
+  }
+ ],
+ "high": [
+  [
+   0,
+   0
+  ],
+  [
+   1,
+   0
+  ],
+  [
+   2,
+   0
+  ],
+  [
+   3,
+   0
+  ],
+  [
+   8,
+   0
+  ],
+  [
+   0,
+   1
+  ],
+  [
+   1,
+   1
+  ],
+  [
+   2,
+   1
+  ],
+  [
+   3,
+   1
+  ],
+  [
+   6,
+   1
+  ],
+  [
+   7,
+   1
+  ],
+  [
+   8,
+   1
+  ],
+  [
+   9,
+   1
+  ],
+  [
+   10,
+   1
+  ],
+  [
+   0,
+   2
+  ],
+  [
+   1,
+   2
+  ],
+  [
+   2,
+   2
+  ],
+  [
+   3,
+   2
+  ],
+  [
+   6,
+   2
+  ],
+  [
+   7,
+   2
+  ],
+  [
+   8,
+   2
+  ],
+  [
+   9,
+   2
+  ],
+  [
+   10,
+   2
+  ],
+  [
+   0,
+   3
+  ],
+  [
+   1,
+   3
+  ],
+  [
+   2,
+   3
+  ],
+  [
+   3,
+   3
+  ],
+  [
+   5,
+   3
+  ],
+  [
+   6,
+   3
+  ],
+  [
+   7,
+   3
+  ],
+  [
+   8,
+   3
+  ],
+  [
+   9,
+   3
+  ],
+  [
+   10,
+   3
+  ],
+  [
+   11,
+   3
+  ],
+  [
+   0,
+   4
+  ],
+  [
+   1,
+   4
+  ],
+  [
+   2,
+   4
+  ],
+  [
+   3,
+   4
+  ],
+  [
+   6,
+   4
+  ],
+  [
+   7,
+   4
+  ]
+ ],
+ "actionKinds": [
+  "attack",
+  "ability",
+  "shove",
+  "kick",
+  "hew",
+  "throw",
+  "ignite",
+  "douse",
+  "pickup",
+  "grab",
+  "subdue",
+  "aid",
+  "free",
+  "guard",
+  "social",
+  "overwatch",
+  "defend",
+  "dash",
+  "escape",
+  "ready",
+  "carry",
+  "trip",
+  "hide",
+  "dig",
+  "build",
+  "climb",
+  "give",
+  "disguise",
+  "trap",
+  "distract"
+ ]
+}

@@ -1,0 +1,101 @@
+{
+  "persona": "silvertongue",
+  "plans": [
+    {
+      "goal": "Scare the pack away by using fire and noise as intimidation.",
+      "steps": [
+        "Grab the torch and use it to create a wall of flame.",
+        "Direct Borin and Pip to make noise and appear more threatening than they are.",
+        "Force the wolves to retreat rather than engage in a prolonged fight."
+      ],
+      "atoms": [
+        {
+          "strategy": "Seize the nearby torch and brandish it.",
+          "capability": "scare-with-fire",
+          "text": "Pick up the torch. Make yourself look big and dangerous. Wolves fear fire.",
+          "expect": ["pickup"]
+        },
+        {
+          "strategy": "Use the campfire as an extension of the threat.",
+          "capability": "scare-with-fire",
+          "text": "Circle the campfire so the wolves see us backed by flames. Make yourself a bigger target.",
+          "expect": ["defend"]
+        },
+        {
+          "strategy": "Distract and intimidate with coordinated noise.",
+          "capability": "distract-animals",
+          "text": "Borin, Pip, shout and wave weapons. Make noise like a dozen warriors.",
+          "expect": ["distract", "social"]
+        },
+        {
+          "strategy": "Press the advantage and drive them back.",
+          "capability": "intimidate",
+          "text": "Old wolf looks done for. If the pack sees one of their own fall, they'll run. End it.",
+          "expect": ["attack"]
+        }
+      ]
+    },
+    {
+      "goal": "Finish the Old wolf quickly, then use its death to break the pack's will.",
+      "steps": [
+        "Identify the Old wolf as the easy target with 1 HP.",
+        "Strike it down with overwhelming force.",
+        "Let the surviving wolves see their elder fall and lose their courage."
+      ],
+      "atoms": [
+        {
+          "strategy": "Focus fire on the weakest link.",
+          "capability": "focus-fire",
+          "text": "The old one's nearly dead. Everyone strike it down now.",
+          "expect": ["attack", "ability"]
+        },
+        {
+          "strategy": "Make the kill decisive and visible.",
+          "capability": "intimidate",
+          "text": "Borin, strike it down where the whole pack can see. Show them what happens to those who don't flee.",
+          "expect": ["attack"]
+        },
+        {
+          "strategy": "Use the psychological impact to break the pack's morale.",
+          "capability": "distract-animals",
+          "text": "Now the rest of you scatter before we do the same to you. Go. Live.",
+          "expect": ["distract", "social"]
+        }
+      ]
+    },
+    {
+      "goal": "Lure the wolves into the fire hazards to weaken them without direct combat.",
+      "steps": [
+        "Use torch and campfire strategically to create a dangerous zone.",
+        "Drag the wolves or their path toward the burning tent.",
+        "Let the environment do half the work while we defend ourselves."
+      ],
+      "atoms": [
+        {
+          "strategy": "Ignite the tent to create an obstacle.",
+          "capability": "scare-with-fire",
+          "text": "Ignite the tent. Burn it and force the wolves to navigate the flames.",
+          "expect": ["ignite"]
+        },
+        {
+          "strategy": "Use the torch to threaten and guide wolf movement.",
+          "capability": "distract-animals",
+          "text": "Pip, swing the torch in wide arcs. Make them fear the fire more than they want our blood.",
+          "expect": ["distract"]
+        },
+        {
+          "strategy": "Take advantage of their hesitation to escape.",
+          "capability": "escape",
+          "text": "If the flames hold them back long enough, we retreat to higher ground. Let the fire be our wall.",
+          "expect": ["escape", "dash"]
+        },
+        {
+          "strategy": "Finish any stragglers who press through.",
+          "capability": "intimidate",
+          "text": "Any wolf that breaks through the flames learns what the torch really does. Attack those that come at us.",
+          "expect": ["attack"]
+        }
+      ]
+    }
+  ]
+}

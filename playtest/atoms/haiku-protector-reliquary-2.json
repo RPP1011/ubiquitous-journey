@@ -1,0 +1,95 @@
+{
+  "persona": "protector",
+  "plans": [
+    {
+      "goal": "Shield companions and secure the reliquary, protecting whoever picks it up during escape",
+      "steps": ["Push forward toward the reliquary while guarding Maud", "Block enemies from reaching the objective", "Protect the companion who grabs the relic", "Escort the relic carrier back to safety"],
+      "atoms": [
+        {
+          "strategy": "advance-guard",
+          "capability": "guard-ally",
+          "text": "Guard Sister Maud as we move forward toward the reliquary.",
+          "expect": ["guard"]
+        },
+        {
+          "strategy": "intercept-marl",
+          "capability": "block-path",
+          "text": "Step between Marl and the path to the reliquary.",
+          "expect": ["dash", "block-path"]
+        },
+        {
+          "strategy": "shield-pickup",
+          "capability": "guard-ally",
+          "text": "Guard whoever is grabbing the silver reliquary so Silas can't stop them.",
+          "expect": ["guard"]
+        },
+        {
+          "strategy": "protect-escape",
+          "capability": "body-block",
+          "text": "Stay between the relic carrier and the enemies to cover their retreat.",
+          "expect": ["block-path", "dash"]
+        }
+      ]
+    },
+    {
+      "goal": "Hold the reliquary site with cover, letting Pip slip in to grab it while You and Borin defend",
+      "steps": ["Use braziers and tables as defensive positions", "Cover Pip's approach to the relic", "Create a perimeter so enemies can't interfere", "Defend the pickup and escape route"],
+      "atoms": [
+        {
+          "strategy": "fortify-with-table",
+          "capability": "take-cover",
+          "text": "Take cover at the trestle table near the reliquary.",
+          "expect": ["take-cover"]
+        },
+        {
+          "strategy": "block-dace",
+          "capability": "block-path",
+          "text": "Block Dace's path so he can't get to the reliquary while Pip grabs it.",
+          "expect": ["block-path", "dash"]
+        },
+        {
+          "strategy": "guard-pip-theft",
+          "capability": "guard-ally",
+          "text": "Guard Pip Marrow while he takes the silver reliquary.",
+          "expect": ["guard"]
+        },
+        {
+          "strategy": "shield-relic",
+          "capability": "block-path",
+          "text": "If Silas charges the relic, shove him back and shield Pip's escape.",
+          "expect": ["shove", "kick", "block-path"]
+        }
+      ]
+    },
+    {
+      "goal": "Absorb damage for wounded allies and swap places to keep them alive while securing the objective",
+      "steps": ["Stay ready to help any hurt companion", "Position to shield Maud if she takes hits", "Grab the reliquary yourself if needed", "Carry it to safety while others defend"],
+      "atoms": [
+        {
+          "strategy": "ready-aid",
+          "capability": "ready-strike",
+          "text": "Stay alert to help any companion who gets hit.",
+          "expect": ["ready"]
+        },
+        {
+          "strategy": "swap-with-maud",
+          "capability": "swap-places",
+          "text": "If Sister Maud gets hurt, swap places so you take the next hit instead.",
+          "expect": ["swap-places"]
+        },
+        {
+          "strategy": "secure-relic",
+          "capability": "give-item",
+          "text": "Pick up the silver reliquary yourself and guard it from Silas.",
+          "expect": ["pickup", "carry"]
+        },
+        {
+          "strategy": "carry-to-safety",
+          "capability": "escort",
+          "text": "Carry the reliquary out while Borin and Pip hold off the enemies.",
+          "expect": ["carry", "escape"]
+        }
+      ]
+    }
+  ]
+}

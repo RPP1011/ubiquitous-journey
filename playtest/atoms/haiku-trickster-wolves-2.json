@@ -1,0 +1,110 @@
+{
+  "persona": "trickster",
+  "plans": [
+    {
+      "goal": "Focus all attacks on the Grey Mother while pack wolves are harried and distracted",
+      "steps": [
+        "Maud guards and heals",
+        "Borin attacks the Grey Mother",
+        "Pip attacks a pack wolf",
+        "I attack and watch for openings"
+      ],
+      "atoms": [
+        {
+          "strategy": "Maud guards and prepares aid",
+          "capability": "guard-ally",
+          "text": "Maud, guard us and aid when we're hit",
+          "expect": ["guard", "aid"]
+        },
+        {
+          "strategy": "Borin hits the Grey Mother",
+          "capability": "ready-strike",
+          "text": "Borin, move close to the Grey Mother and attack",
+          "expect": ["attack", "movement"]
+        },
+        {
+          "strategy": "Pip distracts a smaller wolf",
+          "capability": "ready-strike",
+          "text": "Pip, attack Pale wolf to distract it",
+          "expect": ["attack"]
+        },
+        {
+          "strategy": "I watch and attack",
+          "capability": "ready-strike",
+          "text": "I keep watch and ready to strike",
+          "expect": ["overwatch", "ready", "attack"]
+        }
+      ]
+    },
+    {
+      "goal": "Coordinate a flanking assault with Pip and Borin while I hold the center",
+      "steps": [
+        "I engage the Grey Mother front",
+        "Pip gets to the flanks",
+        "Borin circles around",
+        "Maud heals from range"
+      ],
+      "atoms": [
+        {
+          "strategy": "I ready for the Mother",
+          "capability": "ready-strike",
+          "text": "I ready to face the Grey Mother",
+          "expect": ["ready", "overwatch"]
+        },
+        {
+          "strategy": "Pip moves to flank",
+          "capability": "ready-strike",
+          "text": "Pip, get around to attack from the side",
+          "expect": ["movement", "attack"]
+        },
+        {
+          "strategy": "Borin circles",
+          "capability": "block-path",
+          "text": "Borin, move around and get ready to strike",
+          "expect": ["movement", "defend", "ready"]
+        },
+        {
+          "strategy": "Maud supports from back",
+          "capability": "guard-ally",
+          "text": "Maud, guard and aid as we need it",
+          "expect": ["guard", "aid"]
+        }
+      ]
+    },
+    {
+      "goal": "Use terrain and mobility to avoid the pack's coordinated attack while wearing them down",
+      "steps": [
+        "Pip uses speed to harry the wolves",
+        "Borin takes the hard hits",
+        "I strike and reposition",
+        "Maud watches for breaks in the action"
+      ],
+      "atoms": [
+        {
+          "strategy": "Pip attacks and moves",
+          "capability": "ready-strike",
+          "text": "Pip, hit Pale wolf and stay mobile",
+          "expect": ["attack", "movement"]
+        },
+        {
+          "strategy": "Borin holds the line",
+          "capability": "block-path",
+          "text": "Borin, defend and brace for the Mother's charge",
+          "expect": ["defend", "guard"]
+        },
+        {
+          "strategy": "I watch and strike",
+          "capability": "ready-strike",
+          "text": "I watch the Mother and strike when she commits",
+          "expect": ["overwatch", "attack"]
+        },
+        {
+          "strategy": "Maud watches for openings",
+          "capability": "guard-ally",
+          "text": "Maud, overwatch and aid whoever is worst hit",
+          "expect": ["overwatch", "aid", "guard"]
+        }
+      ]
+    }
+  ]
+}

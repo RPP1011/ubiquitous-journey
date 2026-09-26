@@ -1,0 +1,128 @@
+{
+  "persona": "pyromaniac",
+  "plans": [
+    {
+      "goal": "Use existing fire and create new flames to terrify the wolves and drive them away",
+      "steps": [
+        "Light the torch to create a fire source we can wave",
+        "Ignite the logs near the campfire to expand the burning zone",
+        "Scare the wolves toward the edge with threats of flame",
+        "Drive them away from the flock"
+      ],
+      "atoms": [
+        {
+          "strategy": "Take the torch",
+          "capability": "grab-fire",
+          "text": "Grab the torch",
+          "expect": ["grab", "pickup"]
+        },
+        {
+          "strategy": "Use it to ignite logs",
+          "capability": "ignite-prop",
+          "text": "Light the nearest fallen log with the torch",
+          "expect": ["ignite"]
+        },
+        {
+          "strategy": "Expand the fire zone",
+          "capability": "ignite-prop",
+          "text": "Ignite another log to create a wall of fire",
+          "expect": ["ignite"]
+        },
+        {
+          "strategy": "Scare them with fire",
+          "capability": "scare-with-fire",
+          "text": "Drive the Gaunt wolf away by waving the torch at it",
+          "expect": ["distract"]
+        },
+        {
+          "strategy": "Chase them off",
+          "capability": "scare-with-fire",
+          "text": "Threaten the Scarred wolf with flame until it flees",
+          "expect": ["distract", "social"]
+        }
+      ]
+    },
+    {
+      "goal": "Topple burning logs as weapons to force the wolves back, create a flaming barrier they won't cross",
+      "steps": [
+        "Ignite the logs to make them dangerous",
+        "Shove them at the wolves to drive them back",
+        "Create a burning perimeter around the flock",
+        "Chase off any wolf that tries to push through"
+      ],
+      "atoms": [
+        {
+          "strategy": "Set the stage on fire",
+          "capability": "ignite-prop",
+          "text": "Ignite the fallen logs by the Gaunt wolf",
+          "expect": ["ignite"]
+        },
+        {
+          "strategy": "Use terrain as a club",
+          "capability": "shove-hazard",
+          "text": "Shove the burning log at the Gaunt wolf",
+          "expect": ["shove"]
+        },
+        {
+          "strategy": "Secondary barrier",
+          "capability": "ignite-prop",
+          "text": "Light the hay bale on fire to create another obstacle",
+          "expect": ["ignite"]
+        },
+        {
+          "strategy": "Second wolf",
+          "capability": "shove-hazard",
+          "text": "Kick another log toward the Scarred wolf",
+          "expect": ["kick", "shove"]
+        },
+        {
+          "strategy": "Final push",
+          "capability": "scare-with-fire",
+          "text": "Charge with the torch to drive them both away for good",
+          "expect": ["distract", "dash"]
+        }
+      ]
+    },
+    {
+      "goal": "Coordinate companions to create overlapping fire zones, trap wolves, drive them off together",
+      "steps": [
+        "Have Borin move to help contain the left wolf",
+        "Ignite multiple logs to create a network of fire",
+        "Drive both wolves toward the edge with coordinated pressure",
+        "Protect the flock completely"
+      ],
+      "atoms": [
+        {
+          "strategy": "Rally companion",
+          "capability": "command-ally",
+          "text": "Borin, move up and guard the right flank",
+          "expect": ["social", "guard"]
+        },
+        {
+          "strategy": "Create a fire line",
+          "capability": "ignite-prop",
+          "text": "Ignite the logs near the campfire",
+          "expect": ["ignite"]
+        },
+        {
+          "strategy": "Expand with hay",
+          "capability": "ignite-prop",
+          "text": "Light the hay bale to create a second fire barrier",
+          "expect": ["ignite"]
+        },
+        {
+          "strategy": "Scare them together",
+          "capability": "scare-with-fire",
+          "text": "Move forward with Borin, waving flames at both wolves",
+          "expect": ["distract", "attack"]
+        },
+        {
+          "strategy": "Chase to the edge",
+          "capability": "drive-away",
+          "text": "Push both wolves off the fold with coordinated pressure",
+          "expect": ["shove", "escape", "dash"]
+        }
+      ]
+    }
+  ]
+}

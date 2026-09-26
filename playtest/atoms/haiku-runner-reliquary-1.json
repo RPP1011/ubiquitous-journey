@@ -1,0 +1,37 @@
+{
+  "persona": "runner",
+  "plans": [
+    {
+      "goal": "Charge straight through the mine carts barricade, pushing them aside",
+      "steps": ["Sprint to the carts", "Shove the first cart", "Shove the second cart", "Sprint past the barricade"],
+      "atoms": [
+        { "strategy": "get to the barricade fast", "capability": "dash", "text": "Dash forward toward the handcarts blocking the mine mouth", "expect": ["dash"] },
+        { "strategy": "clear the first obstacle", "capability": "shove-hazard", "text": "Shove the handcart at 7,6 out of the way", "expect": ["shove", "kick"] },
+        { "strategy": "clear the second obstacle", "capability": "shove-hazard", "text": "Shove the handcart at 9,6 to the side", "expect": ["shove", "kick"] },
+        { "strategy": "continue through", "capability": "dash", "text": "Sprint past the barricade into the mine", "expect": ["dash", "escape"] }
+      ]
+    },
+    {
+      "goal": "Ignite oil and flammables to destroy the barricade, then push through",
+      "steps": ["Ignite the oil barrel", "Spread fire to the carts", "Shove burning debris aside", "Escape into the mine"],
+      "atoms": [
+        { "strategy": "start a big fire on the barricade", "capability": "ignite-prop", "text": "Ignite the lamp-oil barrel at 8,4 with a torch", "expect": ["ignite", "throw"] },
+        { "strategy": "spread fire to the barricade carts", "capability": "throw-fire", "text": "Throw burning oil at the handcarts to light them up", "expect": ["throw", "ignite"] },
+        { "strategy": "clear smoking debris", "capability": "shove-hazard", "text": "Shove the burning handcart at 7,6 aside", "expect": ["shove", "kick"] },
+        { "strategy": "escape through the breach", "capability": "escape", "text": "Sprint into the mine mouth while the barricade burns", "expect": ["escape", "dash"] }
+      ]
+    },
+    {
+      "goal": "Have companions hold the enemies while I wreck the barricade",
+      "steps": ["Position companions as blockers", "Charge the carts", "Shove them apart", "Escape"],
+      "atoms": [
+        { "strategy": "delay the brutes", "capability": "block-path", "text": "Borin, hold the center against Grist and Pell", "expect": ["guard", "defend", "block"] },
+        { "strategy": "cover the flanks", "capability": "guard-ally", "text": "Pip, watch for Rook's arrows from the left", "expect": ["guard", "defend"] },
+        { "strategy": "rush the barricade", "capability": "dash", "text": "Dash to the handcarts while my friends hold them off", "expect": ["dash"] },
+        { "strategy": "destroy the first cart", "capability": "break-barricade", "text": "Shove the handcart at 7,6 hard to smash it", "expect": ["shove", "kick"] },
+        { "strategy": "clear the path", "capability": "shove-hazard", "text": "Kick the other handcart out of the way", "expect": ["shove", "kick"] },
+        { "strategy": "escape into darkness", "capability": "escape", "text": "Sprint into the mine and disappear", "expect": ["escape", "dash"] }
+      ]
+    }
+  ]
+}

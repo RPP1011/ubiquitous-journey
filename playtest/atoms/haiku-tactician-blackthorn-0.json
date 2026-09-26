@@ -1,0 +1,125 @@
+{
+  "persona": "tactician",
+  "plans": [
+    {
+      "goal": "Control the crossroads with overlapping fire and deny enemy advance",
+      "steps": [
+        "Establish forward cover position at the handcart with clear sightlines",
+        "Set defensive overwatch on all approach routes",
+        "Focus fire to eliminate Col Garrow before he closes distance"
+      ],
+      "atoms": [
+        {
+          "strategy": "secure-central-cover",
+          "capability": "take-cover",
+          "text": "Move up to the handcart and establish a firing position",
+          "expect": ["dash", "defend"]
+        },
+        {
+          "strategy": "watch-flank",
+          "capability": "guard-ally",
+          "text": "Borin, ready your weapon and watch our left flank for Fitch",
+          "expect": ["ready", "overwatch"]
+        },
+        {
+          "strategy": "aggressive-flank",
+          "capability": "flank",
+          "text": "Pip, move right to the trees and prepare to strike Col from the side",
+          "expect": ["dash", "attack"]
+        },
+        {
+          "strategy": "support-position",
+          "capability": "guard-ally",
+          "text": "Sister Maud, hold back and prepare to heal anyone who takes damage",
+          "expect": ["dash", "ready", "aid"]
+        },
+        {
+          "strategy": "focus-fire",
+          "capability": "focus-fire",
+          "text": "When ready, all units attack Col Garrow together",
+          "expect": ["attack", "ability"]
+        }
+      ]
+    },
+    {
+      "goal": "Disrupt enemy coordination by seizing initiative and attacking scattered forces",
+      "steps": [
+        "Pip immediately pressures Fitch to prevent regrouping",
+        "Main squad advances aggressively on Col with covering fire",
+        "Eliminate Col before his allies can support him"
+      ],
+      "atoms": [
+        {
+          "strategy": "disrupt-skirmisher",
+          "capability": "flank",
+          "text": "Pip, charge forward now and strike Fitch before he gets set",
+          "expect": ["dash", "attack"]
+        },
+        {
+          "strategy": "coordinated-assault",
+          "capability": "focus-fire",
+          "text": "Borin and I move toward Col, ready weapons and stay together",
+          "expect": ["dash", "ready"]
+        },
+        {
+          "strategy": "suppress-archer",
+          "capability": "suppress",
+          "text": "Maud, use what you have to suppress Nell's arrows if she fires",
+          "expect": ["attack", "ability", "distract"]
+        },
+        {
+          "strategy": "eliminate-brute",
+          "capability": "focus-fire",
+          "text": "Focus all fire on Col Garrow, take him down fast",
+          "expect": ["attack", "hew"]
+        },
+        {
+          "strategy": "reactive-defense",
+          "capability": "dodge",
+          "text": "If arrows come our way, dash to cover or dodge",
+          "expect": ["escape", "dash"]
+        }
+      ]
+    },
+    {
+      "goal": "Establish strong defensive perimeter with coordinated overwatch and elimination from prepared positions",
+      "steps": [
+        "Fall back to tree line with overlapping fields of fire",
+        "Set defensive overwatch and deny enemy approach",
+        "Systematically eliminate each enemy threat"
+      ],
+      "atoms": [
+        {
+          "strategy": "reposition-defense",
+          "capability": "take-cover",
+          "text": "Fall back to the trees, spread out for covering fields",
+          "expect": ["escape", "dash"]
+        },
+        {
+          "strategy": "establish-defense",
+          "capability": "ready-strike",
+          "text": "Take strong positions, everyone set overwatch and ready weapons",
+          "expect": ["ready", "overwatch", "defend"]
+        },
+        {
+          "strategy": "support-ready",
+          "capability": "guard-ally",
+          "text": "Maud, position centrally where you can heal anyone quickly",
+          "expect": ["dash", "ready"]
+        },
+        {
+          "strategy": "control-advance",
+          "capability": "trip",
+          "text": "If Fitch charges in, trip him to disrupt his attack",
+          "expect": ["trip", "shove"]
+        },
+        {
+          "strategy": "disciplined-fire",
+          "capability": "focus-fire",
+          "text": "Fire together on each enemy as they enter our kill zone",
+          "expect": ["attack", "hew"]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,89 @@
+{
+  "persona": "silvertongue",
+  "plans": [
+    {
+      "goal": "Break Garrick's will with intimidation and a call to surrender.",
+      "steps": [
+        "Advance toward the high ground where Garrick holds court.",
+        "Demand surrender, showing no fear despite the numbers.",
+        "If he refuses, threaten to burn his camp and let the flames speak."
+      ],
+      "atoms": [
+        {
+          "strategy": "Close the distance while asserting dominance.",
+          "capability": "intimidate",
+          "text": "Garrick the Red, you're surrounded. Lay down your arms and I'll let you walk.",
+          "expect": ["social", "demand-surrender"]
+        },
+        {
+          "strategy": "Use environmental threat as leverage.",
+          "capability": "scare-with-fire",
+          "text": "Borin, ignite the lamp-oil barrel near Garrick. Show him what happens to those who defy me.",
+          "expect": ["ignite"]
+        },
+        {
+          "strategy": "Drive the point home.",
+          "capability": "intimidate",
+          "text": "You want to burn with your camp, or walk free and live to raid another day?",
+          "expect": ["social", "demand-surrender"]
+        }
+      ]
+    },
+    {
+      "goal": "Turn Garrick's lieutenants against him by exploiting divisions.",
+      "steps": [
+        "Identify who seems most expendable or ambitious (Sella or Hollis).",
+        "Separate one and make them an offer they can't refuse.",
+        "Watch Garrick's command collapse from within."
+      ],
+      "atoms": [
+        {
+          "strategy": "Isolate Hollis and appeal to his ambition.",
+          "capability": "bribe",
+          "text": "Hollis, you're a strong fighter wasted taking orders. Join me and you'll have your own crew.",
+          "expect": ["social"]
+        },
+        {
+          "strategy": "Sow doubt about Garrick's leadership.",
+          "capability": "turncoat",
+          "text": "Garrick's losing. Better to be on the winning side than die for a doomed cause.",
+          "expect": ["social"]
+        },
+        {
+          "strategy": "Grab and subdue Hollis to remove him from Garrick's defense.",
+          "capability": "grab",
+          "text": "If that doesn't work, grab Hollis and make an example.",
+          "expect": ["grab", "subdue"]
+        }
+      ]
+    },
+    {
+      "goal": "Interrogate a captive to learn Garrick's weaknesses, then exploit them.",
+      "steps": [
+        "Subdue one of Garrick's crew through overwhelming force.",
+        "Question them about Garrick's fears, alliances, or hidden treasures.",
+        "Use that information to negotiate from a position of knowledge."
+      ],
+      "atoms": [
+        {
+          "strategy": "Subdue Sella quickly before she can rain arrows.",
+          "capability": "subdue",
+          "text": "Pip, trip Sella and keep her on the ground. We need her alive and talkative.",
+          "expect": ["trip", "subdue"]
+        },
+        {
+          "strategy": "Interrogate for intelligence.",
+          "capability": "interrogate",
+          "text": "What does Garrick fear? Who's he planning to betray? Talk and you live.",
+          "expect": ["social"]
+        },
+        {
+          "strategy": "Use secrets to turn the tide.",
+          "capability": "intimidate",
+          "text": "So Garrick sold out the last crew that trusted him. Your crew knows this now, Garrick. How many of them will die for a liar?",
+          "expect": ["social", "demand-surrender"]
+        }
+      ]
+    }
+  ]
+}

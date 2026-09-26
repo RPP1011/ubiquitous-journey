@@ -1,0 +1,139 @@
+{
+  "persona": "tactician",
+  "plans": [
+    {
+      "goal": "Seize high terrain and establish firing dominance over the mine mouth",
+      "steps": [
+        "Move the squad to elevated positions on the left side",
+        "Suppress enemy positions from high ground advantage",
+        "Focus fire on Edda Crowe, the leader, to break their morale"
+      ],
+      "atoms": [
+        {
+          "strategy": "claim-high-ground",
+          "capability": "high-ground",
+          "text": "Advance to the high terrain on the left side for shooting advantage",
+          "expect": ["dash", "climb"]
+        },
+        {
+          "strategy": "establish-dominance",
+          "capability": "ready-strike",
+          "text": "Set overwatch positions on the barricade and prepare to control the engagement",
+          "expect": ["ready", "overwatch"]
+        },
+        {
+          "strategy": "target-leader",
+          "capability": "focus-fire",
+          "text": "Focus fire on Edda Crowe, the leader, to break their coordination",
+          "expect": ["attack", "ability"]
+        },
+        {
+          "strategy": "suppress-archer",
+          "capability": "suppress",
+          "text": "Suppress Rook's archer fire with coordinated attacks",
+          "expect": ["attack", "distract"]
+        },
+        {
+          "strategy": "support-anchor",
+          "capability": "guard-ally",
+          "text": "Maud, stay covered but ready to heal anyone who takes fire",
+          "expect": ["dash", "ready", "aid"]
+        },
+        {
+          "strategy": "eliminate-threats",
+          "capability": "focus-fire",
+          "text": "Shift fire to isolate and eliminate each enemy one by one",
+          "expect": ["attack", "hew"]
+        }
+      ]
+    },
+    {
+      "goal": "Break through the barricade with aggressive assault before enemies organize defense",
+      "steps": [
+        "Push forward directly through the cart barricade",
+        "Target Edda Crowe and eliminate her immediately",
+        "Suppress supporting enemies with focused fire",
+        "Press advantage before they regroup"
+      ],
+      "atoms": [
+        {
+          "strategy": "aggressive-advance",
+          "capability": "flank",
+          "text": "Pip, dash forward around the barricade to threaten them from the side",
+          "expect": ["dash", "attack"]
+        },
+        {
+          "strategy": "push-through",
+          "capability": "break-barricade",
+          "text": "Move through the carts, use them as cover while advancing",
+          "expect": ["dash", "shove"]
+        },
+        {
+          "strategy": "target-leader",
+          "capability": "focus-fire",
+          "text": "Strike Edda Crowe with everything we have, don't let her command",
+          "expect": ["attack", "ability"]
+        },
+        {
+          "strategy": "suppress-brutes",
+          "capability": "suppress",
+          "text": "Keep Grist and Pell suppressed with covering fire",
+          "expect": ["attack", "distract"]
+        },
+        {
+          "strategy": "maintain-support",
+          "capability": "guard-ally",
+          "text": "Maud, move with us and be ready to heal on the move",
+          "expect": ["dash", "aid", "ready"]
+        }
+      ]
+    },
+    {
+      "goal": "Use fire and explosives to force enemies out of position and eliminate them isolated",
+      "steps": [
+        "Move to ignite the lamp-oil barrel for area denial",
+        "Force enemy dispersion away from barricade",
+        "Attack isolated enemies who lose cover coordination",
+        "Maud holds back and heals"
+      ],
+      "atoms": [
+        {
+          "strategy": "set-explosive-trap",
+          "capability": "ignite-prop",
+          "text": "Get to the lamp-oil barrel and set it on fire to disrupt their positions",
+          "expect": ["ignite", "throw"]
+        },
+        {
+          "strategy": "environmental-control",
+          "capability": "shove-hazard",
+          "text": "If enemies are near the flames, shove them into the fire to spread chaos",
+          "expect": ["shove", "kick"]
+        },
+        {
+          "strategy": "exploit-dispersion",
+          "capability": "focus-fire",
+          "text": "As they scatter from the flames, focus fire on isolated targets",
+          "expect": ["attack", "ability"]
+        },
+        {
+          "strategy": "eliminate-leader",
+          "capability": "focus-fire",
+          "text": "Target Edda Crowe before she can regroup her forces",
+          "expect": ["attack", "hew"]
+        },
+        {
+          "strategy": "area-denial",
+          "capability": "ignite-prop",
+          "text": "Keep the fire area between us and enemies, use it as a barrier",
+          "expect": ["ignite", "distract"]
+        },
+        {
+          "strategy": "support-position",
+          "capability": "guard-ally",
+          "text": "Maud, stay back from the flames and prepare heals",
+          "expect": ["dash", "ready", "aid"]
+        }
+      ]
+    }
+  ]
+}

@@ -69,8 +69,13 @@ for (const [qi, quest] of Object.values(QUESTS).entries()) {
   for (let si = 0; si < quest.stages.length; si++) {
     const { s, b, u } = stage(quest.id, si);
     if (!u) { s.dispose(); continue; }
-    const f = files.find((x) => x === `${quest.id}-${si}.json`);
-    const atoms = [...(f ? JSON.parse(fs.readFileSync(path.join(ATOMS, f), 'utf8')) : []), ...templateAtoms(b, u)];
+    // every atom file for this stage: `<quest>-<stage>.json` and persona plans `<who>-<quest>-<stage>.json`
+    const fileAtoms = files.filter((x) => x === `${quest.id}-${si}.json` || x.endsWith(`-${quest.id}-${si}.json`)).flatMap((f) => {
+      let raw; try { raw = JSON.parse(fs.readFileSync(path.join(ATOMS, f), 'utf8')); } catch { return []; }
+      const plans = Array.isArray(raw) ? [{ atoms: raw }] : Array.isArray(raw.plans) ? raw.plans : [raw];
+      return plans.flatMap((p) => (p.atoms || []).filter((a) => a && typeof a.text === 'string' && Array.isArray(a.expect)).map((a) => ({ capability: 'unlabelled', ...a })));
+    });
+    const atoms = [...fileAtoms, ...templateAtoms(b, u)];
     for (const atom of atoms) {
       const rj = judge(atom, readWriteIn(b, u, atom.text), () => explainUnmet(b, u, atom.text), b, u);
       bump(tally.regex, rj.status);

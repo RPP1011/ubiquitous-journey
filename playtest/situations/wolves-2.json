@@ -1,0 +1,293 @@
+{
+ "quest": "wolves",
+ "stage": "the Grey Mother's Den",
+ "intro": "Bones among the rocks below a rise. The Grey Mother is the size of a pony, and she is not afraid of you.",
+ "objective": "Kill the Grey Mother.",
+ "you": "Borin Ashgrove",
+ "units": [
+  {
+   "name": "You",
+   "side": "us",
+   "role": "player",
+   "tactic": "guardian",
+   "hp": 100,
+   "at": [
+    7,
+    13
+   ],
+   "status": []
+  },
+  {
+   "name": "Borin Ashgrove",
+   "side": "us",
+   "role": "companion",
+   "tactic": "guardian",
+   "hp": 100,
+   "at": [
+    8,
+    13
+   ],
+   "status": []
+  },
+  {
+   "name": "Pip Marrow",
+   "side": "us",
+   "role": "companion",
+   "tactic": "rogue",
+   "hp": 100,
+   "at": [
+    6,
+    14
+   ],
+   "status": []
+  },
+  {
+   "name": "Sister Maud",
+   "side": "us",
+   "role": "companion",
+   "tactic": "healer",
+   "hp": 100,
+   "at": [
+    9,
+    14
+   ],
+   "status": []
+  },
+  {
+   "name": "the Grey Mother",
+   "side": "them",
+   "role": "foe",
+   "tactic": "beast",
+   "hp": 180,
+   "at": [
+    8,
+    3
+   ],
+   "status": []
+  },
+  {
+   "name": "Pale wolf",
+   "side": "them",
+   "role": "foe",
+   "tactic": "beast",
+   "hp": 55,
+   "at": [
+    5,
+    3
+   ],
+   "status": []
+  },
+  {
+   "name": "Torn-ear wolf",
+   "side": "them",
+   "role": "foe",
+   "tactic": "beast",
+   "hp": 55,
+   "at": [
+    11,
+    3
+   ],
+   "status": []
+  }
+ ],
+ "props": [
+  {
+   "kind": "rocks",
+   "name": "loose rocks",
+   "at": [
+    5,
+    5
+   ],
+   "tags": [
+    "light"
+   ]
+  },
+  {
+   "kind": "rocks",
+   "name": "loose rocks",
+   "at": [
+    11,
+    5
+   ],
+   "tags": [
+    "light"
+   ]
+  },
+  {
+   "kind": "log",
+   "name": "a fallen log",
+   "at": [
+    7,
+    8
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1",
+    "climbable"
+   ]
+  },
+  {
+   "kind": "log",
+   "name": "a fallen log",
+   "at": [
+    9,
+    8
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1",
+    "climbable"
+   ]
+  },
+  {
+   "kind": "torch",
+   "name": "a torch",
+   "at": [
+    8,
+    12
+   ],
+   "tags": [
+    "fire",
+    "light"
+   ]
+  },
+  {
+   "kind": "hay",
+   "name": "a hay bale",
+   "at": [
+    4,
+    9
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1",
+    "climbable"
+   ]
+  }
+ ],
+ "high": [
+  [
+   0,
+   0
+  ],
+  [
+   1,
+   0
+  ],
+  [
+   0,
+   1
+  ],
+  [
+   8,
+   1
+  ],
+  [
+   0,
+   2
+  ],
+  [
+   7,
+   2
+  ],
+  [
+   8,
+   2
+  ],
+  [
+   9,
+   2
+  ],
+  [
+   0,
+   3
+  ],
+  [
+   6,
+   3
+  ],
+  [
+   7,
+   3
+  ],
+  [
+   8,
+   3
+  ],
+  [
+   9,
+   3
+  ],
+  [
+   10,
+   3
+  ],
+  [
+   0,
+   4
+  ],
+  [
+   7,
+   4
+  ],
+  [
+   8,
+   4
+  ],
+  [
+   9,
+   4
+  ],
+  [
+   0,
+   5
+  ],
+  [
+   8,
+   5
+  ],
+  [
+   0,
+   6
+  ],
+  [
+   0,
+   7
+  ]
+ ],
+ "actionKinds": [
+  "attack",
+  "ability",
+  "shove",
+  "kick",
+  "hew",
+  "throw",
+  "ignite",
+  "douse",
+  "pickup",
+  "grab",
+  "subdue",
+  "aid",
+  "free",
+  "guard",
+  "social",
+  "overwatch",
+  "defend",
+  "dash",
+  "escape",
+  "ready",
+  "carry",
+  "trip",
+  "hide",
+  "dig",
+  "build",
+  "climb",
+  "give",
+  "disguise",
+  "trap",
+  "distract"
+ ]
+}

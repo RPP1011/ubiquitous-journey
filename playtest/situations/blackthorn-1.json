@@ -1,0 +1,453 @@
+{
+ "quest": "blackthorn",
+ "stage": "the Burnt Mill",
+ "intro": "Smoke over the old mill. Elsie is tied to a post by the hay store, and the raiders have oil barrels stacked by the door.",
+ "objective": "Cut Elsie free and get her out alive.",
+ "you": "You",
+ "units": [
+  {
+   "name": "You",
+   "side": "us",
+   "role": "player",
+   "tactic": "guardian",
+   "hp": 100,
+   "at": [
+    7,
+    13
+   ],
+   "status": []
+  },
+  {
+   "name": "Borin Ashgrove",
+   "side": "us",
+   "role": "companion",
+   "tactic": "guardian",
+   "hp": 100,
+   "at": [
+    9,
+    10
+   ],
+   "status": []
+  },
+  {
+   "name": "Pip Marrow",
+   "side": "us",
+   "role": "companion",
+   "tactic": "rogue",
+   "hp": 100,
+   "at": [
+    9,
+    13
+   ],
+   "status": []
+  },
+  {
+   "name": "Sister Maud",
+   "side": "us",
+   "role": "companion",
+   "tactic": "healer",
+   "hp": 100,
+   "at": [
+    9,
+    14
+   ],
+   "status": []
+  },
+  {
+   "name": "Hob Tanner",
+   "side": "them",
+   "role": "foe",
+   "tactic": "brute",
+   "hp": 100,
+   "at": [
+    7,
+    5
+   ],
+   "status": []
+  },
+  {
+   "name": "Moll",
+   "side": "them",
+   "role": "foe",
+   "tactic": "archer",
+   "hp": 100,
+   "at": [
+    8,
+    3
+   ],
+   "status": []
+  },
+  {
+   "name": "Dun Crake",
+   "side": "them",
+   "role": "foe",
+   "tactic": "brute",
+   "hp": 100,
+   "at": [
+    6,
+    6
+   ],
+   "status": []
+  },
+  {
+   "name": "Wick",
+   "side": "them",
+   "role": "foe",
+   "tactic": "skirmisher",
+   "hp": 100,
+   "at": [
+    10,
+    8
+   ],
+   "status": []
+  },
+  {
+   "name": "Elsie Miller",
+   "side": "us",
+   "role": "ally",
+   "tactic": "civilian",
+   "hp": 80,
+   "at": [
+    7,
+    6
+   ],
+   "status": [
+    "bound"
+   ]
+  }
+ ],
+ "props": [
+  {
+   "kind": "hay",
+   "name": "a hay bale",
+   "at": [
+    5,
+    6
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1",
+    "climbable"
+   ]
+  },
+  {
+   "kind": "hay",
+   "name": "a hay bale",
+   "at": [
+    6,
+    6
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1",
+    "climbable"
+   ]
+  },
+  {
+   "kind": "hay",
+   "name": "a hay bale",
+   "at": [
+    9,
+    6
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1",
+    "climbable"
+   ]
+  },
+  {
+   "kind": "hay",
+   "name": "a hay bale",
+   "at": [
+    10,
+    6
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1",
+    "climbable"
+   ]
+  },
+  {
+   "kind": "oil",
+   "name": "a lamp-oil barrel",
+   "at": [
+    8,
+    4
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "oil",
+   "name": "a lamp-oil barrel",
+   "at": [
+    7,
+    4
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "campfire",
+   "name": "the campfire",
+   "at": [
+    11,
+    9
+   ],
+   "tags": [
+    "fire",
+    "fixed"
+   ]
+  },
+  {
+   "kind": "well",
+   "name": "the well",
+   "at": [
+    3,
+    10
+   ],
+   "tags": [
+    "water",
+    "fixed",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "bucket",
+   "name": "a bucket of water",
+   "at": [
+    4,
+    10
+   ],
+   "tags": [
+    "water",
+    "light"
+   ]
+  },
+  {
+   "kind": "table",
+   "name": "a trestle table",
+   "at": [
+    9,
+    9
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1"
+   ]
+  },
+  {
+   "kind": "crate",
+   "name": "a crate",
+   "at": [
+    12,
+    4
+   ],
+   "tags": [
+    "flammable",
+    "heavy",
+    "cover1",
+    "climbable"
+   ]
+  }
+ ],
+ "high": [
+  [
+   3,
+   12
+  ],
+  [
+   4,
+   12
+  ],
+  [
+   5,
+   12
+  ],
+  [
+   6,
+   12
+  ],
+  [
+   7,
+   12
+  ],
+  [
+   0,
+   13
+  ],
+  [
+   1,
+   13
+  ],
+  [
+   2,
+   13
+  ],
+  [
+   3,
+   13
+  ],
+  [
+   4,
+   13
+  ],
+  [
+   5,
+   13
+  ],
+  [
+   6,
+   13
+  ],
+  [
+   7,
+   13
+  ],
+  [
+   8,
+   13
+  ],
+  [
+   9,
+   13
+  ],
+  [
+   0,
+   14
+  ],
+  [
+   1,
+   14
+  ],
+  [
+   2,
+   14
+  ],
+  [
+   3,
+   14
+  ],
+  [
+   4,
+   14
+  ],
+  [
+   5,
+   14
+  ],
+  [
+   6,
+   14
+  ],
+  [
+   7,
+   14
+  ],
+  [
+   8,
+   14
+  ],
+  [
+   9,
+   14
+  ],
+  [
+   10,
+   14
+  ],
+  [
+   0,
+   15
+  ],
+  [
+   1,
+   15
+  ],
+  [
+   2,
+   15
+  ],
+  [
+   3,
+   15
+  ],
+  [
+   4,
+   15
+  ],
+  [
+   5,
+   15
+  ],
+  [
+   6,
+   15
+  ],
+  [
+   7,
+   15
+  ],
+  [
+   8,
+   15
+  ],
+  [
+   9,
+   15
+  ],
+  [
+   10,
+   15
+  ],
+  [
+   11,
+   15
+  ]
+ ],
+ "actionKinds": [
+  "attack",
+  "ability",
+  "shove",
+  "kick",
+  "hew",
+  "throw",
+  "ignite",
+  "douse",
+  "pickup",
+  "grab",
+  "subdue",
+  "aid",
+  "free",
+  "guard",
+  "social",
+  "overwatch",
+  "defend",
+  "dash",
+  "escape",
+  "ready",
+  "carry",
+  "trip",
+  "hide",
+  "dig",
+  "build",
+  "climb",
+  "give",
+  "disguise",
+  "trap",
+  "distract"
+ ]
+}

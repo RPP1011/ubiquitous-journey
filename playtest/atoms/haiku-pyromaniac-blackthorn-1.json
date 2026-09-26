@@ -1,0 +1,128 @@
+{
+  "persona": "pyromaniac",
+  "plans": [
+    {
+      "goal": "Set everything on fire and use the chaos to free Elsie",
+      "steps": [
+        "Rush down to get close enough to ignite the oil barrels",
+        "Light up the hay bales to create a burning barrier",
+        "Cut Elsie free while raiders are panicking",
+        "Burn a path out and escape"
+      ],
+      "atoms": [
+        {
+          "strategy": "Get in ignition range",
+          "capability": "rush-forward",
+          "text": "Rush toward the oil barrels",
+          "expect": ["dash", "attack"]
+        },
+        {
+          "strategy": "Start the inferno",
+          "capability": "ignite-prop",
+          "text": "Ignite the oil barrel",
+          "expect": ["ignite"]
+        },
+        {
+          "strategy": "Spread the flames",
+          "capability": "ignite-prop",
+          "text": "Set the hay on fire",
+          "expect": ["ignite"]
+        },
+        {
+          "strategy": "Rescue under cover of smoke",
+          "capability": "free-captive",
+          "text": "Cut Elsie free",
+          "expect": ["free"]
+        },
+        {
+          "strategy": "Flee through the smoke",
+          "capability": "break-contact",
+          "text": "Run for the edge with Elsie",
+          "expect": ["escape", "dash"]
+        }
+      ]
+    },
+    {
+      "goal": "Smash enemies with terrain and fire, topple barrels onto raiders",
+      "steps": [
+        "Charge the bruises and use weight against them",
+        "Push hay bales and crates as improvised siege weapons",
+        "Create obstacles between us and the archer",
+        "Free Elsie and pull out"
+      ],
+      "atoms": [
+        {
+          "strategy": "Charge Hob directly",
+          "capability": "aggressive-assault",
+          "text": "Attack Hob Tanner head on",
+          "expect": ["attack", "hew"]
+        },
+        {
+          "strategy": "Shove into the fire",
+          "capability": "shove-hazard",
+          "text": "Push Hob into the burning hay",
+          "expect": ["shove"]
+        },
+        {
+          "strategy": "Crush the second brute",
+          "capability": "shove-hazard",
+          "text": "Kick the crate into Dun Crake",
+          "expect": ["kick", "shove"]
+        },
+        {
+          "strategy": "Strike the vulnerable moment",
+          "capability": "free-captive",
+          "text": "Free Elsie from her post",
+          "expect": ["free"]
+        },
+        {
+          "strategy": "Violent extraction",
+          "capability": "break-contact",
+          "text": "Grab Elsie and dash for escape",
+          "expect": ["grab", "escape", "dash"]
+        }
+      ]
+    },
+    {
+      "goal": "Rally companions, create overlapping fire zones, pin enemies in kill zones",
+      "steps": [
+        "Order Borin to move up and apply pressure",
+        "Ignite hay to create a wall between us and Moll",
+        "Drive enemies toward the fire with coordinated pushes",
+        "Free and extract Elsie with team support"
+      ],
+      "atoms": [
+        {
+          "strategy": "Move companions into position",
+          "capability": "command-ally",
+          "text": "Borin, move down and hit Hob",
+          "expect": ["social", "guard"]
+        },
+        {
+          "strategy": "Create fire barrier",
+          "capability": "ignite-prop",
+          "text": "Light the hay between us and the archer",
+          "expect": ["ignite"]
+        },
+        {
+          "strategy": "Coordinated assault",
+          "capability": "aggressive-assault",
+          "text": "Attack while Borin has Hob busy",
+          "expect": ["attack", "hew"]
+        },
+        {
+          "strategy": "Seize the opening",
+          "capability": "free-captive",
+          "text": "Free Elsie now",
+          "expect": ["free"]
+        },
+        {
+          "strategy": "Protected retreat",
+          "capability": "break-contact",
+          "text": "Escape with Elsie and let Borin cover",
+          "expect": ["escape", "dash"]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,95 @@
+{
+  "persona": "protector",
+  "plans": [
+    {
+      "goal": "Shield Maud from attacks while You and Borin intercept the brute and skirmisher",
+      "steps": ["Position between Maud and the approaching foes", "Have Borin block Fitch on the flank", "Draw Col's aggression toward You", "Keep Maud protected to heal wounded"],
+      "atoms": [
+        {
+          "strategy": "shield-healer",
+          "capability": "guard-ally",
+          "text": "Guard Sister Maud from here.",
+          "expect": ["guard"]
+        },
+        {
+          "strategy": "intercept-brute",
+          "capability": "block-path",
+          "text": "Move between Col Garrow and Sister Maud to block his advance.",
+          "expect": ["dash", "block-path"]
+        },
+        {
+          "strategy": "direct-fitch",
+          "capability": "block-path",
+          "text": "Borin, block Fitch so he can't get to Maud.",
+          "expect": ["block-path", "dash"]
+        },
+        {
+          "strategy": "draw-aggro",
+          "capability": "taunt",
+          "text": "Challenge Col Garrow to face you instead.",
+          "expect": ["social", "demand-surrender"]
+        }
+      ]
+    },
+    {
+      "goal": "Use terrain to create a defensive line and prevent enemies from surrounding the group",
+      "steps": ["Position behind cover objects", "Create barriers between Maud and attackers", "Use shove to control enemy positions", "Maintain formation with Borin"],
+      "atoms": [
+        {
+          "strategy": "fortify",
+          "capability": "take-cover",
+          "text": "Take cover behind the cart to shield from Nell's arrows.",
+          "expect": ["take-cover"]
+        },
+        {
+          "strategy": "hold-line",
+          "capability": "block-path",
+          "text": "Stand at the crate between You and Fitch, don't let him past.",
+          "expect": ["block-path"]
+        },
+        {
+          "strategy": "shove-flanker",
+          "capability": "shove-hazard",
+          "text": "If Fitch gets close, shove him into the fallen log to slow him down.",
+          "expect": ["shove", "kick"]
+        },
+        {
+          "strategy": "protect-formation",
+          "capability": "guard-ally",
+          "text": "Guard Pip while Borin guards the approach from Col.",
+          "expect": ["guard"]
+        }
+      ]
+    },
+    {
+      "goal": "Prepare to rescue and swap places with any wounded companion to keep them from the front",
+      "steps": ["Stay mobile to reach hurt allies", "Offer protection to anyone taking damage", "Swap positions to shield wounded", "Escort injured out of danger"],
+      "atoms": [
+        {
+          "strategy": "ready-rescue",
+          "capability": "ready-strike",
+          "text": "Stay ready to grab any companion who gets hit.",
+          "expect": ["ready"]
+        },
+        {
+          "strategy": "swap-with-wounded",
+          "capability": "swap-places",
+          "text": "If Borin takes a hard hit, swap places with him so you absorb the next attack.",
+          "expect": ["swap-places"]
+        },
+        {
+          "strategy": "carry-injured",
+          "capability": "carry-person",
+          "text": "If Pip gets badly wounded, carry Pip to safety behind Maud.",
+          "expect": ["carry"]
+        },
+        {
+          "strategy": "body-block",
+          "capability": "block-path",
+          "text": "Step in front of Sister Maud whenever Col or Fitch get close.",
+          "expect": ["block-path", "dash"]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,95 @@
+{
+  "persona": "protector",
+  "plans": [
+    {
+      "goal": "Finish the Old wolf quickly, then form a defensive circle around Maud to protect her from the pack",
+      "steps": ["Strike the nearly-dead Old wolf to eliminate a threat", "Guard Sister Maud from the remaining wolves", "Have Borin help control the Lean wolf", "Keep Maud safe so she can heal the group"],
+      "atoms": [
+        {
+          "strategy": "finish-weak-foe",
+          "capability": "ready-strike",
+          "text": "Strike the Old wolf to put it down before it can harm anyone.",
+          "expect": ["attack", "hew"]
+        },
+        {
+          "strategy": "guard-healer",
+          "capability": "guard-ally",
+          "text": "Guard Sister Maud so the wolves can't reach her.",
+          "expect": ["guard"]
+        },
+        {
+          "strategy": "block-lean-wolf",
+          "capability": "block-path",
+          "text": "Stay between the Lean wolf and Sister Maud.",
+          "expect": ["dash", "block-path"]
+        },
+        {
+          "strategy": "coordinate-defense",
+          "capability": "ready-strike",
+          "text": "Borin, help me keep the wolves away from Maud.",
+          "expect": ["guard", "block-path"]
+        }
+      ]
+    },
+    {
+      "goal": "Use the campfire and terrain to create a defensive stronghold while protecting Maud from all sides",
+      "steps": ["Position near the tent and campfire for cover", "Create barriers between wolves and Maud", "Guard Maud from the flanks", "Use the fire to scare wolves away"],
+      "atoms": [
+        {
+          "strategy": "fortify-camp",
+          "capability": "take-cover",
+          "text": "Fall back to the tent for cover against the circling wolves.",
+          "expect": ["take-cover"]
+        },
+        {
+          "strategy": "use-fire",
+          "capability": "scare-with-fire",
+          "text": "Use the campfire to keep the Grey wolf at bay.",
+          "expect": ["distract", "ignite"]
+        },
+        {
+          "strategy": "shield-camp",
+          "capability": "block-path",
+          "text": "Position yourself between the barrel and Maud so no wolf can slip through.",
+          "expect": ["block-path", "dash"]
+        },
+        {
+          "strategy": "heal-up",
+          "capability": "guard-ally",
+          "text": "Guard Sister Maud while she heals your wounds.",
+          "expect": ["guard", "aid"]
+        }
+      ]
+    },
+    {
+      "goal": "Protect wounded you and allies by managing positioning while ensuring Maud stays alive to heal",
+      "steps": ["Swap positions with hurt allies to absorb damage", "Keep Maud protected and unhurt", "Position to intercept incoming wolf attacks", "Get healing from Maud as needed"],
+      "atoms": [
+        {
+          "strategy": "ready-defense",
+          "capability": "ready-strike",
+          "text": "Stay alert to help any companion the wolves wound.",
+          "expect": ["ready"]
+        },
+        {
+          "strategy": "swap-with-hurt",
+          "capability": "swap-places",
+          "text": "If Borin gets badly hurt, swap places so you take the next wolf bite.",
+          "expect": ["swap-places"]
+        },
+        {
+          "strategy": "demand-healing",
+          "capability": "give-item",
+          "text": "Tell Sister Maud to heal you when the wolves press too hard.",
+          "expect": ["aid", "give"]
+        },
+        {
+          "strategy": "body-block-wolves",
+          "capability": "block-path",
+          "text": "Step in front of any wolf charging at your wounded companions.",
+          "expect": ["block-path", "dash"]
+        }
+      ]
+    }
+  ]
+}

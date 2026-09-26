@@ -304,7 +304,8 @@ export function resolveIntents(b: Battle, u: Unit, intents: Intent[], model = fa
       case 'move': if (dest) push(dest, { kind: 'defend' }, 'Move and brace', score); break;
       case 'escape': {
         if (b.map.edge(u.x, u.z)) push(null, { kind: 'escape' }, 'Escape', score + 1);
-        else { const e = nearestEdge(b, u); if (e) push(e, { kind: 'defend' }, 'Run for the edge', score); }
+        // not at the edge yet: run for it now, escape next turn — the escape is deferred, not misread
+        else { const e = nearestEdge(b, u); if (e && push(e, { kind: 'defend' }, 'Run for the edge', score)) out[out.length - 1].deferred = true; }
         break;
       }
       case 'intimidate': if (t) push(dest, { kind: 'social', verb: 'intimidate', target: t.id }, `Intimidate ${b.nm(t)}${b.flameAt(u) && t.tactic === 'beast' ? ' with fire' : ''}`, score); break;
