@@ -102,7 +102,9 @@ export class CameraRig {
       }
     }
     const goal = this.goal.clone().add(this.pan);
-    if (!this.started) { this.focus.copy(goal); this.yaw = this.goalYaw; this.pitch = this.goalPitch; this.dist = this.goalDist; this.started = true; }
+    // a new place (a stage set far from town, or home again) is a cut, not a glide across the map
+    const cut = !this.started || this.focus.distanceTo(goal) > 80;
+    if (cut) { this.focus.copy(goal); this.yaw = this.goalYaw; this.pitch = this.goalPitch; this.dist = this.goalDist; this.started = true; }
     this.focus.x = damp(this.focus.x, goal.x, this.tau, dt);
     this.focus.y = damp(this.focus.y, goal.y, this.tau, dt);
     this.focus.z = damp(this.focus.z, goal.z, this.tau, dt);

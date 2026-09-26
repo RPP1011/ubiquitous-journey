@@ -14,10 +14,13 @@ import { TUNE } from './constants.js';
 import { createSession } from './app/session.js';
 import { BattleDirector } from './app/tactics/director.js';
 import { BattleRender } from './ui/battleRender.js';
+import { StageSet, hasSet } from './ui/stageSet.js';
 import { BattleFX } from './ui/battleFX.js';
 import { TacticsView } from './ui/tacticsView.js';
 import { RunController, localStore } from './app/run/run.js';
 import { RunUI } from './ui/runView.js';
+import { QUESTS, QUEST_ORDER } from './app/run/quests.js';
+import { plan } from './app/run/autopilot.js';
 import { hubStage, battleStage } from './ui/stagecraft.js';
 import { CameraRig } from './ui/cameraRig.js';
 import { terrainHeight } from './arena.js';
@@ -34,6 +37,7 @@ let dungeonMgr = null;             // built per-world in buildWorld()
 let session = null;                // the app-layer Session (js/app/session.ts) for the current run
 let tactics = null;                // BattleDirector: opens a tactical grid battle when the player's side comes to blows
 let battleRender = null;           // the grid/props/fire drawn for the current battle
+let stageSet = null; // the dressed place a run stage is fought in (ui/stageSet.ts)
 let battleFX = null;               // the choreographer: plays each action as animation + effects
 const tacView = new TacticsView();
 tacView.camera = camera;
@@ -119,6 +123,15 @@ function buildWorld() {
       focus: (p) => { camFocus = p ? new THREE.Vector3(p.x, 0, p.z) : null; },
       onDone: () => { window.__runDone = true; console.log('[run] done'); },
     });
+    // ?stage=<id> jumps straight into one stage (a preview of its set; no run is saved from it)
+    const jump = PARAMS.get('stage');
+    for (const [qi, qid] of QUEST_ORDER.entries()) {
+      const si = jump ? QUESTS[qid].stages.findIndex((st) => st.id === jump) : -1;
+      if (si < 0) continue;
+      const p = plan(qi, rc);
+      rc.startRun(qid, p.party, p.disposition); rc.stageIdx = si;
+      setTimeout(() => runUI.fight(), 0);
+    }
   }
 
   // dungeons: scatter cave-mouth portals in the wilds and expose the manager to
@@ -179,12 +192,14 @@ function endBattleView() {
   tacView.close();
   if (battleFX) { battleFX.dispose(); battleFX = null; tacView.fx = null; }
   if (battleRender) { battleRender.dispose(); battleRender = null; }
+  if (stageSet) { stageSet.dispose(); stageSet = null; }
 }
 function openBattle(b) {
   game.state = 'battle';
   if (session.player) session.player.goal = { kind: 'idle' };
   if (!b.order.length) b.start();
   battleRender = new BattleRender(scene, b);
+  if (RUN_MODE && rc && rc.stage && hasSet(rc.stage.id) && !b.map.onTerrain) { stageSet = new StageSet(scene, b, rc.stage.id); battleRender.bare = true; }
   battleFX = new BattleFX(scene, b);
   battleFX.onCaption = (text, kind, quote) => tacView.showCaption(text, kind, quote);
   tacView.fx = battleFX;
@@ -266,7 +281,7 @@ function frame() {
       stage = 'run.tick'; if (runUI) runUI.tick(dt, null);
     } else if (game.state === 'battle') {
       // the world holds its breath: only the battle advances (the town is not simulated mid-fight)
-      stage = 'battle.tick'; tacView.tick(dt);
+      stage = 'battle.tick'; tacView.tick(dt); if (stageSet) stageSet.sync(dt);
       if (runUI && rc) runUI.tick(dt, rc.battle, !!battleFX && battleFX.busy);
       if (rc && rc.battle) battleStage(rc.battle, battleFX);
       if (game.sim) { stage = 'fighter.update'; for (const f of game.sim.fighters) f.update(dt); }

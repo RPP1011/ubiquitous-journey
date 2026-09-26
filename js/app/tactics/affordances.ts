@@ -226,6 +226,8 @@ export function affordances(b: Battle, u: Unit): Affordance[] {
     for (const a of b.options(u, s)) {
       if (cost > 0 && STANCES.has(a.kind)) continue;
       if (cost > 0 && a.kind === 'social' && a.verb !== 'intimidate') continue;
+      // lighting bare grass is only worth offering next to a foe (else every tile would count)
+      if (a.kind === 'ignite' && !b.map.propAt(a.at.x, a.at.z) && !b.foesOf(u).some((f) => dist(f, a.at) <= 1)) continue;
       const k = JSON.stringify(a);
       const o = b.odds(u, a, s);
       const prev = best.get(k);

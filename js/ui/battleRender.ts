@@ -48,6 +48,8 @@ const PROP_LOOK: Record<string, { geo: () => THREE.BufferGeometry; color: number
   tent: { geo: () => new THREE.ConeGeometry(1.1, 1.8, 4), color: 0xb9a57c, y: 0.9 },
 };
 
+const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
+
 export class BattleRender {
   private scene: { add(o: unknown): void; remove(o: unknown): void };
   private battle: Battle;
@@ -67,6 +69,10 @@ export class BattleRender {
   reach = new Set<string>();
   targets = new Set<string>();
   path: Spot[] = [];
+  /** On a dressed stage set the ground is drawn by the set: plain tiles are hidden, only tints show. */
+  bare = false;
+  private shown: THREE.Matrix4[] = [];
+  private vis: boolean[] = [];
   /** Tiles holding an object the acting unit can use this turn. */
   usable = new Set<string>();
   /** A hovered option: its object, and the tiles it will touch. */
@@ -82,6 +88,7 @@ export class BattleRender {
     this.map.tiles.forEach((t, i) => {
       m.compose(new THREE.Vector3(t.wx, this.map.surfaceY(t.x, t.z, false) + 0.06, t.wz), q, one);
       this.tiles.setMatrixAt(i, m);
+      this.shown.push(m.clone()); this.vis.push(true);
       this.tiles.setColorAt(i, COL.base);
     });
     o3(this.tiles).renderOrder = 5;
@@ -127,6 +134,8 @@ export class BattleRender {
       if (t.burning > 0) c = COL.fire;
       if (this.hover && this.hover.x === t.x && this.hover.z === t.z) c = COL.hover;
       this.tiles.setColorAt(i, c);
+      const show = !this.bare || (c !== COL.base && c !== COL.ash);
+      if (show !== this.vis[i]) { this.vis[i] = show; this.tiles.setMatrixAt(i, show ? this.shown[i] : HIDDEN); this.tiles.instanceMatrix.needsUpdate = true; }
     });
     if (this.tiles.instanceColor) this.tiles.instanceColor.needsUpdate = true;
 

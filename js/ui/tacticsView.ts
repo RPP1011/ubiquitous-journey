@@ -157,7 +157,8 @@ export class TacticsView {
     const byProp = new Map<string, Affordance[]>();
     if (show) for (const a of this.options()) {
       if (a.subject?.kind !== 'prop') continue;
-      if (a.action.kind === 'hew' && !a.catches.length && b!.map.props.get(a.subject.id)?.kind === 'tree') continue;
+      // trees are everywhere: only mark one when something done to it would catch someone
+      if (!a.catches.length && b!.map.props.get(a.subject.id)?.kind === 'tree') continue;
       (byProp.get(a.subject.id) ?? byProp.set(a.subject.id, []).get(a.subject.id)!).push(a);
     }
     for (const [id, el] of this.markEls) if (!byProp.has(id)) { el.remove(); this.markEls.delete(id); }
@@ -331,7 +332,7 @@ export class TacticsView {
     const u = this.mine();
     r.reach.clear(); r.targets.clear(); r.path = []; r.usable.clear(); r.preview = null;
     if (!u || b.outcome) return;
-    for (const a of this.options()) if (a.subject?.kind === 'prop') { const p = b.map.props.get(a.subject.id); if (p && !(p.kind === 'tree' && a.action.kind === 'hew' && !a.catches.length)) r.usable.add(key(p.x, p.z)); }
+    for (const a of this.options()) if (a.subject?.kind === 'prop') { const p = b.map.props.get(a.subject.id); if (p && !(p.kind === 'tree' && !a.catches.length)) r.usable.add(key(p.x, p.z)); }
     const vk = this.verb ?? this.hoverVerb;
     this.aimAff = this.verb && r.hover ? this.aimedAt(this.verb, r.hover) : null;
     const hv = this.hoverAff ?? (this.aimAff ? { to: this.aimAff.to, action: this.aimAff.action } : null);

@@ -23,6 +23,7 @@ import { Battle, type Outcome, type Traits, type Unit } from '../tactics/battle.
 import { abilityById } from './gear.js';
 import { COMPANIONS, freshProfile, developFromBattle, bark, checkDeparture, type CompanionKey, type CompanionProfile } from './companions.js';
 import { QUESTS, QUEST_ORDER, type QuestDef, type StageDef } from './quests.js';
+import { SETS, setTile, stageCenter } from './sets.js';
 import { HUB_NPCS, HUB_SPOTS, COMPANY_SPOTS, PLAYER_SPOT, freshHub, tellTales, speak, type Deed, type HubLine, type HubState } from './hub.js';
 
 /** Turn a body to look at a point (visual). */
@@ -258,17 +259,31 @@ export class RunController {
   beginStage(): Battle {
     const st = this.stage!;
     const sim = this.session.sim;
-    const spot = findBiomeSpot(BIOMES[st.biome], st.radius[0], st.radius[1], 60) ?? new THREE.Vector3(st.radius[0], 0, 0);
-    const map = new BattleMap(spot, 16, { bare: true });
-    // soften the raw terrain into readable steps, then raise any authored high ground
-    const floor = Math.min(...map.tiles.map((t) => t.h));
-    map.baseY = floor * 0.5;
-    for (const t of map.tiles) t.h = Math.min(3, Math.round((t.h - floor) * 0.35));
+    const set = SETS[st.id];
+    let map: BattleMap;
+    if (set) {
+      // an authored stage set, built on its own ground off the map (see sets.ts)
+      const qi = QUEST_ORDER.indexOf(this.quest!.id);
+      const c = stageCenter(Math.max(0, qi) * 3 + this.stageIdx);
+      map = new BattleMap(c, 16, { bare: true });
+      map.onTerrain = false; map.baseY = 0;
+      for (const t of map.tiles) { const s = setTile(set, t.x, t.z); t.ground = s.ground; t.wall = s.wall; t.h = s.h; }
+    } else {
+      const spot = findBiomeSpot(BIOMES[st.biome], st.radius[0], st.radius[1], 60) ?? new THREE.Vector3(st.radius[0], 0, 0);
+      map = new BattleMap(spot, 16, { bare: true });
+      // soften the raw terrain into readable steps
+      const floor = Math.min(...map.tiles.map((t) => t.h));
+      map.baseY = floor * 0.5;
+      for (const t of map.tiles) t.h = Math.min(3, Math.round((t.h - floor) * 0.35));
+      for (const t of map.tiles) t.ground = 'grass';
+    }
+    // raise any authored high ground
     if (st.rise) for (const t of map.tiles) { const d = Math.hypot(t.x - st.rise.at[0], t.z - st.rise.at[1]); if (d <= st.rise.r) t.h += Math.round(st.rise.h * (1 - d / (st.rise.r + 1))) + 1; }
-    for (const t of map.tiles) t.ground = st.biome === 'hills' ? (t.h >= 3 ? 'stone' : 'grass') : 'grass';
+    const rocky = set?.rockyAbove ?? (st.biome === 'hills' ? 3 : 99);
+    for (const t of map.tiles) if (t.h >= rocky && !t.wall) t.ground = 'stone';
     const reserved = new Set<string>([...st.partyAt, ...st.foes.map((f) => f.at), ...(st.captive ? [st.captive.at] : [])].map(([x, z]) => `${x},${z}`));
     for (const [k, x, z] of st.props) if (!map.propAt(x, z)) map.addProp(k, x, z);
-    if (st.trees) for (const t of map.tiles) if (!reserved.has(`${t.x},${t.z}`) && !map.propAt(t.x, t.z) && rng() < st.trees) map.addProp('tree', t.x, t.z);
+    if (st.trees) for (const t of map.tiles) if (!reserved.has(`${t.x},${t.z}`) && !map.propAt(t.x, t.z) && !t.wall && t.ground === 'grass' && rng() < st.trees) map.addProp('tree', t.x, t.z);
     const b = new Battle(this.session, map);
     const seat = (at: [number, number]): Tile => { const t = map.tile(at[0], at[1]); return t && map.standable(t.x, t.z) && !b.unitAt(t.x, t.z) ? t : map.freeNear(at[0], at[1], 3)!; };
 

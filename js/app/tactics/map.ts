@@ -19,7 +19,7 @@ export const LEVEL = 0.5;         // metres per height level
 export const JUMP = 2;            // levels a unit may climb in one step
 export const FALL_SAFE = 3;       // a drop of more than this many levels hurts
 
-export type Ground = 'grass' | 'dirt' | 'stone' | 'water' | 'mud' | 'ash';
+export type Ground = 'grass' | 'dirt' | 'stone' | 'water' | 'mud' | 'ash' | 'snow';
 export type Cover = 0 | 1 | 2;    // none / half / full
 
 export interface Tile {
@@ -147,6 +147,8 @@ export class BattleMap {
 
   /** World-space y of the level-0 floor (a stage may soften raw terrain into readable steps). */
   baseY = 0;
+  /** Drawn over the world's terrain (open-world fights) or on its own authored ground (stage sets). */
+  onTerrain = true;
 
   /**
    * Where a tile's surface is DRAWN: never below the real terrain mesh (so bodies and the grid
@@ -154,7 +156,7 @@ export class BattleMap {
    */
   surfaceY(x: number, z: number, withProp = true): number {
     const t = this.tile(x, z); if (!t) return 0;
-    const floor = Math.max(safe(() => terrainHeight(t.wx, t.wz), 0), this.baseY + t.h * LEVEL);
+    const floor = Math.max(this.onTerrain ? safe(() => terrainHeight(t.wx, t.wz), 0) : -Infinity, this.baseY + t.h * LEVEL);
     return floor + (withProp ? this.standH(x, z) - t.h : 0) * LEVEL;
   }
 
