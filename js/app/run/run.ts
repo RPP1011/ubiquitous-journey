@@ -238,6 +238,20 @@ export class RunController {
       else if (was.bravery - p.traits.bravery > 0.06) out.push({ key: k, text: `${first} looks like they've seen a ghost.${aboutThem ? ` Is it true ${aboutThem.label}?` : ''}` });
       else if (was.loyalty - p.traits.loyalty > 0.1) out.push({ key: k, text: `${first} sat alone at the Brewer's last night. Wouldn't say why.` });
     }
+    // what the town sees between the people in your company (one thing per person you talk to)
+    const pairs = Object.entries(this.save.bonds ?? {}).filter(([k, r]) => r.kind === 'rival' || r.lvl >= 2)
+      .filter(([k]) => k.split('|').every((m) => m === 'player' || (this.save.profiles[m as CompanionKey]?.alive && !this.save.profiles[m as CompanionKey]?.departed)));
+    if (pairs.length) {
+      const [k, r] = pairs[[...npc].reduce((h, c) => h + c.charCodeAt(0), 0) % pairs.length];
+      const [a, c] = k.split('|');
+      const who = (m: string) => COMPANIONS[m as CompanionKey]?.short ?? m;
+      const one = a === 'player' ? c : c === 'player' ? a : null;
+      const text = r.kind === 'rival'
+        ? (one ? `${who(one)} had hard words about you at the Brewer's. Not the kind a friend says.` : `${who(a)} and ${who(c)} nearly came to blows at the Brewer's. Over what, nobody would say.`)
+        : one ? (r.lvl >= 3 ? `${who(one)} talks about you like family now.` : `${who(one)} won't hear a word against you.`)
+          : `${who(a)} and ${who(c)} are thick as thieves these days. Where one goes, the other follows.`;
+      out.push({ key: (one ?? a) as CompanionKey, text });
+    }
     return out;
   }
 
