@@ -428,7 +428,7 @@ export class StageSet {
         for (let j = 0; j < 5; j++) { const p = at(); kinds.tuft.items.push({ tile: i, x: p.x, y: y + 0.16, z: p.z, s: 0.7 + rnd() * 0.7, ry: rnd() * 6, tilt: (rnd() - 0.5) * 0.4, c: grass }); }
         if (L.flowers && rnd() < 0.35) { const p = at(); kinds.bloom.items.push({ tile: i, x: p.x, y: y + 0.2, z: p.z, s: 1, ry: 0, tilt: 0, c: L.flowers[Math.floor(rnd() * L.flowers.length)] }); }
       } else if (t.ground === 'dirt' || t.ground === 'stone' || t.ground === 'snow') {
-        if (rnd() < 0.5) { const p = at(); kinds.stone.items.push({ tile: i, x: p.x, y: y + 0.05, z: p.z, s: 0.6 + rnd(), ry: rnd() * 6, tilt: 0, c: t.ground === 'snow' ? 0x5f646c : 0x807b72 }); }
+        if (rnd() < (t.ground === 'snow' ? 0.12 : 0.4)) { const p = at(); kinds.stone.items.push({ tile: i, x: p.x, y: y + 0.05, z: p.z, s: 0.6 + rnd(), ry: rnd() * 6, tilt: 0, c: t.ground === 'snow' ? 0x9aa2ac : 0x807b72 }); }
       }
     });
     this.cover = this.map.tiles.map(() => []);
