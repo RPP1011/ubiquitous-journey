@@ -148,6 +148,16 @@ export function developFromBattle(b: Battle, profiles: Map<CompanionKey, Compani
 }
 
 /** Something a companion says — before a battle, after one, or in the hub. Draws on memories. */
+/** What a companion says to someone they've grown close to (a bond of 2+), before a fight. */
+export function pairBark(k: CompanionKey, other: string | null): string {
+  switch (k) {
+    case 'pip': return other ? `Stay close to me, ${other}. Or — I'll stay close to you.` : `If it goes bad, I'm at your back. I mean it.`;
+    case 'borin': return other ? `${other}, on my shield. Nobody touches you today.` : `You call it, I'll hold it. Same as always.`;
+    case 'wren': return other ? `${other} — I've got your left. Don't make me waste arrows.` : `Say where. I'll put one there.`;
+    case 'maud': return other ? `${other}, keep close. I'm not losing you to this lot.` : `Whatever happens, I'll patch you up. Don't make it hard.`;
+  }
+}
+
 export function bark(p: CompanionProfile, moment: 'setout' | 'prebattle' | 'victory' | 'hub', place = ''): string {
   const def = COMPANIONS[p.key];
   const t = p.traits;

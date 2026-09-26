@@ -21,7 +21,7 @@ import type { Session } from '../session.js';
 import { BattleMap, type Tile } from '../tactics/map.js';
 import { Battle, type Outcome, type Traits, type Unit } from '../tactics/battle.js';
 import { abilityById } from './gear.js';
-import { COMPANIONS, freshProfile, developFromBattle, bark, checkDeparture, type CompanionKey, type CompanionProfile } from './companions.js';
+import { COMPANIONS, freshProfile, developFromBattle, bark, pairBark, checkDeparture, type CompanionKey, type CompanionProfile } from './companions.js';
 import { QUESTS, QUEST_ORDER, type QuestDef, type StageDef } from './quests.js';
 import { SETS, setTile, stageCenter } from './sets.js';
 import { PIECES } from './setPieces.js';
@@ -344,7 +344,13 @@ export class RunController {
   }
 
   preBattleBarks(): Array<{ who: string; text: string }> {
-    return this.party.filter((k) => this.companionAgents.get(k)?.alive).map((k) => ({ who: COMPANIONS[k].name, text: bark(this.save.profiles[k], 'prebattle') }));
+    return this.party.filter((k) => this.companionAgents.get(k)?.alive).map((k, i) => {
+      // a close bond (2+) sometimes speaks instead: to the friend beside them, or to you
+      const mates = ['player', ...this.party.filter((o) => o !== k && this.companionAgents.get(o)?.alive)];
+      const best = mates.map((o) => ({ o, lvl: this.save.bonds[[k, o].sort().join('|')]?.lvl ?? 0 })).sort((a, c) => c.lvl - a.lvl)[0];
+      if (best && best.lvl >= 2 && (this.save.runs + this.stageIdx + i) % 2 === 0) return { who: COMPANIONS[k].name, text: pairBark(k, best.o === 'player' ? null : COMPANIONS[best.o as CompanionKey].short) };
+      return { who: COMPANIONS[k].name, text: bark(this.save.profiles[k], 'prebattle') };
+    });
   }
 
   /** Resolve the stage: objective, deeds, growth, patch-up. */
